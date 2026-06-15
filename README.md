@@ -19,7 +19,8 @@
 
 ## 关键技术选型（讨论中的当前共识）
 
-- 桌面 Shell：Tauri 2 + React + TypeScript + React Flow
+- 桌面 Shell：Electron 35.x（Forge + Vite + electron-builder） + React + TypeScript + React Flow
+- Python Runtime 作为 sidecar：PyInstaller one-file，由主进程 spawn，HTTP+SSE 通讯
 - Runtime 主语言：Python 3.10+（FastAPI + Pydantic v2 + asyncio）
 - 图调度内核：LangGraph + 自研 Cognitive Workflow 编译器
 - 基础 chat agent：**Pydantic AI**（作为 90% 节点的默认执行单元）
