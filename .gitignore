@@ -1,0 +1,108 @@
+# =========================================================
+# CognitiveWorkflow .gitignore
+# =========================================================
+
+# --- 参考代码 / 第三方仓库（仅供本地阅读，不纳入版本管理） ---
+pydantic-ai/
+**/third_party/
+**/vendor/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.eggs/
+.tox/
+.nox/
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+*.log
+
+# venv / 包管理
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+.uv/
+uv.lock.dev
+pip-wheel-metadata/
+
+# --- Node / 前端 ---
+node_modules/
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+.turbo/
+.parcel-cache/
+.vite/
+coverage/
+*.tsbuildinfo
+.pnp.*
+.yarn/install-state.gz
+.yarn/cache
+.yarn/unplugged
+
+# --- Tauri / Rust ---
+src-tauri/target/
+target/
+**/*.rs.bk
+Cargo.lock.dev
+
+# --- IDE / 编辑器 ---
+.idea/
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+*.iml
+*.sublime-*
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# --- 操作系统 ---
+$RECYCLE.BIN/
+*.lnk
+
+# --- CognitiveWorkflow 运行时产物（未来运行时会用到的目录，不入库） ---
+.agent-workflow/runs/
+.agent-workflow/stream-events/
+.agent-workflow/cache/
+artifacts/
+outputs/
+logs/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# --- 临时文件 ---
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+
+# --- 大文件 / 模型权重（如未来需要纳入，统一走 Git LFS） ---
+*.gguf
+*.bin
+*.safetensors
+*.onnx
+*.ckpt
