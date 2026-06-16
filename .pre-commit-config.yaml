@@ -1,0 +1,62 @@
+# =====================================================================
+# CognitiveWorkflow .pre-commit-config.yaml
+# =====================================================================
+# 安装：pre-commit install
+# 跑全量：pre-commit run --all-files
+# =====================================================================
+
+repos:
+  # ---- 通用 ----
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.docx$|^pydantic-ai/'
+      - id: end-of-file-fixer
+        exclude: '\.docx$|^pydantic-ai/'
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+        exclude: '\.docx$'
+      - id: detect-private-key
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: '^pydantic-ai/'
+
+  # ---- Python: ruff ----
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # ---- 自定义 hook：CW secure / cache 拦截 ----
+  - repo: local
+    hooks:
+      - id: cw-block-secure-paths
+        name: 拦截 .agent-workflow/secure/** 与 .agent-workflow/cache/** 入 git
+        entry: scripts/git-hooks/block-secure-paths.sh
+        language: script
+        pass_filenames: true
+
+      - id: cw-block-known-secrets
+        name: 拦截已知凭证前缀（sk_ / ANTHROPIC_API_KEY / OPENAI_API_KEY 等）
+        entry: scripts/git-hooks/block-known-secrets.sh
+        language: script
+        pass_filenames: true
+        types: [text]
+
+      - id: cw-no-co-authored-by-claude
+        name: 严禁 commit message 含 Co-Authored-By Claude
+        entry: scripts/git-hooks/block-claude-coauthor.sh
+        language: script
+        stages: [commit-msg]
+
+      - id: cw-no-pydantic-ai-import-in-engine
+        name: Engine / Compiler / MCCL 不得 import pydantic_ai (ADR-0002)
+        entry: scripts/git-hooks/block-pydantic-ai-in-engine.sh
+        language: script
+        types: [python]
+        files: '^apps/runtime/src/cw_runtime/(engine|nodes|mccl|memory|planning|persistence|stream|tools|observability|api)/'

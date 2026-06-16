@@ -1,0 +1,91 @@
+name: ci
+on:
+  push:
+    branches: [main, "phase*", "feat/**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: lint + typecheck + test (${{ matrix.os }} / py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.12"]
+        node: ["20.x"]
+        include:
+          - os: ubuntu-latest
+            python: "3.12"
+            node: "20.x"
+            primary: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: Install Python dependencies
+        run: uv sync --all-extras
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: |
+          uv run ruff format --check .
+          pnpm run format:check
+        if: matrix.primary
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          pnpm -r --if-present run lint
+
+      - name: Typecheck (Python)
+        run: uv run mypy packages/schemas apps/runtime
+
+      - name: Typecheck (TypeScript)
+        run: pnpm -r --if-present run typecheck
+
+      - name: Test (Python)
+        run: uv run pytest
+
+      - name: Test (TypeScript)
+        run: pnpm -r --if-present run test
+
+      - name: Codegen consistency
+        if: matrix.primary
+        run: |
+          uv run python scripts/codegen/generate-json-schemas.py
+          pnpm run codegen
+          git diff --exit-code -- 'packages/schemas-ts/**' || (
+            echo '::error::codegen 输出与 git 仓库内不一致；请本地跑 make codegen 后提交'
+            exit 1
+          )

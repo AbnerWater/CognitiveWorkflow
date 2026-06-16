@@ -1,0 +1,25 @@
+{
+  "name": "@cw/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CognitiveWorkflow Electron desktop shell (main + preload + renderer)",
+  "license": "MIT",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "echo '[@cw/desktop] M1.5 milestone 内落实 Electron Forge dev pipeline'",
+    "build": "echo '[@cw/desktop] M1.5 milestone 内落实 Electron Forge + electron-builder'",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx --max-warnings 0"
+  },
+  "dependencies": {
+    "@cw/schemas": "workspace:*",
+    "@cw/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "eslint": "^9.13.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

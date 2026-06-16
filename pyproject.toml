@@ -1,0 +1,101 @@
+[project]
+name = "cognitiveworkflow"
+version = "0.1.0"
+description = "CognitiveWorkflow — Workspace root (managed by uv)"
+requires-python = ">=3.10,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "CW Architecture" }]
+
+# 这是 uv workspace 的根；不打包，不发布。
+# 各子包（cw_schemas / cw_runtime / cw_ui）的 distribution 名与依赖在
+# 各自的 packages/<name>/pyproject.toml 中声明。
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "packages/schemas",
+    "apps/runtime",
+]
+
+# ============================================================
+# Dev / lint / type / test 共享配置（由各子包通过 inherit 复用）
+# ============================================================
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [
+    "pydantic-ai",
+    ".agent-workflow",
+    "**/.venv",
+    "**/dist",
+    "**/build",
+    "**/__pycache__",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W", "I",      # pycodestyle / pyflakes / isort
+    "B",                      # flake8-bugbear
+    "UP",                     # pyupgrade
+    "ASYNC",
+    "RUF",
+]
+ignore = [
+    "E501",                   # line length 由 formatter 控制
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cw_schemas", "cw_runtime", "cw_ui"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_decorators = true
+exclude = "(pydantic-ai/|\\.agent-workflow/|dist/|build/)"
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["packages/schemas/tests", "apps/runtime/tests"]
+addopts = [
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+    "--cov-report=term-missing",
+]
+asyncio_mode = "auto"
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:pkg_resources.*",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["cw_schemas", "cw_runtime"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = false
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0",
+    "mypy>=1.13.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-snapshot>=0.9.0",
+    "datamodel-code-generator>=0.28.0",
+    "pre-commit>=4.0.0",
+]

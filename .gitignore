@@ -106,3 +106,27 @@ logs/
 *.safetensors
 *.onnx
 *.ckpt
+
+# --- Phase 1 工程产物 ---
+# uv lock 进 git；workspace local 包不进 dist
+**/*.egg-info/
+.uv-cache/
+
+# Electron / electron-builder 构建产物
+apps/desktop/out/
+apps/desktop/dist/
+apps/desktop/release/
+apps/desktop/resources/runtime/
+apps/desktop/.vite/
+
+# PyInstaller 中间产物
+build/
+*.spec
+apps/runtime/build/
+apps/runtime/dist/
+
+# 自动生成 — 但 codegen 输出仍要进 git（由 CI 校验一致性）
+# packages/schemas-ts/src/generated/  ← 不忽略；CI codegen-consistency 验证
+
+# pre-commit
+.pre-commit-cache/

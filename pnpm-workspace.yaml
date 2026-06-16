@@ -1,0 +1,4 @@
+packages:
+  - "apps/desktop"
+  - "packages/schemas-ts"
+  - "packages/ui"
