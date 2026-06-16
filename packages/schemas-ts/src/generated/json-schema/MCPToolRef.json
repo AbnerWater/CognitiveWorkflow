@@ -1,0 +1,29 @@
+{
+  "additionalProperties": false,
+  "description": "MCP 工具引用（§5.2）。",
+  "properties": {
+    "requires_approval": {
+      "default": false,
+      "description": "调用前需用户批准",
+      "title": "Requires Approval",
+      "type": "boolean"
+    },
+    "server_id": {
+      "description": "已配置的 MCP Server ID",
+      "minLength": 1,
+      "title": "Server Id",
+      "type": "string"
+    },
+    "tool_name": {
+      "default": "*",
+      "description": "限定可调用的 tool 名；'*' = 全部",
+      "title": "Tool Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "server_id"
+  ],
+  "title": "MCPToolRef",
+  "type": "object"
+}

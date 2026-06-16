@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "CriterionKind": {
+      "description": "EvaluationCriterion.kind。",
+      "enum": [
+        "rubric",
+        "programmatic",
+        "regex",
+        "schema",
+        "citation",
+        "numeric_threshold"
+      ],
+      "title": "CriterionKind",
+      "type": "string"
+    },
+    "Severity": {
+      "description": "4 级严重度（failure_taxonomy.md §8）。",
+      "enum": [
+        "blocker",
+        "major",
+        "minor",
+        "info"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "单条审查规则（§9.1）。",
+  "properties": {
+    "criterion_id": {
+      "description": "节点内唯一",
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Criterion Id",
+      "type": "string"
+    },
+    "description": {
+      "description": "业务语言描述",
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "expression": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "具体表达：rubric 文本 / JSON Logic / 正则 / JSON Schema 路径 / 阈值表达式",
+      "title": "Expression"
+    },
+    "kind": {
+      "$ref": "#/$defs/CriterionKind",
+      "description": "校验形式"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity",
+      "default": "major",
+      "description": "失败严重程度"
+    },
+    "weight": {
+      "default": 1.0,
+      "description": "用于综合评分",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Weight",
+      "type": "number"
+    }
+  },
+  "required": [
+    "criterion_id",
+    "description",
+    "kind"
+  ],
+  "title": "EvaluationCriterion",
+  "type": "object"
+}

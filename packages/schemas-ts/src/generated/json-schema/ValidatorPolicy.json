@@ -1,0 +1,77 @@
+{
+  "$defs": {
+    "ArbitrationMode": {
+      "description": "EvaluationContract.arbitration（架构 §9 多 Agent 辩论 / D-ER-6）。",
+      "enum": [
+        "single_judge",
+        "multi_judge",
+        "programmatic_first"
+      ],
+      "title": "ArbitrationMode",
+      "type": "string"
+    },
+    "ExtraValidatorRef": {
+      "additionalProperties": false,
+      "description": "ValidatorPolicy.extra_validators 引用（§8）。",
+      "properties": {
+        "options": {
+          "additionalProperties": true,
+          "description": "校验器参数",
+          "title": "Options",
+          "type": "object"
+        },
+        "validator_id": {
+          "description": "ToolRegistry 中已注册的校验器 ID（如 citation_checker / schema_strict_v2）",
+          "minLength": 1,
+          "title": "Validator Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "validator_id"
+      ],
+      "title": "ExtraValidatorRef",
+      "type": "object"
+    },
+    "ValidatorMode": {
+      "description": "ValidatorPolicy.mode。",
+      "enum": [
+        "strict",
+        "lenient",
+        "programmatic_only"
+      ],
+      "title": "ValidatorMode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "节点输出校验策略（§8）。",
+  "properties": {
+    "arbitration": {
+      "$ref": "#/$defs/ArbitrationMode",
+      "default": "single_judge",
+      "description": "多候选 / 多 judge 仲裁模式（D-NC-7 v0.2 占位）"
+    },
+    "extra_validators": {
+      "description": "ToolRegistry 中已注册的额外校验器（D-NC-3：禁止执行用户代码）",
+      "items": {
+        "$ref": "#/$defs/ExtraValidatorRef"
+      },
+      "title": "Extra Validators",
+      "type": "array"
+    },
+    "mode": {
+      "$ref": "#/$defs/ValidatorMode",
+      "default": "strict",
+      "description": "strict：严格校验；lenient：允许部分缺失但触发修复；programmatic_only：跳过 LLM 校验"
+    },
+    "partial_output_allowed": {
+      "default": false,
+      "description": "流式中是否允许 partial output（与 Pydantic AI RunContext.partial_output 对齐）",
+      "title": "Partial Output Allowed",
+      "type": "boolean"
+    }
+  },
+  "title": "ValidatorPolicy",
+  "type": "object"
+}

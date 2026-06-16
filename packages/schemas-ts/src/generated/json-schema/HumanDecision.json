@@ -1,0 +1,32 @@
+{
+  "additionalProperties": false,
+  "description": "人工决策定义（HumanGateContract.decisions[*]）。",
+  "properties": {
+    "key": {
+      "description": "标准枚举：continue/reject/edit/escalate；自定义必须以 custom_ 前缀",
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "label": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "UI 显示标签",
+      "title": "Label"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "title": "HumanDecision",
+  "type": "object"
+}

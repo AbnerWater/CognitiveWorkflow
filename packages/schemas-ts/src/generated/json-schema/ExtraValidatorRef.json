@@ -1,0 +1,23 @@
+{
+  "additionalProperties": false,
+  "description": "ValidatorPolicy.extra_validators 引用（§8）。",
+  "properties": {
+    "options": {
+      "additionalProperties": true,
+      "description": "校验器参数",
+      "title": "Options",
+      "type": "object"
+    },
+    "validator_id": {
+      "description": "ToolRegistry 中已注册的校验器 ID（如 citation_checker / schema_strict_v2）",
+      "minLength": 1,
+      "title": "Validator Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "validator_id"
+  ],
+  "title": "ExtraValidatorRef",
+  "type": "object"
+}

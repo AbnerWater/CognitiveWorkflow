@@ -1,0 +1,83 @@
+{
+  "$defs": {
+    "BackoffStrategy": {
+      "description": "RetryPolicy.backoff。",
+      "enum": [
+        "none",
+        "linear",
+        "exponential"
+      ],
+      "title": "BackoffStrategy",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "节点级重试策略（§7）。",
+  "properties": {
+    "backoff": {
+      "$ref": "#/$defs/BackoffStrategy",
+      "default": "exponential",
+      "description": "重试间隔策略"
+    },
+    "escalation_after": {
+      "default": 2,
+      "description": "第 N 次失败后允许 ModelRouter 升级模型",
+      "minimum": 1,
+      "title": "Escalation After",
+      "type": "integer"
+    },
+    "max_attempts": {
+      "default": 3,
+      "description": "节点的总尝试上限（含首次）",
+      "minimum": 1,
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "model_retries": {
+      "default": 2,
+      "description": "模型层重试",
+      "minimum": 0,
+      "title": "Model Retries",
+      "type": "integer"
+    },
+    "output_validation_retries": {
+      "default": 2,
+      "description": "输出校验失败的重试次数",
+      "minimum": 0,
+      "title": "Output Validation Retries",
+      "type": "integer"
+    },
+    "timeout_seconds": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "单次 attempt 超时",
+      "title": "Timeout Seconds"
+    },
+    "tool_retries": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        }
+      ],
+      "default": 2,
+      "description": "工具调用重试；可按 tool_id 单独设置",
+      "title": "Tool Retries"
+    }
+  },
+  "title": "RetryPolicy",
+  "type": "object"
+}

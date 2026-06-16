@@ -1,0 +1,43 @@
+{
+  "additionalProperties": false,
+  "description": "通过条件（§9.2）。",
+  "properties": {
+    "combinator": {
+      "description": "组合方式",
+      "enum": [
+        "all_pass",
+        "any_pass",
+        "weighted_score",
+        "custom"
+      ],
+      "title": "Combinator",
+      "type": "string"
+    },
+    "must_pass_blockers": {
+      "default": true,
+      "description": "任意 severity=blocker 失败一律视为失败 / 通过判定",
+      "title": "Must Pass Blockers",
+      "type": "boolean"
+    },
+    "threshold": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "当 combinator=weighted_score 时必填；综合分通过阈值",
+      "title": "Threshold"
+    }
+  },
+  "required": [
+    "combinator"
+  ],
+  "title": "PassCondition",
+  "type": "object"
+}

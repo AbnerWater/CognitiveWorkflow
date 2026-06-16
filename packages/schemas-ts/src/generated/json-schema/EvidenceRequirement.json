@@ -1,0 +1,38 @@
+{
+  "additionalProperties": false,
+  "description": "事实性 / 研究类节点的证据要求。",
+  "properties": {
+    "min_coverage": {
+      "default": 1.0,
+      "description": "最小覆盖率阈值",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Min Coverage",
+      "type": "number"
+    },
+    "min_evidences": {
+      "default": 1,
+      "description": "该 requirement 所需的最少 evidence 数量",
+      "minimum": 0,
+      "title": "Min Evidences",
+      "type": "integer"
+    },
+    "required_for": {
+      "description": "引用产物字段路径（JSONPath）；例：'research_questions[*].source_evidence_ids'",
+      "minLength": 1,
+      "title": "Required For",
+      "type": "string"
+    },
+    "requirement_id": {
+      "default": "",
+      "description": "稳定 ID；运行时由 EvidenceBuilder 反查",
+      "title": "Requirement Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "required_for"
+  ],
+  "title": "EvidenceRequirement",
+  "type": "object"
+}

@@ -1,0 +1,72 @@
+{
+  "$defs": {
+    "TemplateEngine": {
+      "description": "PromptSection.template_engine（D-NC-1 默认 handlebars）。",
+      "enum": [
+        "handlebars",
+        "jinja2_minimal",
+        "none"
+      ],
+      "title": "TemplateEngine",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "节点提示词三层结构（§3）。\n\n与 Pydantic AI Agent 的 `system_prompt` / `instructions` / `user_prompt` 三层一致。\n模板变量解析顺序由 ContextBuilder 在装填阶段完成（D-CB-6）；\n此 schema 只承载文本+模板引擎声明。",
+  "properties": {
+    "instructions": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "动态指令；与 Pydantic AI `instructions` 对齐——支持 RunContext 闭包，编译时只允许引用 deps 字段",
+      "title": "Instructions"
+    },
+    "system_prompt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "静态系统提示；多段时按顺序拼接",
+      "title": "System Prompt"
+    },
+    "template_engine": {
+      "$ref": "#/$defs/TemplateEngine",
+      "default": "handlebars",
+      "description": "模板渲染引擎（D-NC-1：默认 handlebars）"
+    },
+    "user_prompt_template": {
+      "description": "节点开始时合成的用户提示词；模板支持变量插值 {{ var }}",
+      "minLength": 1,
+      "title": "User Prompt Template",
+      "type": "string"
+    }
+  },
+  "required": [
+    "user_prompt_template"
+  ],
+  "title": "PromptSection",
+  "type": "object"
+}

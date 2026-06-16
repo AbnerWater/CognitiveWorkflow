@@ -1,0 +1,29 @@
+{
+  "additionalProperties": false,
+  "description": "启用的 Skill 引用（§5.1）。",
+  "properties": {
+    "params": {
+      "additionalProperties": true,
+      "description": "Skill 参数",
+      "title": "Params",
+      "type": "object"
+    },
+    "skill_id": {
+      "description": "SkillRegistry 中的 ID",
+      "minLength": 1,
+      "title": "Skill Id",
+      "type": "string"
+    },
+    "version": {
+      "default": "latest",
+      "description": "锁定版本；运行时不存在则 L4 报 WG_L4_UNKNOWN_SKILL",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "skill_id"
+  ],
+  "title": "SkillRef",
+  "type": "object"
+}

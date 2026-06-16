@@ -11,7 +11,7 @@
 M1.2 进度（2026-06-15）：
 - W1.2.1 ✅ types / ids / metadata
 - W1.2.2 ✅ workflow.graph + nodes + policies
-- W1.2.3 ⏳ contract（NodeContract）
+- W1.2.3 ✅ contract（NodeContract 6 类）
 - W1.2.4 ⏳ packs（ContextPack / EvidencePack）
 - W1.2.5 ⏳ runtime（EvaluationResult / RepairPatch）
 - W1.2.6 ⏳ events（StreamEvent）
@@ -20,6 +20,36 @@ M1.2 进度（2026-06-15）：
 from __future__ import annotations
 
 from . import ids, metadata, types
+from .contract import (
+    ContextRequirement,
+    ContextSelector,
+    EvaluationContract,
+    EvaluationCriterion,
+    EvidenceRequirement,
+    ExecutionContract,
+    ExtraValidatorRef,
+    FailCondition,
+    HumanDecision,
+    HumanGateContract,
+    MCPToolRef,
+    MemoryContract,
+    NodeContract,
+    NodeContractBase,
+    NodeModelPolicy,
+    PassCondition,
+    ProjectMemorySelector,
+    PromptSection,
+    ReferenceSelector,
+    RepairContract,
+    RepairStrategy,
+    RetryPolicy,
+    SkillRef,
+    StaticTextSelector,
+    ToolContract,
+    UpstreamArtifactSelector,
+    UserInputSelector,
+    ValidatorPolicy,
+)
 from .workflow import (
     ArchiveAction,
     DraftSource,
@@ -47,9 +77,7 @@ from .workflow.graph import CURRENT_SCHEMA_VERSION
 
 __version__ = "0.1.0"
 
-# codegen 入口：scripts/codegen/generate-json-schemas.py 会迭代本字典，
-# 把每个 Pydantic 模型 dump 为 JSON Schema → 派生 TS 类型。
-# M1.2 后续 milestone 内陆续注册 NodeContract / ContextPack / EvaluationResult / 等
+# codegen 入口
 __exported_models__: dict[str, type] = {
     # workflow
     "WorkflowGraph": WorkflowGraph,
@@ -73,27 +101,77 @@ __exported_models__: dict[str, type] = {
     "HumanDecisionDef": HumanDecisionDef,
     "ArchiveAction": ArchiveAction,
     "NodePosition": NodePosition,
+    # contract — 6 类
+    "ExecutionContract": ExecutionContract,
+    "EvaluationContract": EvaluationContract,
+    "RepairContract": RepairContract,
+    "HumanGateContract": HumanGateContract,
+    "ToolContract": ToolContract,
+    "MemoryContract": MemoryContract,
+    # contract 子对象
+    "PromptSection": PromptSection,
+    "ContextRequirement": ContextRequirement,
+    "EvidenceRequirement": EvidenceRequirement,
+    "EvaluationCriterion": EvaluationCriterion,
+    "PassCondition": PassCondition,
+    "FailCondition": FailCondition,
+    "RepairStrategy": RepairStrategy,
+    "HumanDecision": HumanDecision,
+    "SkillRef": SkillRef,
+    "MCPToolRef": MCPToolRef,
+    "ExtraValidatorRef": ExtraValidatorRef,
+    "NodeModelPolicy": NodeModelPolicy,
+    "RetryPolicy": RetryPolicy,
+    "ValidatorPolicy": ValidatorPolicy,
 }
 
 __all__ = [
     "CURRENT_SCHEMA_VERSION",
     "ArchiveAction",
+    "ContextRequirement",
+    "ContextSelector",
     "DraftSource",
     "EdgeCondition",
     "EdgeStyle",
     "EndNode",
+    "EvaluationContract",
+    "EvaluationCriterion",
     "EvaluationTaskNode",
+    "EvidenceRequirement",
+    "ExecutionContract",
     "ExecutionPolicy",
     "ExecutionTaskNode",
+    "ExtraValidatorRef",
+    "FailCondition",
     "HumanCheckpointNode",
+    "HumanDecision",
     "HumanDecisionDef",
+    "HumanGateContract",
+    "MCPToolRef",
+    "MemoryContract",
     "MemoryTaskNode",
+    "NodeContract",
+    "NodeContractBase",
+    "NodeModelPolicy",
     "NodePosition",
+    "PassCondition",
+    "ProjectMemorySelector",
+    "PromptSection",
+    "ReferenceSelector",
+    "RepairContract",
+    "RepairStrategy",
     "RepairTaskNode",
+    "RetryPolicy",
     "ReviewPolicy",
+    "SkillRef",
     "StartNode",
+    "StaticTextSelector",
     "SubflowNode",
+    "ToolContract",
     "ToolTaskNode",
+    "UpstreamArtifactSelector",
+    "UserInputSelector",
+    "ValidatorPolicy",
     "WorkflowEdge",
     "WorkflowGraph",
     "WorkflowModelPolicy",

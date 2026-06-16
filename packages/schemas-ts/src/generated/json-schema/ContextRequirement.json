@@ -1,0 +1,236 @@
+{
+  "$defs": {
+    "ProjectMemorySelector": {
+      "additionalProperties": false,
+      "description": "读取项目级 Memory key。",
+      "properties": {
+        "memory_key": {
+          "minLength": 1,
+          "title": "Memory Key",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "project_memory",
+          "default": "project_memory",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_key"
+      ],
+      "title": "ProjectMemorySelector",
+      "type": "object"
+    },
+    "ReferenceSelector": {
+      "additionalProperties": false,
+      "description": "读取 ReferenceLibrary 资料；reference_id 可为 '$auto'（由 EvidenceBuilder 候选检索）。",
+      "properties": {
+        "chunk_filter": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "可选 chunk 过滤条件",
+          "title": "Chunk Filter"
+        },
+        "reference_id": {
+          "minLength": 1,
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "reference",
+          "default": "reference",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference_id"
+      ],
+      "title": "ReferenceSelector",
+      "type": "object"
+    },
+    "StaticTextSelector": {
+      "additionalProperties": false,
+      "description": "直接嵌入静态文本。",
+      "properties": {
+        "source_kind": {
+          "const": "static_text",
+          "default": "static_text",
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "StaticTextSelector",
+      "type": "object"
+    },
+    "UpstreamArtifactSelector": {
+      "additionalProperties": false,
+      "description": "从上游节点产物提取数据。",
+      "properties": {
+        "artifact_field": {
+          "description": "JSONPath；如 'research_questions[*]'",
+          "minLength": 1,
+          "title": "Artifact Field",
+          "type": "string"
+        },
+        "artifact_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "哪一次 Run；默认当前 run",
+          "title": "Artifact Run Id"
+        },
+        "from_node_id": {
+          "description": "上游节点 ID",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "From Node Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "upstream_artifact",
+          "default": "upstream_artifact",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_node_id",
+        "artifact_field"
+      ],
+      "title": "UpstreamArtifactSelector",
+      "type": "object"
+    },
+    "UserInputSelector": {
+      "additionalProperties": false,
+      "description": "读取 Run 启动时的初始输入字段。",
+      "properties": {
+        "input_field": {
+          "minLength": 1,
+          "title": "Input Field",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "user_input",
+          "default": "user_input",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_field"
+      ],
+      "title": "UserInputSelector",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "节点上下文需求（§4）。",
+  "properties": {
+    "key": {
+      "description": "该上下文片段在 deps 中的访问键",
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "kind": {
+      "description": "来源类型；与 selector.source_kind 必须一致",
+      "enum": [
+        "upstream_artifact",
+        "project_memory",
+        "reference",
+        "static_text",
+        "user_input"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "max_tokens": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "单片段 token 上限；超过由 ContextBuilder 摘要",
+      "title": "Max Tokens"
+    },
+    "required": {
+      "default": true,
+      "description": "缺失时是否阻塞节点",
+      "title": "Required",
+      "type": "boolean"
+    },
+    "selector": {
+      "description": "来源选择器",
+      "discriminator": {
+        "mapping": {
+          "project_memory": "#/$defs/ProjectMemorySelector",
+          "reference": "#/$defs/ReferenceSelector",
+          "static_text": "#/$defs/StaticTextSelector",
+          "upstream_artifact": "#/$defs/UpstreamArtifactSelector",
+          "user_input": "#/$defs/UserInputSelector"
+        },
+        "propertyName": "source_kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/UpstreamArtifactSelector"
+        },
+        {
+          "$ref": "#/$defs/ProjectMemorySelector"
+        },
+        {
+          "$ref": "#/$defs/ReferenceSelector"
+        },
+        {
+          "$ref": "#/$defs/StaticTextSelector"
+        },
+        {
+          "$ref": "#/$defs/UserInputSelector"
+        }
+      ],
+      "title": "Selector"
+    },
+    "summarize_if_over": {
+      "default": true,
+      "description": "超长时是否自动摘要",
+      "title": "Summarize If Over",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "key",
+    "kind",
+    "selector"
+  ],
+  "title": "ContextRequirement",
+  "type": "object"
+}

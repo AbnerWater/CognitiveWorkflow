@@ -6,9 +6,7 @@
 - 公共字段 → WorkflowNodeBase
 - 类型差异化 → 各子类用 type 字段做 discriminator
 - 路由字段（on_pass_next_node_id 等）保留在节点级声明；与边声明互斥/合并由 graph.py 校验
-- contract 字段在 M1.2 W1.2.3 接入；本里程碑暂用 dict[str, Any] 占位（避免循环依赖）
-
-注：M1.2 W1.2.3 完成 NodeContract 后会把所有 contract 字段从 dict 升级为 NodeContract 类型。
+- contract 字段在 M1.2 W1.2.3 完成后已升级为 NodeContract（discriminated union）
 
 实现注意：discriminator 的 type 字段用字符串 Literal（mypy strict 兼容），
 不直接用 Literal[NodeType.X]——后者在 mypy 严格模式下会被拒绝。
@@ -16,10 +14,12 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic_core import PydanticCustomError
 
+from ..contract import NodeContract
 from ..ids import LooseId
 from ..metadata import MetadataDict
 from ..types import (
@@ -27,6 +27,19 @@ from ..types import (
     StartTrigger,
     TimeoutAction,
 )
+
+# NodeType ↔ ContractKind 必须一一对应（与 node_contract.md §2 表对齐）
+_NODE_TYPE_TO_CONTRACT_KIND: dict[str, str] = {
+    NodeType.EXECUTION_TASK.value: "execution",
+    NodeType.EVALUATION_TASK.value: "evaluation",
+    NodeType.REPAIR_TASK.value: "repair",
+    NodeType.HUMAN_CHECKPOINT.value: "human_gate",
+    NodeType.TOOL_TASK.value: "tool",
+    NodeType.MEMORY_TASK.value: "memory",
+}
+
+# 这些节点类型 contract 必填
+_NODE_TYPES_REQUIRING_CONTRACT: set[str] = set(_NODE_TYPE_TO_CONTRACT_KIND.keys())
 
 
 class NodePosition(BaseModel):
@@ -60,13 +73,47 @@ class WorkflowNodeBase(BaseModel):
     position: NodePosition | None = Field(default=None, description="Canvas 位置；Engine 忽略")
     tags: list[str] = Field(default_factory=list, description="自由标签，用于过滤")
     metadata: MetadataDict = Field(default_factory=dict, description="命名空间化扩展字段（D-WG-4）")
-    contract: dict[str, Any] | None = Field(
+    contract: NodeContract | None = Field(
         default=None,
         description=(
-            "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。"
-            "start/end/subflow/memory_task 通常为 None。"
+            "节点契约；NodeContract 6 类 discriminated union（contract_kind）。"
+            "start/end/subflow 必须为 None；execution/evaluation/repair/human_checkpoint/tool/memory 必填。"
         ),
     )
+
+    @model_validator(mode="after")
+    def _check_node_contract_kind_match(self) -> Self:
+        """校验 NodeType ↔ ContractKind 一致性（NC_L2_KIND_MISMATCH）。
+
+        - start/end/subflow：contract 必须为 None
+        - 其它节点：contract 必填，且 contract.contract_kind 与 NodeType 对应表一致
+        """
+        # contract = None 时
+        if self.contract is None:
+            if self.type in _NODE_TYPES_REQUIRING_CONTRACT:
+                raise PydanticCustomError(
+                    "NC_L2_CONTRACT_REQUIRED",
+                    f"节点 type={self.type} 必填 contract，但实际为 None",
+                )
+            return self
+
+        # contract != None 时
+        if self.type not in _NODE_TYPE_TO_CONTRACT_KIND:
+            # start/end/subflow 不应有 contract
+            raise PydanticCustomError(
+                "NC_L2_KIND_MISMATCH",
+                f"节点 type={self.type} 不应有 contract（仅执行/评价/修复/人工/工具/记忆类节点支持）",
+            )
+
+        expected_kind = _NODE_TYPE_TO_CONTRACT_KIND[self.type]
+        if self.contract.contract_kind != expected_kind:
+            raise PydanticCustomError(
+                "NC_L2_KIND_MISMATCH",
+                f"节点 type={self.type} 与 contract.contract_kind={self.contract.contract_kind} 不匹配；"
+                f"预期 contract_kind={expected_kind}",
+            )
+
+        return self
 
 
 # =============================================================================

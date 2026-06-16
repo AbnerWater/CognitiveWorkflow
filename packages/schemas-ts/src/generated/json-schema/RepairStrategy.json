@@ -1,0 +1,80 @@
+{
+  "$defs": {
+    "FailureType": {
+      "description": "8+1 类失败分类（D-FT-1 锁定，不允许扩充至 v0.2）。",
+      "enum": [
+        "format_error",
+        "missing_output",
+        "missing_evidence",
+        "logic_gap",
+        "model_capability_limit",
+        "tool_error",
+        "ambiguous_requirement",
+        "review_rule_too_strict",
+        "unknown"
+      ],
+      "title": "FailureType",
+      "type": "string"
+    },
+    "RepairKind": {
+      "description": "6 类 patch_kind（D-RP-1 锁定）。",
+      "enum": [
+        "prompt_patch",
+        "context_patch",
+        "evidence_patch",
+        "model_escalation",
+        "workflow_patch",
+        "human_checkpoint"
+      ],
+      "title": "RepairKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "修复策略声明（§10）。\n\nPhase 1 RepairAgent **仅可输出**：\n    prompt_patch / context_patch / evidence_patch / model_escalation\nworkflow_patch / human_checkpoint 由 Engine 直接生成（D-NC-4）。",
+  "properties": {
+    "applies_to_failure_types": {
+      "description": "适用的失败类型子集",
+      "items": {
+        "$ref": "#/$defs/FailureType"
+      },
+      "minItems": 1,
+      "title": "Applies To Failure Types",
+      "type": "array"
+    },
+    "guarded_by": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "触发条件（如 'attempts >= 2'）；JSON Logic 或简单表达式",
+      "title": "Guarded By"
+    },
+    "kind": {
+      "$ref": "#/$defs/RepairKind",
+      "description": "6 类 patch_kind 之一"
+    },
+    "max_uses": {
+      "default": 1,
+      "description": "单次执行链路中本策略最多被使用几次",
+      "minimum": 1,
+      "title": "Max Uses",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "kind",
+    "applies_to_failure_types"
+  ],
+  "title": "RepairStrategy",
+  "type": "object"
+}
