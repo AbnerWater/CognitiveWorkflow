@@ -219,7 +219,7 @@ def test_wg_l2_dup_node_id() -> None:
 
 def test_wg_l2_dup_edge_id() -> None:
     g = make_minimal_graph_dict()
-    g["edges"][1]["edge_id"] = "e1"
+    g["edges"][1]["edge_id"] = "e_01"  # 与 edges[0] 同 ID
     with pytest.raises(ValidationError) as exc_info:
         WorkflowGraph.model_validate(g)
     _assert_validation_error_contains(exc_info.value, "WG_L2_DUP_EDGE_ID")

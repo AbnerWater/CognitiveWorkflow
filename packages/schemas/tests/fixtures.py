@@ -45,37 +45,37 @@ MINIMAL_GRAPH_DICT: dict[str, Any] = {
     ],
     "edges": [
         {
-            "edge_id": "e1",
+            "edge_id": "e_01",
             "source_node_id": "n_start",
             "target_node_id": "n_extract",
             "type": "normal",
         },
         {
-            "edge_id": "e2",
+            "edge_id": "e_02",
             "source_node_id": "n_extract",
             "target_node_id": "n_review",
             "type": "normal",
         },
         {
-            "edge_id": "e3",
+            "edge_id": "e_03",
             "source_node_id": "n_review",
             "target_node_id": "n_report",
             "type": "pass",
         },
         {
-            "edge_id": "e4",
+            "edge_id": "e_04",
             "source_node_id": "n_review",
             "target_node_id": "n_repair",
             "type": "fail",
         },
         {
-            "edge_id": "e5",
+            "edge_id": "e_05",
             "source_node_id": "n_repair",
             "target_node_id": "n_extract",
             "type": "retry",
         },
         {
-            "edge_id": "e6",
+            "edge_id": "e_06",
             "source_node_id": "n_report",
             "target_node_id": "n_end",
             "type": "normal",
