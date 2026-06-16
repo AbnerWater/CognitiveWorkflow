@@ -1,0 +1,184 @@
+{
+  "$defs": {
+    "HumanDecisionDef": {
+      "additionalProperties": false,
+      "description": "human_checkpoint 节点的决策定义。",
+      "properties": {
+        "key": {
+          "description": "标准枚举：continue/reject/edit/escalate；自定义必须以 custom_ 前缀",
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "UI 显示标签",
+          "title": "Label"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "HumanDecisionDef",
+      "type": "object"
+    },
+    "NodePosition": {
+      "additionalProperties": false,
+      "description": "Canvas 位置；Engine 不读取，仅前端使用。",
+      "properties": {
+        "x": {
+          "default": 0.0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0.0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "title": "NodePosition",
+      "type": "object"
+    },
+    "TimeoutAction": {
+      "description": "human_gate.timeout_action / WorkflowEdge human.",
+      "enum": [
+        "hold",
+        "fallback",
+        "abort"
+      ],
+      "title": "TimeoutAction",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "人工检查点节点（§2.3.5）。",
+  "properties": {
+    "contract": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+      "title": "Contract"
+    },
+    "decisions": {
+      "description": "用户可选择的决策枚举；至少含 continue",
+      "items": {
+        "$ref": "#/$defs/HumanDecisionDef"
+      },
+      "minItems": 1,
+      "title": "Decisions",
+      "type": "array"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "节点说明",
+      "title": "Description"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "description": "命名空间化扩展字段（D-WG-4）",
+      "title": "Metadata",
+      "type": "object"
+    },
+    "node_id": {
+      "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Node Id",
+      "type": "string"
+    },
+    "position": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NodePosition"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Canvas 位置；Engine 忽略"
+    },
+    "routing_map": {
+      "additionalProperties": {
+        "maxLength": 64,
+        "minLength": 3,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+        "type": "string"
+      },
+      "description": "每个决策 key → 下游节点映射",
+      "minProperties": 1,
+      "title": "Routing Map",
+      "type": "object"
+    },
+    "tags": {
+      "description": "自由标签，用于过滤",
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "timeout_action": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TimeoutAction"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "用户长时间无响应时的兜底"
+    },
+    "title": {
+      "description": "Canvas 标签",
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "type": {
+      "const": "human_checkpoint",
+      "default": "human_checkpoint",
+      "title": "Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "node_id",
+    "title",
+    "decisions",
+    "routing_map"
+  ],
+  "title": "HumanCheckpointNode",
+  "type": "object"
+}

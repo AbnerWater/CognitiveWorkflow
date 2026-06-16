@@ -1,0 +1,1583 @@
+{
+  "$defs": {
+    "ArchiveAction": {
+      "additionalProperties": false,
+      "description": "end 节点的归档动作。",
+      "properties": {
+        "kind": {
+          "description": "例：export_markdown / git_tag / write_memory",
+          "title": "Kind",
+          "type": "string"
+        },
+        "options": {
+          "additionalProperties": true,
+          "title": "Options",
+          "type": "object"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "目标路径或 tag 名",
+          "title": "To"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ArchiveAction",
+      "type": "object"
+    },
+    "CreatedBy": {
+      "description": "WorkflowGraph.created_by。",
+      "enum": [
+        "ai_planning",
+        "manual_editor",
+        "hybrid",
+        "template",
+        "imported"
+      ],
+      "title": "CreatedBy",
+      "type": "string"
+    },
+    "DraftSource": {
+      "additionalProperties": false,
+      "description": "草案来源（§4.2）。",
+      "properties": {
+        "applied_patches": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Applied Patches",
+          "type": "array"
+        },
+        "draft_version": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Draft Version"
+        },
+        "planning_session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Planning Session Id"
+        },
+        "template_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Template Id"
+        }
+      },
+      "title": "DraftSource",
+      "type": "object"
+    },
+    "EdgeCondition": {
+      "additionalProperties": false,
+      "description": "仅 optional / 扩展条件型边使用（§3.3）。",
+      "properties": {
+        "expression": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "JSON Logic 子集；当 kind=expression 时必填",
+          "title": "Expression"
+        },
+        "kind": {
+          "description": "expression / capability / artifact_present / always_false",
+          "title": "Kind",
+          "type": "string"
+        },
+        "requires_artifact_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "当 kind=artifact_present 时必填",
+          "title": "Requires Artifact Id"
+        },
+        "requires_capability": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "例：mcp.search.web；当 kind=capability 时必填",
+          "title": "Requires Capability"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "EdgeCondition",
+      "type": "object"
+    },
+    "EdgeStyle": {
+      "additionalProperties": false,
+      "description": "渲染样式提示；Engine 忽略。",
+      "properties": {
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "dashed": {
+          "default": false,
+          "title": "Dashed",
+          "type": "boolean"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        }
+      },
+      "title": "EdgeStyle",
+      "type": "object"
+    },
+    "EdgeType": {
+      "description": "8 类 WorkflowEdge。",
+      "enum": [
+        "normal",
+        "pass",
+        "fail",
+        "retry",
+        "repair",
+        "human",
+        "optional",
+        "loop"
+      ],
+      "title": "EdgeType",
+      "type": "string"
+    },
+    "EndNode": {
+      "additionalProperties": false,
+      "description": "图终点（§2.3.2）。",
+      "properties": {
+        "archive_actions": {
+          "description": "归档动作列表",
+          "items": {
+            "$ref": "#/$defs/ArchiveAction"
+          },
+          "title": "Archive Actions",
+          "type": "array"
+        },
+        "contract": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+          "title": "Contract"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明",
+          "title": "Description"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段（D-WG-4）",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas 位置；Engine 忽略"
+        },
+        "tags": {
+          "description": "自由标签，用于过滤",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "description": "Canvas 标签",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "const": "end",
+          "default": "end",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "title"
+      ],
+      "title": "EndNode",
+      "type": "object"
+    },
+    "EvaluationTaskNode": {
+      "additionalProperties": false,
+      "description": "评价任务节点（§2.3.3）。",
+      "properties": {
+        "contract": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+          "title": "Contract"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明",
+          "title": "Description"
+        },
+        "max_retry": {
+          "description": "不通过后允许的回流次数；超过转 human_checkpoint",
+          "minimum": 0,
+          "title": "Max Retry",
+          "type": "integer"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段（D-WG-4）",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "on_fail_next_node_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 3,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "二选一：本字段或对应 fail 边",
+          "title": "On Fail Next Node Id"
+        },
+        "on_pass_next_node_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 3,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "二选一：本字段或对应 pass 边",
+          "title": "On Pass Next Node Id"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas 位置；Engine 忽略"
+        },
+        "tags": {
+          "description": "自由标签，用于过滤",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "target_node_id": {
+          "description": "被审查的节点 ID",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Target Node Id",
+          "type": "string"
+        },
+        "title": {
+          "description": "Canvas 标签",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "const": "evaluation_task",
+          "default": "evaluation_task",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "title",
+        "target_node_id",
+        "max_retry"
+      ],
+      "title": "EvaluationTaskNode",
+      "type": "object"
+    },
+    "ExecutionMode": {
+      "description": "ExecutionPolicy.mode；与 UIUX FR-007 三种模式对齐。",
+      "enum": [
+        "step",
+        "semi_auto",
+        "auto"
+      ],
+      "title": "ExecutionMode",
+      "type": "string"
+    },
+    "ExecutionPolicy": {
+      "additionalProperties": false,
+      "description": "全局执行策略（workflow_graph.md §5.1）。",
+      "properties": {
+        "default_timeout_seconds": {
+          "default": 600,
+          "description": "节点级未声明 timeout 时的默认值",
+          "minimum": 1,
+          "title": "Default Timeout Seconds",
+          "type": "integer"
+        },
+        "max_concurrent_nodes": {
+          "default": 1,
+          "description": "全局并发上限；Phase 1 默认 1",
+          "minimum": 1,
+          "title": "Max Concurrent Nodes",
+          "type": "integer"
+        },
+        "mode": {
+          "$ref": "#/$defs/ExecutionMode",
+          "default": "semi_auto",
+          "description": "执行模式，与 UIUX FR-007 三种模式对齐"
+        },
+        "on_node_failure": {
+          "$ref": "#/$defs/OnNodeFailure",
+          "default": "human",
+          "description": "非审查类节点本身失败时的处理"
+        }
+      },
+      "title": "ExecutionPolicy",
+      "type": "object"
+    },
+    "ExecutionTaskNode": {
+      "additionalProperties": false,
+      "description": "执行任务节点（§2.2 / §6.3）。",
+      "properties": {
+        "contract": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+          "title": "Contract"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明",
+          "title": "Description"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段（D-WG-4）",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas 位置；Engine 忽略"
+        },
+        "tags": {
+          "description": "自由标签，用于过滤",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "description": "Canvas 标签",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "const": "execution_task",
+          "default": "execution_task",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "title"
+      ],
+      "title": "ExecutionTaskNode",
+      "type": "object"
+    },
+    "HumanCheckpointNode": {
+      "additionalProperties": false,
+      "description": "人工检查点节点（§2.3.5）。",
+      "properties": {
+        "contract": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+          "title": "Contract"
+        },
+        "decisions": {
+          "description": "用户可选择的决策枚举；至少含 continue",
+          "items": {
+            "$ref": "#/$defs/HumanDecisionDef"
+          },
+          "minItems": 1,
+          "title": "Decisions",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明",
+          "title": "Description"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段（D-WG-4）",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas 位置；Engine 忽略"
+        },
+        "routing_map": {
+          "additionalProperties": {
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+            "type": "string"
+          },
+          "description": "每个决策 key → 下游节点映射",
+          "minProperties": 1,
+          "title": "Routing Map",
+          "type": "object"
+        },
+        "tags": {
+          "description": "自由标签，用于过滤",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "timeout_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeoutAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "用户长时间无响应时的兜底"
+        },
+        "title": {
+          "description": "Canvas 标签",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "const": "human_checkpoint",
+          "default": "human_checkpoint",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "title",
+        "decisions",
+        "routing_map"
+      ],
+      "title": "HumanCheckpointNode",
+      "type": "object"
+    },
+    "HumanDecisionDef": {
+      "additionalProperties": false,
+      "description": "human_checkpoint 节点的决策定义。",
+      "properties": {
+        "key": {
+          "description": "标准枚举：continue/reject/edit/escalate；自定义必须以 custom_ 前缀",
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "UI 显示标签",
+          "title": "Label"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "HumanDecisionDef",
+      "type": "object"
+    },
+    "MemoryTaskNode": {
+      "additionalProperties": false,
+      "description": "项目级 Memory 读写节点（§2.2 表 + D-RH-2）。",
+      "properties": {
+        "contract": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+          "title": "Contract"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明",
+          "title": "Description"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段（D-WG-4）",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas 位置；Engine 忽略"
+        },
+        "tags": {
+          "description": "自由标签，用于过滤",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "description": "Canvas 标签",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "const": "memory_task",
+          "default": "memory_task",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "title"
+      ],
+      "title": "MemoryTaskNode",
+      "type": "object"
+    },
+    "NodePosition": {
+      "additionalProperties": false,
+      "description": "Canvas 位置；Engine 不读取，仅前端使用。",
+      "properties": {
+        "x": {
+          "default": 0.0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0.0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "title": "NodePosition",
+      "type": "object"
+    },
+    "OnNodeFailure": {
+      "description": "ExecutionPolicy.on_node_failure。",
+      "enum": [
+        "stop",
+        "continue_safe_branches",
+        "human"
+      ],
+      "title": "OnNodeFailure",
+      "type": "string"
+    },
+    "RepairTaskNode": {
+      "additionalProperties": false,
+      "description": "修复任务节点（§2.3.4）。",
+      "properties": {
+        "contract": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+          "title": "Contract"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明",
+          "title": "Description"
+        },
+        "failure_input_ref": {
+          "description": "EvaluationResult ID 或占位符（如 $last_evaluation）",
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Failure Input Ref",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段（D-WG-4）",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "on_repair_next_node_id": {
+          "description": "修复后回到的节点（通常 = repair_target_node_id）",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "On Repair Next Node Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas 位置；Engine 忽略"
+        },
+        "repair_target_node_id": {
+          "description": "被修复的执行节点 ID",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Repair Target Node Id",
+          "type": "string"
+        },
+        "tags": {
+          "description": "自由标签，用于过滤",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "description": "Canvas 标签",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "const": "repair_task",
+          "default": "repair_task",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "title",
+        "repair_target_node_id",
+        "failure_input_ref",
+        "on_repair_next_node_id"
+      ],
+      "title": "RepairTaskNode",
+      "type": "object"
+    },
+    "ReviewPolicy": {
+      "additionalProperties": false,
+      "description": "全局审查策略（workflow_graph.md §5.2）。",
+      "properties": {
+        "default_max_retry": {
+          "default": 2,
+          "description": "evaluation_task 未声明 max_retry 时使用",
+          "minimum": 0,
+          "title": "Default Max Retry",
+          "type": "integer"
+        },
+        "escalate_after_repairs": {
+          "default": 3,
+          "description": "累计 repair 次数超过此值进入 human_checkpoint",
+          "minimum": 0,
+          "title": "Escalate After Repairs",
+          "type": "integer"
+        },
+        "evidence_required_for_factual_outputs": {
+          "default": true,
+          "description": "事实性输出强制要求 EvidencePack 覆盖",
+          "title": "Evidence Required For Factual Outputs",
+          "type": "boolean"
+        }
+      },
+      "title": "ReviewPolicy",
+      "type": "object"
+    },
+    "StartNode": {
+      "additionalProperties": false,
+      "description": "图入口节点（§2.3.1）。",
+      "properties": {
+        "contract": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+          "title": "Contract"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明",
+          "title": "Description"
+        },
+        "initial_input_schema": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "用户在启动 Run 时输入的结构化数据形态（JSON Schema）",
+          "title": "Initial Input Schema"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段（D-WG-4）",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas 位置；Engine 忽略"
+        },
+        "tags": {
+          "description": "自由标签，用于过滤",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "description": "Canvas 标签",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "trigger": {
+          "$ref": "#/$defs/StartTrigger",
+          "default": "manual",
+          "description": "Phase 1 仅允许 manual"
+        },
+        "type": {
+          "const": "start",
+          "default": "start",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "title"
+      ],
+      "title": "StartNode",
+      "type": "object"
+    },
+    "StartTrigger": {
+      "description": "start 节点 trigger。Phase 1 仅允许 manual。",
+      "enum": [
+        "manual",
+        "scheduled",
+        "event"
+      ],
+      "title": "StartTrigger",
+      "type": "string"
+    },
+    "SubflowNode": {
+      "additionalProperties": false,
+      "description": "子工作流嵌入（§2.2，Phase 4 启用）。",
+      "properties": {
+        "contract": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+          "title": "Contract"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明",
+          "title": "Description"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段（D-WG-4）",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas 位置；Engine 忽略"
+        },
+        "subflow_workflow_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 3,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "被嵌入的 Workflow ID",
+          "title": "Subflow Workflow Id"
+        },
+        "tags": {
+          "description": "自由标签，用于过滤",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "description": "Canvas 标签",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "const": "subflow",
+          "default": "subflow",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "title"
+      ],
+      "title": "SubflowNode",
+      "type": "object"
+    },
+    "TimeoutAction": {
+      "description": "human_gate.timeout_action / WorkflowEdge human.",
+      "enum": [
+        "hold",
+        "fallback",
+        "abort"
+      ],
+      "title": "TimeoutAction",
+      "type": "string"
+    },
+    "ToolTaskNode": {
+      "additionalProperties": false,
+      "description": "确定性工具节点（§2.2 表）。",
+      "properties": {
+        "contract": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+          "title": "Contract"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明",
+          "title": "Description"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段（D-WG-4）",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas 位置；Engine 忽略"
+        },
+        "tags": {
+          "description": "自由标签，用于过滤",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "description": "Canvas 标签",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "const": "tool_task",
+          "default": "tool_task",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "title"
+      ],
+      "title": "ToolTaskNode",
+      "type": "object"
+    },
+    "WorkflowEdge": {
+      "additionalProperties": false,
+      "description": "图边（§3.1）。",
+      "properties": {
+        "condition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EdgeCondition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "edge_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Edge Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "source_node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Source Node Id",
+          "type": "string"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EdgeStyle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "target_node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Target Node Id",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/EdgeType"
+        }
+      },
+      "required": [
+        "edge_id",
+        "source_node_id",
+        "target_node_id",
+        "type"
+      ],
+      "title": "WorkflowEdge",
+      "type": "object"
+    },
+    "WorkflowModelPolicy": {
+      "additionalProperties": false,
+      "description": "全局模型策略（workflow_graph.md §5.3）。",
+      "properties": {
+        "default_model_profile_id": {
+          "description": "节点未声明模型时使用；ModelProfile 全局唯一 ID",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Default Model Profile Id",
+          "type": "string"
+        },
+        "escalation_chain": {
+          "description": "模型升级链；ModelRouter 在 model_capability_limit 触发时按序升级",
+          "items": {
+            "type": "string"
+          },
+          "title": "Escalation Chain",
+          "type": "array"
+        },
+        "forbid_remote_for_sensitive": {
+          "default": true,
+          "description": "metadata.sensitive=true 的节点禁止使用远程 Provider",
+          "title": "Forbid Remote For Sensitive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "default_model_profile_id"
+      ],
+      "title": "WorkflowModelPolicy",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "CW Workflow 有向图顶层结构（§1.1）。",
+  "properties": {
+    "created_at": {
+      "description": "ISO-8601 UTC",
+      "title": "Created At",
+      "type": "string"
+    },
+    "created_by": {
+      "$ref": "#/$defs/CreatedBy"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "draft_source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DraftSource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/WorkflowEdge"
+      },
+      "title": "Edges",
+      "type": "array"
+    },
+    "entry_node_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Entry Node Id",
+      "type": "string"
+    },
+    "execution_policy": {
+      "$ref": "#/$defs/ExecutionPolicy"
+    },
+    "global_context_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Global Context Refs",
+      "type": "array"
+    },
+    "last_modified_at": {
+      "description": "ISO-8601 UTC",
+      "title": "Last Modified At",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "model_policy": {
+      "$ref": "#/$defs/WorkflowModelPolicy"
+    },
+    "nodes": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "end": "#/$defs/EndNode",
+            "evaluation_task": "#/$defs/EvaluationTaskNode",
+            "execution_task": "#/$defs/ExecutionTaskNode",
+            "human_checkpoint": "#/$defs/HumanCheckpointNode",
+            "memory_task": "#/$defs/MemoryTaskNode",
+            "repair_task": "#/$defs/RepairTaskNode",
+            "start": "#/$defs/StartNode",
+            "subflow": "#/$defs/SubflowNode",
+            "tool_task": "#/$defs/ToolTaskNode"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/StartNode"
+          },
+          {
+            "$ref": "#/$defs/EndNode"
+          },
+          {
+            "$ref": "#/$defs/ExecutionTaskNode"
+          },
+          {
+            "$ref": "#/$defs/EvaluationTaskNode"
+          },
+          {
+            "$ref": "#/$defs/RepairTaskNode"
+          },
+          {
+            "$ref": "#/$defs/HumanCheckpointNode"
+          },
+          {
+            "$ref": "#/$defs/ToolTaskNode"
+          },
+          {
+            "$ref": "#/$defs/MemoryTaskNode"
+          },
+          {
+            "$ref": "#/$defs/SubflowNode"
+          }
+        ]
+      },
+      "minItems": 2,
+      "title": "Nodes",
+      "type": "array"
+    },
+    "review_policy": {
+      "$ref": "#/$defs/ReviewPolicy"
+    },
+    "schema_version": {
+      "default": "0.1.0",
+      "description": "本 spec 版本号；用于未来兼容性升级判定",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "terminal_node_ids": {
+      "items": {
+        "maxLength": 64,
+        "minLength": 3,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Terminal Node Ids",
+      "type": "array"
+    },
+    "title": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "version": {
+      "description": "SemVer；草案版本由 draft.version: int 区分（D-WG-1）",
+      "title": "Version",
+      "type": "string"
+    },
+    "workflow_id": {
+      "description": "ULID/UUIDv7；草案阶段允许 LooseId",
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Workflow Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workflow_id",
+    "version",
+    "title",
+    "nodes",
+    "entry_node_id",
+    "terminal_node_ids",
+    "execution_policy",
+    "review_policy",
+    "model_policy",
+    "created_by",
+    "created_at",
+    "last_modified_at"
+  ],
+  "title": "WorkflowGraph",
+  "type": "object"
+}

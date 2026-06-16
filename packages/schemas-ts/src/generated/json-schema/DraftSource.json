@@ -1,0 +1,52 @@
+{
+  "additionalProperties": false,
+  "description": "草案来源（§4.2）。",
+  "properties": {
+    "applied_patches": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Applied Patches",
+      "type": "array"
+    },
+    "draft_version": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Draft Version"
+    },
+    "planning_session_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Planning Session Id"
+    },
+    "template_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Template Id"
+    }
+  },
+  "title": "DraftSource",
+  "type": "object"
+}

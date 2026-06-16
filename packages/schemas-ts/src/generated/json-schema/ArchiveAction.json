@@ -1,0 +1,34 @@
+{
+  "additionalProperties": false,
+  "description": "end 节点的归档动作。",
+  "properties": {
+    "kind": {
+      "description": "例：export_markdown / git_tag / write_memory",
+      "title": "Kind",
+      "type": "string"
+    },
+    "options": {
+      "additionalProperties": true,
+      "title": "Options",
+      "type": "object"
+    },
+    "to": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "目标路径或 tag 名",
+      "title": "To"
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "ArchiveAction",
+  "type": "object"
+}

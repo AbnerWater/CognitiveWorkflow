@@ -1,0 +1,54 @@
+{
+  "$defs": {
+    "ExecutionMode": {
+      "description": "ExecutionPolicy.mode；与 UIUX FR-007 三种模式对齐。",
+      "enum": [
+        "step",
+        "semi_auto",
+        "auto"
+      ],
+      "title": "ExecutionMode",
+      "type": "string"
+    },
+    "OnNodeFailure": {
+      "description": "ExecutionPolicy.on_node_failure。",
+      "enum": [
+        "stop",
+        "continue_safe_branches",
+        "human"
+      ],
+      "title": "OnNodeFailure",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "全局执行策略（workflow_graph.md §5.1）。",
+  "properties": {
+    "default_timeout_seconds": {
+      "default": 600,
+      "description": "节点级未声明 timeout 时的默认值",
+      "minimum": 1,
+      "title": "Default Timeout Seconds",
+      "type": "integer"
+    },
+    "max_concurrent_nodes": {
+      "default": 1,
+      "description": "全局并发上限；Phase 1 默认 1",
+      "minimum": 1,
+      "title": "Max Concurrent Nodes",
+      "type": "integer"
+    },
+    "mode": {
+      "$ref": "#/$defs/ExecutionMode",
+      "default": "semi_auto",
+      "description": "执行模式，与 UIUX FR-007 三种模式对齐"
+    },
+    "on_node_failure": {
+      "$ref": "#/$defs/OnNodeFailure",
+      "default": "human",
+      "description": "非审查类节点本身失败时的处理"
+    }
+  },
+  "title": "ExecutionPolicy",
+  "type": "object"
+}

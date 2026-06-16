@@ -2,7 +2,7 @@
 name = "cognitiveworkflow"
 version = "0.1.0"
 description = "CognitiveWorkflow — Workspace root (managed by uv)"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.11,<3.13"
 license = { text = "MIT" }
 authors = [{ name = "CW Architecture" }]
 
@@ -30,7 +30,7 @@ cw_runtime = { workspace = true }
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 extend-exclude = [
     "pydantic-ai",
     ".agent-workflow",
@@ -62,7 +62,7 @@ ignore = [
 known-first-party = ["cw_schemas", "cw_runtime", "cw_ui"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 warn_unused_ignores = true
 warn_redundant_casts = true

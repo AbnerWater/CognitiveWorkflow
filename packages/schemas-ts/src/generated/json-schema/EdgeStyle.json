@@ -1,0 +1,37 @@
+{
+  "additionalProperties": false,
+  "description": "渲染样式提示；Engine 忽略。",
+  "properties": {
+    "color": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Color"
+    },
+    "dashed": {
+      "default": false,
+      "title": "Dashed",
+      "type": "boolean"
+    },
+    "width": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Width"
+    }
+  },
+  "title": "EdgeStyle",
+  "type": "object"
+}

@@ -1,0 +1,32 @@
+{
+  "additionalProperties": false,
+  "description": "全局模型策略（workflow_graph.md §5.3）。",
+  "properties": {
+    "default_model_profile_id": {
+      "description": "节点未声明模型时使用；ModelProfile 全局唯一 ID",
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Default Model Profile Id",
+      "type": "string"
+    },
+    "escalation_chain": {
+      "description": "模型升级链；ModelRouter 在 model_capability_limit 触发时按序升级",
+      "items": {
+        "type": "string"
+      },
+      "title": "Escalation Chain",
+      "type": "array"
+    },
+    "forbid_remote_for_sensitive": {
+      "default": true,
+      "description": "metadata.sensitive=true 的节点禁止使用远程 Provider",
+      "title": "Forbid Remote For Sensitive",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "default_model_profile_id"
+  ],
+  "title": "WorkflowModelPolicy",
+  "type": "object"
+}

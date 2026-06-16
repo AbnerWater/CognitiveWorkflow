@@ -2,7 +2,7 @@
 name = "cw_schemas"
 version = "0.1.0"
 description = "CognitiveWorkflow shared Pydantic v2 schemas (single source of truth, ADR-0003)"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.11,<3.13"
 license = { text = "MIT" }
 authors = [{ name = "CW Architecture" }]
 readme = "README.md"

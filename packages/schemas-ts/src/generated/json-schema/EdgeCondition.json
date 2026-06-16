@@ -1,0 +1,56 @@
+{
+  "additionalProperties": false,
+  "description": "仅 optional / 扩展条件型边使用（§3.3）。",
+  "properties": {
+    "expression": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "JSON Logic 子集；当 kind=expression 时必填",
+      "title": "Expression"
+    },
+    "kind": {
+      "description": "expression / capability / artifact_present / always_false",
+      "title": "Kind",
+      "type": "string"
+    },
+    "requires_artifact_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "当 kind=artifact_present 时必填",
+      "title": "Requires Artifact Id"
+    },
+    "requires_capability": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "例：mcp.search.web；当 kind=capability 时必填",
+      "title": "Requires Capability"
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "EdgeCondition",
+  "type": "object"
+}

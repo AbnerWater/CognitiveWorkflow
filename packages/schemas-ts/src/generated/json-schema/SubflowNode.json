@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "NodePosition": {
+      "additionalProperties": false,
+      "description": "Canvas 位置；Engine 不读取，仅前端使用。",
+      "properties": {
+        "x": {
+          "default": 0.0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0.0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "title": "NodePosition",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "子工作流嵌入（§2.2，Phase 4 启用）。",
+  "properties": {
+    "contract": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "节点契约；M1.2 W1.2.3 完成后会从 dict 升级为 NodeContract Pydantic 模型。start/end/subflow/memory_task 通常为 None。",
+      "title": "Contract"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "节点说明",
+      "title": "Description"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "description": "命名空间化扩展字段（D-WG-4）",
+      "title": "Metadata",
+      "type": "object"
+    },
+    "node_id": {
+      "description": "节点 ID；草案阶段允许 LooseId，实例化后必须是 ULID/UUIDv7",
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Node Id",
+      "type": "string"
+    },
+    "position": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NodePosition"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Canvas 位置；Engine 忽略"
+    },
+    "subflow_workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "被嵌入的 Workflow ID",
+      "title": "Subflow Workflow Id"
+    },
+    "tags": {
+      "description": "自由标签，用于过滤",
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "title": {
+      "description": "Canvas 标签",
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "type": {
+      "const": "subflow",
+      "default": "subflow",
+      "title": "Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "node_id",
+    "title"
+  ],
+  "title": "SubflowNode",
+  "type": "object"
+}
