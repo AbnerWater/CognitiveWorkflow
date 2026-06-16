@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CognitiveWorkflow Schema (M1.1 placeholder)",
+  "description": "M1.2 milestone will populate this directory with Pydantic-derived JSON Schemas.",
+  "type": "object",
+  "properties": {
+    "cw_schemas_version": {
+      "type": "string",
+      "const": "0.1.0"
+    }
+  },
+  "required": [
+    "cw_schemas_version"
+  ]
+}

@@ -65,7 +65,7 @@ previewing ◄────┐
    │            │
    ▼            │
 revising ───────┘ (循环：用户提出修改意见或回退版本)
-   │            
+   │
    ▼
 created      (实例化为正式 Workflow，进入 WorkflowRun 状态机)
 

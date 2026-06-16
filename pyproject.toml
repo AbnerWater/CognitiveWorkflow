@@ -19,6 +19,11 @@ members = [
     "apps/runtime",
 ]
 
+# uv 要求 workspace 成员之间的依赖必须在此显式声明
+[tool.uv.sources]
+cw_schemas = { workspace = true }
+cw_runtime = { workspace = true }
+
 # ============================================================
 # Dev / lint / type / test 共享配置（由各子包通过 inherit 复用）
 # ============================================================
@@ -45,6 +50,12 @@ select = [
 ]
 ignore = [
     "E501",                   # line length 由 formatter 控制
+
+    # 全角中文标点：CW 是中文为主的项目，docstring / 注释 / 字符串内含中文标点是常态
+    # 仅在"看起来像但其实不是"的情况下 ruff 会报误警，对 CW 而言收益小于干扰
+    "RUF001",                 # ambiguous unicode in string
+    "RUF002",                 # ambiguous unicode in docstring
+    "RUF003",                 # ambiguous unicode in comment
 ]
 
 [tool.ruff.lint.isort]
@@ -58,6 +69,9 @@ warn_redundant_casts = true
 disallow_untyped_decorators = true
 exclude = "(pydantic-ai/|\\.agent-workflow/|dist/|build/)"
 plugins = ["pydantic.mypy"]
+mypy_path = ["packages/schemas/src", "apps/runtime/src"]
+explicit_package_bases = true
+namespace_packages = true
 
 [tool.pydantic-mypy]
 init_forbid_extra = true
@@ -72,6 +86,7 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "--cov-report=term-missing",
+    "--import-mode=importlib",   # 避免同名 test 文件在不同目录冲突
 ]
 asyncio_mode = "auto"
 filterwarnings = [

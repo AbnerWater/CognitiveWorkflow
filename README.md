@@ -6,7 +6,49 @@
 
 ## 当前阶段
 
-第一阶段：技术选型与开发路线讨论，**暂不进入编码**。
+**Phase 1 · MVP 闭环（工程实施进行中）**。Phase 0 协议化已完成（18 份 Accepted spec + 工程治理文档），详见 [`docs/roadmap.md`](docs/roadmap.md)。
+
+## 快速开始
+
+### 依赖工具
+
+- Python 3.10~3.12
+- Node.js ≥ 20.10 + pnpm 9
+- [uv](https://docs.astral.sh/uv/) ≥ 0.5（推荐）
+- Git
+
+### 一键安装
+
+**macOS / Linux**：
+
+```bash
+make install        # uv sync + pnpm install
+make hooks-install  # uv run pre-commit install + commit-msg
+make test           # 验证
+```
+
+**Windows PowerShell**（无需 GNU Make）：
+
+```powershell
+.\dev.ps1 install
+.\dev.ps1 hooks-install
+.\dev.ps1 test
+```
+
+`dev.ps1` 提供与 `Makefile` 等价的 13 个 target；任意 target 用 `.\dev.ps1 help` 查看。
+
+### 当前可用命令
+
+| target | macOS / Linux | Windows |
+|---|---|---|
+| 安装依赖 | `make install` | `.\dev.ps1 install` |
+| 安装 git hooks | `make hooks-install` | `.\dev.ps1 hooks-install` |
+| Lint | `make lint` | `.\dev.ps1 lint` |
+| 类型检查 | `make typecheck` | `.\dev.ps1 typecheck` |
+| 测试 | `make test` | `.\dev.ps1 test` |
+| Codegen | `make codegen` | `.\dev.ps1 codegen` |
+| Phase 状态 | `make phase-status` | `.\dev.ps1 phase-status` |
+| 一键 dev（M1.5 后启用） | `make dev` | `.\dev.ps1 dev` |
 
 ## 仓库结构（当前）
 

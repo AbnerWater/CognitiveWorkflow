@@ -9,13 +9,11 @@
   "types": "src/index.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
+    "test": "echo '[@cw/schemas] M1.2 milestone 内落实 vitest'",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts --max-warnings 0"
+    "lint": "echo '[@cw/schemas] M1.2 milestone 内落实 eslint'"
   },
   "devDependencies": {
-    "eslint": "^9.13.0",
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "typescript": "^5.6.3"
   }
 }

@@ -6,9 +6,9 @@
 
 ADR-0003：Pydantic 是单一真理；TS 类型由 codegen 派生。
 
-M1.1 stub：
+M1.1 stub:
 - 当前 cw_schemas 仅含 __version__；后续 M1.2 milestone 内逐 spec 注册 Pydantic 模型
-- 本脚本通过约定（cw_schemas.__exported_models__）自动发现待导出模型
+- 本脚本通过约定 cw_schemas.__exported_models__ 自动发现待导出模型
 
 Usage:
     uv run python scripts/codegen/generate-json-schemas.py
@@ -20,28 +20,37 @@ import json
 import sys
 from pathlib import Path
 
-OUTPUT_DIR = Path(__file__).resolve().parents[2] / "packages" / "schemas-ts" / "src" / "generated" / "json-schema"
+ROOT = Path(__file__).resolve().parents[2]
+OUTPUT_DIR = ROOT / "packages" / "schemas-ts" / "src" / "generated" / "json-schema"
+
+# sys.path 兜底：当 PowerShell 内已激活 conda base env，uv run 子进程的 PYTHONPATH 可能
+# 被外部 site-packages 抢占，导致找不到本仓库 src 布局下的 cw_schemas。
+# 为 codegen 脚本显式注入 packages/schemas/src，确保稳定。
+SCHEMAS_SRC = ROOT / "packages" / "schemas" / "src"
+if SCHEMAS_SRC.exists() and str(SCHEMAS_SRC) not in sys.path:
+    sys.path.insert(0, str(SCHEMAS_SRC))
 
 
 def main() -> int:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     try:
-        import cw_schemas  # noqa: F401  pylint: disable=unused-import
+        import cw_schemas
     except ImportError as exc:
-        print(f"[codegen] 无法导入 cw_schemas：{exc}", file=sys.stderr)
-        print("   请先 uv sync。", file=sys.stderr)
+        print(f"[codegen] failed to import cw_schemas: {exc}", file=sys.stderr)
+        print(f"   sys.path[0:3] = {sys.path[0:3]}", file=sys.stderr)
+        print("   Run `uv sync --all-extras` first.", file=sys.stderr)
         return 1
 
-    # M1.1 stub：cw_schemas 尚未注册任何模型；写一个 placeholder 文件占位
-    # M1.2 milestone 落实后改为遍历 cw_schemas.__exported_models__
     exported = getattr(cw_schemas, "__exported_models__", {})
 
     if not exported:
+        # M1.1 stub: cw_schemas not registered any models yet
+        # M1.2 milestone will iterate cw_schemas.__exported_models__
         placeholder = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "title": "CognitiveWorkflow Schema (M1.1 placeholder)",
-            "description": "M1.2 milestone 将以此目录承载实际 Pydantic 派生 JSON Schema。",
+            "description": "M1.2 milestone will populate this directory with Pydantic-derived JSON Schemas.",
             "type": "object",
             "properties": {
                 "cw_schemas_version": {"type": "string", "const": cw_schemas.__version__},
@@ -62,7 +71,7 @@ def main() -> int:
             json.dumps(schema, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        print(f"[codegen] {name} → {path}")
+        print(f"[codegen] {name} -> {path}")
 
     return 0
 

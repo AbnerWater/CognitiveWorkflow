@@ -25,38 +25,40 @@ repos:
         exclude: '^pydantic-ai/'
 
   # ---- Python: ruff ----
+  # 注：ruff-pre-commit v0.9.x 还使用旧 id `ruff` 与 `ruff-format`。
+  # v0.11+ 起改名为 `ruff-check / ruff-format`。
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.9.0
     hooks:
-      - id: ruff-check
+      - id: ruff
         args: [--fix]
       - id: ruff-format
 
-  # ---- 自定义 hook：CW secure / cache 拦截 ----
+  # ---- 自定义 hook：CW 跨平台 Python 实现（Bash 版作为非 Windows 用户的 .git/hooks/* 备选） ----
   - repo: local
     hooks:
       - id: cw-block-secure-paths
-        name: 拦截 .agent-workflow/secure/** 与 .agent-workflow/cache/** 入 git
-        entry: scripts/git-hooks/block-secure-paths.sh
-        language: script
+        name: 拦截 .agent-workflow/secure/** 与 cache/** 入 git
+        entry: python scripts/git-hooks/block-secure-paths.py
+        language: system
         pass_filenames: true
 
       - id: cw-block-known-secrets
-        name: 拦截已知凭证前缀（sk_ / ANTHROPIC_API_KEY / OPENAI_API_KEY 等）
-        entry: scripts/git-hooks/block-known-secrets.sh
-        language: script
+        name: 拦截已知凭证前缀（sk_ / ANTHROPIC / OPENAI / AWS / Google / GitHub / GitLab）
+        entry: python scripts/git-hooks/block-known-secrets.py
+        language: system
         pass_filenames: true
         types: [text]
 
       - id: cw-no-co-authored-by-claude
         name: 严禁 commit message 含 Co-Authored-By Claude
-        entry: scripts/git-hooks/block-claude-coauthor.sh
-        language: script
+        entry: python scripts/git-hooks/block-claude-coauthor.py
+        language: system
         stages: [commit-msg]
 
       - id: cw-no-pydantic-ai-import-in-engine
         name: Engine / Compiler / MCCL 不得 import pydantic_ai (ADR-0002)
-        entry: scripts/git-hooks/block-pydantic-ai-in-engine.sh
-        language: script
+        entry: python scripts/git-hooks/block-pydantic-ai-in-engine.py
+        language: system
         types: [python]
         files: '^apps/runtime/src/cw_runtime/(engine|nodes|mccl|memory|planning|persistence|stream|tools|observability|api)/'
