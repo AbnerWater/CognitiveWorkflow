@@ -1,0 +1,443 @@
+{
+  "$defs": {
+    "McpResourceEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "resource_revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Revision"
+        },
+        "resource_uri": {
+          "description": "MCP Resource URI",
+          "minLength": 1,
+          "title": "Resource Uri",
+          "type": "string"
+        },
+        "server_id": {
+          "minLength": 1,
+          "title": "Server Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "mcp_resource",
+          "default": "mcp_resource",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server_id",
+        "resource_uri"
+      ],
+      "title": "McpResourceEvidenceSource",
+      "type": "object"
+    },
+    "Priority": {
+      "description": "ContextFragment.priority / Evidence.priority。",
+      "enum": [
+        "critical",
+        "high",
+        "normal",
+        "low"
+      ],
+      "title": "Priority",
+      "type": "string"
+    },
+    "ProjectMemoryEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "memory_key": {
+          "minLength": 1,
+          "title": "Memory Key",
+          "type": "string"
+        },
+        "memory_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Version"
+        },
+        "source_kind": {
+          "const": "project_memory",
+          "default": "project_memory",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_key"
+      ],
+      "title": "ProjectMemoryEvidenceSource",
+      "type": "object"
+    },
+    "ReferenceChunkEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "minLength": 1,
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "chunk_index": {
+          "minimum": 0,
+          "title": "Chunk Index",
+          "type": "integer"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page"
+        },
+        "paragraph": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paragraph"
+        },
+        "position": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "{start, end} 字符 / token 偏移",
+          "title": "Position",
+          "type": "object"
+        },
+        "reference_id": {
+          "minLength": 1,
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "reference_title": {
+          "description": "冗余便于阅读",
+          "minLength": 1,
+          "title": "Reference Title",
+          "type": "string"
+        },
+        "reference_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Url"
+        },
+        "source_kind": {
+          "const": "reference_chunk",
+          "default": "reference_chunk",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference_id",
+        "reference_title",
+        "chunk_id",
+        "chunk_index",
+        "position"
+      ],
+      "title": "ReferenceChunkEvidenceSource",
+      "type": "object"
+    },
+    "SupportPolarity": {
+      "description": "Evidence.support_polarity。",
+      "enum": [
+        "supports",
+        "refutes",
+        "contextual",
+        "unclear"
+      ],
+      "title": "SupportPolarity",
+      "type": "string"
+    },
+    "ToolResultEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments_hash": {
+          "description": "调用参数 hash，用于回放",
+          "minLength": 1,
+          "title": "Arguments Hash",
+          "type": "string"
+        },
+        "invocation_id": {
+          "minLength": 1,
+          "title": "Invocation Id",
+          "type": "string"
+        },
+        "invoked_at": {
+          "description": "ISO-8601",
+          "title": "Invoked At",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "tool_result",
+          "default": "tool_result",
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "tool_id": {
+          "minLength": 1,
+          "title": "Tool Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_id",
+        "invocation_id",
+        "arguments_hash",
+        "invoked_at"
+      ],
+      "title": "ToolResultEvidenceSource",
+      "type": "object"
+    },
+    "UpstreamArtifactEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_field": {
+          "minLength": 1,
+          "title": "Artifact Field",
+          "type": "string"
+        },
+        "artifact_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact Run Id"
+        },
+        "from_node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "From Node Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "upstream_artifact",
+          "default": "upstream_artifact",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_node_id",
+        "artifact_field"
+      ],
+      "title": "UpstreamArtifactEvidenceSource",
+      "type": "object"
+    },
+    "UserInputEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "asserted_at": {
+          "description": "ISO-8601",
+          "title": "Asserted At",
+          "type": "string"
+        },
+        "input_field": {
+          "minLength": 1,
+          "title": "Input Field",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "user_input",
+          "default": "user_input",
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "user_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Id"
+        }
+      },
+      "required": [
+        "input_field",
+        "asserted_at"
+      ],
+      "title": "UserInputEvidenceSource",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "单条 Evidence（§2.1）。",
+  "properties": {
+    "claim": {
+      "description": "该证据所支持的核心论点",
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Claim",
+      "type": "string"
+    },
+    "confidence": {
+      "description": "来源可信度",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "created_at": {
+      "description": "ISO-8601",
+      "title": "Created At",
+      "type": "string"
+    },
+    "evidence_id": {
+      "description": "Pack 内唯一；建议格式 ev_<8 字符 base32>",
+      "minLength": 1,
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "paraphrase": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "模型可读摘要；CitationChecker 优先使用 quote",
+      "title": "Paraphrase"
+    },
+    "priority": {
+      "$ref": "#/$defs/Priority",
+      "default": "normal",
+      "description": "保留优先级"
+    },
+    "quote": {
+      "description": "原文片段（精确引用，不允许改写）",
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Quote",
+      "type": "string"
+    },
+    "relevance": {
+      "description": "与节点 purpose 的相关性",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Relevance",
+      "type": "number"
+    },
+    "sensitive": {
+      "default": false,
+      "description": "敏感数据标记",
+      "title": "Sensitive",
+      "type": "boolean"
+    },
+    "source": {
+      "discriminator": {
+        "mapping": {
+          "mcp_resource": "#/$defs/McpResourceEvidenceSource",
+          "project_memory": "#/$defs/ProjectMemoryEvidenceSource",
+          "reference_chunk": "#/$defs/ReferenceChunkEvidenceSource",
+          "tool_result": "#/$defs/ToolResultEvidenceSource",
+          "upstream_artifact": "#/$defs/UpstreamArtifactEvidenceSource",
+          "user_input": "#/$defs/UserInputEvidenceSource"
+        },
+        "propertyName": "source_kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ReferenceChunkEvidenceSource"
+        },
+        {
+          "$ref": "#/$defs/UpstreamArtifactEvidenceSource"
+        },
+        {
+          "$ref": "#/$defs/ToolResultEvidenceSource"
+        },
+        {
+          "$ref": "#/$defs/McpResourceEvidenceSource"
+        },
+        {
+          "$ref": "#/$defs/UserInputEvidenceSource"
+        },
+        {
+          "$ref": "#/$defs/ProjectMemoryEvidenceSource"
+        }
+      ],
+      "title": "Source"
+    },
+    "support_polarity": {
+      "$ref": "#/$defs/SupportPolarity",
+      "default": "supports",
+      "description": "对 claim 的极性"
+    },
+    "tokens_estimate": {
+      "description": "渲染后 token 估算（含引用元信息）",
+      "minimum": 0,
+      "title": "Tokens Estimate",
+      "type": "integer"
+    },
+    "topics": {
+      "description": "主题标签，用于覆盖度统计",
+      "items": {
+        "type": "string"
+      },
+      "title": "Topics",
+      "type": "array"
+    }
+  },
+  "required": [
+    "evidence_id",
+    "claim",
+    "quote",
+    "source",
+    "relevance",
+    "confidence",
+    "tokens_estimate",
+    "created_at"
+  ],
+  "title": "Evidence",
+  "type": "object"
+}

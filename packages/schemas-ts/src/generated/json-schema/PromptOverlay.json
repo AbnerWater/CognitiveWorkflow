@@ -1,0 +1,53 @@
+{
+  "additionalProperties": false,
+  "description": "RepairPatch 产生的 prompt 修订（叠加在 NodeContract.prompt 之上）。",
+  "properties": {
+    "append_to_instructions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Append To Instructions",
+      "type": "array"
+    },
+    "append_to_system_prompt": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Append To System Prompt",
+      "type": "array"
+    },
+    "append_to_user_prompt_template": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Append To User Prompt Template",
+      "type": "array"
+    },
+    "extra_few_shot_examples": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Extra Few Shot Examples",
+      "type": "array"
+    },
+    "source_patch_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "来源 RepairPatch.patch_id",
+      "title": "Source Patch Id"
+    }
+  },
+  "title": "PromptOverlay",
+  "type": "object"
+}

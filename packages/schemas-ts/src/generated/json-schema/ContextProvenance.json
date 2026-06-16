@@ -1,0 +1,57 @@
+{
+  "additionalProperties": false,
+  "description": "Pack 产生来源（§5）。",
+  "properties": {
+    "builder_version": {
+      "description": "ContextBuilder 实现版本（SemVer）",
+      "title": "Builder Version",
+      "type": "string"
+    },
+    "built_at": {
+      "description": "ISO-8601",
+      "title": "Built At",
+      "type": "string"
+    },
+    "inputs_hash": {
+      "description": "上游 Artifact + Reference 快照 + Memory 版本的复合 hash",
+      "minLength": 1,
+      "title": "Inputs Hash",
+      "type": "string"
+    },
+    "model_profile_id": {
+      "description": "当前节点目标模型",
+      "minLength": 1,
+      "title": "Model Profile Id",
+      "type": "string"
+    },
+    "pack_hash": {
+      "description": "ContextPack 整体的稳定 hash（D-CP-5：排除时间戳与缓存元）",
+      "minLength": 1,
+      "title": "Pack Hash",
+      "type": "string"
+    },
+    "requirements_hash": {
+      "description": "NodeContract.context_requirements 稳定 hash",
+      "minLength": 1,
+      "title": "Requirements Hash",
+      "type": "string"
+    },
+    "tokenizer": {
+      "description": "如 cl100k_base / claude-tokenizer-v3",
+      "minLength": 1,
+      "title": "Tokenizer",
+      "type": "string"
+    }
+  },
+  "required": [
+    "builder_version",
+    "built_at",
+    "model_profile_id",
+    "tokenizer",
+    "requirements_hash",
+    "inputs_hash",
+    "pack_hash"
+  ],
+  "title": "ContextProvenance",
+  "type": "object"
+}

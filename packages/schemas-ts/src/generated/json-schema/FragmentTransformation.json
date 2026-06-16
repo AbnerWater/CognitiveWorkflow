@@ -1,0 +1,62 @@
+{
+  "additionalProperties": false,
+  "description": "记录 Builder 对该片段做过的处理。",
+  "properties": {
+    "at": {
+      "description": "ISO-8601",
+      "title": "At",
+      "type": "string"
+    },
+    "details": {
+      "additionalProperties": true,
+      "description": "处理细节",
+      "title": "Details",
+      "type": "object"
+    },
+    "final_tokens": {
+      "minimum": 0,
+      "title": "Final Tokens",
+      "type": "integer"
+    },
+    "kind": {
+      "description": "处理类型",
+      "enum": [
+        "as_is",
+        "chunk",
+        "summarize",
+        "quote_extract",
+        "truncate",
+        "merge",
+        "inline_resize"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "original_tokens": {
+      "minimum": 0,
+      "title": "Original Tokens",
+      "type": "integer"
+    },
+    "summarizer_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "kind=summarize 时的模型",
+      "title": "Summarizer Model"
+    }
+  },
+  "required": [
+    "kind",
+    "original_tokens",
+    "final_tokens",
+    "at"
+  ],
+  "title": "FragmentTransformation",
+  "type": "object"
+}

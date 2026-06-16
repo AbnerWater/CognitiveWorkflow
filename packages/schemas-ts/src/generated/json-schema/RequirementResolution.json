@@ -1,0 +1,51 @@
+{
+  "additionalProperties": false,
+  "description": "RequirementResolution（§5.1）。",
+  "properties": {
+    "actual_coverage": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Actual Coverage",
+      "type": "number"
+    },
+    "evidence_ids": {
+      "description": "用于满足该 requirement 的 evidence 子集",
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "min_coverage": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Min Coverage",
+      "type": "number"
+    },
+    "required_for": {
+      "description": "引用产物字段路径（JSONPath）",
+      "minLength": 1,
+      "title": "Required For",
+      "type": "string"
+    },
+    "requirement_id": {
+      "description": "NodeContract 中该 requirement 的稳定 ID",
+      "minLength": 1,
+      "title": "Requirement Id",
+      "type": "string"
+    },
+    "satisfied": {
+      "title": "Satisfied",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "requirement_id",
+    "required_for",
+    "min_coverage",
+    "actual_coverage",
+    "satisfied"
+  ],
+  "title": "RequirementResolution",
+  "type": "object"
+}

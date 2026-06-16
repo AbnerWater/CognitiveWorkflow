@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "EvidenceConflictKind": {
+      "description": "EvidenceConflict.kind。",
+      "enum": [
+        "contradiction",
+        "numeric_disagreement",
+        "scope_mismatch",
+        "temporal_mismatch",
+        "source_credibility_gap"
+      ],
+      "title": "EvidenceConflictKind",
+      "type": "string"
+    },
+    "Severity": {
+      "description": "4 级严重度（failure_taxonomy.md §8）。",
+      "enum": [
+        "blocker",
+        "major",
+        "minor",
+        "info"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "证据冲突（§4.1）。",
+  "properties": {
+    "auto_detected_by": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "检测器；如 evidence_builder/conflict_detector_v1",
+      "title": "Auto Detected By"
+    },
+    "conflict_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Conflict Id",
+      "type": "string"
+    },
+    "evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 2,
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "kind": {
+      "$ref": "#/$defs/EvidenceConflictKind"
+    },
+    "resolution_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolution Hint"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity"
+    }
+  },
+  "required": [
+    "conflict_id",
+    "evidence_ids",
+    "kind",
+    "severity"
+  ],
+  "title": "EvidenceConflict",
+  "type": "object"
+}

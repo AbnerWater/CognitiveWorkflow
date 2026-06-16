@@ -1,0 +1,513 @@
+{
+  "$defs": {
+    "EvidenceFragmentSource": {
+      "additionalProperties": false,
+      "description": "ContextFragment.source 中的 evidence 来源；指向 EvidencePack 内某条 Evidence。",
+      "properties": {
+        "evidence_id": {
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "evidence_pack_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Evidence Pack Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "evidence",
+          "default": "evidence",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_pack_id",
+        "evidence_id"
+      ],
+      "title": "EvidenceFragmentSource",
+      "type": "object"
+    },
+    "FailureHistorySource": {
+      "additionalProperties": false,
+      "description": "过往 attempts 失败摘要（仅 repair / re-run 节点）。",
+      "properties": {
+        "attempt_ids": {
+          "items": {
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Attempt Ids",
+          "type": "array"
+        },
+        "source_kind": {
+          "const": "failure_history",
+          "default": "failure_history",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt_ids"
+      ],
+      "title": "FailureHistorySource",
+      "type": "object"
+    },
+    "FragmentTransformation": {
+      "additionalProperties": false,
+      "description": "记录 Builder 对该片段做过的处理。",
+      "properties": {
+        "at": {
+          "description": "ISO-8601",
+          "title": "At",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "description": "处理细节",
+          "title": "Details",
+          "type": "object"
+        },
+        "final_tokens": {
+          "minimum": 0,
+          "title": "Final Tokens",
+          "type": "integer"
+        },
+        "kind": {
+          "description": "处理类型",
+          "enum": [
+            "as_is",
+            "chunk",
+            "summarize",
+            "quote_extract",
+            "truncate",
+            "merge",
+            "inline_resize"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "original_tokens": {
+          "minimum": 0,
+          "title": "Original Tokens",
+          "type": "integer"
+        },
+        "summarizer_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "kind=summarize 时的模型",
+          "title": "Summarizer Model"
+        }
+      },
+      "required": [
+        "kind",
+        "original_tokens",
+        "final_tokens",
+        "at"
+      ],
+      "title": "FragmentTransformation",
+      "type": "object"
+    },
+    "InjectedSource": {
+      "additionalProperties": false,
+      "description": "Capability / ReflectionMemory 等中间件注入。",
+      "properties": {
+        "injected_by": {
+          "description": "capability_id / reflection_memory / planner",
+          "minLength": 1,
+          "title": "Injected By",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "injected",
+          "default": "injected",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "injected_by"
+      ],
+      "title": "InjectedSource",
+      "type": "object"
+    },
+    "Priority": {
+      "description": "ContextFragment.priority / Evidence.priority。",
+      "enum": [
+        "critical",
+        "high",
+        "normal",
+        "low"
+      ],
+      "title": "Priority",
+      "type": "string"
+    },
+    "ProjectMemorySource": {
+      "additionalProperties": false,
+      "properties": {
+        "memory_key": {
+          "minLength": 1,
+          "title": "Memory Key",
+          "type": "string"
+        },
+        "memory_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Version"
+        },
+        "source_kind": {
+          "const": "project_memory",
+          "default": "project_memory",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_key"
+      ],
+      "title": "ProjectMemorySource",
+      "type": "object"
+    },
+    "ReferenceChunkSource": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "minLength": 1,
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "chunk_index": {
+          "minimum": 0,
+          "title": "Chunk Index",
+          "type": "integer"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "{ start, end } 在原文中的字符或 token 偏移",
+          "title": "Position"
+        },
+        "reference_id": {
+          "minLength": 1,
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "similarity_score": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Similarity Score"
+        },
+        "source_kind": {
+          "const": "reference",
+          "default": "reference",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference_id",
+        "chunk_id",
+        "chunk_index"
+      ],
+      "title": "ReferenceChunkSource",
+      "type": "object"
+    },
+    "StaticTextSource": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_field_path": {
+          "description": "如 'context_requirements[2]'",
+          "minLength": 1,
+          "title": "Contract Field Path",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "static_text",
+          "default": "static_text",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_field_path"
+      ],
+      "title": "StaticTextSource",
+      "type": "object"
+    },
+    "UpstreamArtifactSource": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_field": {
+          "description": "支持 JSONPath；如 'research_questions[*]'",
+          "minLength": 1,
+          "title": "Artifact Field",
+          "type": "string"
+        },
+        "artifact_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact Run Id"
+        },
+        "from_node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "From Node Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "upstream_artifact",
+          "default": "upstream_artifact",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_node_id",
+        "artifact_field"
+      ],
+      "title": "UpstreamArtifactSource",
+      "type": "object"
+    },
+    "UserInputSource": {
+      "additionalProperties": false,
+      "properties": {
+        "input_field": {
+          "minLength": 1,
+          "title": "Input Field",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "user_input",
+          "default": "user_input",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_field"
+      ],
+      "title": "UserInputSource",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "上下文片段（§2.1）。",
+  "properties": {
+    "created_at": {
+      "description": "ISO-8601",
+      "title": "Created At",
+      "type": "string"
+    },
+    "fragment_id": {
+      "description": "Pack 内唯一；可读 ID（如 frag_upstream_research_questions）",
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Fragment Id",
+      "type": "string"
+    },
+    "key": {
+      "description": "在 template_inputs / deps 中的访问键",
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "kind": {
+      "description": "11 类片段",
+      "enum": [
+        "node_goal",
+        "global_summary",
+        "user_constraint",
+        "upstream_artifact",
+        "project_memory",
+        "reference_chunk",
+        "evidence",
+        "static_text",
+        "user_input",
+        "instruction_addendum",
+        "failure_history"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "payload": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "结构化数据（upstream_artifact / evidence）",
+      "title": "Payload"
+    },
+    "priority": {
+      "$ref": "#/$defs/Priority",
+      "description": "压缩时丢弃顺序"
+    },
+    "required": {
+      "description": "true 时严禁被 drop（D-CP-2）",
+      "title": "Required",
+      "type": "boolean"
+    },
+    "source": {
+      "description": "来源描述",
+      "discriminator": {
+        "mapping": {
+          "evidence": "#/$defs/EvidenceFragmentSource",
+          "failure_history": "#/$defs/FailureHistorySource",
+          "injected": "#/$defs/InjectedSource",
+          "project_memory": "#/$defs/ProjectMemorySource",
+          "reference": "#/$defs/ReferenceChunkSource",
+          "static_text": "#/$defs/StaticTextSource",
+          "upstream_artifact": "#/$defs/UpstreamArtifactSource",
+          "user_input": "#/$defs/UserInputSource"
+        },
+        "propertyName": "source_kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/UpstreamArtifactSource"
+        },
+        {
+          "$ref": "#/$defs/ReferenceChunkSource"
+        },
+        {
+          "$ref": "#/$defs/ProjectMemorySource"
+        },
+        {
+          "$ref": "#/$defs/EvidenceFragmentSource"
+        },
+        {
+          "$ref": "#/$defs/UserInputSource"
+        },
+        {
+          "$ref": "#/$defs/StaticTextSource"
+        },
+        {
+          "$ref": "#/$defs/InjectedSource"
+        },
+        {
+          "$ref": "#/$defs/FailureHistorySource"
+        }
+      ],
+      "title": "Source"
+    },
+    "text": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "已渲染的文本（多数 kind 用这个）",
+      "title": "Text"
+    },
+    "tokens_actual": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "实际写入 prompt 后的 token 数",
+      "title": "Tokens Actual"
+    },
+    "tokens_estimate": {
+      "description": "估算 token 数",
+      "minimum": 0,
+      "title": "Tokens Estimate",
+      "type": "integer"
+    },
+    "transformation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FragmentTransformation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Builder 处理记录"
+    }
+  },
+  "required": [
+    "fragment_id",
+    "key",
+    "kind",
+    "priority",
+    "required",
+    "tokens_estimate",
+    "source",
+    "created_at"
+  ],
+  "title": "ContextFragment",
+  "type": "object"
+}

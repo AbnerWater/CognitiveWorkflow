@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "description": "Pack 产生来源（§5.2）。",
+  "properties": {
+    "builder_version": {
+      "description": "EvidenceBuilder 版本",
+      "title": "Builder Version",
+      "type": "string"
+    },
+    "built_at": {
+      "description": "ISO-8601",
+      "title": "Built At",
+      "type": "string"
+    },
+    "embedding_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "如 bge-m3",
+      "title": "Embedding Model"
+    },
+    "pack_hash": {
+      "description": "EvidencePack 整体（去时间戳）的稳定 hash",
+      "minLength": 1,
+      "title": "Pack Hash",
+      "type": "string"
+    },
+    "re_ranker_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "如 claude-haiku-rerank",
+      "title": "Re Ranker Model"
+    },
+    "reference_index_snapshot_id": {
+      "minLength": 1,
+      "title": "Reference Index Snapshot Id",
+      "type": "string"
+    },
+    "requirements_hash": {
+      "minLength": 1,
+      "title": "Requirements Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "builder_version",
+    "built_at",
+    "reference_index_snapshot_id",
+    "requirements_hash",
+    "pack_hash"
+  ],
+  "title": "EvidenceProvenance",
+  "type": "object"
+}

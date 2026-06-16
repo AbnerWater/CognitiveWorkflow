@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "CompressionAction": {
+      "description": "CompressionLogEntry.action（context_pack.md §4.4）。",
+      "enum": [
+        "dropped",
+        "summarized",
+        "truncated",
+        "quote_extracted",
+        "merged"
+      ],
+      "title": "CompressionAction",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "压缩日志条目（§4.4）。",
+  "properties": {
+    "action": {
+      "$ref": "#/$defs/CompressionAction"
+    },
+    "after_tokens": {
+      "minimum": 0,
+      "title": "After Tokens",
+      "type": "integer"
+    },
+    "at": {
+      "description": "ISO-8601",
+      "title": "At",
+      "type": "string"
+    },
+    "before_tokens": {
+      "minimum": 0,
+      "title": "Before Tokens",
+      "type": "integer"
+    },
+    "fragment_id": {
+      "minLength": 1,
+      "title": "Fragment Id",
+      "type": "string"
+    },
+    "reason": {
+      "default": "",
+      "description": "触发原因（budget_exceeded / policy_drop_low / 等）",
+      "title": "Reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fragment_id",
+    "action",
+    "before_tokens",
+    "after_tokens",
+    "at"
+  ],
+  "title": "CompressionLogEntry",
+  "type": "object"
+}

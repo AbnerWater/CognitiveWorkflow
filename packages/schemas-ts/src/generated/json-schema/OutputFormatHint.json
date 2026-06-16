@@ -1,0 +1,55 @@
+{
+  "additionalProperties": false,
+  "description": "输出格式提示（§7）— 非强制；OutputFormatHint 不替代 ValidatorPolicy。",
+  "properties": {
+    "example_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Example Count"
+    },
+    "examples": {
+      "description": "须满足 output_schema",
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Examples",
+      "type": "array"
+    },
+    "kind": {
+      "enum": [
+        "schema_only",
+        "schema_with_example",
+        "few_shot",
+        "none"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "style_notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Style Notes"
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "OutputFormatHint",
+  "type": "object"
+}

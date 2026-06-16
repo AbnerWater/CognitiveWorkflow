@@ -1,0 +1,37 @@
+{
+  "additionalProperties": false,
+  "description": "缓存元（§6）。",
+  "properties": {
+    "cache_namespace": {
+      "default": "",
+      "description": "如 <project_id>::context_fragment::<tokenizer>",
+      "title": "Cache Namespace",
+      "type": "string"
+    },
+    "fragment_cache_hits": {
+      "description": "命中缓存的 fragment_id 列表",
+      "items": {
+        "type": "string"
+      },
+      "title": "Fragment Cache Hits",
+      "type": "array"
+    },
+    "invalidated_by": {
+      "description": "触发失效的事件",
+      "items": {
+        "type": "string"
+      },
+      "title": "Invalidated By",
+      "type": "array"
+    },
+    "ttl_seconds": {
+      "default": 86400,
+      "description": "默认 24 小时",
+      "minimum": 1,
+      "title": "Ttl Seconds",
+      "type": "integer"
+    }
+  },
+  "title": "CacheMeta",
+  "type": "object"
+}

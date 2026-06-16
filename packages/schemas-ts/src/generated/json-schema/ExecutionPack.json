@@ -1,0 +1,4077 @@
+{
+  "$defs": {
+    "ArbitrationMode": {
+      "description": "EvaluationContract.arbitration（架构 §9 多 Agent 辩论 / D-ER-6）。",
+      "enum": [
+        "single_judge",
+        "multi_judge",
+        "programmatic_first"
+      ],
+      "title": "ArbitrationMode",
+      "type": "string"
+    },
+    "BackoffStrategy": {
+      "description": "RetryPolicy.backoff。",
+      "enum": [
+        "none",
+        "linear",
+        "exponential"
+      ],
+      "title": "BackoffStrategy",
+      "type": "string"
+    },
+    "CacheMeta": {
+      "additionalProperties": false,
+      "description": "缓存元（§6）。",
+      "properties": {
+        "cache_namespace": {
+          "default": "",
+          "description": "如 <project_id>::context_fragment::<tokenizer>",
+          "title": "Cache Namespace",
+          "type": "string"
+        },
+        "fragment_cache_hits": {
+          "description": "命中缓存的 fragment_id 列表",
+          "items": {
+            "type": "string"
+          },
+          "title": "Fragment Cache Hits",
+          "type": "array"
+        },
+        "invalidated_by": {
+          "description": "触发失效的事件",
+          "items": {
+            "type": "string"
+          },
+          "title": "Invalidated By",
+          "type": "array"
+        },
+        "ttl_seconds": {
+          "default": 86400,
+          "description": "默认 24 小时",
+          "minimum": 1,
+          "title": "Ttl Seconds",
+          "type": "integer"
+        }
+      },
+      "title": "CacheMeta",
+      "type": "object"
+    },
+    "CompressionAction": {
+      "description": "CompressionLogEntry.action（context_pack.md §4.4）。",
+      "enum": [
+        "dropped",
+        "summarized",
+        "truncated",
+        "quote_extracted",
+        "merged"
+      ],
+      "title": "CompressionAction",
+      "type": "string"
+    },
+    "CompressionLogEntry": {
+      "additionalProperties": false,
+      "description": "压缩日志条目（§4.4）。",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/CompressionAction"
+        },
+        "after_tokens": {
+          "minimum": 0,
+          "title": "After Tokens",
+          "type": "integer"
+        },
+        "at": {
+          "description": "ISO-8601",
+          "title": "At",
+          "type": "string"
+        },
+        "before_tokens": {
+          "minimum": 0,
+          "title": "Before Tokens",
+          "type": "integer"
+        },
+        "fragment_id": {
+          "minLength": 1,
+          "title": "Fragment Id",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "description": "触发原因（budget_exceeded / policy_drop_low / 等）",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fragment_id",
+        "action",
+        "before_tokens",
+        "after_tokens",
+        "at"
+      ],
+      "title": "CompressionLogEntry",
+      "type": "object"
+    },
+    "CompressionStrategy": {
+      "additionalProperties": false,
+      "description": "压缩策略（context_pack.md §4.2）。",
+      "properties": {
+        "chunk_overlap_tokens": {
+          "default": 64,
+          "description": "reference_chunk 重叠尺寸",
+          "minimum": 0,
+          "title": "Chunk Overlap Tokens",
+          "type": "integer"
+        },
+        "chunk_size_tokens": {
+          "default": 512,
+          "description": "reference_chunk 目标尺寸",
+          "minimum": 1,
+          "title": "Chunk Size Tokens",
+          "type": "integer"
+        },
+        "default_long_text_action": {
+          "default": "summarize",
+          "description": "文本片段长度超出预算时的默认动作",
+          "enum": [
+            "truncate_head",
+            "truncate_tail",
+            "truncate_middle",
+            "summarize",
+            "quote_extract"
+          ],
+          "title": "Default Long Text Action",
+          "type": "string"
+        },
+        "drop_priority_threshold": {
+          "$ref": "#/$defs/Priority",
+          "default": "low",
+          "description": "预算紧张时允许丢弃的优先级阈值（≤ 该级别可丢）"
+        },
+        "keep_evidence_intact": {
+          "default": true,
+          "description": "EvidencePack 内 Evidence 默认不允许 summarize（D-CP-3 / D-EP-4）",
+          "title": "Keep Evidence Intact",
+          "type": "boolean"
+        },
+        "summarize_min_tokens": {
+          "default": 1024,
+          "description": "低于此值不摘要，改用 truncate_middle",
+          "minimum": 1,
+          "title": "Summarize Min Tokens",
+          "type": "integer"
+        },
+        "summarizer_model_profile_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "用于摘要的模型；null 时用与节点同模型",
+          "title": "Summarizer Model Profile Id"
+        }
+      },
+      "title": "CompressionStrategy",
+      "type": "object"
+    },
+    "ContextBudget": {
+      "additionalProperties": false,
+      "description": "节点级上下文预算（§4.1）。",
+      "properties": {
+        "compression_strategy": {
+          "$ref": "#/$defs/CompressionStrategy",
+          "description": "压缩策略"
+        },
+        "hard_limit_tokens": {
+          "description": "= window - output - history - tools - safety_margin",
+          "minimum": 1024,
+          "title": "Hard Limit Tokens",
+          "type": "integer"
+        },
+        "model_context_window_tokens": {
+          "description": "ModelProfile.max_context_tokens",
+          "minimum": 1024,
+          "title": "Model Context Window Tokens",
+          "type": "integer"
+        },
+        "reserved_for_history_tokens": {
+          "default": 0,
+          "description": "为 message_history 预留",
+          "minimum": 0,
+          "title": "Reserved For History Tokens",
+          "type": "integer"
+        },
+        "reserved_for_output_tokens": {
+          "default": 4096,
+          "description": "为模型输出预留",
+          "minimum": 256,
+          "title": "Reserved For Output Tokens",
+          "type": "integer"
+        },
+        "reserved_for_tools_tokens": {
+          "default": 2048,
+          "description": "为工具定义占位",
+          "minimum": 0,
+          "title": "Reserved For Tools Tokens",
+          "type": "integer"
+        },
+        "safety_margin_tokens": {
+          "default": 512,
+          "description": "误差保护",
+          "minimum": 0,
+          "title": "Safety Margin Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "model_context_window_tokens",
+        "hard_limit_tokens"
+      ],
+      "title": "ContextBudget",
+      "type": "object"
+    },
+    "ContextFragment": {
+      "additionalProperties": false,
+      "description": "上下文片段（§2.1）。",
+      "properties": {
+        "created_at": {
+          "description": "ISO-8601",
+          "title": "Created At",
+          "type": "string"
+        },
+        "fragment_id": {
+          "description": "Pack 内唯一；可读 ID（如 frag_upstream_research_questions）",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Fragment Id",
+          "type": "string"
+        },
+        "key": {
+          "description": "在 template_inputs / deps 中的访问键",
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "description": "11 类片段",
+          "enum": [
+            "node_goal",
+            "global_summary",
+            "user_constraint",
+            "upstream_artifact",
+            "project_memory",
+            "reference_chunk",
+            "evidence",
+            "static_text",
+            "user_input",
+            "instruction_addendum",
+            "failure_history"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "payload": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "结构化数据（upstream_artifact / evidence）",
+          "title": "Payload"
+        },
+        "priority": {
+          "$ref": "#/$defs/Priority",
+          "description": "压缩时丢弃顺序"
+        },
+        "required": {
+          "description": "true 时严禁被 drop（D-CP-2）",
+          "title": "Required",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "来源描述",
+          "discriminator": {
+            "mapping": {
+              "evidence": "#/$defs/EvidenceFragmentSource",
+              "failure_history": "#/$defs/FailureHistorySource",
+              "injected": "#/$defs/InjectedSource",
+              "project_memory": "#/$defs/ProjectMemorySource",
+              "reference": "#/$defs/ReferenceChunkSource",
+              "static_text": "#/$defs/StaticTextSource",
+              "upstream_artifact": "#/$defs/UpstreamArtifactSource",
+              "user_input": "#/$defs/UserInputSource"
+            },
+            "propertyName": "source_kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UpstreamArtifactSource"
+            },
+            {
+              "$ref": "#/$defs/ReferenceChunkSource"
+            },
+            {
+              "$ref": "#/$defs/ProjectMemorySource"
+            },
+            {
+              "$ref": "#/$defs/EvidenceFragmentSource"
+            },
+            {
+              "$ref": "#/$defs/UserInputSource"
+            },
+            {
+              "$ref": "#/$defs/StaticTextSource"
+            },
+            {
+              "$ref": "#/$defs/InjectedSource"
+            },
+            {
+              "$ref": "#/$defs/FailureHistorySource"
+            }
+          ],
+          "title": "Source"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "已渲染的文本（多数 kind 用这个）",
+          "title": "Text"
+        },
+        "tokens_actual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "实际写入 prompt 后的 token 数",
+          "title": "Tokens Actual"
+        },
+        "tokens_estimate": {
+          "description": "估算 token 数",
+          "minimum": 0,
+          "title": "Tokens Estimate",
+          "type": "integer"
+        },
+        "transformation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FragmentTransformation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Builder 处理记录"
+        }
+      },
+      "required": [
+        "fragment_id",
+        "key",
+        "kind",
+        "priority",
+        "required",
+        "tokens_estimate",
+        "source",
+        "created_at"
+      ],
+      "title": "ContextFragment",
+      "type": "object"
+    },
+    "ContextPack": {
+      "additionalProperties": false,
+      "description": "节点上下文包（§1.1）。\n\n强约束（D-CP-1）：写入完成后到 attempt 结束之间不得修改；变更须产生新版本 Pack。",
+      "properties": {
+        "attempt_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Attempt Id",
+          "type": "string"
+        },
+        "budget": {
+          "$ref": "#/$defs/ContextBudget"
+        },
+        "cache_meta": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CacheMeta"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "compression_log": {
+          "items": {
+            "$ref": "#/$defs/CompressionLogEntry"
+          },
+          "title": "Compression Log",
+          "type": "array"
+        },
+        "fragments": {
+          "description": "按 priority 降序",
+          "items": {
+            "$ref": "#/$defs/ContextFragment"
+          },
+          "minItems": 1,
+          "title": "Fragments",
+          "type": "array"
+        },
+        "global_summary": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Global Summary"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_goal": {
+          "description": "复制自 NodeContract.goal",
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Node Goal",
+          "type": "string"
+        },
+        "node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "output_format_hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutputFormatHint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pack_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/ContextProvenance"
+        },
+        "run_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "template_inputs": {
+          "additionalProperties": true,
+          "description": "渲染 user_prompt_template 时使用",
+          "title": "Template Inputs",
+          "type": "object"
+        },
+        "user_constraints": {
+          "description": "来自项目 Memory.constraints",
+          "items": {
+            "type": "string"
+          },
+          "title": "User Constraints",
+          "type": "array"
+        }
+      },
+      "required": [
+        "pack_id",
+        "node_id",
+        "attempt_id",
+        "run_id",
+        "node_goal",
+        "fragments",
+        "budget",
+        "provenance"
+      ],
+      "title": "ContextPack",
+      "type": "object"
+    },
+    "ContextProvenance": {
+      "additionalProperties": false,
+      "description": "Pack 产生来源（§5）。",
+      "properties": {
+        "builder_version": {
+          "description": "ContextBuilder 实现版本（SemVer）",
+          "title": "Builder Version",
+          "type": "string"
+        },
+        "built_at": {
+          "description": "ISO-8601",
+          "title": "Built At",
+          "type": "string"
+        },
+        "inputs_hash": {
+          "description": "上游 Artifact + Reference 快照 + Memory 版本的复合 hash",
+          "minLength": 1,
+          "title": "Inputs Hash",
+          "type": "string"
+        },
+        "model_profile_id": {
+          "description": "当前节点目标模型",
+          "minLength": 1,
+          "title": "Model Profile Id",
+          "type": "string"
+        },
+        "pack_hash": {
+          "description": "ContextPack 整体的稳定 hash（D-CP-5：排除时间戳与缓存元）",
+          "minLength": 1,
+          "title": "Pack Hash",
+          "type": "string"
+        },
+        "requirements_hash": {
+          "description": "NodeContract.context_requirements 稳定 hash",
+          "minLength": 1,
+          "title": "Requirements Hash",
+          "type": "string"
+        },
+        "tokenizer": {
+          "description": "如 cl100k_base / claude-tokenizer-v3",
+          "minLength": 1,
+          "title": "Tokenizer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "builder_version",
+        "built_at",
+        "model_profile_id",
+        "tokenizer",
+        "requirements_hash",
+        "inputs_hash",
+        "pack_hash"
+      ],
+      "title": "ContextProvenance",
+      "type": "object"
+    },
+    "ContextRequirement": {
+      "additionalProperties": false,
+      "description": "节点上下文需求（§4）。",
+      "properties": {
+        "key": {
+          "description": "该上下文片段在 deps 中的访问键",
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "description": "来源类型；与 selector.source_kind 必须一致",
+          "enum": [
+            "upstream_artifact",
+            "project_memory",
+            "reference",
+            "static_text",
+            "user_input"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "max_tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "单片段 token 上限；超过由 ContextBuilder 摘要",
+          "title": "Max Tokens"
+        },
+        "required": {
+          "default": true,
+          "description": "缺失时是否阻塞节点",
+          "title": "Required",
+          "type": "boolean"
+        },
+        "selector": {
+          "description": "来源选择器",
+          "discriminator": {
+            "mapping": {
+              "project_memory": "#/$defs/ProjectMemorySelector",
+              "reference": "#/$defs/ReferenceSelector",
+              "static_text": "#/$defs/StaticTextSelector",
+              "upstream_artifact": "#/$defs/UpstreamArtifactSelector",
+              "user_input": "#/$defs/UserInputSelector"
+            },
+            "propertyName": "source_kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UpstreamArtifactSelector"
+            },
+            {
+              "$ref": "#/$defs/ProjectMemorySelector"
+            },
+            {
+              "$ref": "#/$defs/ReferenceSelector"
+            },
+            {
+              "$ref": "#/$defs/StaticTextSelector"
+            },
+            {
+              "$ref": "#/$defs/UserInputSelector"
+            }
+          ],
+          "title": "Selector"
+        },
+        "summarize_if_over": {
+          "default": true,
+          "description": "超长时是否自动摘要",
+          "title": "Summarize If Over",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "kind",
+        "selector"
+      ],
+      "title": "ContextRequirement",
+      "type": "object"
+    },
+    "CriterionKind": {
+      "description": "EvaluationCriterion.kind。",
+      "enum": [
+        "rubric",
+        "programmatic",
+        "regex",
+        "schema",
+        "citation",
+        "numeric_threshold"
+      ],
+      "title": "CriterionKind",
+      "type": "string"
+    },
+    "EvaluationContract": {
+      "additionalProperties": false,
+      "description": "评价任务契约（§1.2.2）。",
+      "properties": {
+        "allowed_tools": {
+          "description": "内置工具白名单",
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "arbitration": {
+          "$ref": "#/$defs/ArbitrationMode",
+          "default": "single_judge",
+          "description": "LLM-as-judge / 多角色辩论 / 程序化校验优先（架构 §9）"
+        },
+        "context_requirements": {
+          "description": "节点对上下文的需求；详见 §4",
+          "items": {
+            "$ref": "#/$defs/ContextRequirement"
+          },
+          "title": "Context Requirements",
+          "type": "array"
+        },
+        "contract_id": {
+          "description": "ULID/UUIDv7；与节点解耦的唯一 ID，便于跨 Workflow 复用模板",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Contract Id",
+          "type": "string"
+        },
+        "contract_kind": {
+          "const": "evaluation",
+          "default": "evaluation",
+          "title": "Contract Kind",
+          "type": "string"
+        },
+        "criteria": {
+          "description": "审查规则集；至少 1 条",
+          "items": {
+            "$ref": "#/$defs/EvaluationCriterion"
+          },
+          "minItems": 1,
+          "title": "Criteria",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明（Canvas / API 文档使用）",
+          "title": "Description"
+        },
+        "evidence_requirements": {
+          "description": "仅事实性 / 研究类节点",
+          "items": {
+            "$ref": "#/$defs/EvidenceRequirement"
+          },
+          "title": "Evidence Requirements",
+          "type": "array"
+        },
+        "fail_condition": {
+          "$ref": "#/$defs/FailCondition",
+          "description": "失败条件"
+        },
+        "failure_diagnosis_schema": {
+          "additionalProperties": true,
+          "description": "EvaluationResult 中 failure_diagnosis 字段的 schema",
+          "title": "Failure Diagnosis Schema",
+          "type": "object"
+        },
+        "failure_taxonomy": {
+          "description": "关注的失败类型子集（D-FT-6：未声明则全 9 类；不在子集内的失败归 unknown）",
+          "items": {
+            "$ref": "#/$defs/FailureType"
+          },
+          "title": "Failure Taxonomy",
+          "type": "array"
+        },
+        "forbid_remote_models": {
+          "default": false,
+          "description": "标记敏感节点；与 WorkflowModelPolicy 配合",
+          "title": "Forbid Remote Models",
+          "type": "boolean"
+        },
+        "goal": {
+          "description": "节点必须完成的业务目标（业务语言、非 prompt）",
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "input_schema": {
+          "additionalProperties": true,
+          "description": "节点入参 JSON Schema",
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "mcp_tools": {
+          "description": "可调用的 MCP 工具",
+          "items": {
+            "$ref": "#/$defs/MCPToolRef"
+          },
+          "title": "Mcp Tools",
+          "type": "array"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "model_policy": {
+          "$ref": "#/$defs/NodeModelPolicy",
+          "description": "节点级模型策略（覆盖 WorkflowModelPolicy）"
+        },
+        "output_schema": {
+          "additionalProperties": true,
+          "description": "节点产物 JSON Schema",
+          "title": "Output Schema",
+          "type": "object"
+        },
+        "pass_condition": {
+          "$ref": "#/$defs/PassCondition",
+          "description": "通过条件"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PromptSection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "提示词三层结构；execution/evaluation/repair 必填，tool/memory 不允许设置"
+        },
+        "requires_human_approval": {
+          "default": false,
+          "description": "高风险节点：成功也走 human_checkpoint（D-NC-5）",
+          "title": "Requires Human Approval",
+          "type": "boolean"
+        },
+        "retry_policy": {
+          "$ref": "#/$defs/RetryPolicy",
+          "description": "节点级重试"
+        },
+        "review_targets": {
+          "description": "审查对象的产物字段名",
+          "items": {
+            "type": "string"
+          },
+          "title": "Review Targets",
+          "type": "array"
+        },
+        "skills": {
+          "description": "启用的 Skill",
+          "items": {
+            "$ref": "#/$defs/SkillRef"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "validator_policy": {
+          "$ref": "#/$defs/ValidatorPolicy",
+          "description": "输出校验策略"
+        }
+      },
+      "required": [
+        "contract_id",
+        "goal",
+        "model_policy",
+        "criteria",
+        "pass_condition",
+        "fail_condition"
+      ],
+      "title": "EvaluationContract",
+      "type": "object"
+    },
+    "EvaluationCriterion": {
+      "additionalProperties": false,
+      "description": "单条审查规则（§9.1）。",
+      "properties": {
+        "criterion_id": {
+          "description": "节点内唯一",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Criterion Id",
+          "type": "string"
+        },
+        "description": {
+          "description": "业务语言描述",
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "具体表达：rubric 文本 / JSON Logic / 正则 / JSON Schema 路径 / 阈值表达式",
+          "title": "Expression"
+        },
+        "kind": {
+          "$ref": "#/$defs/CriterionKind",
+          "description": "校验形式"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity",
+          "default": "major",
+          "description": "失败严重程度"
+        },
+        "weight": {
+          "default": 1.0,
+          "description": "用于综合评分",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "criterion_id",
+        "description",
+        "kind"
+      ],
+      "title": "EvaluationCriterion",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "单条 Evidence（§2.1）。",
+      "properties": {
+        "claim": {
+          "description": "该证据所支持的核心论点",
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Claim",
+          "type": "string"
+        },
+        "confidence": {
+          "description": "来源可信度",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "created_at": {
+          "description": "ISO-8601",
+          "title": "Created At",
+          "type": "string"
+        },
+        "evidence_id": {
+          "description": "Pack 内唯一；建议格式 ev_<8 字符 base32>",
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "paraphrase": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "模型可读摘要；CitationChecker 优先使用 quote",
+          "title": "Paraphrase"
+        },
+        "priority": {
+          "$ref": "#/$defs/Priority",
+          "default": "normal",
+          "description": "保留优先级"
+        },
+        "quote": {
+          "description": "原文片段（精确引用，不允许改写）",
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Quote",
+          "type": "string"
+        },
+        "relevance": {
+          "description": "与节点 purpose 的相关性",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Relevance",
+          "type": "number"
+        },
+        "sensitive": {
+          "default": false,
+          "description": "敏感数据标记",
+          "title": "Sensitive",
+          "type": "boolean"
+        },
+        "source": {
+          "discriminator": {
+            "mapping": {
+              "mcp_resource": "#/$defs/McpResourceEvidenceSource",
+              "project_memory": "#/$defs/ProjectMemoryEvidenceSource",
+              "reference_chunk": "#/$defs/ReferenceChunkEvidenceSource",
+              "tool_result": "#/$defs/ToolResultEvidenceSource",
+              "upstream_artifact": "#/$defs/UpstreamArtifactEvidenceSource",
+              "user_input": "#/$defs/UserInputEvidenceSource"
+            },
+            "propertyName": "source_kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ReferenceChunkEvidenceSource"
+            },
+            {
+              "$ref": "#/$defs/UpstreamArtifactEvidenceSource"
+            },
+            {
+              "$ref": "#/$defs/ToolResultEvidenceSource"
+            },
+            {
+              "$ref": "#/$defs/McpResourceEvidenceSource"
+            },
+            {
+              "$ref": "#/$defs/UserInputEvidenceSource"
+            },
+            {
+              "$ref": "#/$defs/ProjectMemoryEvidenceSource"
+            }
+          ],
+          "title": "Source"
+        },
+        "support_polarity": {
+          "$ref": "#/$defs/SupportPolarity",
+          "default": "supports",
+          "description": "对 claim 的极性"
+        },
+        "tokens_estimate": {
+          "description": "渲染后 token 估算（含引用元信息）",
+          "minimum": 0,
+          "title": "Tokens Estimate",
+          "type": "integer"
+        },
+        "topics": {
+          "description": "主题标签，用于覆盖度统计",
+          "items": {
+            "type": "string"
+          },
+          "title": "Topics",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "claim",
+        "quote",
+        "source",
+        "relevance",
+        "confidence",
+        "tokens_estimate",
+        "created_at"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "EvidenceConflict": {
+      "additionalProperties": false,
+      "description": "证据冲突（§4.1）。",
+      "properties": {
+        "auto_detected_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "检测器；如 evidence_builder/conflict_detector_v1",
+          "title": "Auto Detected By"
+        },
+        "conflict_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Conflict Id",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/EvidenceConflictKind"
+        },
+        "resolution_hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolution Hint"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        }
+      },
+      "required": [
+        "conflict_id",
+        "evidence_ids",
+        "kind",
+        "severity"
+      ],
+      "title": "EvidenceConflict",
+      "type": "object"
+    },
+    "EvidenceConflictKind": {
+      "description": "EvidenceConflict.kind。",
+      "enum": [
+        "contradiction",
+        "numeric_disagreement",
+        "scope_mismatch",
+        "temporal_mismatch",
+        "source_credibility_gap"
+      ],
+      "title": "EvidenceConflictKind",
+      "type": "string"
+    },
+    "EvidenceCoverage": {
+      "additionalProperties": false,
+      "description": "覆盖度（§3.1）。",
+      "properties": {
+        "avg_confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Avg Confidence",
+          "type": "number"
+        },
+        "avg_relevance": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Avg Relevance",
+          "type": "number"
+        },
+        "coverage_ratio": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Coverage Ratio",
+          "type": "number"
+        },
+        "evidence_density": {
+          "default": 0.0,
+          "description": "每千字结论文本的平均 evidence 数",
+          "minimum": 0.0,
+          "title": "Evidence Density",
+          "type": "number"
+        },
+        "required_topics": {
+          "description": "NodeContract 期望覆盖的主题",
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Topics",
+          "type": "array"
+        },
+        "required_topics_covered": {
+          "description": "已覆盖的主题（子集）",
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Topics Covered",
+          "type": "array"
+        },
+        "unsupported_claim_estimates": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "由 CitationChecker 在 evaluation 阶段回填（D-EP-5：构建期不写入）",
+          "title": "Unsupported Claim Estimates"
+        }
+      },
+      "required": [
+        "coverage_ratio",
+        "avg_relevance",
+        "avg_confidence"
+      ],
+      "title": "EvidenceCoverage",
+      "type": "object"
+    },
+    "EvidenceFragmentSource": {
+      "additionalProperties": false,
+      "description": "ContextFragment.source 中的 evidence 来源；指向 EvidencePack 内某条 Evidence。",
+      "properties": {
+        "evidence_id": {
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "evidence_pack_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Evidence Pack Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "evidence",
+          "default": "evidence",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_pack_id",
+        "evidence_id"
+      ],
+      "title": "EvidenceFragmentSource",
+      "type": "object"
+    },
+    "EvidencePack": {
+      "additionalProperties": false,
+      "description": "事实声明的来源边界（§1.1）。\n\n强约束（D-EP-1）：写入完成后到 attempt 结束之间不得修改。",
+      "properties": {
+        "attempt_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Attempt Id",
+          "type": "string"
+        },
+        "cache_meta": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CacheMeta"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/EvidenceConflict"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "coverage": {
+          "$ref": "#/$defs/EvidenceCoverage"
+        },
+        "evidences": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "minItems": 1,
+          "title": "Evidences",
+          "type": "array"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "pack_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/EvidenceProvenance"
+        },
+        "purpose": {
+          "description": "本 Pack 服务的事实性问题",
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Purpose",
+          "type": "string"
+        },
+        "requirements_resolved": {
+          "items": {
+            "$ref": "#/$defs/RequirementResolution"
+          },
+          "title": "Requirements Resolved",
+          "type": "array"
+        },
+        "run_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pack_id",
+        "node_id",
+        "attempt_id",
+        "run_id",
+        "purpose",
+        "evidences",
+        "coverage",
+        "requirements_resolved",
+        "provenance"
+      ],
+      "title": "EvidencePack",
+      "type": "object"
+    },
+    "EvidenceProvenance": {
+      "additionalProperties": false,
+      "description": "Pack 产生来源（§5.2）。",
+      "properties": {
+        "builder_version": {
+          "description": "EvidenceBuilder 版本",
+          "title": "Builder Version",
+          "type": "string"
+        },
+        "built_at": {
+          "description": "ISO-8601",
+          "title": "Built At",
+          "type": "string"
+        },
+        "embedding_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "如 bge-m3",
+          "title": "Embedding Model"
+        },
+        "pack_hash": {
+          "description": "EvidencePack 整体（去时间戳）的稳定 hash",
+          "minLength": 1,
+          "title": "Pack Hash",
+          "type": "string"
+        },
+        "re_ranker_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "如 claude-haiku-rerank",
+          "title": "Re Ranker Model"
+        },
+        "reference_index_snapshot_id": {
+          "minLength": 1,
+          "title": "Reference Index Snapshot Id",
+          "type": "string"
+        },
+        "requirements_hash": {
+          "minLength": 1,
+          "title": "Requirements Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "builder_version",
+        "built_at",
+        "reference_index_snapshot_id",
+        "requirements_hash",
+        "pack_hash"
+      ],
+      "title": "EvidenceProvenance",
+      "type": "object"
+    },
+    "EvidenceRequirement": {
+      "additionalProperties": false,
+      "description": "事实性 / 研究类节点的证据要求。",
+      "properties": {
+        "min_coverage": {
+          "default": 1.0,
+          "description": "最小覆盖率阈值",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Coverage",
+          "type": "number"
+        },
+        "min_evidences": {
+          "default": 1,
+          "description": "该 requirement 所需的最少 evidence 数量",
+          "minimum": 0,
+          "title": "Min Evidences",
+          "type": "integer"
+        },
+        "required_for": {
+          "description": "引用产物字段路径（JSONPath）；例：'research_questions[*].source_evidence_ids'",
+          "minLength": 1,
+          "title": "Required For",
+          "type": "string"
+        },
+        "requirement_id": {
+          "default": "",
+          "description": "稳定 ID；运行时由 EvidenceBuilder 反查",
+          "title": "Requirement Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "required_for"
+      ],
+      "title": "EvidenceRequirement",
+      "type": "object"
+    },
+    "ExecutionContract": {
+      "additionalProperties": false,
+      "description": "执行任务契约。\n\n公共字段已足够；output_schema 是节点要交付的业务产物 schema。",
+      "properties": {
+        "allowed_tools": {
+          "description": "内置工具白名单",
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "context_requirements": {
+          "description": "节点对上下文的需求；详见 §4",
+          "items": {
+            "$ref": "#/$defs/ContextRequirement"
+          },
+          "title": "Context Requirements",
+          "type": "array"
+        },
+        "contract_id": {
+          "description": "ULID/UUIDv7；与节点解耦的唯一 ID，便于跨 Workflow 复用模板",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Contract Id",
+          "type": "string"
+        },
+        "contract_kind": {
+          "const": "execution",
+          "default": "execution",
+          "title": "Contract Kind",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明（Canvas / API 文档使用）",
+          "title": "Description"
+        },
+        "evidence_requirements": {
+          "description": "仅事实性 / 研究类节点",
+          "items": {
+            "$ref": "#/$defs/EvidenceRequirement"
+          },
+          "title": "Evidence Requirements",
+          "type": "array"
+        },
+        "failure_taxonomy": {
+          "description": "关注的失败类型子集（D-FT-6：未声明则全 9 类；不在子集内的失败归 unknown）",
+          "items": {
+            "$ref": "#/$defs/FailureType"
+          },
+          "title": "Failure Taxonomy",
+          "type": "array"
+        },
+        "forbid_remote_models": {
+          "default": false,
+          "description": "标记敏感节点；与 WorkflowModelPolicy 配合",
+          "title": "Forbid Remote Models",
+          "type": "boolean"
+        },
+        "goal": {
+          "description": "节点必须完成的业务目标（业务语言、非 prompt）",
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "input_schema": {
+          "additionalProperties": true,
+          "description": "节点入参 JSON Schema",
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "mcp_tools": {
+          "description": "可调用的 MCP 工具",
+          "items": {
+            "$ref": "#/$defs/MCPToolRef"
+          },
+          "title": "Mcp Tools",
+          "type": "array"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "model_policy": {
+          "$ref": "#/$defs/NodeModelPolicy",
+          "description": "节点级模型策略（覆盖 WorkflowModelPolicy）"
+        },
+        "output_schema": {
+          "additionalProperties": true,
+          "description": "节点产物 JSON Schema",
+          "title": "Output Schema",
+          "type": "object"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PromptSection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "提示词三层结构；execution/evaluation/repair 必填，tool/memory 不允许设置"
+        },
+        "requires_human_approval": {
+          "default": false,
+          "description": "高风险节点：成功也走 human_checkpoint（D-NC-5）",
+          "title": "Requires Human Approval",
+          "type": "boolean"
+        },
+        "retry_policy": {
+          "$ref": "#/$defs/RetryPolicy",
+          "description": "节点级重试"
+        },
+        "skills": {
+          "description": "启用的 Skill",
+          "items": {
+            "$ref": "#/$defs/SkillRef"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "validator_policy": {
+          "$ref": "#/$defs/ValidatorPolicy",
+          "description": "输出校验策略"
+        }
+      },
+      "required": [
+        "contract_id",
+        "goal",
+        "model_policy"
+      ],
+      "title": "ExecutionContract",
+      "type": "object"
+    },
+    "ExtraValidatorRef": {
+      "additionalProperties": false,
+      "description": "ValidatorPolicy.extra_validators 引用（§8）。",
+      "properties": {
+        "options": {
+          "additionalProperties": true,
+          "description": "校验器参数",
+          "title": "Options",
+          "type": "object"
+        },
+        "validator_id": {
+          "description": "ToolRegistry 中已注册的校验器 ID（如 citation_checker / schema_strict_v2）",
+          "minLength": 1,
+          "title": "Validator Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "validator_id"
+      ],
+      "title": "ExtraValidatorRef",
+      "type": "object"
+    },
+    "FailCondition": {
+      "additionalProperties": false,
+      "description": "失败条件（§9.2）。\n\n与 PassCondition 互斥但不必互补：可以同时存在\"未通过 + 未失败\"的中间态，\n由 Engine 驱动重试或人工介入。",
+      "properties": {
+        "combinator": {
+          "description": "组合方式",
+          "enum": [
+            "all_pass",
+            "any_pass",
+            "weighted_score",
+            "custom"
+          ],
+          "title": "Combinator",
+          "type": "string"
+        },
+        "must_pass_blockers": {
+          "default": true,
+          "description": "任意 severity=blocker 失败一律视为失败 / 通过判定",
+          "title": "Must Pass Blockers",
+          "type": "boolean"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "当 combinator=weighted_score 时必填；综合分通过阈值",
+          "title": "Threshold"
+        }
+      },
+      "required": [
+        "combinator"
+      ],
+      "title": "FailCondition",
+      "type": "object"
+    },
+    "FailureHistorySource": {
+      "additionalProperties": false,
+      "description": "过往 attempts 失败摘要（仅 repair / re-run 节点）。",
+      "properties": {
+        "attempt_ids": {
+          "items": {
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Attempt Ids",
+          "type": "array"
+        },
+        "source_kind": {
+          "const": "failure_history",
+          "default": "failure_history",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt_ids"
+      ],
+      "title": "FailureHistorySource",
+      "type": "object"
+    },
+    "FailureType": {
+      "description": "8+1 类失败分类（D-FT-1 锁定，不允许扩充至 v0.2）。",
+      "enum": [
+        "format_error",
+        "missing_output",
+        "missing_evidence",
+        "logic_gap",
+        "model_capability_limit",
+        "tool_error",
+        "ambiguous_requirement",
+        "review_rule_too_strict",
+        "unknown"
+      ],
+      "title": "FailureType",
+      "type": "string"
+    },
+    "FragmentTransformation": {
+      "additionalProperties": false,
+      "description": "记录 Builder 对该片段做过的处理。",
+      "properties": {
+        "at": {
+          "description": "ISO-8601",
+          "title": "At",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "description": "处理细节",
+          "title": "Details",
+          "type": "object"
+        },
+        "final_tokens": {
+          "minimum": 0,
+          "title": "Final Tokens",
+          "type": "integer"
+        },
+        "kind": {
+          "description": "处理类型",
+          "enum": [
+            "as_is",
+            "chunk",
+            "summarize",
+            "quote_extract",
+            "truncate",
+            "merge",
+            "inline_resize"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "original_tokens": {
+          "minimum": 0,
+          "title": "Original Tokens",
+          "type": "integer"
+        },
+        "summarizer_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "kind=summarize 时的模型",
+          "title": "Summarizer Model"
+        }
+      },
+      "required": [
+        "kind",
+        "original_tokens",
+        "final_tokens",
+        "at"
+      ],
+      "title": "FragmentTransformation",
+      "type": "object"
+    },
+    "HumanDecision": {
+      "additionalProperties": false,
+      "description": "人工决策定义（HumanGateContract.decisions[*]）。",
+      "properties": {
+        "key": {
+          "description": "标准枚举：continue/reject/edit/escalate；自定义必须以 custom_ 前缀",
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "UI 显示标签",
+          "title": "Label"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "HumanDecision",
+      "type": "object"
+    },
+    "HumanGateContract": {
+      "additionalProperties": false,
+      "description": "人工检查点契约（§1.2.4）。",
+      "properties": {
+        "allowed_tools": {
+          "description": "内置工具白名单",
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "context_requirements": {
+          "description": "节点对上下文的需求；详见 §4",
+          "items": {
+            "$ref": "#/$defs/ContextRequirement"
+          },
+          "title": "Context Requirements",
+          "type": "array"
+        },
+        "contract_id": {
+          "description": "ULID/UUIDv7；与节点解耦的唯一 ID，便于跨 Workflow 复用模板",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Contract Id",
+          "type": "string"
+        },
+        "contract_kind": {
+          "const": "human_gate",
+          "default": "human_gate",
+          "title": "Contract Kind",
+          "type": "string"
+        },
+        "decisions": {
+          "description": "用户可选决策；至少含 continue",
+          "items": {
+            "$ref": "#/$defs/HumanDecision"
+          },
+          "minItems": 1,
+          "title": "Decisions",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明（Canvas / API 文档使用）",
+          "title": "Description"
+        },
+        "evidence_requirements": {
+          "description": "仅事实性 / 研究类节点",
+          "items": {
+            "$ref": "#/$defs/EvidenceRequirement"
+          },
+          "title": "Evidence Requirements",
+          "type": "array"
+        },
+        "failure_taxonomy": {
+          "description": "关注的失败类型子集（D-FT-6：未声明则全 9 类；不在子集内的失败归 unknown）",
+          "items": {
+            "$ref": "#/$defs/FailureType"
+          },
+          "title": "Failure Taxonomy",
+          "type": "array"
+        },
+        "forbid_remote_models": {
+          "default": false,
+          "description": "标记敏感节点；与 WorkflowModelPolicy 配合",
+          "title": "Forbid Remote Models",
+          "type": "boolean"
+        },
+        "goal": {
+          "description": "节点必须完成的业务目标（业务语言、非 prompt）",
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "input_schema": {
+          "additionalProperties": true,
+          "description": "节点入参 JSON Schema",
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "mcp_tools": {
+          "description": "可调用的 MCP 工具",
+          "items": {
+            "$ref": "#/$defs/MCPToolRef"
+          },
+          "title": "Mcp Tools",
+          "type": "array"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "model_policy": {
+          "$ref": "#/$defs/NodeModelPolicy",
+          "description": "节点级模型策略（覆盖 WorkflowModelPolicy）"
+        },
+        "output_schema": {
+          "additionalProperties": true,
+          "description": "节点产物 JSON Schema",
+          "title": "Output Schema",
+          "type": "object"
+        },
+        "present_artifacts": {
+          "description": "展示给用户审阅的产物字段",
+          "items": {
+            "type": "string"
+          },
+          "title": "Present Artifacts",
+          "type": "array"
+        },
+        "present_evidence": {
+          "default": true,
+          "description": "是否同时展示 EvidencePack",
+          "title": "Present Evidence",
+          "type": "boolean"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PromptSection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "提示词三层结构；execution/evaluation/repair 必填，tool/memory 不允许设置"
+        },
+        "prompt_to_user": {
+          "description": "UI 上展示给用户的指引",
+          "minLength": 1,
+          "title": "Prompt To User",
+          "type": "string"
+        },
+        "requires_human_approval": {
+          "default": false,
+          "description": "高风险节点：成功也走 human_checkpoint（D-NC-5）",
+          "title": "Requires Human Approval",
+          "type": "boolean"
+        },
+        "retry_policy": {
+          "$ref": "#/$defs/RetryPolicy",
+          "description": "节点级重试"
+        },
+        "skills": {
+          "description": "启用的 Skill",
+          "items": {
+            "$ref": "#/$defs/SkillRef"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "timeout_action": {
+          "$ref": "#/$defs/TimeoutAction",
+          "default": "hold",
+          "description": "超时兜底"
+        },
+        "timeout_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "等待超时；null = 无限等待",
+          "title": "Timeout Seconds"
+        },
+        "validator_policy": {
+          "$ref": "#/$defs/ValidatorPolicy",
+          "description": "输出校验策略"
+        }
+      },
+      "required": [
+        "contract_id",
+        "goal",
+        "model_policy",
+        "decisions",
+        "prompt_to_user"
+      ],
+      "title": "HumanGateContract",
+      "type": "object"
+    },
+    "InjectedSource": {
+      "additionalProperties": false,
+      "description": "Capability / ReflectionMemory 等中间件注入。",
+      "properties": {
+        "injected_by": {
+          "description": "capability_id / reflection_memory / planner",
+          "minLength": 1,
+          "title": "Injected By",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "injected",
+          "default": "injected",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "injected_by"
+      ],
+      "title": "InjectedSource",
+      "type": "object"
+    },
+    "MCPToolRef": {
+      "additionalProperties": false,
+      "description": "MCP 工具引用（§5.2）。",
+      "properties": {
+        "requires_approval": {
+          "default": false,
+          "description": "调用前需用户批准",
+          "title": "Requires Approval",
+          "type": "boolean"
+        },
+        "server_id": {
+          "description": "已配置的 MCP Server ID",
+          "minLength": 1,
+          "title": "Server Id",
+          "type": "string"
+        },
+        "tool_name": {
+          "default": "*",
+          "description": "限定可调用的 tool 名；'*' = 全部",
+          "title": "Tool Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server_id"
+      ],
+      "title": "MCPToolRef",
+      "type": "object"
+    },
+    "McpResourceEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "resource_revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Revision"
+        },
+        "resource_uri": {
+          "description": "MCP Resource URI",
+          "minLength": 1,
+          "title": "Resource Uri",
+          "type": "string"
+        },
+        "server_id": {
+          "minLength": 1,
+          "title": "Server Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "mcp_resource",
+          "default": "mcp_resource",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server_id",
+        "resource_uri"
+      ],
+      "title": "McpResourceEvidenceSource",
+      "type": "object"
+    },
+    "MemoryContract": {
+      "additionalProperties": false,
+      "description": "memory_task 节点契约（§1.2.6）。\n\n与 D-RH-2 一致：仅 memory_task 节点或显式 UI 操作可写 memory.json。",
+      "properties": {
+        "allowed_tools": {
+          "description": "内置工具白名单",
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "context_requirements": {
+          "description": "节点对上下文的需求；详见 §4",
+          "items": {
+            "$ref": "#/$defs/ContextRequirement"
+          },
+          "title": "Context Requirements",
+          "type": "array"
+        },
+        "contract_id": {
+          "description": "ULID/UUIDv7；与节点解耦的唯一 ID，便于跨 Workflow 复用模板",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Contract Id",
+          "type": "string"
+        },
+        "contract_kind": {
+          "const": "memory",
+          "default": "memory",
+          "title": "Contract Kind",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明（Canvas / API 文档使用）",
+          "title": "Description"
+        },
+        "evidence_requirements": {
+          "description": "仅事实性 / 研究类节点",
+          "items": {
+            "$ref": "#/$defs/EvidenceRequirement"
+          },
+          "title": "Evidence Requirements",
+          "type": "array"
+        },
+        "failure_taxonomy": {
+          "description": "关注的失败类型子集（D-FT-6：未声明则全 9 类；不在子集内的失败归 unknown）",
+          "items": {
+            "$ref": "#/$defs/FailureType"
+          },
+          "title": "Failure Taxonomy",
+          "type": "array"
+        },
+        "forbid_remote_models": {
+          "default": false,
+          "description": "标记敏感节点；与 WorkflowModelPolicy 配合",
+          "title": "Forbid Remote Models",
+          "type": "boolean"
+        },
+        "goal": {
+          "description": "节点必须完成的业务目标（业务语言、非 prompt）",
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "input_schema": {
+          "additionalProperties": true,
+          "description": "节点入参 JSON Schema",
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "key_schema": {
+          "additionalProperties": true,
+          "description": "操作 key 的 schema",
+          "title": "Key Schema",
+          "type": "object"
+        },
+        "mcp_tools": {
+          "description": "可调用的 MCP 工具",
+          "items": {
+            "$ref": "#/$defs/MCPToolRef"
+          },
+          "title": "Mcp Tools",
+          "type": "array"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "model_policy": {
+          "$ref": "#/$defs/NodeModelPolicy",
+          "description": "节点级模型策略（覆盖 WorkflowModelPolicy）"
+        },
+        "operation": {
+          "description": "操作类型",
+          "enum": [
+            "read",
+            "write",
+            "upsert",
+            "delete"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "output_schema": {
+          "additionalProperties": true,
+          "description": "节点产物 JSON Schema",
+          "title": "Output Schema",
+          "type": "object"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PromptSection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "提示词三层结构；execution/evaluation/repair 必填，tool/memory 不允许设置"
+        },
+        "requires_human_approval": {
+          "default": false,
+          "description": "高风险节点：成功也走 human_checkpoint（D-NC-5）",
+          "title": "Requires Human Approval",
+          "type": "boolean"
+        },
+        "retry_policy": {
+          "$ref": "#/$defs/RetryPolicy",
+          "description": "节点级重试"
+        },
+        "skills": {
+          "description": "启用的 Skill",
+          "items": {
+            "$ref": "#/$defs/SkillRef"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "target": {
+          "description": "操作对象",
+          "enum": [
+            "project_memory",
+            "reflection_memory"
+          ],
+          "title": "Target",
+          "type": "string"
+        },
+        "validator_policy": {
+          "$ref": "#/$defs/ValidatorPolicy",
+          "description": "输出校验策略"
+        },
+        "value_schema": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "当 operation ∈ {write, upsert} 时必填",
+          "title": "Value Schema"
+        }
+      },
+      "required": [
+        "contract_id",
+        "goal",
+        "model_policy",
+        "operation",
+        "target"
+      ],
+      "title": "MemoryContract",
+      "type": "object"
+    },
+    "NodeModelPolicy": {
+      "additionalProperties": false,
+      "description": "节点级模型策略（§6）。",
+      "properties": {
+        "candidate_count": {
+          "default": 1,
+          "description": ">1 时进入 CandidateGenerator + 仲裁",
+          "minimum": 1,
+          "title": "Candidate Count",
+          "type": "integer"
+        },
+        "escalation_chain": {
+          "description": "节点级升级链；为空时使用 Workflow 全局链",
+          "items": {
+            "type": "string"
+          },
+          "title": "Escalation Chain",
+          "type": "array"
+        },
+        "forbid_provider_kinds": {
+          "description": "禁用的 Provider 类别",
+          "items": {
+            "$ref": "#/$defs/ProviderKind"
+          },
+          "title": "Forbid Provider Kinds",
+          "type": "array"
+        },
+        "model_settings": {
+          "additionalProperties": true,
+          "description": "temperature / top_p / max_tokens / reasoning_effort 等；与 Pydantic AI ModelSettings 兼容",
+          "title": "Model Settings",
+          "type": "object"
+        },
+        "primary_model_profile_id": {
+          "description": "ModelProfile ID 或 'auto'（走 ModelRouter）",
+          "minLength": 1,
+          "title": "Primary Model Profile Id",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "可重放 seed",
+          "title": "Seed"
+        }
+      },
+      "required": [
+        "primary_model_profile_id"
+      ],
+      "title": "NodeModelPolicy",
+      "type": "object"
+    },
+    "OutputFormatHint": {
+      "additionalProperties": false,
+      "description": "输出格式提示（§7）— 非强制；OutputFormatHint 不替代 ValidatorPolicy。",
+      "properties": {
+        "example_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Example Count"
+        },
+        "examples": {
+          "description": "须满足 output_schema",
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Examples",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "schema_only",
+            "schema_with_example",
+            "few_shot",
+            "none"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "style_notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Style Notes"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "OutputFormatHint",
+      "type": "object"
+    },
+    "PassCondition": {
+      "additionalProperties": false,
+      "description": "通过条件（§9.2）。",
+      "properties": {
+        "combinator": {
+          "description": "组合方式",
+          "enum": [
+            "all_pass",
+            "any_pass",
+            "weighted_score",
+            "custom"
+          ],
+          "title": "Combinator",
+          "type": "string"
+        },
+        "must_pass_blockers": {
+          "default": true,
+          "description": "任意 severity=blocker 失败一律视为失败 / 通过判定",
+          "title": "Must Pass Blockers",
+          "type": "boolean"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "当 combinator=weighted_score 时必填；综合分通过阈值",
+          "title": "Threshold"
+        }
+      },
+      "required": [
+        "combinator"
+      ],
+      "title": "PassCondition",
+      "type": "object"
+    },
+    "Priority": {
+      "description": "ContextFragment.priority / Evidence.priority。",
+      "enum": [
+        "critical",
+        "high",
+        "normal",
+        "low"
+      ],
+      "title": "Priority",
+      "type": "string"
+    },
+    "ProjectMemoryEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "memory_key": {
+          "minLength": 1,
+          "title": "Memory Key",
+          "type": "string"
+        },
+        "memory_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Version"
+        },
+        "source_kind": {
+          "const": "project_memory",
+          "default": "project_memory",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_key"
+      ],
+      "title": "ProjectMemoryEvidenceSource",
+      "type": "object"
+    },
+    "ProjectMemorySelector": {
+      "additionalProperties": false,
+      "description": "读取项目级 Memory key。",
+      "properties": {
+        "memory_key": {
+          "minLength": 1,
+          "title": "Memory Key",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "project_memory",
+          "default": "project_memory",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_key"
+      ],
+      "title": "ProjectMemorySelector",
+      "type": "object"
+    },
+    "ProjectMemorySource": {
+      "additionalProperties": false,
+      "properties": {
+        "memory_key": {
+          "minLength": 1,
+          "title": "Memory Key",
+          "type": "string"
+        },
+        "memory_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Version"
+        },
+        "source_kind": {
+          "const": "project_memory",
+          "default": "project_memory",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_key"
+      ],
+      "title": "ProjectMemorySource",
+      "type": "object"
+    },
+    "PromptOverlay": {
+      "additionalProperties": false,
+      "description": "RepairPatch 产生的 prompt 修订（叠加在 NodeContract.prompt 之上）。",
+      "properties": {
+        "append_to_instructions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Append To Instructions",
+          "type": "array"
+        },
+        "append_to_system_prompt": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Append To System Prompt",
+          "type": "array"
+        },
+        "append_to_user_prompt_template": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Append To User Prompt Template",
+          "type": "array"
+        },
+        "extra_few_shot_examples": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Extra Few Shot Examples",
+          "type": "array"
+        },
+        "source_patch_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 3,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "来源 RepairPatch.patch_id",
+          "title": "Source Patch Id"
+        }
+      },
+      "title": "PromptOverlay",
+      "type": "object"
+    },
+    "PromptSection": {
+      "additionalProperties": false,
+      "description": "节点提示词三层结构（§3）。\n\n与 Pydantic AI Agent 的 `system_prompt` / `instructions` / `user_prompt` 三层一致。\n模板变量解析顺序由 ContextBuilder 在装填阶段完成（D-CB-6）；\n此 schema 只承载文本+模板引擎声明。",
+      "properties": {
+        "instructions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "动态指令；与 Pydantic AI `instructions` 对齐——支持 RunContext 闭包，编译时只允许引用 deps 字段",
+          "title": "Instructions"
+        },
+        "system_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "静态系统提示；多段时按顺序拼接",
+          "title": "System Prompt"
+        },
+        "template_engine": {
+          "$ref": "#/$defs/TemplateEngine",
+          "default": "handlebars",
+          "description": "模板渲染引擎（D-NC-1：默认 handlebars）"
+        },
+        "user_prompt_template": {
+          "description": "节点开始时合成的用户提示词；模板支持变量插值 {{ var }}",
+          "minLength": 1,
+          "title": "User Prompt Template",
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_prompt_template"
+      ],
+      "title": "PromptSection",
+      "type": "object"
+    },
+    "ProviderKind": {
+      "description": "ModelProfile.provider_kind / AdapterCapabilities.provider_kinds。",
+      "enum": [
+        "cloud",
+        "private",
+        "local"
+      ],
+      "title": "ProviderKind",
+      "type": "string"
+    },
+    "ReferenceChunkEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "minLength": 1,
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "chunk_index": {
+          "minimum": 0,
+          "title": "Chunk Index",
+          "type": "integer"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page"
+        },
+        "paragraph": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paragraph"
+        },
+        "position": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "{start, end} 字符 / token 偏移",
+          "title": "Position",
+          "type": "object"
+        },
+        "reference_id": {
+          "minLength": 1,
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "reference_title": {
+          "description": "冗余便于阅读",
+          "minLength": 1,
+          "title": "Reference Title",
+          "type": "string"
+        },
+        "reference_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Url"
+        },
+        "source_kind": {
+          "const": "reference_chunk",
+          "default": "reference_chunk",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference_id",
+        "reference_title",
+        "chunk_id",
+        "chunk_index",
+        "position"
+      ],
+      "title": "ReferenceChunkEvidenceSource",
+      "type": "object"
+    },
+    "ReferenceChunkSource": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "minLength": 1,
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "chunk_index": {
+          "minimum": 0,
+          "title": "Chunk Index",
+          "type": "integer"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "{ start, end } 在原文中的字符或 token 偏移",
+          "title": "Position"
+        },
+        "reference_id": {
+          "minLength": 1,
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "similarity_score": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Similarity Score"
+        },
+        "source_kind": {
+          "const": "reference",
+          "default": "reference",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference_id",
+        "chunk_id",
+        "chunk_index"
+      ],
+      "title": "ReferenceChunkSource",
+      "type": "object"
+    },
+    "ReferenceSelector": {
+      "additionalProperties": false,
+      "description": "读取 ReferenceLibrary 资料；reference_id 可为 '$auto'（由 EvidenceBuilder 候选检索）。",
+      "properties": {
+        "chunk_filter": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "可选 chunk 过滤条件",
+          "title": "Chunk Filter"
+        },
+        "reference_id": {
+          "minLength": 1,
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "reference",
+          "default": "reference",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference_id"
+      ],
+      "title": "ReferenceSelector",
+      "type": "object"
+    },
+    "RepairContract": {
+      "additionalProperties": false,
+      "description": "修复任务契约（§1.2.3）。",
+      "properties": {
+        "allowed_tools": {
+          "description": "内置工具白名单",
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "attempts_window": {
+          "default": 5,
+          "description": "看回最近 N 次 attempts 作为修复输入",
+          "minimum": 1,
+          "title": "Attempts Window",
+          "type": "integer"
+        },
+        "context_requirements": {
+          "description": "节点对上下文的需求；详见 §4",
+          "items": {
+            "$ref": "#/$defs/ContextRequirement"
+          },
+          "title": "Context Requirements",
+          "type": "array"
+        },
+        "contract_id": {
+          "description": "ULID/UUIDv7；与节点解耦的唯一 ID，便于跨 Workflow 复用模板",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Contract Id",
+          "type": "string"
+        },
+        "contract_kind": {
+          "const": "repair",
+          "default": "repair",
+          "title": "Contract Kind",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明（Canvas / API 文档使用）",
+          "title": "Description"
+        },
+        "evidence_requirements": {
+          "description": "仅事实性 / 研究类节点",
+          "items": {
+            "$ref": "#/$defs/EvidenceRequirement"
+          },
+          "title": "Evidence Requirements",
+          "type": "array"
+        },
+        "failure_taxonomy": {
+          "description": "关注的失败类型子集（D-FT-6：未声明则全 9 类；不在子集内的失败归 unknown）",
+          "items": {
+            "$ref": "#/$defs/FailureType"
+          },
+          "title": "Failure Taxonomy",
+          "type": "array"
+        },
+        "forbid_remote_models": {
+          "default": false,
+          "description": "标记敏感节点；与 WorkflowModelPolicy 配合",
+          "title": "Forbid Remote Models",
+          "type": "boolean"
+        },
+        "goal": {
+          "description": "节点必须完成的业务目标（业务语言、非 prompt）",
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "input_schema": {
+          "additionalProperties": true,
+          "description": "节点入参 JSON Schema",
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "mcp_tools": {
+          "description": "可调用的 MCP 工具",
+          "items": {
+            "$ref": "#/$defs/MCPToolRef"
+          },
+          "title": "Mcp Tools",
+          "type": "array"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "model_escalation_allowed": {
+          "default": true,
+          "description": "允许 RepairAgent 选择 model_escalation 策略",
+          "title": "Model Escalation Allowed",
+          "type": "boolean"
+        },
+        "model_policy": {
+          "$ref": "#/$defs/NodeModelPolicy",
+          "description": "节点级模型策略（覆盖 WorkflowModelPolicy）"
+        },
+        "output_patch_schema": {
+          "additionalProperties": true,
+          "description": "RepairPatch 的 schema（节点可在 repair_patch.md schema 基础上缩窄）",
+          "title": "Output Patch Schema",
+          "type": "object"
+        },
+        "output_schema": {
+          "additionalProperties": true,
+          "description": "节点产物 JSON Schema",
+          "title": "Output Schema",
+          "type": "object"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PromptSection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "提示词三层结构；execution/evaluation/repair 必填，tool/memory 不允许设置"
+        },
+        "repair_strategies": {
+          "description": "允许的修复路径（与失败类型对应）",
+          "items": {
+            "$ref": "#/$defs/RepairStrategy"
+          },
+          "minItems": 1,
+          "title": "Repair Strategies",
+          "type": "array"
+        },
+        "requires_human_approval": {
+          "default": false,
+          "description": "高风险节点：成功也走 human_checkpoint（D-NC-5）",
+          "title": "Requires Human Approval",
+          "type": "boolean"
+        },
+        "retry_policy": {
+          "$ref": "#/$defs/RetryPolicy",
+          "description": "节点级重试"
+        },
+        "skills": {
+          "description": "启用的 Skill",
+          "items": {
+            "$ref": "#/$defs/SkillRef"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "validator_policy": {
+          "$ref": "#/$defs/ValidatorPolicy",
+          "description": "输出校验策略"
+        }
+      },
+      "required": [
+        "contract_id",
+        "goal",
+        "model_policy",
+        "repair_strategies"
+      ],
+      "title": "RepairContract",
+      "type": "object"
+    },
+    "RepairKind": {
+      "description": "6 类 patch_kind（D-RP-1 锁定）。",
+      "enum": [
+        "prompt_patch",
+        "context_patch",
+        "evidence_patch",
+        "model_escalation",
+        "workflow_patch",
+        "human_checkpoint"
+      ],
+      "title": "RepairKind",
+      "type": "string"
+    },
+    "RepairStrategy": {
+      "additionalProperties": false,
+      "description": "修复策略声明（§10）。\n\nPhase 1 RepairAgent **仅可输出**：\n    prompt_patch / context_patch / evidence_patch / model_escalation\nworkflow_patch / human_checkpoint 由 Engine 直接生成（D-NC-4）。",
+      "properties": {
+        "applies_to_failure_types": {
+          "description": "适用的失败类型子集",
+          "items": {
+            "$ref": "#/$defs/FailureType"
+          },
+          "minItems": 1,
+          "title": "Applies To Failure Types",
+          "type": "array"
+        },
+        "guarded_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "触发条件（如 'attempts >= 2'）；JSON Logic 或简单表达式",
+          "title": "Guarded By"
+        },
+        "kind": {
+          "$ref": "#/$defs/RepairKind",
+          "description": "6 类 patch_kind 之一"
+        },
+        "max_uses": {
+          "default": 1,
+          "description": "单次执行链路中本策略最多被使用几次",
+          "minimum": 1,
+          "title": "Max Uses",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "applies_to_failure_types"
+      ],
+      "title": "RepairStrategy",
+      "type": "object"
+    },
+    "RequirementResolution": {
+      "additionalProperties": false,
+      "description": "RequirementResolution（§5.1）。",
+      "properties": {
+        "actual_coverage": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Actual Coverage",
+          "type": "number"
+        },
+        "evidence_ids": {
+          "description": "用于满足该 requirement 的 evidence 子集",
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "min_coverage": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Coverage",
+          "type": "number"
+        },
+        "required_for": {
+          "description": "引用产物字段路径（JSONPath）",
+          "minLength": 1,
+          "title": "Required For",
+          "type": "string"
+        },
+        "requirement_id": {
+          "description": "NodeContract 中该 requirement 的稳定 ID",
+          "minLength": 1,
+          "title": "Requirement Id",
+          "type": "string"
+        },
+        "satisfied": {
+          "title": "Satisfied",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requirement_id",
+        "required_for",
+        "min_coverage",
+        "actual_coverage",
+        "satisfied"
+      ],
+      "title": "RequirementResolution",
+      "type": "object"
+    },
+    "RetryPolicy": {
+      "additionalProperties": false,
+      "description": "节点级重试策略（§7）。",
+      "properties": {
+        "backoff": {
+          "$ref": "#/$defs/BackoffStrategy",
+          "default": "exponential",
+          "description": "重试间隔策略"
+        },
+        "escalation_after": {
+          "default": 2,
+          "description": "第 N 次失败后允许 ModelRouter 升级模型",
+          "minimum": 1,
+          "title": "Escalation After",
+          "type": "integer"
+        },
+        "max_attempts": {
+          "default": 3,
+          "description": "节点的总尝试上限（含首次）",
+          "minimum": 1,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "model_retries": {
+          "default": 2,
+          "description": "模型层重试",
+          "minimum": 0,
+          "title": "Model Retries",
+          "type": "integer"
+        },
+        "output_validation_retries": {
+          "default": 2,
+          "description": "输出校验失败的重试次数",
+          "minimum": 0,
+          "title": "Output Validation Retries",
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "单次 attempt 超时",
+          "title": "Timeout Seconds"
+        },
+        "tool_retries": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            }
+          ],
+          "default": 2,
+          "description": "工具调用重试；可按 tool_id 单独设置",
+          "title": "Tool Retries"
+        }
+      },
+      "title": "RetryPolicy",
+      "type": "object"
+    },
+    "Severity": {
+      "description": "4 级严重度（failure_taxonomy.md §8）。",
+      "enum": [
+        "blocker",
+        "major",
+        "minor",
+        "info"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "SkillRef": {
+      "additionalProperties": false,
+      "description": "启用的 Skill 引用（§5.1）。",
+      "properties": {
+        "params": {
+          "additionalProperties": true,
+          "description": "Skill 参数",
+          "title": "Params",
+          "type": "object"
+        },
+        "skill_id": {
+          "description": "SkillRegistry 中的 ID",
+          "minLength": 1,
+          "title": "Skill Id",
+          "type": "string"
+        },
+        "version": {
+          "default": "latest",
+          "description": "锁定版本；运行时不存在则 L4 报 WG_L4_UNKNOWN_SKILL",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill_id"
+      ],
+      "title": "SkillRef",
+      "type": "object"
+    },
+    "StaticTextSelector": {
+      "additionalProperties": false,
+      "description": "直接嵌入静态文本。",
+      "properties": {
+        "source_kind": {
+          "const": "static_text",
+          "default": "static_text",
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "StaticTextSelector",
+      "type": "object"
+    },
+    "StaticTextSource": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_field_path": {
+          "description": "如 'context_requirements[2]'",
+          "minLength": 1,
+          "title": "Contract Field Path",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "static_text",
+          "default": "static_text",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_field_path"
+      ],
+      "title": "StaticTextSource",
+      "type": "object"
+    },
+    "SupportPolarity": {
+      "description": "Evidence.support_polarity。",
+      "enum": [
+        "supports",
+        "refutes",
+        "contextual",
+        "unclear"
+      ],
+      "title": "SupportPolarity",
+      "type": "string"
+    },
+    "TemplateEngine": {
+      "description": "PromptSection.template_engine（D-NC-1 默认 handlebars）。",
+      "enum": [
+        "handlebars",
+        "jinja2_minimal",
+        "none"
+      ],
+      "title": "TemplateEngine",
+      "type": "string"
+    },
+    "TimeoutAction": {
+      "description": "human_gate.timeout_action / WorkflowEdge human.",
+      "enum": [
+        "hold",
+        "fallback",
+        "abort"
+      ],
+      "title": "TimeoutAction",
+      "type": "string"
+    },
+    "ToolContract": {
+      "additionalProperties": false,
+      "description": "确定性工具节点契约（§1.2.5）。\n\n`tool_task` 不调用 LLM；`prompt` / `model_policy` 字段对它无意义。\nL2 校验：发现 prompt 非空将报 NC_L2_TOOL_HAS_PROMPT。",
+      "properties": {
+        "allowed_tools": {
+          "description": "内置工具白名单",
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "args_schema": {
+          "additionalProperties": true,
+          "description": "入参 JSON Schema",
+          "title": "Args Schema",
+          "type": "object"
+        },
+        "context_requirements": {
+          "description": "节点对上下文的需求；详见 §4",
+          "items": {
+            "$ref": "#/$defs/ContextRequirement"
+          },
+          "title": "Context Requirements",
+          "type": "array"
+        },
+        "contract_id": {
+          "description": "ULID/UUIDv7；与节点解耦的唯一 ID，便于跨 Workflow 复用模板",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Contract Id",
+          "type": "string"
+        },
+        "contract_kind": {
+          "const": "tool",
+          "default": "tool",
+          "title": "Contract Kind",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "节点说明（Canvas / API 文档使用）",
+          "title": "Description"
+        },
+        "evidence_requirements": {
+          "description": "仅事实性 / 研究类节点",
+          "items": {
+            "$ref": "#/$defs/EvidenceRequirement"
+          },
+          "title": "Evidence Requirements",
+          "type": "array"
+        },
+        "failure_taxonomy": {
+          "description": "关注的失败类型子集（D-FT-6：未声明则全 9 类；不在子集内的失败归 unknown）",
+          "items": {
+            "$ref": "#/$defs/FailureType"
+          },
+          "title": "Failure Taxonomy",
+          "type": "array"
+        },
+        "forbid_remote_models": {
+          "default": false,
+          "description": "标记敏感节点；与 WorkflowModelPolicy 配合",
+          "title": "Forbid Remote Models",
+          "type": "boolean"
+        },
+        "goal": {
+          "description": "节点必须完成的业务目标（业务语言、非 prompt）",
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "input_schema": {
+          "additionalProperties": true,
+          "description": "节点入参 JSON Schema",
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "mcp_tools": {
+          "description": "可调用的 MCP 工具",
+          "items": {
+            "$ref": "#/$defs/MCPToolRef"
+          },
+          "title": "Mcp Tools",
+          "type": "array"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "命名空间化扩展字段",
+          "title": "Metadata",
+          "type": "object"
+        },
+        "model_policy": {
+          "$ref": "#/$defs/NodeModelPolicy",
+          "description": "节点级模型策略（覆盖 WorkflowModelPolicy）"
+        },
+        "output_schema": {
+          "additionalProperties": true,
+          "description": "节点产物 JSON Schema",
+          "title": "Output Schema",
+          "type": "object"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PromptSection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "提示词三层结构；execution/evaluation/repair 必填，tool/memory 不允许设置"
+        },
+        "requires_human_approval": {
+          "default": false,
+          "description": "高风险节点：成功也走 human_checkpoint（D-NC-5）",
+          "title": "Requires Human Approval",
+          "type": "boolean"
+        },
+        "requires_sandbox": {
+          "default": true,
+          "description": "是否在沙箱中执行",
+          "title": "Requires Sandbox",
+          "type": "boolean"
+        },
+        "retry_policy": {
+          "$ref": "#/$defs/RetryPolicy",
+          "description": "节点级重试"
+        },
+        "skills": {
+          "description": "启用的 Skill",
+          "items": {
+            "$ref": "#/$defs/SkillRef"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "tool_id": {
+          "description": "ToolRegistry 中的工具 ID",
+          "minLength": 1,
+          "title": "Tool Id",
+          "type": "string"
+        },
+        "validator_policy": {
+          "$ref": "#/$defs/ValidatorPolicy",
+          "description": "输出校验策略"
+        }
+      },
+      "required": [
+        "contract_id",
+        "goal",
+        "model_policy",
+        "tool_id"
+      ],
+      "title": "ToolContract",
+      "type": "object"
+    },
+    "ToolResultEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments_hash": {
+          "description": "调用参数 hash，用于回放",
+          "minLength": 1,
+          "title": "Arguments Hash",
+          "type": "string"
+        },
+        "invocation_id": {
+          "minLength": 1,
+          "title": "Invocation Id",
+          "type": "string"
+        },
+        "invoked_at": {
+          "description": "ISO-8601",
+          "title": "Invoked At",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "tool_result",
+          "default": "tool_result",
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "tool_id": {
+          "minLength": 1,
+          "title": "Tool Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_id",
+        "invocation_id",
+        "arguments_hash",
+        "invoked_at"
+      ],
+      "title": "ToolResultEvidenceSource",
+      "type": "object"
+    },
+    "ToolsetSpec": {
+      "additionalProperties": false,
+      "description": "解析后的 Skill / MCP / 内置工具列表（Adapter 内部构造 CombinedToolset 用）。",
+      "properties": {
+        "builtin_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Builtin Tools",
+          "type": "array"
+        },
+        "mcp_server_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mcp Server Ids",
+          "type": "array"
+        },
+        "skill_ids_resolved": {
+          "description": "带版本：'skill_id@version'",
+          "items": {
+            "type": "string"
+          },
+          "title": "Skill Ids Resolved",
+          "type": "array"
+        }
+      },
+      "title": "ToolsetSpec",
+      "type": "object"
+    },
+    "UpstreamArtifactEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_field": {
+          "minLength": 1,
+          "title": "Artifact Field",
+          "type": "string"
+        },
+        "artifact_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact Run Id"
+        },
+        "from_node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "From Node Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "upstream_artifact",
+          "default": "upstream_artifact",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_node_id",
+        "artifact_field"
+      ],
+      "title": "UpstreamArtifactEvidenceSource",
+      "type": "object"
+    },
+    "UpstreamArtifactSelector": {
+      "additionalProperties": false,
+      "description": "从上游节点产物提取数据。",
+      "properties": {
+        "artifact_field": {
+          "description": "JSONPath；如 'research_questions[*]'",
+          "minLength": 1,
+          "title": "Artifact Field",
+          "type": "string"
+        },
+        "artifact_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "哪一次 Run；默认当前 run",
+          "title": "Artifact Run Id"
+        },
+        "from_node_id": {
+          "description": "上游节点 ID",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "From Node Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "upstream_artifact",
+          "default": "upstream_artifact",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_node_id",
+        "artifact_field"
+      ],
+      "title": "UpstreamArtifactSelector",
+      "type": "object"
+    },
+    "UpstreamArtifactSource": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_field": {
+          "description": "支持 JSONPath；如 'research_questions[*]'",
+          "minLength": 1,
+          "title": "Artifact Field",
+          "type": "string"
+        },
+        "artifact_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact Run Id"
+        },
+        "from_node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "From Node Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "upstream_artifact",
+          "default": "upstream_artifact",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_node_id",
+        "artifact_field"
+      ],
+      "title": "UpstreamArtifactSource",
+      "type": "object"
+    },
+    "UsageLimits": {
+      "additionalProperties": false,
+      "description": "token / cost 限流（agent_adapter.md §3.1 字段 usage_limits）。",
+      "properties": {
+        "max_cost_usd": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Cost Usd"
+        },
+        "max_input_tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Input Tokens"
+        },
+        "max_output_tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Output Tokens"
+        },
+        "max_total_tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Total Tokens"
+        }
+      },
+      "title": "UsageLimits",
+      "type": "object"
+    },
+    "UserInputEvidenceSource": {
+      "additionalProperties": false,
+      "properties": {
+        "asserted_at": {
+          "description": "ISO-8601",
+          "title": "Asserted At",
+          "type": "string"
+        },
+        "input_field": {
+          "minLength": 1,
+          "title": "Input Field",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "user_input",
+          "default": "user_input",
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "user_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Id"
+        }
+      },
+      "required": [
+        "input_field",
+        "asserted_at"
+      ],
+      "title": "UserInputEvidenceSource",
+      "type": "object"
+    },
+    "UserInputSelector": {
+      "additionalProperties": false,
+      "description": "读取 Run 启动时的初始输入字段。",
+      "properties": {
+        "input_field": {
+          "minLength": 1,
+          "title": "Input Field",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "user_input",
+          "default": "user_input",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_field"
+      ],
+      "title": "UserInputSelector",
+      "type": "object"
+    },
+    "UserInputSource": {
+      "additionalProperties": false,
+      "properties": {
+        "input_field": {
+          "minLength": 1,
+          "title": "Input Field",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "user_input",
+          "default": "user_input",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_field"
+      ],
+      "title": "UserInputSource",
+      "type": "object"
+    },
+    "ValidatorMode": {
+      "description": "ValidatorPolicy.mode。",
+      "enum": [
+        "strict",
+        "lenient",
+        "programmatic_only"
+      ],
+      "title": "ValidatorMode",
+      "type": "string"
+    },
+    "ValidatorPolicy": {
+      "additionalProperties": false,
+      "description": "节点输出校验策略（§8）。",
+      "properties": {
+        "arbitration": {
+          "$ref": "#/$defs/ArbitrationMode",
+          "default": "single_judge",
+          "description": "多候选 / 多 judge 仲裁模式（D-NC-7 v0.2 占位）"
+        },
+        "extra_validators": {
+          "description": "ToolRegistry 中已注册的额外校验器（D-NC-3：禁止执行用户代码）",
+          "items": {
+            "$ref": "#/$defs/ExtraValidatorRef"
+          },
+          "title": "Extra Validators",
+          "type": "array"
+        },
+        "mode": {
+          "$ref": "#/$defs/ValidatorMode",
+          "default": "strict",
+          "description": "strict：严格校验；lenient：允许部分缺失但触发修复；programmatic_only：跳过 LLM 校验"
+        },
+        "partial_output_allowed": {
+          "default": false,
+          "description": "流式中是否允许 partial output（与 Pydantic AI RunContext.partial_output 对齐）",
+          "title": "Partial Output Allowed",
+          "type": "boolean"
+        }
+      },
+      "title": "ValidatorPolicy",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Engine → Adapter 的单一输入对象（agent_adapter.md §3.1）。",
+  "properties": {
+    "attempt_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "cancel_token": {
+      "description": "Engine 用于触发 cancel 的 token；attempt 内唯一",
+      "minLength": 1,
+      "title": "Cancel Token",
+      "type": "string"
+    },
+    "context_pack": {
+      "$ref": "#/$defs/ContextPack"
+    },
+    "correlation_id": {
+      "description": "OTel TraceID",
+      "minLength": 1,
+      "title": "Correlation Id",
+      "type": "string"
+    },
+    "effective_model_profile_id": {
+      "description": "ModelRouter 已解析的具体 ProfileID",
+      "minLength": 1,
+      "title": "Effective Model Profile Id",
+      "type": "string"
+    },
+    "effective_model_settings": {
+      "additionalProperties": true,
+      "description": "已合并 ModelPolicy / RepairPatch / 全局策略 的最终设置",
+      "title": "Effective Model Settings",
+      "type": "object"
+    },
+    "effective_prompt_overlay": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PromptOverlay"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "RepairPatch 产生的 prompt 修订；overlay 已合并入 contract.prompt"
+    },
+    "effective_toolsets": {
+      "$ref": "#/$defs/ToolsetSpec"
+    },
+    "evidence_pack": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EvidencePack"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "node_contract_snapshot": {
+      "description": "本次 attempt 生效的契约（已应用 overlay）",
+      "discriminator": {
+        "mapping": {
+          "evaluation": "#/$defs/EvaluationContract",
+          "execution": "#/$defs/ExecutionContract",
+          "human_gate": "#/$defs/HumanGateContract",
+          "memory": "#/$defs/MemoryContract",
+          "repair": "#/$defs/RepairContract",
+          "tool": "#/$defs/ToolContract"
+        },
+        "propertyName": "contract_kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ExecutionContract"
+        },
+        {
+          "$ref": "#/$defs/EvaluationContract"
+        },
+        {
+          "$ref": "#/$defs/RepairContract"
+        },
+        {
+          "$ref": "#/$defs/HumanGateContract"
+        },
+        {
+          "$ref": "#/$defs/ToolContract"
+        },
+        {
+          "$ref": "#/$defs/MemoryContract"
+        }
+      ],
+      "title": "Node Contract Snapshot"
+    },
+    "node_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Node Id",
+      "type": "string"
+    },
+    "output_format_hint": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OutputFormatHint"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "pack_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Pack Id",
+      "type": "string"
+    },
+    "retry_policy": {
+      "$ref": "#/$defs/RetryPolicy",
+      "description": "已合并节点 / 全局"
+    },
+    "run_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "usage_limits": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/UsageLimits"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "validator_policy": {
+      "$ref": "#/$defs/ValidatorPolicy"
+    }
+  },
+  "required": [
+    "pack_id",
+    "run_id",
+    "node_id",
+    "attempt_id",
+    "node_contract_snapshot",
+    "context_pack",
+    "effective_model_profile_id",
+    "cancel_token",
+    "correlation_id"
+  ],
+  "title": "ExecutionPack",
+  "type": "object"
+}

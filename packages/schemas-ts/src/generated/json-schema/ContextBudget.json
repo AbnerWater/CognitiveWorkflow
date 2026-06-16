@@ -1,0 +1,135 @@
+{
+  "$defs": {
+    "CompressionStrategy": {
+      "additionalProperties": false,
+      "description": "压缩策略（context_pack.md §4.2）。",
+      "properties": {
+        "chunk_overlap_tokens": {
+          "default": 64,
+          "description": "reference_chunk 重叠尺寸",
+          "minimum": 0,
+          "title": "Chunk Overlap Tokens",
+          "type": "integer"
+        },
+        "chunk_size_tokens": {
+          "default": 512,
+          "description": "reference_chunk 目标尺寸",
+          "minimum": 1,
+          "title": "Chunk Size Tokens",
+          "type": "integer"
+        },
+        "default_long_text_action": {
+          "default": "summarize",
+          "description": "文本片段长度超出预算时的默认动作",
+          "enum": [
+            "truncate_head",
+            "truncate_tail",
+            "truncate_middle",
+            "summarize",
+            "quote_extract"
+          ],
+          "title": "Default Long Text Action",
+          "type": "string"
+        },
+        "drop_priority_threshold": {
+          "$ref": "#/$defs/Priority",
+          "default": "low",
+          "description": "预算紧张时允许丢弃的优先级阈值（≤ 该级别可丢）"
+        },
+        "keep_evidence_intact": {
+          "default": true,
+          "description": "EvidencePack 内 Evidence 默认不允许 summarize（D-CP-3 / D-EP-4）",
+          "title": "Keep Evidence Intact",
+          "type": "boolean"
+        },
+        "summarize_min_tokens": {
+          "default": 1024,
+          "description": "低于此值不摘要，改用 truncate_middle",
+          "minimum": 1,
+          "title": "Summarize Min Tokens",
+          "type": "integer"
+        },
+        "summarizer_model_profile_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "用于摘要的模型；null 时用与节点同模型",
+          "title": "Summarizer Model Profile Id"
+        }
+      },
+      "title": "CompressionStrategy",
+      "type": "object"
+    },
+    "Priority": {
+      "description": "ContextFragment.priority / Evidence.priority。",
+      "enum": [
+        "critical",
+        "high",
+        "normal",
+        "low"
+      ],
+      "title": "Priority",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "节点级上下文预算（§4.1）。",
+  "properties": {
+    "compression_strategy": {
+      "$ref": "#/$defs/CompressionStrategy",
+      "description": "压缩策略"
+    },
+    "hard_limit_tokens": {
+      "description": "= window - output - history - tools - safety_margin",
+      "minimum": 1024,
+      "title": "Hard Limit Tokens",
+      "type": "integer"
+    },
+    "model_context_window_tokens": {
+      "description": "ModelProfile.max_context_tokens",
+      "minimum": 1024,
+      "title": "Model Context Window Tokens",
+      "type": "integer"
+    },
+    "reserved_for_history_tokens": {
+      "default": 0,
+      "description": "为 message_history 预留",
+      "minimum": 0,
+      "title": "Reserved For History Tokens",
+      "type": "integer"
+    },
+    "reserved_for_output_tokens": {
+      "default": 4096,
+      "description": "为模型输出预留",
+      "minimum": 256,
+      "title": "Reserved For Output Tokens",
+      "type": "integer"
+    },
+    "reserved_for_tools_tokens": {
+      "default": 2048,
+      "description": "为工具定义占位",
+      "minimum": 0,
+      "title": "Reserved For Tools Tokens",
+      "type": "integer"
+    },
+    "safety_margin_tokens": {
+      "default": 512,
+      "description": "误差保护",
+      "minimum": 0,
+      "title": "Safety Margin Tokens",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "model_context_window_tokens",
+    "hard_limit_tokens"
+  ],
+  "title": "ContextBudget",
+  "type": "object"
+}

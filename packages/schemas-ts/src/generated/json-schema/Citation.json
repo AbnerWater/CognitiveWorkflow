@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "description": "带 span 的精细引用（§2.3）。",
+  "properties": {
+    "claim_text_span": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "{ start, end } 在产物文本字段内的字符范围",
+      "title": "Claim Text Span"
+    },
+    "evidence_id": {
+      "minLength": 1,
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "note": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "解释如何被该 evidence 支撑",
+      "title": "Note"
+    }
+  },
+  "required": [
+    "evidence_id"
+  ],
+  "title": "Citation",
+  "type": "object"
+}

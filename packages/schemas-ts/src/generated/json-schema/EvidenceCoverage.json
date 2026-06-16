@@ -1,0 +1,68 @@
+{
+  "additionalProperties": false,
+  "description": "覆盖度（§3.1）。",
+  "properties": {
+    "avg_confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Avg Confidence",
+      "type": "number"
+    },
+    "avg_relevance": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Avg Relevance",
+      "type": "number"
+    },
+    "coverage_ratio": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Coverage Ratio",
+      "type": "number"
+    },
+    "evidence_density": {
+      "default": 0.0,
+      "description": "每千字结论文本的平均 evidence 数",
+      "minimum": 0.0,
+      "title": "Evidence Density",
+      "type": "number"
+    },
+    "required_topics": {
+      "description": "NodeContract 期望覆盖的主题",
+      "items": {
+        "type": "string"
+      },
+      "title": "Required Topics",
+      "type": "array"
+    },
+    "required_topics_covered": {
+      "description": "已覆盖的主题（子集）",
+      "items": {
+        "type": "string"
+      },
+      "title": "Required Topics Covered",
+      "type": "array"
+    },
+    "unsupported_claim_estimates": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "由 CitationChecker 在 evaluation 阶段回填（D-EP-5：构建期不写入）",
+      "title": "Unsupported Claim Estimates"
+    }
+  },
+  "required": [
+    "coverage_ratio",
+    "avg_relevance",
+    "avg_confidence"
+  ],
+  "title": "EvidenceCoverage",
+  "type": "object"
+}

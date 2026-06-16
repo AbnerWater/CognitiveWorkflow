@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "description": "解析后的 Skill / MCP / 内置工具列表（Adapter 内部构造 CombinedToolset 用）。",
+  "properties": {
+    "builtin_tools": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Builtin Tools",
+      "type": "array"
+    },
+    "mcp_server_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Mcp Server Ids",
+      "type": "array"
+    },
+    "skill_ids_resolved": {
+      "description": "带版本：'skill_id@version'",
+      "items": {
+        "type": "string"
+      },
+      "title": "Skill Ids Resolved",
+      "type": "array"
+    }
+  },
+  "title": "ToolsetSpec",
+  "type": "object"
+}
