@@ -19,6 +19,7 @@ from typing import Any, Final, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from cw_runtime import __version__
+from cw_runtime.persistence import ensure_runtime_databases, record_initial_git_snapshot
 from cw_runtime.settings import RUNTIME_SCHEMA_VERSION
 from cw_schemas import WorkflowGraph
 
@@ -190,6 +191,7 @@ def initialize_project(request: ProjectCreateRequest) -> ProjectCreateResponse:
 
     project_root.mkdir(parents=True, exist_ok=True)
     _create_directories(project_root)
+    ensure_runtime_databases(project_root)
     _append_missing_lines(project_root / ".gitignore", _GITIGNORE_LINES)
     _append_missing_lines(project_root / ".gitattributes", _GITATTRIBUTES_LINES)
 
@@ -208,6 +210,7 @@ def initialize_project(request: ProjectCreateRequest) -> ProjectCreateResponse:
     _write_text_atomic(agent_root / "artifacts" / "index.jsonl", "")
     _write_text_atomic(agent_root / "snapshots" / "snapshots.jsonl", "")
     first_commit_sha = _initialize_git_and_commit(project_root, project_id)
+    record_initial_git_snapshot(project_root, project_id=project_id, commit_sha=first_commit_sha, created_at=now)
     return ProjectCreateResponse(
         project_id=project_id,
         host_path=_to_posix(project_root),
@@ -568,7 +571,7 @@ if printf '%s\n' "$tracked" | grep -E '\\.encrypted\\.sqlite$' | grep -v '^\\.ag
   echo 'CW pre-commit: encrypted sqlite files outside secure/ are forbidden' >&2
   exit 1
 fi
-if git diff --cached -G'(sk_|ANTHROPIC_API_KEY|OPENAI_API_KEY|AWS_SECRET_ACCESS_KEY|GOOGLE_API_KEY|GITHUB_TOKEN|GITLAB_TOKEN)' --name-only -- | grep . >/dev/null; then
+if git diff --cached -G'(sk-[A-Za-z0-9]|sk-proj-|ANTHROPIC_API_KEY|OPENAI_API_KEY|AWS_SECRET_ACCESS_KEY|GOOGLE_API_KEY|GITHUB_TOKEN|GITLAB_TOKEN)' --name-only -- | grep . >/dev/null; then
   echo 'CW pre-commit: known secret prefix detected' >&2
   exit 1
 fi

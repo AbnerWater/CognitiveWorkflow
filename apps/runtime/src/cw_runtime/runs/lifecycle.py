@@ -19,6 +19,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cw_runtime.engine import compile_workflow_graph, load_workflow_graph
 from cw_runtime.harness.project import AGENT_WORKFLOW_DIR, acquire_runtime_lock
+from cw_runtime.persistence import (
+    create_git_snapshot_locked,
+    ensure_runtime_databases,
+    index_run_jsonl_append,
+    index_run_manifest,
+    index_stream_event,
+    should_snapshot_event,
+)
 from cw_runtime.settings import RUNTIME_SCHEMA_VERSION
 from cw_schemas.events import LifecycleEvent, StreamEventBase, SystemEvent, validate_stream_event
 from cw_schemas.types import DisplayLevel, EventCategory, EventPhase, ExecutionMode, RunState, Sensitivity
@@ -142,6 +150,7 @@ def create_workflow_run(
         )
     compiled = compile_workflow_graph(graph)
     with acquire_runtime_lock(project_root):
+        ensure_runtime_databases(project_root)
         _ensure_no_active_run(project_root, workflow_id)
 
         run_id = _new_ulid()
@@ -235,6 +244,7 @@ def write_workflow_run_locked(project_root: Path, run: WorkflowRunDocument) -> W
     """Persist ``run.json`` for callers already holding ``runtime.lock``."""
 
     _write_json_atomic(_run_root(project_root, run.run_id) / "run.json", run.model_dump(mode="json"))
+    index_run_manifest(project_root, cast(dict[str, object], run.model_dump(mode="json")))
     return run
 
 
@@ -274,6 +284,7 @@ def append_run_jsonl_locked(project_root: Path, run_id: str, filename: str, payl
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8", newline="\n") as file:
         file.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+    index_run_jsonl_append(project_root, run_id, filename, payload)
 
 
 def new_runtime_id(now_ms: int | None = None) -> str:
@@ -574,8 +585,29 @@ def _append_event_and_update_run(
     event: StreamEventBase,
 ) -> WorkflowRunDocument:
     appended = _append_stream_event(_run_root(project_root, run.run_id), event)
-    updated = run.model_copy(update={"last_event_id": appended.event_id})
+    snapshot_id = _new_ulid() if should_snapshot_event(appended) else None
+    git_snapshots = list(run.git_snapshots)
+    if snapshot_id is not None:
+        git_snapshots.append(snapshot_id)
+    updated = run.model_copy(update={"last_event_id": appended.event_id, "git_snapshots": git_snapshots})
     _write_json_atomic(_run_root(project_root, run.run_id) / "run.json", updated.model_dump(mode="json"))
+    index_run_manifest(project_root, cast(dict[str, object], updated.model_dump(mode="json")))
+    index_stream_event(project_root, appended)
+    if snapshot_id is not None:
+        snapshot = create_git_snapshot_locked(
+            project_root,
+            run_id=updated.run_id,
+            workflow_id=updated.workflow_id,
+            workflow_version=updated.workflow_version,
+            run_state=updated.state.value,
+            event=appended,
+            snapshot_id=snapshot_id,
+            created_at=appended.created_at,
+        )
+        if snapshot is None:
+            updated = updated.model_copy(update={"git_snapshots": run.git_snapshots})
+            _write_json_atomic(_run_root(project_root, run.run_id) / "run.json", updated.model_dump(mode="json"))
+            index_run_manifest(project_root, cast(dict[str, object], updated.model_dump(mode="json")))
     return updated
 
 
