@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from types import ModuleType, SimpleNamespace, TracebackType
 from typing import Any, ClassVar
 
@@ -12,14 +12,17 @@ from cw_runtime.adapters import (
     AttemptResumption,
     HumanDecisionResolution,
     PydanticAIAdapter,
+    PydanticAIMCPToolset,
     PydanticAIResumeRequest,
     PydanticAIRunRequest,
     PydanticAISession,
     PydanticAISessionFactory,
+    PydanticAIToolsetRequest,
+    PydanticAIToolsets,
     RawPydanticAIEvent,
     build_pydantic_ai_descriptor,
 )
-from cw_schemas.contract import ExecutionContract, NodeModelPolicy, PromptSection
+from cw_schemas.contract import ExecutionContract, MCPToolRef, NodeModelPolicy, PromptSection, SkillRef
 from cw_schemas.events import StreamEventBase, ToolEvent
 from cw_schemas.packs import (
     ContextBudget,
@@ -28,6 +31,7 @@ from cw_schemas.packs import (
     ContextProvenance,
     ExecutionPack,
     StaticTextSource,
+    ToolsetSpec,
     UsageLimits,
 )
 from cw_schemas.types import AdapterKind, AttemptState, CancelReason, Priority, ProviderKind, ResumptionKind
@@ -99,6 +103,21 @@ class UsageLimitExceeded(RuntimeError):
 class FakeSDKUsageLimits:
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
+
+
+class FakeSDKApprovalRequiredToolset:
+    def __init__(
+        self,
+        wrapped: object,
+        approval_required_func: Callable[[Any, Any, dict[str, Any]], bool],
+    ) -> None:
+        self.wrapped = wrapped
+        self.approval_required_func = approval_required_func
+
+
+class FakeSDKToolset:
+    def __init__(self, toolset_id: str) -> None:
+        self.toolset_id = toolset_id
 
 
 class FakeSDKAgent:
@@ -221,6 +240,7 @@ def _install_fake_pydantic_ai_sdk(
     fake_sdk.__dict__["Agent"] = agent_cls
     fake_sdk.__dict__["StructuredDict"] = structured_dict
     fake_sdk.__dict__["UsageLimits"] = FakeSDKUsageLimits
+    fake_sdk.__dict__["ApprovalRequiredToolset"] = FakeSDKApprovalRequiredToolset
 
     def import_module(name: str) -> ModuleType:
         if name == "pydantic_ai":
@@ -300,6 +320,10 @@ async def _collect(events: AsyncIterator[StreamEventBase]) -> list[StreamEventBa
 def _execution_pack(
     output_schema: dict[str, Any] | None = None,
     *,
+    allowed_tools: list[str] | None = None,
+    skills: list[SkillRef] | None = None,
+    mcp_tools: list[MCPToolRef] | None = None,
+    effective_toolsets: ToolsetSpec | None = None,
     usage_limits: UsageLimits | None = None,
 ) -> ExecutionPack:
     return ExecutionPack(
@@ -312,6 +336,9 @@ def _execution_pack(
             goal="Return a short answer",
             output_schema=output_schema or {},
             model_policy=NodeModelPolicy(primary_model_profile_id="claude-sonnet-default"),
+            allowed_tools=[] if allowed_tools is None else allowed_tools,
+            skills=[] if skills is None else skills,
+            mcp_tools=[] if mcp_tools is None else mcp_tools,
             prompt=PromptSection(
                 system_prompt="You are running inside CW.",
                 instructions=["Respect the output schema."],
@@ -356,6 +383,7 @@ def _execution_pack(
         ),
         effective_model_profile_id="claude-sonnet-default",
         effective_model_settings={"temperature": 0.2},
+        effective_toolsets=ToolsetSpec() if effective_toolsets is None else effective_toolsets,
         usage_limits=usage_limits,
         cancel_token="tok_abc_01",
         correlation_id="trace_xyz",
@@ -388,6 +416,22 @@ async def test_pydantic_ai_adapter_capabilities_descriptor_and_prepare() -> None
     assert handle.adapter_id == "pydantic_ai"
     assert handle.state == AttemptState.PREPARED
     assert handle.stream_started is False
+
+
+def test_pydantic_ai_adapter_capabilities_reflect_configured_toolset_factory() -> None:
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        return PydanticAIToolsets()
+
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+
+    capabilities = adapter.capabilities()
+
+    assert capabilities.tool_call is True
+    assert capabilities.mcp is True
+    assert capabilities.max_tool_iterations == 16
+    assert capabilities.human_in_the_loop is False
+    assert capabilities.deferred_tool_results is False
+    assert capabilities.cancel is False
 
 
 @pytest.mark.asyncio
@@ -671,6 +715,157 @@ async def test_pydantic_ai_default_sdk_session_streams_events_and_records_outcom
     assert outcome.usage.requests == 1
     assert outcome.messages == [{"role": "assistant", "content": "sdk ok", "mode": "json"}]
     assert outcome.provenance.pydantic_ai_traceparent == "00-sdk-trace"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_passes_toolsets_and_wraps_mcp_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    function_toolset = FakeSDKToolset("function")
+    mcp_toolset = FakeSDKToolset("mcp")
+    captured_toolsets: PydanticAIToolsetRequest | None = None
+
+    def toolset_factory(_sdk: ModuleType, toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        nonlocal captured_toolsets
+        captured_toolsets = toolsets
+        return PydanticAIToolsets(
+            function_toolsets=(function_toolset,),
+            mcp_toolsets=(PydanticAIMCPToolset(server_id="mcp_research", toolset=mcp_toolset),),
+        )
+
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["python_sandbox"],
+            skills=[SkillRef(skill_id="citation_checker", version="1.0.0")],
+            mcp_tools=[MCPToolRef(server_id="mcp_research", tool_name="search", requires_approval=True)],
+            effective_toolsets=ToolsetSpec(
+                builtin_tools=["python_sandbox"],
+                skill_ids_resolved=["citation_checker@1.0.0"],
+                mcp_server_ids=["mcp_research"],
+            ),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    assert captured_toolsets is not None
+    assert captured_toolsets.builtin_tools == ["python_sandbox"]
+    assert captured_toolsets.skill_ids_resolved == ["citation_checker@1.0.0"]
+    assert len(captured_toolsets.mcp_tools) == 1
+    assert captured_toolsets.mcp_tools[0].server_id == "mcp_research"
+    assert captured_toolsets.mcp_tools[0].tool_name == "search"
+    assert captured_toolsets.mcp_tools[0].requires_approval is True
+
+    assert len(FakeSDKAgent.instances) == 1
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert sdk_toolsets[0] is function_toolset
+    approval_wrapper = sdk_toolsets[1]
+    assert isinstance(approval_wrapper, FakeSDKApprovalRequiredToolset)
+    assert approval_wrapper.wrapped is mcp_toolset
+    assert approval_wrapper.approval_required_func(None, SimpleNamespace(name="search"), {"query": "cw"}) is True
+    assert approval_wrapper.approval_required_func(None, SimpleNamespace(name="read_resource"), {}) is False
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_scopes_mcp_approval_by_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    approved_server_toolset = FakeSDKToolset("approved")
+    plain_server_toolset = FakeSDKToolset("plain")
+
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        return PydanticAIToolsets(
+            mcp_toolsets=(
+                PydanticAIMCPToolset(server_id="mcp_sensitive", toolset=approved_server_toolset),
+                PydanticAIMCPToolset(server_id="mcp_public", toolset=plain_server_toolset),
+            )
+        )
+
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            mcp_tools=[
+                MCPToolRef(server_id="mcp_sensitive", tool_name="*", requires_approval=True),
+                MCPToolRef(server_id="mcp_public", tool_name="*", requires_approval=False),
+            ],
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["mcp_sensitive", "mcp_public"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    sensitive_wrapper = sdk_toolsets[0]
+    assert isinstance(sensitive_wrapper, FakeSDKApprovalRequiredToolset)
+    assert sensitive_wrapper.wrapped is approved_server_toolset
+    assert sensitive_wrapper.approval_required_func(None, SimpleNamespace(name="same_name"), {}) is True
+    assert sdk_toolsets[1] is plain_server_toolset
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_unrequested_mcp_toolsets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        return PydanticAIToolsets(
+            mcp_toolsets=(
+                PydanticAIMCPToolset(server_id="mcp_allowed", toolset=FakeSDKToolset("allowed")),
+                PydanticAIMCPToolset(server_id="mcp_extra", toolset=FakeSDKToolset("extra")),
+            )
+        )
+
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            mcp_tools=[MCPToolRef(server_id="mcp_allowed", tool_name="*", requires_approval=False)],
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["mcp_allowed"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["unexpected_mcp_server_ids"] == ["mcp_extra"]
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_tools_without_toolset_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["python_sandbox"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["python_sandbox"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert events[-1].payload is not None
+    assert events[-1].payload["error_kind"] == "tool_failed"
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["toolsets"]["builtin_tools"] == ["python_sandbox"]
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,8 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from dataclasses import dataclass
 from types import ModuleType
 from typing import Any, Literal, Protocol, TypeAlias, cast
 
@@ -45,6 +46,26 @@ from cw_schemas.types import (
 RawPydanticAIEvent: TypeAlias = Mapping[str, Any]
 
 
+class PydanticAIMCPToolRequest(BaseModel):
+    """Serializable MCP tool request projected from a NodeContract."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    server_id: str = Field(..., min_length=1)
+    tool_name: str = Field(default="*", min_length=1)
+    requires_approval: bool = False
+
+
+class PydanticAIToolsetRequest(BaseModel):
+    """Serializable toolset request passed to the SDK toolset factory."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    builtin_tools: list[str] = Field(default_factory=list)
+    skill_ids_resolved: list[str] = Field(default_factory=list)
+    mcp_tools: list[PydanticAIMCPToolRequest] = Field(default_factory=list)
+
+
 class PydanticAIRunRequest(BaseModel):
     """Internal request passed to a Pydantic AI session implementation."""
 
@@ -62,6 +83,7 @@ class PydanticAIRunRequest(BaseModel):
     output_schema: dict[str, Any] = Field(default_factory=dict)
     model_settings: dict[str, Any] = Field(default_factory=dict)
     usage_limits: dict[str, Any] = Field(default_factory=dict)
+    toolsets: PydanticAIToolsetRequest = Field(default_factory=PydanticAIToolsetRequest)
     correlation_id: str = Field(..., min_length=1)
 
 
@@ -92,6 +114,25 @@ class PydanticAISession(Protocol):
 PydanticAISessionFactory: TypeAlias = Callable[[], PydanticAISession]
 
 
+@dataclass(frozen=True)
+class PydanticAIMCPToolset:
+    """SDK MCP toolset bound to the CW MCP server id that produced it."""
+
+    server_id: str
+    toolset: object
+
+
+@dataclass(frozen=True)
+class PydanticAIToolsets:
+    """SDK toolsets grouped by CW source kind for adapter-side policy wrapping."""
+
+    function_toolsets: Sequence[object] = ()
+    mcp_toolsets: Sequence[PydanticAIMCPToolset] = ()
+
+
+PydanticAIToolsetFactory: TypeAlias = Callable[[ModuleType, PydanticAIToolsetRequest], PydanticAIToolsets]
+
+
 class PydanticAISDKSession:
     """Lazy SDK-backed Pydantic AI session.
 
@@ -100,12 +141,18 @@ class PydanticAISDKSession:
     ``agents`` extra.
     """
 
-    def __init__(self, sdk_module: ModuleType | None = None) -> None:
+    def __init__(
+        self,
+        sdk_module: ModuleType | None = None,
+        *,
+        toolset_factory: PydanticAIToolsetFactory | None = None,
+    ) -> None:
         self._sdk_module = sdk_module
+        self._toolset_factory = toolset_factory
 
     async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
         sdk = self._sdk()
-        agent = _build_sdk_agent(sdk, request)
+        agent = _build_sdk_agent(sdk, request, self._toolset_factory)
         usage_limits = _sdk_usage_limits(sdk, request)
         stream_events = getattr(agent, "run_stream_events", None)
         if callable(stream_events):
@@ -161,9 +208,11 @@ class PydanticAIAdapter:
         config: AdapterConfig | None = None,
         *,
         session_factory: PydanticAISessionFactory | None = None,
+        toolset_factory: PydanticAIToolsetFactory | None = None,
     ) -> None:
         self._config = config or AdapterConfig(adapter_id=self._ADAPTER_ID)
         self._session_factory = session_factory
+        self._toolset_factory = toolset_factory
         self._packs: dict[str, ExecutionPack] = {}
         self._sessions: dict[str, PydanticAISession] = {}
         self._outputs: dict[str, dict[str, Any]] = {}
@@ -182,18 +231,19 @@ class PydanticAIAdapter:
 
     def capabilities(self) -> AdapterCapabilities:
         common_settings = {"temperature", "top_p", "max_tokens", "reasoning_effort", "seed"}
+        tooling_enabled = self._toolset_factory is not None
         return AdapterCapabilities(
             kinds={AdapterKind.CHAT},
             provider_kinds={ProviderKind.CLOUD, ProviderKind.PRIVATE, ProviderKind.LOCAL},
             structured_output=True,
             streaming=True,
-            tool_call=False,
-            mcp=False,
+            tool_call=tooling_enabled,
+            mcp=tooling_enabled,
             human_in_the_loop=False,
             deferred_tool_results=False,
             multi_modal=set(),
             long_context_tokens=200_000,
-            max_tool_iterations=0,
+            max_tool_iterations=16 if tooling_enabled else 0,
             cancel=False,
             evidence_lookup_tool=False,
             model_settings_passthrough=common_settings,
@@ -404,7 +454,11 @@ class PydanticAIAdapter:
         session = self._sessions.get(handle.handle_id)
         if session is not None:
             return session
-        session = PydanticAISDKSession() if self._session_factory is None else self._session_factory()
+        session = (
+            PydanticAISDKSession(toolset_factory=self._toolset_factory)
+            if self._session_factory is None
+            else self._session_factory()
+        )
         self._sessions[handle.handle_id] = session
         return session
 
@@ -428,6 +482,7 @@ class PydanticAIAdapter:
             usage_limits={}
             if pack.usage_limits is None
             else pack.usage_limits.model_dump(mode="json", exclude_none=True),
+            toolsets=_toolset_request(pack),
             correlation_id=pack.correlation_id,
         )
 
@@ -931,7 +986,36 @@ def _prompt_text(value: str | list[str] | None) -> str | None:
     return "\n".join(value)
 
 
-def _build_sdk_agent(sdk: ModuleType, request: PydanticAIRunRequest) -> Any:
+def _toolset_request(pack: ExecutionPack) -> PydanticAIToolsetRequest:
+    contract = pack.node_contract_snapshot
+    builtin_tools = _unique_strings([*pack.effective_toolsets.builtin_tools, *contract.allowed_tools])
+    skill_ids_resolved = list(pack.effective_toolsets.skill_ids_resolved)
+    if not skill_ids_resolved:
+        skill_ids_resolved = _unique_strings([f"{skill.skill_id}@{skill.version}" for skill in contract.skills])
+    mcp_tools = [
+        PydanticAIMCPToolRequest(
+            server_id=tool.server_id,
+            tool_name=tool.tool_name,
+            requires_approval=tool.requires_approval,
+        )
+        for tool in contract.mcp_tools
+    ]
+    if not mcp_tools:
+        mcp_tools = [
+            PydanticAIMCPToolRequest(server_id=server_id) for server_id in pack.effective_toolsets.mcp_server_ids
+        ]
+    return PydanticAIToolsetRequest(
+        builtin_tools=builtin_tools,
+        skill_ids_resolved=_unique_strings(skill_ids_resolved),
+        mcp_tools=mcp_tools,
+    )
+
+
+def _build_sdk_agent(
+    sdk: ModuleType,
+    request: PydanticAIRunRequest,
+    toolset_factory: PydanticAIToolsetFactory | None,
+) -> Any:
     agent_cls = getattr(sdk, "Agent", None)
     structured_dict = getattr(sdk, "StructuredDict", None)
     if not callable(agent_cls) or not callable(structured_dict):
@@ -967,7 +1051,107 @@ def _build_sdk_agent(sdk: ModuleType, request: PydanticAIRunRequest) -> Any:
         kwargs["instructions"] = request.instructions
     if request.model_settings:
         kwargs["model_settings"] = request.model_settings
+    toolsets = _sdk_toolsets(sdk, request.toolsets, toolset_factory)
+    if toolsets:
+        kwargs["toolsets"] = toolsets
     return agent_cls(request.model_profile_id, **kwargs)
+
+
+def _sdk_toolsets(
+    sdk: ModuleType,
+    toolset_request: PydanticAIToolsetRequest,
+    toolset_factory: PydanticAIToolsetFactory | None,
+) -> list[object]:
+    if not _has_toolset_request(toolset_request):
+        return []
+    if toolset_factory is None:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Pydantic AI toolsets were requested, but no toolset factory is configured.",
+            payload={"toolsets": toolset_request.model_dump(mode="json")},
+        )
+
+    bundle = toolset_factory(sdk, toolset_request)
+    function_toolsets = list(bundle.function_toolsets)
+    mcp_toolsets_by_server = {mcp_toolset.server_id: mcp_toolset.toolset for mcp_toolset in bundle.mcp_toolsets}
+    if (toolset_request.builtin_tools or toolset_request.skill_ids_resolved) and not function_toolsets:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Pydantic AI toolset factory did not resolve requested builtin tools or skills.",
+            payload={
+                "builtin_tools": toolset_request.builtin_tools,
+                "skill_ids_resolved": toolset_request.skill_ids_resolved,
+            },
+        )
+    requested_mcp_server_ids = {tool.server_id for tool in toolset_request.mcp_tools}
+    missing_mcp_server_ids = sorted(requested_mcp_server_ids - set(mcp_toolsets_by_server))
+    if missing_mcp_server_ids:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Pydantic AI toolset factory did not resolve requested MCP servers.",
+            payload={
+                "missing_mcp_server_ids": missing_mcp_server_ids,
+                "mcp_tools": [tool.model_dump(mode="json") for tool in toolset_request.mcp_tools],
+            },
+        )
+    unexpected_mcp_server_ids = sorted(set(mcp_toolsets_by_server) - requested_mcp_server_ids)
+    if unexpected_mcp_server_ids:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Pydantic AI toolset factory returned unrequested MCP servers.",
+            payload={
+                "unexpected_mcp_server_ids": unexpected_mcp_server_ids,
+                "mcp_tools": [tool.model_dump(mode="json") for tool in toolset_request.mcp_tools],
+            },
+        )
+
+    mcp_toolsets = _approval_wrapped_mcp_toolsets(sdk, toolset_request.mcp_tools, mcp_toolsets_by_server)
+    return [*function_toolsets, *mcp_toolsets]
+
+
+def _has_toolset_request(toolset_request: PydanticAIToolsetRequest) -> bool:
+    return bool(toolset_request.builtin_tools or toolset_request.skill_ids_resolved or toolset_request.mcp_tools)
+
+
+def _mcp_approval_required_func(
+    mcp_tools: Sequence[PydanticAIMCPToolRequest],
+) -> Callable[[Any, Any, dict[str, Any]], bool] | None:
+    approve_all = any(tool.requires_approval and tool.tool_name == "*" for tool in mcp_tools)
+    approval_tool_names = {tool.tool_name for tool in mcp_tools if tool.requires_approval and tool.tool_name != "*"}
+    if not approve_all and not approval_tool_names:
+        return None
+
+    def approval_required(_ctx: Any, tool_def: Any, _args: dict[str, Any]) -> bool:
+        if approve_all:
+            return True
+        tool_name = getattr(tool_def, "name", None)
+        return isinstance(tool_name, str) and tool_name in approval_tool_names
+
+    return approval_required
+
+
+def _approval_wrapped_mcp_toolsets(
+    sdk: ModuleType,
+    mcp_tools: Sequence[PydanticAIMCPToolRequest],
+    mcp_toolsets_by_server: Mapping[str, object],
+) -> list[object]:
+    result: list[object] = []
+    approval_toolset_cls = getattr(sdk, "ApprovalRequiredToolset", None)
+    for server_id, toolset in mcp_toolsets_by_server.items():
+        approval_required_func = _mcp_approval_required_func(
+            [tool for tool in mcp_tools if tool.server_id == server_id]
+        )
+        if approval_required_func is None:
+            result.append(toolset)
+            continue
+        if not callable(approval_toolset_cls):
+            raise AdapterRuntimeError(
+                "AA_RUN_INTERNAL",
+                "pydantic_ai module does not expose ApprovalRequiredToolset.",
+                payload={"module": "pydantic_ai"},
+            )
+        result.append(approval_toolset_cls(toolset, approval_required_func=approval_required_func))
+    return result
 
 
 def _sdk_usage_limits(sdk: ModuleType, request: PydanticAIRunRequest) -> object | None:
@@ -1442,13 +1626,28 @@ def _stable_hash(payload: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _unique_strings(values: Sequence[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value and value not in seen:
+            result.append(value)
+            seen.add(value)
+    return result
+
+
 __all__ = [
     "PydanticAIAdapter",
+    "PydanticAIMCPToolRequest",
+    "PydanticAIMCPToolset",
     "PydanticAIResumeRequest",
     "PydanticAIRunRequest",
     "PydanticAISDKSession",
     "PydanticAISession",
     "PydanticAISessionFactory",
+    "PydanticAIToolsetFactory",
+    "PydanticAIToolsetRequest",
+    "PydanticAIToolsets",
     "RawPydanticAIEvent",
     "build_pydantic_ai_descriptor",
 ]
