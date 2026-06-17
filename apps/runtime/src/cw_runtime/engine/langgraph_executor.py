@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeAlias, TypedDict, cast
+from typing import Any, Literal, Protocol, TypeAlias, TypedDict, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,6 +32,24 @@ class LangGraphRunState(TypedDict, total=False):
     visited_node_ids: list[str]
     route_key: str | None
     node_results: dict[str, dict[str, Any]]
+    interrupt: dict[str, Any] | None
+
+
+class LangGraphInterrupt(BaseModel):
+    """Internal interrupt envelope persisted in LangGraph state.
+
+    The actual WorkflowRun and StreamEvent jsonl remain authoritative; this
+    envelope gives LangGraph callers enough information to stop and resume from
+    CW state without making the LangGraph checkpoint the source of truth.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["human_gate"]
+    run_id: str
+    node_id: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    event_ids: list[str] = Field(default_factory=list)
 
 
 class LangGraphNodeResult(BaseModel):
@@ -42,6 +60,7 @@ class LangGraphNodeResult(BaseModel):
     route_key: str | None = None
     next_node_ids: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    interrupt: LangGraphInterrupt | None = None
 
 
 class LangGraphNodeExecutor(Protocol):
@@ -70,6 +89,7 @@ def compile_langgraph_state_graph(
     checkpointer: Any | None = None,
     debug: bool = False,
     name: str | None = None,
+    resume_from_current_node: bool = False,
 ) -> CompiledLangGraphWorkflow:
     """Compile EngineWorkflowIR into a LangGraph StateGraph.
 
@@ -90,7 +110,14 @@ def compile_langgraph_state_graph(
             destinations=tuple(path_maps[node.node_id].keys()),
         )
 
-    graph.add_edge(start_symbol, engine_ir.entry_node_id)
+    if resume_from_current_node:
+        graph.add_conditional_edges(
+            start_symbol,
+            _start_selector(engine_ir.entry_node_id, node_ids={node.node_id for node in engine_ir.nodes}),
+            path_map={node.node_id: node.node_id for node in engine_ir.nodes},
+        )
+    else:
+        graph.add_edge(start_symbol, engine_ir.entry_node_id)
     route_selector = _route_selector(end_symbol=end_symbol)
     for node_id, path_map in path_maps.items():
         graph.add_conditional_edges(node_id, route_selector, path_map=dict(path_map))
@@ -151,7 +178,13 @@ def _node_action(
 ) -> Callable[[LangGraphRunState], LangGraphRunState]:
     def action(state: LangGraphRunState) -> LangGraphRunState:
         result = _default_node_result(node) if node_executor is None else node_executor(state, node)
-        next_node_ids, route_key = _resolve_next_nodes(node, route_table, result)
+        if result.interrupt is None:
+            next_node_ids, route_key = _resolve_next_nodes(node, route_table, result)
+            interrupt: dict[str, Any] | None = None
+        else:
+            next_node_ids = []
+            route_key = result.route_key
+            interrupt = result.interrupt.model_dump(mode="json")
         visited = [*state.get("visited_node_ids", []), node.node_id]
         node_results = dict(state.get("node_results", {}))
         node_results[node.node_id] = {
@@ -159,12 +192,15 @@ def _node_action(
             "next_node_ids": next_node_ids,
             **result.metadata,
         }
+        if interrupt is not None:
+            node_results[node.node_id]["interrupt"] = interrupt
         return {
             "current_node_id": node.node_id,
             "next_node_ids": next_node_ids,
             "visited_node_ids": visited,
             "route_key": route_key,
             "node_results": node_results,
+            "interrupt": interrupt,
         }
 
     return action
@@ -259,8 +295,19 @@ def _route_selector(*, end_symbol: str) -> Callable[[LangGraphRunState], str | l
     return select_next
 
 
+def _start_selector(entry_node_id: str, *, node_ids: set[str]) -> Callable[[LangGraphRunState], str]:
+    def select_start(state: LangGraphRunState) -> str:
+        current_node_id = state.get("current_node_id")
+        if current_node_id in node_ids:
+            return current_node_id
+        return entry_node_id
+
+    return select_start
+
+
 __all__ = [
     "CompiledLangGraphWorkflow",
+    "LangGraphInterrupt",
     "LangGraphNodeExecutor",
     "LangGraphNodeResult",
     "LangGraphRunState",

@@ -16,6 +16,7 @@ from .compiler import (
 )
 from .langgraph_executor import (
     CompiledLangGraphWorkflow,
+    LangGraphInterrupt,
     LangGraphNodeExecutor,
     LangGraphNodeResult,
     LangGraphRunState,
@@ -28,6 +29,7 @@ __all__ = [
     "EngineEdge",
     "EngineNode",
     "EngineWorkflowIR",
+    "LangGraphInterrupt",
     "LangGraphNodeExecutor",
     "LangGraphNodeResult",
     "LangGraphRunState",
