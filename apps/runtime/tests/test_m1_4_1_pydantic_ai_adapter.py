@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from types import ModuleType
+from types import ModuleType, SimpleNamespace, TracebackType
 from typing import Any, ClassVar
 
 import pytest
@@ -20,7 +20,7 @@ from cw_runtime.adapters import (
     build_pydantic_ai_descriptor,
 )
 from cw_schemas.contract import ExecutionContract, NodeModelPolicy, PromptSection
-from cw_schemas.events import StreamEventBase
+from cw_schemas.events import StreamEventBase, ToolEvent
 from cw_schemas.packs import (
     ContextBudget,
     ContextFragment,
@@ -93,12 +93,15 @@ class FakeSDKResult:
 
 class FakeSDKAgent:
     instances: ClassVar[list[FakeSDKAgent]] = []
+    stream_events: ClassVar[list[object] | None] = None
 
     def __init__(self, model: str, **kwargs: Any) -> None:
         self.model = model
         self.kwargs = kwargs
         self.run_user_prompt: str | None = None
         self.run_model_settings: dict[str, Any] | None = None
+        self.stream_user_prompt: str | None = None
+        self.stream_model_settings: dict[str, Any] | None = None
         FakeSDKAgent.instances.append(self)
 
     async def run(self, user_prompt: str, *, model_settings: dict[str, Any] | None = None) -> FakeSDKResult:
@@ -106,11 +109,73 @@ class FakeSDKAgent:
         self.run_model_settings = model_settings
         return FakeSDKResult()
 
+    def run_stream_events(
+        self,
+        user_prompt: str,
+        *,
+        model_settings: dict[str, Any] | None = None,
+    ) -> FakeSDKEventStream:
+        self.stream_user_prompt = user_prompt
+        self.stream_model_settings = model_settings
+        events = FakeSDKAgent.stream_events
+        return FakeSDKEventStream(_default_sdk_stream_events() if events is None else events)
 
-def _install_fake_pydantic_ai_sdk(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+
+class FakeSDKRunOnlyAgent:
+    instances: ClassVar[list[FakeSDKRunOnlyAgent]] = []
+
+    def __init__(self, model: str, **kwargs: Any) -> None:
+        self.model = model
+        self.kwargs = kwargs
+        self.run_user_prompt: str | None = None
+        self.run_model_settings: dict[str, Any] | None = None
+        FakeSDKRunOnlyAgent.instances.append(self)
+
+    async def run(self, user_prompt: str, *, model_settings: dict[str, Any] | None = None) -> FakeSDKResult:
+        self.run_user_prompt = user_prompt
+        self.run_model_settings = model_settings
+        return FakeSDKResult()
+
+
+class FakeSDKEventStream:
+    def __init__(self, events: list[object]) -> None:
+        self._events = events
+        self._index = 0
+        self.closed = False
+
+    async def __aenter__(self) -> FakeSDKEventStream:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
+        self.closed = True
+        return False
+
+    def __aiter__(self) -> FakeSDKEventStream:
+        return self
+
+    async def __anext__(self) -> object:
+        if self._index >= len(self._events):
+            raise StopAsyncIteration
+        event = self._events[self._index]
+        self._index += 1
+        return event
+
+
+def _install_fake_pydantic_ai_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    agent_cls: type[object] = FakeSDKAgent,
+) -> list[dict[str, Any]]:
     structured_dict_calls: list[dict[str, Any]] = []
     fake_sdk = ModuleType("pydantic_ai")
     FakeSDKAgent.instances.clear()
+    FakeSDKRunOnlyAgent.instances.clear()
+    FakeSDKAgent.stream_events = None
 
     def structured_dict(
         json_schema: dict[str, Any],
@@ -122,7 +187,7 @@ def _install_fake_pydantic_ai_sdk(monkeypatch: pytest.MonkeyPatch) -> list[dict[
         structured_dict_calls.append(call)
         return {"structured_schema": json_schema, "name": name, "description": description}
 
-    fake_sdk.__dict__["Agent"] = FakeSDKAgent
+    fake_sdk.__dict__["Agent"] = agent_cls
     fake_sdk.__dict__["StructuredDict"] = structured_dict
 
     def import_module(name: str) -> ModuleType:
@@ -132,6 +197,61 @@ def _install_fake_pydantic_ai_sdk(monkeypatch: pytest.MonkeyPatch) -> list[dict[
 
     monkeypatch.setattr("importlib.import_module", import_module)
     return structured_dict_calls
+
+
+def _default_sdk_stream_events() -> list[object]:
+    return [
+        SimpleNamespace(event_kind="part_start", part=SimpleNamespace(part_kind="text", content="sdk ")),
+        SimpleNamespace(event_kind="part_delta", delta=SimpleNamespace(part_delta_kind="text", content_delta="ok")),
+        SimpleNamespace(event_kind="part_end", part=SimpleNamespace(part_kind="text", content="sdk ok")),
+        SimpleNamespace(event_kind="part_start", part=SimpleNamespace(part_kind="thinking", content="plan")),
+        SimpleNamespace(
+            event_kind="part_delta", delta=SimpleNamespace(part_delta_kind="thinking", content_delta=" done")
+        ),
+        SimpleNamespace(event_kind="part_end", part=SimpleNamespace(part_kind="thinking", content="plan done")),
+        SimpleNamespace(
+            event_kind="function_tool_call",
+            part=SimpleNamespace(tool_name="lookup", args='{"query":"cw"}', tool_call_id="call_1"),
+        ),
+        SimpleNamespace(
+            event_kind="function_tool_result",
+            part=SimpleNamespace(tool_name="lookup", content={"ok": True}, tool_call_id="call_1", outcome="success"),
+        ),
+        SimpleNamespace(event_kind="agent_run_result", result=FakeSDKResult()),
+    ]
+
+
+def _sdk_retry_prompt_stream_events() -> list[object]:
+    return [
+        SimpleNamespace(
+            event_kind="function_tool_call",
+            part=SimpleNamespace(tool_name="lookup", args={"query": "cw"}, tool_call_id="call_retry"),
+        ),
+        SimpleNamespace(
+            event_kind="function_tool_result",
+            part=SimpleNamespace(
+                part_kind="retry-prompt",
+                tool_name="lookup",
+                content="bad args",
+                tool_call_id="call_retry",
+            ),
+        ),
+        SimpleNamespace(event_kind="agent_run_result", result=FakeSDKResult()),
+    ]
+
+
+def _sdk_builtin_dual_shape_stream_events() -> list[object]:
+    part = SimpleNamespace(
+        part_kind="builtin-tool-call",
+        tool_name="web_search",
+        args={"query": "cw"},
+        tool_call_id="builtin_1",
+    )
+    return [
+        SimpleNamespace(event_kind="part_start", part=part),
+        SimpleNamespace(event_kind="builtin_tool_call", part=part),
+        SimpleNamespace(event_kind="agent_run_result", result=FakeSDKResult()),
+    ]
 
 
 def _factory_for(session: FakePydanticAISession) -> PydanticAISessionFactory:
@@ -213,7 +333,7 @@ async def test_pydantic_ai_adapter_capabilities_descriptor_and_prepare() -> None
     assert capabilities.kinds == {AdapterKind.CHAT}
     assert capabilities.provider_kinds == {ProviderKind.CLOUD, ProviderKind.PRIVATE, ProviderKind.LOCAL}
     assert capabilities.structured_output is True
-    assert capabilities.streaming is False
+    assert capabilities.streaming is True
     assert capabilities.tool_call is False
     assert capabilities.mcp is False
     assert capabilities.human_in_the_loop is False
@@ -442,7 +562,7 @@ async def test_pydantic_ai_resume_empty_session_fails_with_terminal_event() -> N
 
 
 @pytest.mark.asyncio
-async def test_pydantic_ai_default_sdk_session_runs_agent_and_records_outcome(
+async def test_pydantic_ai_default_sdk_session_streams_events_and_records_outcome(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     structured_dict_calls = _install_fake_pydantic_ai_sdk(monkeypatch)
@@ -458,9 +578,28 @@ async def test_pydantic_ai_default_sdk_session_runs_agent_and_records_outcome(
 
     assert [event.type for event in events] == [
         "attempt.started",
+        "model.text_delta",
+        "model.text_delta",
+        "model.text_completed",
+        "model.thinking_delta",
+        "model.thinking_delta",
+        "model.thought_completed",
+        "tool.call_started",
+        "tool.call_completed",
         "model.request_completed",
         "attempt.completed",
     ]
+    assert events[1].payload == {"delta_text": "sdk ", "start": True}
+    assert events[2].payload == {"delta_text": "ok"}
+    assert events[3].payload == {"text": "sdk ok", "role": "assistant"}
+    assert events[4].payload == {"delta_text": "plan", "start": True}
+    assert events[5].payload == {"delta_text": " done"}
+    assert events[6].payload == {"summary": "plan done"}
+    assert events[7].payload is not None
+    assert events[7].payload["tool_id"] == "lookup"
+    assert events[7].payload["args"] == {"query": "cw"}
+    assert events[8].payload is not None
+    assert events[8].payload["result_summary"] == '{"ok": true}'
     assert structured_dict_calls == [
         {
             "json_schema": output_schema,
@@ -476,10 +615,12 @@ async def test_pydantic_ai_default_sdk_session_runs_agent_and_records_outcome(
     assert agent.kwargs["model_settings"] == {"temperature": 0.2}
     assert agent.kwargs["defer_model_check"] is True
     assert agent.kwargs["metadata"]["cw"]["execution_pack_id"] == "exp_01"
-    assert agent.run_user_prompt is not None
-    assert "Answer with JSON." in agent.run_user_prompt
-    assert "Keep the result concise." in agent.run_user_prompt
-    assert agent.run_model_settings == {"temperature": 0.2}
+    assert agent.run_user_prompt is None
+    assert agent.run_model_settings is None
+    assert agent.stream_user_prompt is not None
+    assert "Answer with JSON." in agent.stream_user_prompt
+    assert "Keep the result concise." in agent.stream_user_prompt
+    assert agent.stream_model_settings == {"temperature": 0.2}
 
     outcome = await adapter.finalize(handle)
     assert outcome.state == AttemptState.COMPLETED
@@ -493,6 +634,84 @@ async def test_pydantic_ai_default_sdk_session_runs_agent_and_records_outcome(
     assert outcome.usage.requests == 1
     assert outcome.messages == [{"role": "assistant", "content": "sdk ok", "mode": "json"}]
     assert outcome.provenance.pydantic_ai_traceparent == "00-sdk-trace"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_maps_retry_prompt_to_tool_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    FakeSDKAgent.stream_events = _sdk_retry_prompt_stream_events()
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(_execution_pack({"type": "object", "required": ["answer"]}))
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == [
+        "attempt.started",
+        "tool.call_started",
+        "tool.call_failed",
+        "model.request_completed",
+        "attempt.completed",
+    ]
+    failed = events[2]
+    assert isinstance(failed, ToolEvent)
+    assert failed.payload == {
+        "error_kind": "tool_failed",
+        "message": "bad args",
+        "retryable": True,
+    }
+    assert failed.tool_id == "lookup"
+    assert failed.invocation_id == "call_retry"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_dedupes_builtin_tool_call_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    FakeSDKAgent.stream_events = _sdk_builtin_dual_shape_stream_events()
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(_execution_pack({"type": "object", "required": ["answer"]}))
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == [
+        "attempt.started",
+        "tool.call_started",
+        "model.request_completed",
+        "attempt.completed",
+    ]
+    tool_starts = [event for event in events if event.type == "tool.call_started"]
+    assert len(tool_starts) == 1
+    assert isinstance(tool_starts[0], ToolEvent)
+    assert tool_starts[0].tool_id == "builtin:web_search"
+    assert tool_starts[0].invocation_id == "builtin_1"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_falls_back_to_run_when_stream_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch, agent_cls=FakeSDKRunOnlyAgent)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(_execution_pack({"type": "object", "required": ["answer"]}))
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == [
+        "attempt.started",
+        "model.request_completed",
+        "attempt.completed",
+    ]
+    assert len(FakeSDKRunOnlyAgent.instances) == 1
+    agent = FakeSDKRunOnlyAgent.instances[0]
+    assert agent.run_user_prompt is not None
+    assert "Answer with JSON." in agent.run_user_prompt
+    assert agent.run_model_settings == {"temperature": 0.2}
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.COMPLETED
+    assert outcome.output == {"answer": "sdk"}
 
 
 @pytest.mark.asyncio

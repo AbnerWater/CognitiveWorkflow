@@ -105,28 +105,19 @@ class PydanticAISDKSession:
     async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
         sdk = self._sdk()
         agent = _build_sdk_agent(sdk, request)
-        result = await agent.run(
-            request.user_prompt,
-            model_settings=request.model_settings or None,
-        )
-        usage = _sdk_usage(result)
-        messages = _sdk_messages(result)
-        yield {
-            "type": "request_completed",
-            "usage": usage,
-            "finish_reason": "stop",
-            "latency_ms": 0,
-        }
-        completed_event: dict[str, Any] = {
-            "type": "completed",
-            "output": _sdk_output(result),
-            "usage": usage,
-            "messages": messages,
-        }
-        traceparent = _sdk_traceparent(result)
-        if traceparent is not None:
-            completed_event["pydantic_ai_traceparent"] = traceparent
-        yield completed_event
+        stream_events = getattr(agent, "run_stream_events", None)
+        if callable(stream_events):
+            async with stream_events(
+                request.user_prompt,
+                model_settings=request.model_settings or None,
+            ) as stream:
+                async for sdk_event in stream:
+                    for raw_event in _sdk_stream_event_to_raw(sdk_event):
+                        yield raw_event
+            return
+
+        async for raw_event in _run_sdk_agent_once(agent, request):
+            yield raw_event
 
     async def resume(self, request: PydanticAIResumeRequest) -> AsyncIterator[RawPydanticAIEvent]:
         raise AdapterRuntimeError(
@@ -192,7 +183,7 @@ class PydanticAIAdapter:
             kinds={AdapterKind.CHAT},
             provider_kinds={ProviderKind.CLOUD, ProviderKind.PRIVATE, ProviderKind.LOCAL},
             structured_output=True,
-            streaming=False,
+            streaming=True,
             tool_call=False,
             mcp=False,
             human_in_the_loop=False,
@@ -463,23 +454,49 @@ class PydanticAIAdapter:
     def _translate_raw_event(self, handle: AttemptHandle, raw_event: RawPydanticAIEvent) -> list[StreamEventBase]:
         event_type = _required_str(raw_event, "type")
         if event_type == "text_delta":
+            payload: dict[str, Any] = {"delta_text": _optional_str(raw_event, "text") or ""}
+            if _bool_value(raw_event.get("start")):
+                payload["start"] = True
             return [
                 self._model_event(
                     handle,
                     event_type="model.text_delta",
                     phase=EventPhase.ATTEMPT_STREAMING,
                     title="Pydantic AI text delta",
-                    payload={"delta_text": _optional_str(raw_event, "text") or ""},
+                    payload=payload,
                 )
             ]
         if event_type == "thinking_delta":
+            payload = {"delta_text": _optional_str(raw_event, "text") or ""}
+            if _bool_value(raw_event.get("start")):
+                payload["start"] = True
             return [
                 self._model_event(
                     handle,
                     event_type="model.thinking_delta",
                     phase=EventPhase.ATTEMPT_STREAMING,
                     title="Pydantic AI thinking delta",
-                    payload={"delta_text": _optional_str(raw_event, "text") or ""},
+                    payload=payload,
+                )
+            ]
+        if event_type == "text_completed":
+            return [
+                self._model_event(
+                    handle,
+                    event_type="model.text_completed",
+                    phase=EventPhase.ATTEMPT_STREAMING,
+                    title="Pydantic AI text completed",
+                    payload={"text": _optional_str(raw_event, "text") or "", "role": "assistant"},
+                )
+            ]
+        if event_type == "thought_completed":
+            return [
+                self._model_event(
+                    handle,
+                    event_type="model.thought_completed",
+                    phase=EventPhase.ATTEMPT_STREAMING,
+                    title="Pydantic AI thought completed",
+                    payload={"summary": _optional_str(raw_event, "summary") or ""},
                 )
             ]
         if event_type == "tool_call_started":
@@ -511,6 +528,22 @@ class PydanticAIAdapter:
                         "result_summary": _optional_str(raw_event, "result_summary") or "",
                         "duration_ms": _int_value(raw_event.get("duration_ms")),
                         "output_artifact_refs": _list_of_mappings(raw_event.get("output_artifact_refs")),
+                    },
+                    tool_id=tool_id,
+                    invocation_id=_optional_str(raw_event, "invocation_id"),
+                )
+            ]
+        if event_type == "tool_call_failed":
+            tool_id = _optional_str(raw_event, "tool_id") or "unknown"
+            return [
+                self._tool_event(
+                    handle,
+                    event_type="tool.call_failed",
+                    title="Pydantic AI tool call failed",
+                    payload={
+                        "error_kind": _optional_str(raw_event, "error_kind") or "tool_failed",
+                        "message": _optional_str(raw_event, "message") or "",
+                        "retryable": _bool_value(raw_event.get("retryable")),
                     },
                     tool_id=tool_id,
                     invocation_id=_optional_str(raw_event, "invocation_id"),
@@ -748,7 +781,13 @@ class PydanticAIAdapter:
         self,
         handle: AttemptHandle,
         *,
-        event_type: Literal["model.thinking_delta", "model.text_delta", "model.request_completed"],
+        event_type: Literal[
+            "model.thinking_delta",
+            "model.thought_completed",
+            "model.text_delta",
+            "model.text_completed",
+            "model.request_completed",
+        ],
         phase: EventPhase,
         title: str,
         payload: dict[str, Any],
@@ -777,7 +816,7 @@ class PydanticAIAdapter:
         self,
         handle: AttemptHandle,
         *,
-        event_type: Literal["tool.call_started", "tool.call_completed", "tool.approval_required"],
+        event_type: Literal["tool.call_started", "tool.call_completed", "tool.call_failed", "tool.approval_required"],
         title: str,
         payload: dict[str, Any],
         tool_id: str,
@@ -917,6 +956,127 @@ def _build_sdk_agent(sdk: ModuleType, request: PydanticAIRunRequest) -> Any:
     return agent_cls(request.model_profile_id, **kwargs)
 
 
+async def _run_sdk_agent_once(agent: Any, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
+    result = await agent.run(
+        request.user_prompt,
+        model_settings=request.model_settings or None,
+    )
+    for raw_event in _sdk_result_to_raw_events(result):
+        yield raw_event
+
+
+def _sdk_stream_event_to_raw(event: object) -> list[RawPydanticAIEvent]:
+    event_kind = _str_attr(event, "event_kind")
+    if event_kind == "part_start":
+        return _sdk_part_start_to_raw(getattr(event, "part", None))
+    if event_kind == "part_delta":
+        return _sdk_part_delta_to_raw(getattr(event, "delta", None))
+    if event_kind == "part_end":
+        return _sdk_part_end_to_raw(getattr(event, "part", None))
+    if event_kind == "function_tool_call":
+        return [_sdk_tool_call_to_raw(getattr(event, "part", None), builtin=False)]
+    if event_kind == "builtin_tool_call":
+        return []
+    if event_kind in {"function_tool_result", "builtin_tool_result"}:
+        part = getattr(event, "part", None)
+        if part is None:
+            part = getattr(event, "result", None)
+        return [_sdk_tool_result_to_raw(part, builtin=event_kind == "builtin_tool_result")]
+    if event_kind == "agent_run_result":
+        return _sdk_result_to_raw_events(getattr(event, "result", None))
+    return []
+
+
+def _sdk_part_start_to_raw(part: object) -> list[RawPydanticAIEvent]:
+    part_kind = _str_attr(part, "part_kind")
+    content = _str_attr(part, "content") or ""
+    if part_kind == "text":
+        return [{"type": "text_delta", "text": content, "start": True}]
+    if part_kind == "thinking":
+        return [{"type": "thinking_delta", "text": content, "start": True}]
+    if part_kind == "builtin-tool-call":
+        return [_sdk_tool_call_to_raw(part, builtin=True)]
+    return []
+
+
+def _sdk_part_delta_to_raw(delta: object) -> list[RawPydanticAIEvent]:
+    delta_kind = _str_attr(delta, "part_delta_kind")
+    if delta_kind == "text":
+        return [{"type": "text_delta", "text": _str_attr(delta, "content_delta") or ""}]
+    if delta_kind == "thinking":
+        return [{"type": "thinking_delta", "text": _str_attr(delta, "content_delta") or ""}]
+    return []
+
+
+def _sdk_part_end_to_raw(part: object) -> list[RawPydanticAIEvent]:
+    part_kind = _str_attr(part, "part_kind")
+    content = _str_attr(part, "content") or ""
+    if part_kind == "text":
+        return [{"type": "text_completed", "text": content}]
+    if part_kind == "thinking":
+        return [{"type": "thought_completed", "summary": _summary_text(content)}]
+    return []
+
+
+def _sdk_tool_call_to_raw(part: object, *, builtin: bool) -> RawPydanticAIEvent:
+    tool_name = _str_attr(part, "tool_name") or "unknown"
+    tool_id = f"builtin:{tool_name}" if builtin and not tool_name.startswith("builtin:") else tool_name
+    args = _sdk_tool_args(getattr(part, "args", None))
+    return {
+        "type": "tool_call_started",
+        "tool_id": tool_id,
+        "args": args,
+        "args_hash": _stable_hash(args),
+        "requires_approval": False,
+        "invocation_id": _str_attr(part, "tool_call_id"),
+    }
+
+
+def _sdk_tool_result_to_raw(part: object, *, builtin: bool) -> RawPydanticAIEvent:
+    tool_name = _str_attr(part, "tool_name") or "unknown"
+    tool_id = f"builtin:{tool_name}" if builtin and not tool_name.startswith("builtin:") else tool_name
+    outcome = _str_attr(part, "outcome")
+    part_kind = _str_attr(part, "part_kind")
+    if outcome in {"failed", "denied"} or part_kind == "retry-prompt":
+        return {
+            "type": "tool_call_failed",
+            "tool_id": tool_id,
+            "error_kind": "tool_failed",
+            "message": _sdk_tool_result_message(part),
+            "retryable": outcome == "failed" or part_kind == "retry-prompt",
+            "invocation_id": _str_attr(part, "tool_call_id"),
+        }
+    return {
+        "type": "tool_call_completed",
+        "tool_id": tool_id,
+        "result_summary": _sdk_result_summary(getattr(part, "content", None)),
+        "duration_ms": 0,
+        "invocation_id": _str_attr(part, "tool_call_id"),
+    }
+
+
+def _sdk_result_to_raw_events(result: object) -> list[RawPydanticAIEvent]:
+    usage = _sdk_usage(result)
+    completed_event: dict[str, Any] = {
+        "type": "completed",
+        "output": _sdk_output(result),
+        "usage": usage,
+        "messages": _sdk_messages(result),
+    }
+    traceparent = _sdk_traceparent(result)
+    if traceparent is not None:
+        completed_event["pydantic_ai_traceparent"] = traceparent
+    return [
+        {
+            "type": "request_completed",
+            "usage": usage,
+            "finish_reason": "stop",
+            "latency_ms": 0,
+        },
+        completed_event,
+    ]
+
+
 def _sdk_output(result: object) -> object:
     return getattr(result, "output", {})
 
@@ -960,6 +1120,56 @@ def _sdk_traceparent(result: object) -> str | None:
     except TypeError:
         value = traceparent()
     return value if isinstance(value, str) and value else None
+
+
+def _str_attr(value: object, name: str) -> str | None:
+    attr = getattr(value, name, None)
+    return attr if isinstance(attr, str) and attr else None
+
+
+def _sdk_tool_args(value: object) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return _mapping_or_empty(value)
+    if isinstance(value, str) and value:
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            decoded = None
+        if isinstance(decoded, Mapping):
+            return _mapping_or_empty(decoded)
+        return {"raw": value}
+    return {}
+
+
+def _sdk_result_summary(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return _summary_text(value)
+    jsonable = _jsonable_model(value)
+    try:
+        encoded = json.dumps(jsonable, ensure_ascii=False, sort_keys=True, default=str)
+    except TypeError:
+        encoded = str(value)
+    return _summary_text(encoded)
+
+
+def _sdk_tool_result_message(part: object) -> str:
+    model_response = getattr(part, "model_response", None)
+    if callable(model_response):
+        try:
+            value = model_response()
+        except TypeError:
+            value = None
+        if isinstance(value, str):
+            return _summary_text(value)
+    return _sdk_result_summary(getattr(part, "content", None))
+
+
+def _summary_text(value: str, *, limit: int = 500) -> str:
+    if len(value) <= limit:
+        return value
+    return value[: limit - 3] + "..."
 
 
 def _required_str(raw_event: RawPydanticAIEvent, key: str) -> str:
