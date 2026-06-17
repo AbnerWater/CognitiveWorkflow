@@ -8,8 +8,10 @@ Real SDK integration can provide a ``PydanticAISession`` behind this seam.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 from collections.abc import AsyncIterator, Callable, Mapping
+from types import ModuleType
 from typing import Any, Literal, Protocol, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -89,6 +91,71 @@ class PydanticAISession(Protocol):
 PydanticAISessionFactory: TypeAlias = Callable[[], PydanticAISession]
 
 
+class PydanticAISDKSession:
+    """Lazy SDK-backed Pydantic AI session.
+
+    The optional ``pydantic_ai`` package is imported only when this default
+    session is used, so the runtime package remains importable without the
+    ``agents`` extra.
+    """
+
+    def __init__(self, sdk_module: ModuleType | None = None) -> None:
+        self._sdk_module = sdk_module
+
+    async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
+        sdk = self._sdk()
+        agent = _build_sdk_agent(sdk, request)
+        result = await agent.run(
+            request.user_prompt,
+            model_settings=request.model_settings or None,
+        )
+        usage = _sdk_usage(result)
+        messages = _sdk_messages(result)
+        yield {
+            "type": "request_completed",
+            "usage": usage,
+            "finish_reason": "stop",
+            "latency_ms": 0,
+        }
+        completed_event: dict[str, Any] = {
+            "type": "completed",
+            "output": _sdk_output(result),
+            "usage": usage,
+            "messages": messages,
+        }
+        traceparent = _sdk_traceparent(result)
+        if traceparent is not None:
+            completed_event["pydantic_ai_traceparent"] = traceparent
+        yield completed_event
+
+    async def resume(self, request: PydanticAIResumeRequest) -> AsyncIterator[RawPydanticAIEvent]:
+        raise AdapterRuntimeError(
+            "AA_RESUME_INVALID_KIND",
+            "Pydantic AI SDK-backed resume is not implemented in W1.4.2.",
+            payload={"handle_id": request.handle_id, "kind": request.resumption.kind.value},
+        )
+        yield {}
+
+    async def cancel(self, handle_id: str, reason: CancelReason) -> None:
+        return None
+
+    async def aclose(self) -> None:
+        return None
+
+    def _sdk(self) -> ModuleType:
+        if self._sdk_module is not None:
+            return self._sdk_module
+        try:
+            self._sdk_module = importlib.import_module("pydantic_ai")
+        except ImportError as exc:
+            raise AdapterRuntimeError(
+                "AA_RUN_INTERNAL",
+                "Pydantic AI optional dependency is not installed; install cw_runtime[agents].",
+                payload={"extra": "agents", "module": "pydantic_ai"},
+            ) from exc
+        return self._sdk_module
+
+
 class PydanticAIAdapter:
     """Phase-1 Pydantic AI adapter foundation."""
 
@@ -107,6 +174,8 @@ class PydanticAIAdapter:
         self._sessions: dict[str, PydanticAISession] = {}
         self._outputs: dict[str, dict[str, Any]] = {}
         self._errors: dict[str, list[AdapterError]] = {}
+        self._usage: dict[str, RunUsage] = {}
+        self._messages: dict[str, list[dict[str, Any]]] = {}
         self._stream_seq: dict[str, int] = {}
 
     @property
@@ -123,16 +192,16 @@ class PydanticAIAdapter:
             kinds={AdapterKind.CHAT},
             provider_kinds={ProviderKind.CLOUD, ProviderKind.PRIVATE, ProviderKind.LOCAL},
             structured_output=True,
-            streaming=True,
-            tool_call=True,
-            mcp=True,
-            human_in_the_loop=True,
-            deferred_tool_results=True,
-            multi_modal={"image", "document"},
+            streaming=False,
+            tool_call=False,
+            mcp=False,
+            human_in_the_loop=False,
+            deferred_tool_results=False,
+            multi_modal=set(),
             long_context_tokens=200_000,
-            max_tool_iterations=16,
-            cancel=True,
-            evidence_lookup_tool=True,
+            max_tool_iterations=0,
+            cancel=False,
+            evidence_lookup_tool=False,
             model_settings_passthrough=common_settings,
         )
 
@@ -271,6 +340,8 @@ class PydanticAIAdapter:
         pack = self._packs[handle.handle_id]
         output = self._outputs.get(handle.handle_id)
         errors = self._errors.get(handle.handle_id, [])
+        usage = self._usage.get(handle.handle_id)
+        messages = self._messages.get(handle.handle_id)
         finished_at = handle.finished_at or utc_now_ms()
         output_hash = _stable_hash(output)
         outcome_hash = _stable_hash(
@@ -288,8 +359,8 @@ class PydanticAIAdapter:
             output=output,
             output_hash=output_hash,
             output_artifact_refs=[],
-            usage=None,
-            messages=None,
+            usage=usage,
+            messages=messages,
             errors=errors,
             started_at=handle.started_at or handle.prepared_at,
             finished_at=finished_at,
@@ -339,13 +410,7 @@ class PydanticAIAdapter:
         session = self._sessions.get(handle.handle_id)
         if session is not None:
             return session
-        if self._session_factory is None:
-            raise AdapterRuntimeError(
-                "AA_RUN_INTERNAL",
-                "Pydantic AI session factory is not configured.",
-                payload={"adapter_id": self.adapter_id},
-            )
-        session = self._session_factory()
+        session = PydanticAISDKSession() if self._session_factory is None else self._session_factory()
         self._sessions[handle.handle_id] = session
         return session
 
@@ -531,8 +596,18 @@ class PydanticAIAdapter:
             ]
 
         self._outputs[handle.handle_id] = output
+        usage = _usage_from_raw(raw_event)
+        if usage is not None:
+            self._usage[handle.handle_id] = usage
+        messages = _messages_from_raw(raw_event)
+        if messages is not None:
+            self._messages[handle.handle_id] = messages
+        traceparent = _optional_str(raw_event, "pydantic_ai_traceparent")
+        if traceparent is not None:
+            handle.metadata["pydantic_ai_traceparent"] = traceparent
         handle.state = AttemptState.COMPLETED
         handle.finished_at = utc_now_ms()
+        payload_usage = usage or RunUsage()
         return [
             self._lifecycle_event(
                 handle,
@@ -542,7 +617,7 @@ class PydanticAIAdapter:
                 payload={
                     "output_hash": _stable_hash(output),
                     "duration_ms": 0,
-                    "usage": RunUsage().model_dump(mode="json"),
+                    "usage": payload_usage.model_dump(mode="json"),
                 },
             )
         ]
@@ -803,6 +878,90 @@ def _prompt_text(value: str | list[str] | None) -> str | None:
     return "\n".join(value)
 
 
+def _build_sdk_agent(sdk: ModuleType, request: PydanticAIRunRequest) -> Any:
+    agent_cls = getattr(sdk, "Agent", None)
+    structured_dict = getattr(sdk, "StructuredDict", None)
+    if not callable(agent_cls) or not callable(structured_dict):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "pydantic_ai module does not expose Agent and StructuredDict.",
+            payload={"module": "pydantic_ai"},
+        )
+
+    output_schema = request.output_schema or {"type": "object", "additionalProperties": True}
+    output_type = structured_dict(
+        _jsonable_mapping(output_schema),
+        name=f"{request.node_id}_output",
+        description=f"CW output for node {request.node_id}",
+    )
+    kwargs: dict[str, Any] = {
+        "output_type": output_type,
+        "defer_model_check": True,
+        "metadata": {
+            "cw": {
+                "handle_id": request.handle_id,
+                "run_id": request.run_id,
+                "node_id": request.node_id,
+                "attempt_id": request.attempt_id,
+                "execution_pack_id": request.execution_pack_id,
+                "correlation_id": request.correlation_id,
+            }
+        },
+    }
+    if request.system_prompt is not None:
+        kwargs["system_prompt"] = request.system_prompt
+    if request.instructions:
+        kwargs["instructions"] = request.instructions
+    if request.model_settings:
+        kwargs["model_settings"] = request.model_settings
+    return agent_cls(request.model_profile_id, **kwargs)
+
+
+def _sdk_output(result: object) -> object:
+    return getattr(result, "output", {})
+
+
+def _sdk_usage(result: object) -> dict[str, Any]:
+    raw_usage = getattr(result, "usage", None)
+    usage = raw_usage() if callable(raw_usage) else raw_usage
+    return _usage_mapping(usage)
+
+
+def _sdk_messages(result: object) -> list[dict[str, Any]]:
+    all_messages_json = getattr(result, "all_messages_json", None)
+    if callable(all_messages_json):
+        try:
+            decoded = json.loads(all_messages_json().decode("utf-8"))
+        except (AttributeError, TypeError, ValueError):
+            decoded = None
+        if isinstance(decoded, list):
+            return [_mapping_or_empty(item) for item in decoded if isinstance(item, Mapping)]
+
+    all_messages = getattr(result, "all_messages", None)
+    if not callable(all_messages):
+        return []
+    raw_messages = all_messages()
+    if not isinstance(raw_messages, list):
+        return []
+    messages: list[dict[str, Any]] = []
+    for raw_message in raw_messages:
+        dumped = _jsonable_model(raw_message)
+        if isinstance(dumped, Mapping):
+            messages.append(_mapping_or_empty(dumped))
+    return messages
+
+
+def _sdk_traceparent(result: object) -> str | None:
+    traceparent = getattr(result, "_traceparent", None)
+    if not callable(traceparent):
+        return None
+    try:
+        value = traceparent(required=False)
+    except TypeError:
+        value = traceparent()
+    return value if isinstance(value, str) and value else None
+
+
 def _required_str(raw_event: RawPydanticAIEvent, key: str) -> str:
     value = raw_event.get(key)
     if isinstance(value, str) and value:
@@ -837,6 +996,22 @@ def _mapping_or_empty(value: object) -> dict[str, Any]:
     return {}
 
 
+def _jsonable_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads(json.dumps(dict(value), ensure_ascii=False, default=str)))
+
+
+def _jsonable_model(value: object) -> object:
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return model_dump(mode="json")
+        except TypeError:
+            return model_dump()
+    if isinstance(value, Mapping):
+        return _jsonable_mapping(value)
+    return value
+
+
 def _list_of_mappings(value: object) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
@@ -855,6 +1030,69 @@ def _int_or_none(value: object) -> int | None:
     if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
         return value
     return None
+
+
+def _usage_mapping(value: object) -> dict[str, Any]:
+    if value is None:
+        return RunUsage().model_dump(mode="json")
+    raw_mapping = _jsonable_model(value)
+    source = raw_mapping if isinstance(raw_mapping, Mapping) else _usage_attrs(value)
+    mapped: dict[str, Any] = {}
+    for source_key, target_key in [
+        ("input_tokens", "input_tokens"),
+        ("output_tokens", "output_tokens"),
+        ("cache_write_tokens", "cache_creation_input_tokens"),
+        ("cache_creation_input_tokens", "cache_creation_input_tokens"),
+        ("cache_read_tokens", "cache_read_input_tokens"),
+        ("cache_read_input_tokens", "cache_read_input_tokens"),
+        ("total_tokens", "total_tokens"),
+        ("requests", "requests"),
+        ("est_cost_usd", "est_cost_usd"),
+    ]:
+        raw_value = source.get(source_key) if isinstance(source, Mapping) else None
+        if _valid_usage_value(raw_value):
+            mapped[target_key] = raw_value
+    if "total_tokens" not in mapped:
+        mapped["total_tokens"] = int(mapped.get("input_tokens", 0)) + int(mapped.get("output_tokens", 0))
+    return RunUsage.model_validate(mapped).model_dump(mode="json")
+
+
+def _usage_attrs(value: object) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key in [
+        "input_tokens",
+        "output_tokens",
+        "cache_write_tokens",
+        "cache_read_tokens",
+        "total_tokens",
+        "requests",
+        "est_cost_usd",
+    ]:
+        attr = getattr(value, key, None)
+        if _valid_usage_value(attr):
+            result[key] = attr
+    return result
+
+
+def _valid_usage_value(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int | float) and value >= 0
+
+
+def _usage_from_raw(raw_event: RawPydanticAIEvent) -> RunUsage | None:
+    if "usage" not in raw_event:
+        return None
+    return RunUsage.model_validate(_usage_mapping(raw_event.get("usage")))
+
+
+def _messages_from_raw(raw_event: RawPydanticAIEvent) -> list[dict[str, Any]] | None:
+    raw_messages = raw_event.get("messages")
+    if raw_messages is None:
+        return None
+    if not isinstance(raw_messages, list):
+        return []
+    return [_mapping_or_empty(item) for item in raw_messages if isinstance(item, Mapping)]
 
 
 def _decisions(raw_event: RawPydanticAIEvent) -> list[dict[str, Any]]:
@@ -946,6 +1184,7 @@ __all__ = [
     "PydanticAIAdapter",
     "PydanticAIResumeRequest",
     "PydanticAIRunRequest",
+    "PydanticAISDKSession",
     "PydanticAISession",
     "PydanticAISessionFactory",
     "RawPydanticAIEvent",
