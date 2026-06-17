@@ -62,6 +62,7 @@ ollama = [
 
 [project.entry-points."cw.adapters"]
 pydantic_ai = "cw_runtime.adapters.pydantic_ai_adapter:PydanticAIAdapter"
+claude_code = "cw_runtime.adapters.claude_code_adapter:ClaudeCodeAdapter"
 litellm = "cw_runtime.adapters.litellm_adapter:LiteLLMAdapter"
 
 [project.scripts]
