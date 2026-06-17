@@ -14,14 +14,26 @@ from .compiler import (
     load_workflow_graph,
     validate_workflow_graph_payload,
 )
+from .langgraph_executor import (
+    CompiledLangGraphWorkflow,
+    LangGraphNodeExecutor,
+    LangGraphNodeResult,
+    LangGraphRunState,
+    compile_langgraph_state_graph,
+)
 
 __all__ = [
     "DEFAULT_ENABLED_NODE_TYPES",
+    "CompiledLangGraphWorkflow",
     "EngineEdge",
     "EngineNode",
     "EngineWorkflowIR",
+    "LangGraphNodeExecutor",
+    "LangGraphNodeResult",
+    "LangGraphRunState",
     "WorkflowValidationContext",
     "WorkflowValidationError",
+    "compile_langgraph_state_graph",
     "compile_workflow_graph",
     "load_and_compile_workflow",
     "load_workflow_graph",
