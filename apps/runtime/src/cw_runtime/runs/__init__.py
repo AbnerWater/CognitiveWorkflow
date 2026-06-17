@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from .lifecycle import (
+    ProjectRecoveryResult,
+    RecoveredWorkflowRun,
     RunActionRequest,
     RunError,
     WorkflowRunDocument,
@@ -19,12 +21,15 @@ from .lifecycle import (
     pause_active_workflow_run,
     pause_workflow_run,
     read_workflow_run,
+    recover_project_runs,
     resume_active_workflow_run,
     resume_workflow_run,
     stream_sse_events,
 )
 
 __all__ = [
+    "ProjectRecoveryResult",
+    "RecoveredWorkflowRun",
     "RunActionRequest",
     "RunError",
     "WorkflowRunDocument",
@@ -41,6 +46,7 @@ __all__ = [
     "pause_active_workflow_run",
     "pause_workflow_run",
     "read_workflow_run",
+    "recover_project_runs",
     "resume_active_workflow_run",
     "resume_workflow_run",
     "stream_sse_events",

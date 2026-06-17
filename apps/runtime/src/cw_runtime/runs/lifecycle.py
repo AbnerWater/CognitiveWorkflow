@@ -15,7 +15,7 @@ from collections.abc import AsyncGenerator, Iterable, Mapping
 from pathlib import Path
 from typing import Any, Final, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from cw_runtime.engine import compile_workflow_graph, load_workflow_graph
 from cw_runtime.harness.project import AGENT_WORKFLOW_DIR, acquire_runtime_lock
@@ -104,6 +104,32 @@ class WorkflowRunStartResponse(BaseModel):
     run_id: str
     started_at: str
     stream_url: str
+
+
+class RecoveredWorkflowRun(BaseModel):
+    """A non-terminal run reconciled during sidecar startup recovery."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    previous_state: RunState
+    recovered_state: RunState
+    was_downgraded: bool
+    last_event_id_before_recovery: str | None = None
+    runtime_ready_event_id: str
+    recovery_event_id: str
+
+
+class ProjectRecoveryResult(BaseModel):
+    """Summary returned by project-level sidecar restart recovery."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["0.1.0"] = RUNTIME_SCHEMA_VERSION
+    project_root: str
+    recovered_at: str
+    active_run_count: int
+    recovered_runs: list[RecoveredWorkflowRun] = Field(default_factory=list)
 
 
 class WorkflowRunDocument(BaseModel):
@@ -212,7 +238,46 @@ def create_workflow_run(
 def read_workflow_run(project_root: Path, run_id: str) -> WorkflowRunDocument:
     """Read ``runs/<run_id>/run.json``."""
 
-    return WorkflowRunDocument.model_validate(_read_json_object(_run_root(project_root, run_id) / "run.json"))
+    return _read_workflow_run_document(_run_root(project_root, run_id) / "run.json")
+
+
+def recover_project_runs(
+    project_root: Path,
+    *,
+    runtime_version: str,
+    http_port: int | None = None,
+) -> ProjectRecoveryResult:
+    """Reconcile non-terminal WorkflowRuns after sidecar restart.
+
+    workflow_run.md §4.2 requires running runs to downgrade to paused before
+    the runtime is considered ready, while paused/waiting_user/repairing runs
+    remain recoverable from their persisted jsonl authority.
+    """
+
+    recovered_at = _utc_now_ms()
+    recovered_runs: list[RecoveredWorkflowRun] = []
+    with acquire_runtime_lock(project_root):
+        ensure_runtime_databases(project_root)
+        runs_root = project_root.resolve() / AGENT_WORKFLOW_DIR / "runs"
+        if runs_root.exists():
+            for run_root in sorted(path for path in runs_root.iterdir() if path.is_dir()):
+                run = _read_workflow_run_document(run_root / "run.json")
+                recovered = _recover_run_locked(
+                    project_root,
+                    run,
+                    recovered_at=recovered_at,
+                    runtime_version=runtime_version,
+                    http_port=http_port,
+                )
+                if recovered is not None:
+                    recovered_runs.append(recovered)
+
+    return ProjectRecoveryResult(
+        project_root=project_root.resolve().as_posix(),
+        recovered_at=recovered_at,
+        active_run_count=len(recovered_runs),
+        recovered_runs=recovered_runs,
+    )
 
 
 def run_directory(project_root: Path, run_id: str) -> Path:
@@ -528,7 +593,7 @@ def _ensure_no_active_run(project_root: Path, workflow_id: str) -> None:
     if not runs_root.exists():
         return
     for run_json in runs_root.glob("*/run.json"):
-        run = WorkflowRunDocument.model_validate(_read_json_object(run_json))
+        run = _read_workflow_run_document(run_json)
         if run.workflow_id == workflow_id and run.state not in _TERMINAL_RUN_STATES:
             raise RunError(
                 "WR_CONCURRENT_RUN_FORBIDDEN",
@@ -542,7 +607,7 @@ def _find_active_run(project_root: Path, workflow_id: str) -> WorkflowRunDocumen
     if not runs_root.exists():
         raise _active_run_not_found(workflow_id)
     for run_json in sorted(runs_root.glob("*/run.json")):
-        run = WorkflowRunDocument.model_validate(_read_json_object(run_json))
+        run = _read_workflow_run_document(run_json)
         if run.workflow_id == workflow_id and run.state not in _TERMINAL_RUN_STATES:
             return run
     raise _active_run_not_found(workflow_id)
@@ -637,6 +702,90 @@ def append_system_heartbeat(project_root: Path, run_id: str, *, uptime_seconds: 
         )
         _append_event_and_update_run(project_root, updated, event)
         return event
+
+
+def _recover_run_locked(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    *,
+    recovered_at: str,
+    runtime_version: str,
+    http_port: int | None,
+) -> RecoveredWorkflowRun | None:
+    recoverable_states = {RunState.RUNNING, RunState.PAUSED, RunState.WAITING_USER, RunState.REPAIRING}
+    if run.state not in recoverable_states:
+        return None
+
+    previous_state = run.state
+    last_event_id_before_recovery = run.last_event_id
+    was_downgraded = previous_state == RunState.RUNNING
+    updated = run.model_copy(update={"last_heartbeat_at": recovered_at})
+
+    if was_downgraded:
+        updated = updated.model_copy(
+            update={
+                "state": RunState.PAUSED,
+                "previous_state": previous_state,
+                "paused_at": recovered_at,
+            }
+        )
+        paused_event = _build_lifecycle_event(
+            run=updated,
+            seq=_next_event_seq(_run_root(project_root, run.run_id)),
+            event_type="run.paused",
+            phase=EventPhase.RUN_PAUSED,
+            title="Run paused after sidecar restart",
+            payload={"reason": "sidecar_restart"},
+            expandable=False,
+        )
+        updated = _append_event_and_update_run(project_root, updated, paused_event)
+
+    runtime_ready_event = SystemEvent(
+        event_id=_new_ulid(),
+        seq=_next_event_seq(_run_root(project_root, run.run_id)),
+        run_id=run.run_id,
+        node_id=None,
+        attempt_id=None,
+        type="system.runtime_ready",
+        phase=None,
+        title="Runtime ready",
+        summary=None,
+        content=None,
+        payload={
+            "runtime_version": runtime_version,
+            "http_port": http_port,
+            "schema_versions": {"runtime": RUNTIME_SCHEMA_VERSION, "stream_event": RUNTIME_SCHEMA_VERSION},
+        },
+        display_level=DisplayLevel.MINIMAL,
+        expandable=False,
+        created_at=recovered_at,
+    )
+    updated = _append_event_and_update_run(project_root, updated, runtime_ready_event)
+
+    recovery_event = _build_lifecycle_event(
+        run=updated,
+        seq=_next_event_seq(_run_root(project_root, run.run_id)),
+        event_type="run.resumed",
+        phase=EventPhase.RUN_RESUMED,
+        title="Run recovery point restored",
+        payload={
+            "from_checkpoint_id": None,
+            "last_event_id": last_event_id_before_recovery,
+            "recovered_state": updated.state.value,
+        },
+        expandable=False,
+    )
+    updated = _append_event_and_update_run(project_root, updated, recovery_event)
+
+    return RecoveredWorkflowRun(
+        run_id=updated.run_id,
+        previous_state=previous_state,
+        recovered_state=updated.state,
+        was_downgraded=was_downgraded,
+        last_event_id_before_recovery=last_event_id_before_recovery,
+        runtime_ready_event_id=runtime_ready_event.event_id,
+        recovery_event_id=recovery_event.event_id,
+    )
 
 
 def _append_stream_event(run_root: Path, event: StreamEventBase) -> StreamEventBase:
@@ -799,6 +948,18 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], loaded)
 
 
+def _read_workflow_run_document(path: Path) -> WorkflowRunDocument:
+    try:
+        return WorkflowRunDocument.model_validate(_read_json_object(path))
+    except ValidationError as exc:
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run JSON file failed WorkflowRun schema validation.",
+            status_code=500,
+            details={"path": path.as_posix(), "errors": exc.errors()},
+        ) from exc
+
+
 def _write_json_atomic(path: Path, payload: object) -> None:
     _write_text_atomic(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
@@ -844,6 +1005,8 @@ def _split_query_list(raw: str) -> Iterable[str]:
 
 
 __all__ = [
+    "ProjectRecoveryResult",
+    "RecoveredWorkflowRun",
     "RunActionRequest",
     "RunCancellationSummary",
     "RunError",
@@ -866,6 +1029,7 @@ __all__ = [
     "pause_active_workflow_run",
     "pause_workflow_run",
     "read_workflow_run",
+    "recover_project_runs",
     "resume_active_workflow_run",
     "resume_workflow_run",
     "run_directory",
