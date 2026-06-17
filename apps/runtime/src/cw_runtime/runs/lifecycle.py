@@ -205,6 +205,89 @@ def read_workflow_run(project_root: Path, run_id: str) -> WorkflowRunDocument:
     return WorkflowRunDocument.model_validate(_read_json_object(_run_root(project_root, run_id) / "run.json"))
 
 
+def run_directory(project_root: Path, run_id: str) -> Path:
+    """Return ``runs/<run_id>`` for internal runtime writers."""
+
+    return _run_root(project_root, run_id)
+
+
+def next_event_seq(project_root: Path, run_id: str) -> int:
+    """Return the next StreamEvent seq for callers already holding ``runtime.lock``."""
+
+    return _next_event_seq(_run_root(project_root, run_id))
+
+
+def append_run_event_locked(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    event: StreamEventBase,
+) -> WorkflowRunDocument:
+    """Append a StreamEvent and update ``run.json``.
+
+    The caller must hold ``runtime.lock``. This lets the node runner append
+    several causally ordered records in one critical section.
+    """
+
+    return _append_event_and_update_run(project_root, run, event)
+
+
+def write_workflow_run_locked(project_root: Path, run: WorkflowRunDocument) -> WorkflowRunDocument:
+    """Persist ``run.json`` for callers already holding ``runtime.lock``."""
+
+    _write_json_atomic(_run_root(project_root, run.run_id) / "run.json", run.model_dump(mode="json"))
+    return run
+
+
+def write_run_json_locked(project_root: Path, run_id: str, relative_path: str, payload: object) -> None:
+    """Write a JSON file below ``runs/<run_id>``.
+
+    The relative path is intentionally constrained to the run directory so
+    runner-owned pack and overlay writes cannot escape the harness boundary.
+    """
+
+    target = (_run_root(project_root, run_id) / relative_path).resolve()
+    run_root = _run_root(project_root, run_id).resolve()
+    if not target.is_relative_to(run_root):
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run-relative JSON write escaped the run directory.",
+            status_code=500,
+            details={"run_id": run_id, "relative_path": relative_path},
+        )
+    _write_json_atomic(target, payload)
+
+
+def append_run_jsonl_locked(project_root: Path, run_id: str, filename: str, payload: object) -> None:
+    """Append one JSONL record below ``runs/<run_id>``.
+
+    The caller must hold ``runtime.lock``.
+    """
+
+    if "/" in filename or "\\" in filename or not filename.endswith(".jsonl"):
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run JSONL append requires a direct .jsonl filename.",
+            status_code=500,
+            details={"run_id": run_id, "filename": filename},
+        )
+    target = _run_root(project_root, run_id) / filename
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8", newline="\n") as file:
+        file.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def new_runtime_id(now_ms: int | None = None) -> str:
+    """Create a runtime ULID-like identifier."""
+
+    return _new_ulid(now_ms)
+
+
+def utc_now_ms() -> str:
+    """Return current UTC time in the runtime ISO-8601 millisecond format."""
+
+    return _utc_now_ms()
+
+
 def pause_workflow_run(project_root: Path, run_id: str, request: RunActionRequest) -> WorkflowRunDocument:
     with acquire_runtime_lock(project_root):
         return _pause_workflow_run_locked(project_root, run_id, request)
@@ -735,12 +818,16 @@ __all__ = [
     "WorkflowRunDocument",
     "WorkflowRunStartRequest",
     "WorkflowRunStartResponse",
+    "append_run_event_locked",
+    "append_run_jsonl_locked",
     "append_system_heartbeat",
     "cancel_active_workflow_run",
     "cancel_workflow_run",
     "create_workflow_run",
     "format_sse_event",
     "list_stream_events",
+    "new_runtime_id",
+    "next_event_seq",
     "parse_display_levels",
     "parse_event_categories",
     "pause_active_workflow_run",
@@ -748,5 +835,9 @@ __all__ = [
     "read_workflow_run",
     "resume_active_workflow_run",
     "resume_workflow_run",
+    "run_directory",
     "stream_sse_events",
+    "utc_now_ms",
+    "write_run_json_locked",
+    "write_workflow_run_locked",
 ]
