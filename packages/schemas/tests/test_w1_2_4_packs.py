@@ -28,6 +28,7 @@ from cw_schemas import (
 )
 from cw_schemas.packs.evidence_source import ReferenceChunkEvidenceSource
 from cw_schemas.packs.fragments import (
+    FragmentKindLiteral,
     InjectedSource,
     StaticTextSource,
     UpstreamArtifactSource,
@@ -72,12 +73,12 @@ def _provenance() -> ContextProvenance:
 
 
 def _fragment(
-    *, fid: str, kind: str, tokens: int, required: bool, priority: Priority = Priority.NORMAL
+    *, fid: str, kind: FragmentKindLiteral, tokens: int, required: bool, priority: Priority = Priority.NORMAL
 ) -> ContextFragment:
     return ContextFragment(
         fragment_id=fid,
         key="k_" + fid,
-        kind=kind,  # type: ignore[arg-type]
+        kind=kind,
         priority=priority,
         required=required,
         tokens_estimate=tokens,

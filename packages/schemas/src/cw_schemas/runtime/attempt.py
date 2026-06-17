@@ -11,12 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..ids import LooseId
 from ..metadata import MetadataDict
-from ..packs.context_pack import OutputFormatHint as _OutputFormatHintAlias  # 只用于类型同步, 不直接用
 from ..types import AdapterErrorKind, AttemptState, FailureType
 from .usage import RunUsage
-
-# 解决 ruff F401：导入但不重导出
-_ = _OutputFormatHintAlias  # type: ignore[unused-ignore]
 
 
 class ArtifactRef(BaseModel):
