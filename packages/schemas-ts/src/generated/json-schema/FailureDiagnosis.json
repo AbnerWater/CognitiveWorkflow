@@ -1,0 +1,92 @@
+{
+  "$defs": {
+    "FailureType": {
+      "description": "8+1 类失败分类（D-FT-1 锁定，不允许扩充至 v0.2）。",
+      "enum": [
+        "format_error",
+        "missing_output",
+        "missing_evidence",
+        "logic_gap",
+        "model_capability_limit",
+        "tool_error",
+        "ambiguous_requirement",
+        "review_rule_too_strict",
+        "unknown"
+      ],
+      "title": "FailureType",
+      "type": "string"
+    },
+    "Severity": {
+      "description": "4 级严重度（failure_taxonomy.md §8）。",
+      "enum": [
+        "blocker",
+        "major",
+        "minor",
+        "info"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "失败诊断（§3）。",
+  "properties": {
+    "failed_criteria": {
+      "description": "失败的 criterion_id（≥1）",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Failed Criteria",
+      "type": "array"
+    },
+    "failure_type": {
+      "$ref": "#/$defs/FailureType"
+    },
+    "rationale": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rationale"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity"
+    },
+    "suggested_repair_targets": {
+      "description": "JSONPath 列表",
+      "items": {
+        "type": "string"
+      },
+      "title": "Suggested Repair Targets",
+      "type": "array"
+    },
+    "summary": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    }
+  },
+  "required": [
+    "failure_type",
+    "failed_criteria",
+    "severity",
+    "summary"
+  ],
+  "title": "FailureDiagnosis",
+  "type": "object"
+}

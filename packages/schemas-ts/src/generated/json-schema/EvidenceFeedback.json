@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "description": "写回 EvidencePack 的反馈（§7）。",
+  "properties": {
+    "dangling_citation_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Dangling Citation Ids",
+      "type": "array"
+    },
+    "evidence_pack_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Evidence Pack Id",
+      "type": "string"
+    },
+    "suggested_topics": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Suggested Topics",
+      "type": "array"
+    },
+    "under_used_evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Under Used Evidence Ids",
+      "type": "array"
+    },
+    "unsupported_claim_estimates": {
+      "minimum": 0,
+      "title": "Unsupported Claim Estimates",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "evidence_pack_id",
+    "unsupported_claim_estimates"
+  ],
+  "title": "EvidenceFeedback",
+  "type": "object"
+}

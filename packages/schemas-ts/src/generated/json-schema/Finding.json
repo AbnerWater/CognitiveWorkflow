@@ -1,0 +1,90 @@
+{
+  "$defs": {
+    "Severity": {
+      "description": "4 级严重度（failure_taxonomy.md §8）。",
+      "enum": [
+        "blocker",
+        "major",
+        "minor",
+        "info"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "单项发现（§2.2）。",
+  "properties": {
+    "finding_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Finding Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "format_violation",
+        "missing_field",
+        "wrong_type",
+        "unsupported_claim",
+        "dangling_citation",
+        "numeric_out_of_range",
+        "regex_mismatch",
+        "rubric_violation",
+        "schema_violation"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "message": {
+      "minLength": 1,
+      "title": "Message",
+      "type": "string"
+    },
+    "path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "JSONPath 指向被审产物中的具体位置",
+      "title": "Path"
+    },
+    "proposed_fix_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Proposed Fix Hint"
+    },
+    "related_evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Related Evidence Ids",
+      "type": "array"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity",
+      "default": "major",
+      "description": "该 finding 自身严重度（可低于 criterion.severity）"
+    }
+  },
+  "required": [
+    "finding_id",
+    "kind",
+    "message"
+  ],
+  "title": "Finding",
+  "type": "object"
+}

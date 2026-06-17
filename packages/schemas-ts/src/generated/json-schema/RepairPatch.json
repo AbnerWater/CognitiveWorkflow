@@ -1,0 +1,1817 @@
+{
+  "$defs": {
+    "AddContextRequirementOp": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "add_context_requirement",
+          "default": "add_context_requirement",
+          "title": "Op",
+          "type": "string"
+        },
+        "requirement": {
+          "$ref": "#/$defs/ContextRequirement"
+        }
+      },
+      "required": [
+        "requirement"
+      ],
+      "title": "AddContextRequirementOp",
+      "type": "object"
+    },
+    "AddFewShotExampleOp": {
+      "additionalProperties": false,
+      "properties": {
+        "example_input": {
+          "additionalProperties": true,
+          "title": "Example Input",
+          "type": "object"
+        },
+        "example_output": {
+          "additionalProperties": true,
+          "title": "Example Output",
+          "type": "object"
+        },
+        "op": {
+          "const": "add_few_shot_example",
+          "default": "add_few_shot_example",
+          "title": "Op",
+          "type": "string"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "example_input",
+        "example_output",
+        "rationale"
+      ],
+      "title": "AddFewShotExampleOp",
+      "type": "object"
+    },
+    "AddOutputFormatHintOp": {
+      "additionalProperties": false,
+      "properties": {
+        "examples": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Examples",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "schema_only",
+            "schema_with_example",
+            "few_shot"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "op": {
+          "const": "add_output_format_hint",
+          "default": "add_output_format_hint",
+          "title": "Op",
+          "type": "string"
+        },
+        "style_notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Style Notes"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "AddOutputFormatHintOp",
+      "type": "object"
+    },
+    "AddTopicCoverageOp": {
+      "additionalProperties": false,
+      "properties": {
+        "min_evidences": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Evidences"
+        },
+        "op": {
+          "const": "add_topic_coverage",
+          "default": "add_topic_coverage",
+          "title": "Op",
+          "type": "string"
+        },
+        "topic": {
+          "minLength": 1,
+          "title": "Topic",
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic"
+      ],
+      "title": "AddTopicCoverageOp",
+      "type": "object"
+    },
+    "AppendToInstructionsOp": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "append_to_instructions",
+          "default": "append_to_instructions",
+          "title": "Op",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AppendToInstructionsOp",
+      "type": "object"
+    },
+    "AppendToSystemPromptOp": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "append_to_system_prompt",
+          "default": "append_to_system_prompt",
+          "title": "Op",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AppendToSystemPromptOp",
+      "type": "object"
+    },
+    "AppendToUserPromptTemplateOp": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "append_to_user_prompt_template",
+          "default": "append_to_user_prompt_template",
+          "title": "Op",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AppendToUserPromptTemplateOp",
+      "type": "object"
+    },
+    "BumpPriorityOp": {
+      "additionalProperties": false,
+      "properties": {
+        "fragment_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fragment Kind"
+        },
+        "from": {
+          "$ref": "#/$defs/Priority"
+        },
+        "op": {
+          "const": "bump_priority",
+          "default": "bump_priority",
+          "title": "Op",
+          "type": "string"
+        },
+        "to": {
+          "$ref": "#/$defs/Priority"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "BumpPriorityOp",
+      "type": "object"
+    },
+    "BumpTemperatureOp": {
+      "additionalProperties": false,
+      "properties": {
+        "delta": {
+          "title": "Delta",
+          "type": "number"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max"
+        },
+        "min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min"
+        },
+        "op": {
+          "const": "bump_temperature",
+          "default": "bump_temperature",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "delta"
+      ],
+      "title": "BumpTemperatureOp",
+      "type": "object"
+    },
+    "ContextRequirement": {
+      "additionalProperties": false,
+      "description": "节点上下文需求（§4）。",
+      "properties": {
+        "key": {
+          "description": "该上下文片段在 deps 中的访问键",
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "description": "来源类型；与 selector.source_kind 必须一致",
+          "enum": [
+            "upstream_artifact",
+            "project_memory",
+            "reference",
+            "static_text",
+            "user_input"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "max_tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "单片段 token 上限；超过由 ContextBuilder 摘要",
+          "title": "Max Tokens"
+        },
+        "required": {
+          "default": true,
+          "description": "缺失时是否阻塞节点",
+          "title": "Required",
+          "type": "boolean"
+        },
+        "selector": {
+          "description": "来源选择器",
+          "discriminator": {
+            "mapping": {
+              "project_memory": "#/$defs/ProjectMemorySelector",
+              "reference": "#/$defs/ReferenceSelector",
+              "static_text": "#/$defs/StaticTextSelector",
+              "upstream_artifact": "#/$defs/UpstreamArtifactSelector",
+              "user_input": "#/$defs/UserInputSelector"
+            },
+            "propertyName": "source_kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/UpstreamArtifactSelector"
+            },
+            {
+              "$ref": "#/$defs/ProjectMemorySelector"
+            },
+            {
+              "$ref": "#/$defs/ReferenceSelector"
+            },
+            {
+              "$ref": "#/$defs/StaticTextSelector"
+            },
+            {
+              "$ref": "#/$defs/UserInputSelector"
+            }
+          ],
+          "title": "Selector"
+        },
+        "summarize_if_over": {
+          "default": true,
+          "description": "超长时是否自动摘要",
+          "title": "Summarize If Over",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "kind",
+        "selector"
+      ],
+      "title": "ContextRequirement",
+      "type": "object"
+    },
+    "EnableThinkingOp": {
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Level",
+          "type": "string"
+        },
+        "op": {
+          "const": "enable_thinking",
+          "default": "enable_thinking",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "level"
+      ],
+      "title": "EnableThinkingOp",
+      "type": "object"
+    },
+    "ExtendMaxOutputTokensOp": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "extend_max_output_tokens",
+          "default": "extend_max_output_tokens",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "minimum": 1,
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "ExtendMaxOutputTokensOp",
+      "type": "object"
+    },
+    "FailureType": {
+      "description": "8+1 类失败分类（D-FT-1 锁定，不允许扩充至 v0.2）。",
+      "enum": [
+        "format_error",
+        "missing_output",
+        "missing_evidence",
+        "logic_gap",
+        "model_capability_limit",
+        "tool_error",
+        "ambiguous_requirement",
+        "review_rule_too_strict",
+        "unknown"
+      ],
+      "title": "FailureType",
+      "type": "string"
+    },
+    "InjectEvidenceLookupToolOp": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "inject_evidence_lookup_tool",
+          "default": "inject_evidence_lookup_tool",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "InjectEvidenceLookupToolOp",
+      "type": "object"
+    },
+    "InsertEdgeOp": {
+      "additionalProperties": false,
+      "properties": {
+        "edge": {
+          "additionalProperties": true,
+          "title": "Edge",
+          "type": "object"
+        },
+        "op": {
+          "const": "insert_edge",
+          "default": "insert_edge",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "edge"
+      ],
+      "title": "InsertEdgeOp",
+      "type": "object"
+    },
+    "InsertNodeOp": {
+      "additionalProperties": false,
+      "properties": {
+        "after_node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "After Node Id",
+          "type": "string"
+        },
+        "node": {
+          "additionalProperties": true,
+          "title": "Node",
+          "type": "object"
+        },
+        "op": {
+          "const": "insert_node",
+          "default": "insert_node",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "after_node_id"
+      ],
+      "title": "InsertNodeOp",
+      "type": "object"
+    },
+    "MarkConflictResolvedOp": {
+      "additionalProperties": false,
+      "properties": {
+        "conflict_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Conflict Id",
+          "type": "string"
+        },
+        "op": {
+          "const": "mark_conflict_resolved",
+          "default": "mark_conflict_resolved",
+          "title": "Op",
+          "type": "string"
+        },
+        "resolution_note": {
+          "minLength": 1,
+          "title": "Resolution Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conflict_id",
+        "resolution_note"
+      ],
+      "title": "MarkConflictResolvedOp",
+      "type": "object"
+    },
+    "PatchScope": {
+      "description": "RepairPatch.scope。",
+      "enum": [
+        "this_attempt_only",
+        "until_pass",
+        "persistent_for_run",
+        "persistent_for_workflow"
+      ],
+      "title": "PatchScope",
+      "type": "string"
+    },
+    "PinUpstreamArtifactOp": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_field": {
+          "minLength": 1,
+          "title": "Artifact Field",
+          "type": "string"
+        },
+        "as_key": {
+          "minLength": 1,
+          "title": "As Key",
+          "type": "string"
+        },
+        "from_node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "From Node Id",
+          "type": "string"
+        },
+        "op": {
+          "const": "pin_upstream_artifact",
+          "default": "pin_upstream_artifact",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_node_id",
+        "artifact_field",
+        "as_key"
+      ],
+      "title": "PinUpstreamArtifactOp",
+      "type": "object"
+    },
+    "Priority": {
+      "description": "ContextFragment.priority / Evidence.priority。",
+      "enum": [
+        "critical",
+        "high",
+        "normal",
+        "low"
+      ],
+      "title": "Priority",
+      "type": "string"
+    },
+    "ProjectMemorySelector": {
+      "additionalProperties": false,
+      "description": "读取项目级 Memory key。",
+      "properties": {
+        "memory_key": {
+          "minLength": 1,
+          "title": "Memory Key",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "project_memory",
+          "default": "project_memory",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_key"
+      ],
+      "title": "ProjectMemorySelector",
+      "type": "object"
+    },
+    "ReferenceSelector": {
+      "additionalProperties": false,
+      "description": "读取 ReferenceLibrary 资料；reference_id 可为 '$auto'（由 EvidenceBuilder 候选检索）。",
+      "properties": {
+        "chunk_filter": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "可选 chunk 过滤条件",
+          "title": "Chunk Filter"
+        },
+        "reference_id": {
+          "minLength": 1,
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "reference",
+          "default": "reference",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference_id"
+      ],
+      "title": "ReferenceSelector",
+      "type": "object"
+    },
+    "RelaxReviewRuleOp": {
+      "additionalProperties": false,
+      "properties": {
+        "criterion_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Criterion Id",
+          "type": "string"
+        },
+        "evaluation_node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Evaluation Node Id",
+          "type": "string"
+        },
+        "new_severity": {
+          "enum": [
+            "blocker",
+            "major",
+            "minor",
+            "info"
+          ],
+          "title": "New Severity",
+          "type": "string"
+        },
+        "op": {
+          "const": "relax_review_rule",
+          "default": "relax_review_rule",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evaluation_node_id",
+        "criterion_id",
+        "new_severity"
+      ],
+      "title": "RelaxReviewRuleOp",
+      "type": "object"
+    },
+    "RemoveContextRequirementOp": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "remove_context_requirement",
+          "default": "remove_context_requirement",
+          "title": "Op",
+          "type": "string"
+        },
+        "requirement_key": {
+          "minLength": 1,
+          "title": "Requirement Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requirement_key"
+      ],
+      "title": "RemoveContextRequirementOp",
+      "type": "object"
+    },
+    "RemoveEdgeOp": {
+      "additionalProperties": false,
+      "properties": {
+        "edge_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Edge Id",
+          "type": "string"
+        },
+        "op": {
+          "const": "remove_edge",
+          "default": "remove_edge",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "edge_id"
+      ],
+      "title": "RemoveEdgeOp",
+      "type": "object"
+    },
+    "RemoveNodeOp": {
+      "additionalProperties": false,
+      "properties": {
+        "node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "op": {
+          "const": "remove_node",
+          "default": "remove_node",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id"
+      ],
+      "title": "RemoveNodeOp",
+      "type": "object"
+    },
+    "RepairKind": {
+      "description": "6 类 patch_kind（D-RP-1 锁定）。",
+      "enum": [
+        "prompt_patch",
+        "context_patch",
+        "evidence_patch",
+        "model_escalation",
+        "workflow_patch",
+        "human_checkpoint"
+      ],
+      "title": "RepairKind",
+      "type": "string"
+    },
+    "RepairProvenance": {
+      "additionalProperties": false,
+      "description": "修复过程源信息（§6）。",
+      "properties": {
+        "attempts_window_used": {
+          "minimum": 1,
+          "title": "Attempts Window Used",
+          "type": "integer"
+        },
+        "evaluation_id": {
+          "description": "与顶层 evaluation_id 一致（冗余便于检索）",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Evaluation Id",
+          "type": "string"
+        },
+        "patch_hash": {
+          "description": "RepairPatch 整体（去时间戳）的稳定 hash",
+          "minLength": 1,
+          "title": "Patch Hash",
+          "type": "string"
+        },
+        "repair_finished_at": {
+          "description": "ISO-8601",
+          "title": "Repair Finished At",
+          "type": "string"
+        },
+        "repair_model_profile_id": {
+          "minLength": 1,
+          "title": "Repair Model Profile Id",
+          "type": "string"
+        },
+        "repair_started_at": {
+          "description": "ISO-8601",
+          "title": "Repair Started At",
+          "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunUsage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "repair_started_at",
+        "repair_finished_at",
+        "repair_model_profile_id",
+        "attempts_window_used",
+        "evaluation_id",
+        "patch_hash"
+      ],
+      "title": "RepairProvenance",
+      "type": "object"
+    },
+    "ReplaceEvidenceSetOp": {
+      "additionalProperties": false,
+      "properties": {
+        "criterion_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Criterion Id",
+          "type": "string"
+        },
+        "min_count": {
+          "minimum": 1,
+          "title": "Min Count",
+          "type": "integer"
+        },
+        "op": {
+          "const": "replace_evidence_set",
+          "default": "replace_evidence_set",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "criterion_id",
+        "min_count"
+      ],
+      "title": "ReplaceEvidenceSetOp",
+      "type": "object"
+    },
+    "RequestUserClarificationOp": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_answers": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Candidate Answers",
+          "type": "array"
+        },
+        "op": {
+          "const": "request_user_clarification",
+          "default": "request_user_clarification",
+          "title": "Op",
+          "type": "string"
+        },
+        "question": {
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "RequestUserClarificationOp",
+      "type": "object"
+    },
+    "RequestUserDecisionOp": {
+      "additionalProperties": false,
+      "properties": {
+        "decisions": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "minItems": 1,
+          "title": "Decisions",
+          "type": "array"
+        },
+        "default_decision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Decision"
+        },
+        "op": {
+          "const": "request_user_decision",
+          "default": "request_user_decision",
+          "title": "Op",
+          "type": "string"
+        },
+        "prompt_to_user": {
+          "minLength": 1,
+          "title": "Prompt To User",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt_to_user",
+        "decisions"
+      ],
+      "title": "RequestUserDecisionOp",
+      "type": "object"
+    },
+    "RequestUserEditOp": {
+      "additionalProperties": false,
+      "properties": {
+        "edit_hint": {
+          "minLength": 1,
+          "title": "Edit Hint",
+          "type": "string"
+        },
+        "op": {
+          "const": "request_user_edit",
+          "default": "request_user_edit",
+          "title": "Op",
+          "type": "string"
+        },
+        "target_artifact_path": {
+          "minLength": 1,
+          "title": "Target Artifact Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_artifact_path",
+        "edit_hint"
+      ],
+      "title": "RequestUserEditOp",
+      "type": "object"
+    },
+    "RequestUserInputOp": {
+      "additionalProperties": false,
+      "properties": {
+        "input_schema": {
+          "additionalProperties": true,
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "op": {
+          "const": "request_user_input",
+          "default": "request_user_input",
+          "title": "Op",
+          "type": "string"
+        },
+        "prompt_to_user": {
+          "minLength": 1,
+          "title": "Prompt To User",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_schema",
+        "prompt_to_user"
+      ],
+      "title": "RequestUserInputOp",
+      "type": "object"
+    },
+    "ReversalHint": {
+      "additionalProperties": false,
+      "description": "反向操作提示（§4）。",
+      "properties": {
+        "inverse_operations": {
+          "anyOf": [
+            {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "add_context_requirement": "#/$defs/AddContextRequirementOp",
+                    "add_few_shot_example": "#/$defs/AddFewShotExampleOp",
+                    "add_output_format_hint": "#/$defs/AddOutputFormatHintOp",
+                    "add_topic_coverage": "#/$defs/AddTopicCoverageOp",
+                    "append_to_instructions": "#/$defs/AppendToInstructionsOp",
+                    "append_to_system_prompt": "#/$defs/AppendToSystemPromptOp",
+                    "append_to_user_prompt_template": "#/$defs/AppendToUserPromptTemplateOp",
+                    "bump_priority": "#/$defs/BumpPriorityOp",
+                    "bump_temperature": "#/$defs/BumpTemperatureOp",
+                    "enable_thinking": "#/$defs/EnableThinkingOp",
+                    "extend_max_output_tokens": "#/$defs/ExtendMaxOutputTokensOp",
+                    "inject_evidence_lookup_tool": "#/$defs/InjectEvidenceLookupToolOp",
+                    "insert_edge": "#/$defs/InsertEdgeOp",
+                    "insert_node": "#/$defs/InsertNodeOp",
+                    "mark_conflict_resolved": "#/$defs/MarkConflictResolvedOp",
+                    "pin_upstream_artifact": "#/$defs/PinUpstreamArtifactOp",
+                    "relax_review_rule": "#/$defs/RelaxReviewRuleOp",
+                    "remove_context_requirement": "#/$defs/RemoveContextRequirementOp",
+                    "remove_edge": "#/$defs/RemoveEdgeOp",
+                    "remove_node": "#/$defs/RemoveNodeOp",
+                    "replace_evidence_set": "#/$defs/ReplaceEvidenceSetOp",
+                    "request_user_clarification": "#/$defs/RequestUserClarificationOp",
+                    "request_user_decision": "#/$defs/RequestUserDecisionOp",
+                    "request_user_edit": "#/$defs/RequestUserEditOp",
+                    "request_user_input": "#/$defs/RequestUserInputOp",
+                    "split_node": "#/$defs/SplitNodeOp",
+                    "summarize_long_fragments": "#/$defs/SummarizeLongFragmentsOp",
+                    "switch_to_model_profile": "#/$defs/SwitchToModelProfileOp",
+                    "tighten_confidence_threshold": "#/$defs/TightenConfidenceThresholdOp",
+                    "tighten_constraint": "#/$defs/TightenConstraintOp",
+                    "tighten_relevance_threshold": "#/$defs/TightenRelevanceThresholdOp",
+                    "update_context_requirement": "#/$defs/UpdateContextRequirementOp",
+                    "update_node": "#/$defs/UpdateNodeOp"
+                  },
+                  "propertyName": "op"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/AppendToSystemPromptOp"
+                  },
+                  {
+                    "$ref": "#/$defs/AppendToInstructionsOp"
+                  },
+                  {
+                    "$ref": "#/$defs/AppendToUserPromptTemplateOp"
+                  },
+                  {
+                    "$ref": "#/$defs/AddFewShotExampleOp"
+                  },
+                  {
+                    "$ref": "#/$defs/AddOutputFormatHintOp"
+                  },
+                  {
+                    "$ref": "#/$defs/TightenConstraintOp"
+                  },
+                  {
+                    "$ref": "#/$defs/AddContextRequirementOp"
+                  },
+                  {
+                    "$ref": "#/$defs/RemoveContextRequirementOp"
+                  },
+                  {
+                    "$ref": "#/$defs/UpdateContextRequirementOp"
+                  },
+                  {
+                    "$ref": "#/$defs/BumpPriorityOp"
+                  },
+                  {
+                    "$ref": "#/$defs/SummarizeLongFragmentsOp"
+                  },
+                  {
+                    "$ref": "#/$defs/PinUpstreamArtifactOp"
+                  },
+                  {
+                    "$ref": "#/$defs/AddTopicCoverageOp"
+                  },
+                  {
+                    "$ref": "#/$defs/ReplaceEvidenceSetOp"
+                  },
+                  {
+                    "$ref": "#/$defs/TightenRelevanceThresholdOp"
+                  },
+                  {
+                    "$ref": "#/$defs/TightenConfidenceThresholdOp"
+                  },
+                  {
+                    "$ref": "#/$defs/MarkConflictResolvedOp"
+                  },
+                  {
+                    "$ref": "#/$defs/InjectEvidenceLookupToolOp"
+                  },
+                  {
+                    "$ref": "#/$defs/SwitchToModelProfileOp"
+                  },
+                  {
+                    "$ref": "#/$defs/BumpTemperatureOp"
+                  },
+                  {
+                    "$ref": "#/$defs/EnableThinkingOp"
+                  },
+                  {
+                    "$ref": "#/$defs/ExtendMaxOutputTokensOp"
+                  },
+                  {
+                    "$ref": "#/$defs/InsertNodeOp"
+                  },
+                  {
+                    "$ref": "#/$defs/RemoveNodeOp"
+                  },
+                  {
+                    "$ref": "#/$defs/UpdateNodeOp"
+                  },
+                  {
+                    "$ref": "#/$defs/InsertEdgeOp"
+                  },
+                  {
+                    "$ref": "#/$defs/RemoveEdgeOp"
+                  },
+                  {
+                    "$ref": "#/$defs/RelaxReviewRuleOp"
+                  },
+                  {
+                    "$ref": "#/$defs/SplitNodeOp"
+                  },
+                  {
+                    "$ref": "#/$defs/RequestUserDecisionOp"
+                  },
+                  {
+                    "$ref": "#/$defs/RequestUserEditOp"
+                  },
+                  {
+                    "$ref": "#/$defs/RequestUserInputOp"
+                  },
+                  {
+                    "$ref": "#/$defs/RequestUserClarificationOp"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "mode=explicit 时手动写出反向 Operation",
+          "title": "Inverse Operations"
+        },
+        "mode": {
+          "$ref": "#/$defs/ReversalMode"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "ReversalHint",
+      "type": "object"
+    },
+    "ReversalMode": {
+      "description": "RepairPatch.reversal_hint.mode。",
+      "enum": [
+        "auto",
+        "explicit",
+        "non_reversible"
+      ],
+      "title": "ReversalMode",
+      "type": "string"
+    },
+    "RiskLevel": {
+      "description": "RepairPatch.risk_level + node_contract.NodeCapabilityRequirement.risk_level。",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "RiskLevel",
+      "type": "string"
+    },
+    "RunUsage": {
+      "additionalProperties": false,
+      "description": "模型调用 token / cost 用量。\n\n字段与 Pydantic AI `RunUsage` 兼容，便于 Adapter 直接转译。",
+      "properties": {
+        "cache_creation_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cache Creation Input Tokens",
+          "type": "integer"
+        },
+        "cache_read_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cache Read Input Tokens",
+          "type": "integer"
+        },
+        "est_cost_usd": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Est Cost Usd"
+        },
+        "input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "requests": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Requests",
+          "type": "integer"
+        },
+        "total_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Total Tokens",
+          "type": "integer"
+        }
+      },
+      "title": "RunUsage",
+      "type": "object"
+    },
+    "SplitNodeOp": {
+      "additionalProperties": false,
+      "properties": {
+        "node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "op": {
+          "const": "split_node",
+          "default": "split_node",
+          "title": "Op",
+          "type": "string"
+        },
+        "split_into": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "minItems": 2,
+          "title": "Split Into",
+          "type": "array"
+        }
+      },
+      "required": [
+        "node_id",
+        "split_into"
+      ],
+      "title": "SplitNodeOp",
+      "type": "object"
+    },
+    "StaticTextSelector": {
+      "additionalProperties": false,
+      "description": "直接嵌入静态文本。",
+      "properties": {
+        "source_kind": {
+          "const": "static_text",
+          "default": "static_text",
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "StaticTextSelector",
+      "type": "object"
+    },
+    "SummarizeLongFragmentsOp": {
+      "additionalProperties": false,
+      "properties": {
+        "above_tokens": {
+          "minimum": 1,
+          "title": "Above Tokens",
+          "type": "integer"
+        },
+        "op": {
+          "const": "summarize_long_fragments",
+          "default": "summarize_long_fragments",
+          "title": "Op",
+          "type": "string"
+        },
+        "target_tokens": {
+          "minimum": 1,
+          "title": "Target Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "above_tokens",
+        "target_tokens"
+      ],
+      "title": "SummarizeLongFragmentsOp",
+      "type": "object"
+    },
+    "SwitchToModelProfileOp": {
+      "additionalProperties": false,
+      "properties": {
+        "model_profile_id": {
+          "minLength": 1,
+          "title": "Model Profile Id",
+          "type": "string"
+        },
+        "op": {
+          "const": "switch_to_model_profile",
+          "default": "switch_to_model_profile",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_profile_id",
+        "reason"
+      ],
+      "title": "SwitchToModelProfileOp",
+      "type": "object"
+    },
+    "TightenConfidenceThresholdOp": {
+      "additionalProperties": false,
+      "properties": {
+        "min_confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Confidence",
+          "type": "number"
+        },
+        "op": {
+          "const": "tighten_confidence_threshold",
+          "default": "tighten_confidence_threshold",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "min_confidence"
+      ],
+      "title": "TightenConfidenceThresholdOp",
+      "type": "object"
+    },
+    "TightenConstraintOp": {
+      "additionalProperties": false,
+      "properties": {
+        "constraint_text": {
+          "minLength": 1,
+          "title": "Constraint Text",
+          "type": "string"
+        },
+        "op": {
+          "const": "tighten_constraint",
+          "default": "tighten_constraint",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "constraint_text"
+      ],
+      "title": "TightenConstraintOp",
+      "type": "object"
+    },
+    "TightenRelevanceThresholdOp": {
+      "additionalProperties": false,
+      "properties": {
+        "min_relevance": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Relevance",
+          "type": "number"
+        },
+        "op": {
+          "const": "tighten_relevance_threshold",
+          "default": "tighten_relevance_threshold",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "min_relevance"
+      ],
+      "title": "TightenRelevanceThresholdOp",
+      "type": "object"
+    },
+    "UpdateContextRequirementOp": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "update_context_requirement",
+          "default": "update_context_requirement",
+          "title": "Op",
+          "type": "string"
+        },
+        "patch": {
+          "additionalProperties": true,
+          "title": "Patch",
+          "type": "object"
+        },
+        "requirement_key": {
+          "minLength": 1,
+          "title": "Requirement Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requirement_key",
+        "patch"
+      ],
+      "title": "UpdateContextRequirementOp",
+      "type": "object"
+    },
+    "UpdateNodeOp": {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "additionalProperties": true,
+          "title": "Changes",
+          "type": "object"
+        },
+        "node_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "op": {
+          "const": "update_node",
+          "default": "update_node",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "changes"
+      ],
+      "title": "UpdateNodeOp",
+      "type": "object"
+    },
+    "UpstreamArtifactSelector": {
+      "additionalProperties": false,
+      "description": "从上游节点产物提取数据。",
+      "properties": {
+        "artifact_field": {
+          "description": "JSONPath；如 'research_questions[*]'",
+          "minLength": 1,
+          "title": "Artifact Field",
+          "type": "string"
+        },
+        "artifact_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "哪一次 Run；默认当前 run",
+          "title": "Artifact Run Id"
+        },
+        "from_node_id": {
+          "description": "上游节点 ID",
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "From Node Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "upstream_artifact",
+          "default": "upstream_artifact",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_node_id",
+        "artifact_field"
+      ],
+      "title": "UpstreamArtifactSelector",
+      "type": "object"
+    },
+    "UserInputSelector": {
+      "additionalProperties": false,
+      "description": "读取 Run 启动时的初始输入字段。",
+      "properties": {
+        "input_field": {
+          "minLength": 1,
+          "title": "Input Field",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "user_input",
+          "default": "user_input",
+          "title": "Source Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_field"
+      ],
+      "title": "UserInputSelector",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "修复补丁（§1）。\n\n强约束（D-RP-1）：6 类 patch_kind 固定；Phase 1 RepairAgent 仅允许 4 类。",
+  "properties": {
+    "addresses_failure_types": {
+      "items": {
+        "$ref": "#/$defs/FailureType"
+      },
+      "minItems": 1,
+      "title": "Addresses Failure Types",
+      "type": "array"
+    },
+    "applies_to_attempts": {
+      "items": {
+        "maxLength": 64,
+        "minLength": 3,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+        "type": "string"
+      },
+      "title": "Applies To Attempts",
+      "type": "array"
+    },
+    "evaluation_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Evaluation Id",
+      "type": "string"
+    },
+    "expected_effect": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Expected Effect",
+      "type": "string"
+    },
+    "expires_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "ISO-8601",
+      "title": "Expires At"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "operations": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "add_context_requirement": "#/$defs/AddContextRequirementOp",
+            "add_few_shot_example": "#/$defs/AddFewShotExampleOp",
+            "add_output_format_hint": "#/$defs/AddOutputFormatHintOp",
+            "add_topic_coverage": "#/$defs/AddTopicCoverageOp",
+            "append_to_instructions": "#/$defs/AppendToInstructionsOp",
+            "append_to_system_prompt": "#/$defs/AppendToSystemPromptOp",
+            "append_to_user_prompt_template": "#/$defs/AppendToUserPromptTemplateOp",
+            "bump_priority": "#/$defs/BumpPriorityOp",
+            "bump_temperature": "#/$defs/BumpTemperatureOp",
+            "enable_thinking": "#/$defs/EnableThinkingOp",
+            "extend_max_output_tokens": "#/$defs/ExtendMaxOutputTokensOp",
+            "inject_evidence_lookup_tool": "#/$defs/InjectEvidenceLookupToolOp",
+            "insert_edge": "#/$defs/InsertEdgeOp",
+            "insert_node": "#/$defs/InsertNodeOp",
+            "mark_conflict_resolved": "#/$defs/MarkConflictResolvedOp",
+            "pin_upstream_artifact": "#/$defs/PinUpstreamArtifactOp",
+            "relax_review_rule": "#/$defs/RelaxReviewRuleOp",
+            "remove_context_requirement": "#/$defs/RemoveContextRequirementOp",
+            "remove_edge": "#/$defs/RemoveEdgeOp",
+            "remove_node": "#/$defs/RemoveNodeOp",
+            "replace_evidence_set": "#/$defs/ReplaceEvidenceSetOp",
+            "request_user_clarification": "#/$defs/RequestUserClarificationOp",
+            "request_user_decision": "#/$defs/RequestUserDecisionOp",
+            "request_user_edit": "#/$defs/RequestUserEditOp",
+            "request_user_input": "#/$defs/RequestUserInputOp",
+            "split_node": "#/$defs/SplitNodeOp",
+            "summarize_long_fragments": "#/$defs/SummarizeLongFragmentsOp",
+            "switch_to_model_profile": "#/$defs/SwitchToModelProfileOp",
+            "tighten_confidence_threshold": "#/$defs/TightenConfidenceThresholdOp",
+            "tighten_constraint": "#/$defs/TightenConstraintOp",
+            "tighten_relevance_threshold": "#/$defs/TightenRelevanceThresholdOp",
+            "update_context_requirement": "#/$defs/UpdateContextRequirementOp",
+            "update_node": "#/$defs/UpdateNodeOp"
+          },
+          "propertyName": "op"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/AppendToSystemPromptOp"
+          },
+          {
+            "$ref": "#/$defs/AppendToInstructionsOp"
+          },
+          {
+            "$ref": "#/$defs/AppendToUserPromptTemplateOp"
+          },
+          {
+            "$ref": "#/$defs/AddFewShotExampleOp"
+          },
+          {
+            "$ref": "#/$defs/AddOutputFormatHintOp"
+          },
+          {
+            "$ref": "#/$defs/TightenConstraintOp"
+          },
+          {
+            "$ref": "#/$defs/AddContextRequirementOp"
+          },
+          {
+            "$ref": "#/$defs/RemoveContextRequirementOp"
+          },
+          {
+            "$ref": "#/$defs/UpdateContextRequirementOp"
+          },
+          {
+            "$ref": "#/$defs/BumpPriorityOp"
+          },
+          {
+            "$ref": "#/$defs/SummarizeLongFragmentsOp"
+          },
+          {
+            "$ref": "#/$defs/PinUpstreamArtifactOp"
+          },
+          {
+            "$ref": "#/$defs/AddTopicCoverageOp"
+          },
+          {
+            "$ref": "#/$defs/ReplaceEvidenceSetOp"
+          },
+          {
+            "$ref": "#/$defs/TightenRelevanceThresholdOp"
+          },
+          {
+            "$ref": "#/$defs/TightenConfidenceThresholdOp"
+          },
+          {
+            "$ref": "#/$defs/MarkConflictResolvedOp"
+          },
+          {
+            "$ref": "#/$defs/InjectEvidenceLookupToolOp"
+          },
+          {
+            "$ref": "#/$defs/SwitchToModelProfileOp"
+          },
+          {
+            "$ref": "#/$defs/BumpTemperatureOp"
+          },
+          {
+            "$ref": "#/$defs/EnableThinkingOp"
+          },
+          {
+            "$ref": "#/$defs/ExtendMaxOutputTokensOp"
+          },
+          {
+            "$ref": "#/$defs/InsertNodeOp"
+          },
+          {
+            "$ref": "#/$defs/RemoveNodeOp"
+          },
+          {
+            "$ref": "#/$defs/UpdateNodeOp"
+          },
+          {
+            "$ref": "#/$defs/InsertEdgeOp"
+          },
+          {
+            "$ref": "#/$defs/RemoveEdgeOp"
+          },
+          {
+            "$ref": "#/$defs/RelaxReviewRuleOp"
+          },
+          {
+            "$ref": "#/$defs/SplitNodeOp"
+          },
+          {
+            "$ref": "#/$defs/RequestUserDecisionOp"
+          },
+          {
+            "$ref": "#/$defs/RequestUserEditOp"
+          },
+          {
+            "$ref": "#/$defs/RequestUserInputOp"
+          },
+          {
+            "$ref": "#/$defs/RequestUserClarificationOp"
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Operations",
+      "type": "array"
+    },
+    "patch_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Patch Id",
+      "type": "string"
+    },
+    "patch_kind": {
+      "$ref": "#/$defs/RepairKind"
+    },
+    "provenance": {
+      "$ref": "#/$defs/RepairProvenance"
+    },
+    "rationale": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rationale"
+    },
+    "repair_attempt_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Repair Attempt Id",
+      "type": "string"
+    },
+    "repair_node_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Repair Node Id",
+      "type": "string"
+    },
+    "reversal_hint": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReversalHint"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "risk_level": {
+      "$ref": "#/$defs/RiskLevel"
+    },
+    "run_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "$ref": "#/$defs/PatchScope",
+      "default": "until_pass"
+    },
+    "target_node_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Target Node Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "patch_id",
+    "repair_node_id",
+    "repair_attempt_id",
+    "target_node_id",
+    "evaluation_id",
+    "run_id",
+    "patch_kind",
+    "addresses_failure_types",
+    "operations",
+    "expected_effect",
+    "risk_level",
+    "provenance"
+  ],
+  "title": "RepairPatch",
+  "type": "object"
+}

@@ -1,0 +1,81 @@
+{
+  "additionalProperties": false,
+  "description": "节点产物引用（stream_event.md §1.5 + agent_adapter.md §6 复用）。",
+  "properties": {
+    "artifact_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Artifact Id",
+      "type": "string"
+    },
+    "display_name": {
+      "minLength": 1,
+      "title": "Display Name",
+      "type": "string"
+    },
+    "kind": {
+      "description": "artifact / pack / evaluation / patch / file / image / chart",
+      "title": "Kind",
+      "type": "string"
+    },
+    "mime_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mime Type"
+    },
+    "path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "项目相对路径",
+      "title": "Path"
+    },
+    "preview_text": {
+      "anyOf": [
+        {
+          "maxLength": 500,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Preview Text"
+    },
+    "size_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Size Bytes"
+    }
+  },
+  "required": [
+    "artifact_id",
+    "kind",
+    "display_name"
+  ],
+  "title": "ArtifactRef",
+  "type": "object"
+}

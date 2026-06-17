@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "RunUsage": {
+      "additionalProperties": false,
+      "description": "模型调用 token / cost 用量。\n\n字段与 Pydantic AI `RunUsage` 兼容，便于 Adapter 直接转译。",
+      "properties": {
+        "cache_creation_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cache Creation Input Tokens",
+          "type": "integer"
+        },
+        "cache_read_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cache Read Input Tokens",
+          "type": "integer"
+        },
+        "est_cost_usd": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Est Cost Usd"
+        },
+        "input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "requests": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Requests",
+          "type": "integer"
+        },
+        "total_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Total Tokens",
+          "type": "integer"
+        }
+      },
+      "title": "RunUsage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "修复过程源信息（§6）。",
+  "properties": {
+    "attempts_window_used": {
+      "minimum": 1,
+      "title": "Attempts Window Used",
+      "type": "integer"
+    },
+    "evaluation_id": {
+      "description": "与顶层 evaluation_id 一致（冗余便于检索）",
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Evaluation Id",
+      "type": "string"
+    },
+    "patch_hash": {
+      "description": "RepairPatch 整体（去时间戳）的稳定 hash",
+      "minLength": 1,
+      "title": "Patch Hash",
+      "type": "string"
+    },
+    "repair_finished_at": {
+      "description": "ISO-8601",
+      "title": "Repair Finished At",
+      "type": "string"
+    },
+    "repair_model_profile_id": {
+      "minLength": 1,
+      "title": "Repair Model Profile Id",
+      "type": "string"
+    },
+    "repair_started_at": {
+      "description": "ISO-8601",
+      "title": "Repair Started At",
+      "type": "string"
+    },
+    "usage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunUsage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "repair_started_at",
+    "repair_finished_at",
+    "repair_model_profile_id",
+    "attempts_window_used",
+    "evaluation_id",
+    "patch_hash"
+  ],
+  "title": "RepairProvenance",
+  "type": "object"
+}

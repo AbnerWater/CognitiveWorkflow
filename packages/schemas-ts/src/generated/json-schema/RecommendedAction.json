@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "description": "Engine 路由动作（§4）。",
+  "properties": {
+    "action": {
+      "enum": [
+        "pass_to_next",
+        "repair_with_patch",
+        "retry_same",
+        "request_evidence",
+        "human_checkpoint",
+        "abort"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "note_to_user": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Note To User"
+    },
+    "target_human_node_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "action=human_checkpoint 时必填",
+      "title": "Target Human Node Id"
+    },
+    "target_repair_node_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "action=repair_with_patch 时必填",
+      "title": "Target Repair Node Id"
+    }
+  },
+  "required": [
+    "action"
+  ],
+  "title": "RecommendedAction",
+  "type": "object"
+}

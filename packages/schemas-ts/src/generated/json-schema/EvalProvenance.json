@@ -1,0 +1,79 @@
+{
+  "additionalProperties": false,
+  "description": "评价过程源信息（§6）。",
+  "properties": {
+    "context_pack_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Context Pack Id",
+      "type": "string"
+    },
+    "criteria_hash": {
+      "minLength": 1,
+      "title": "Criteria Hash",
+      "type": "string"
+    },
+    "eval_finished_at": {
+      "description": "ISO-8601",
+      "title": "Eval Finished At",
+      "type": "string"
+    },
+    "eval_hash": {
+      "description": "EvaluationResult 整体（去时间戳）的稳定 hash",
+      "minLength": 1,
+      "title": "Eval Hash",
+      "type": "string"
+    },
+    "eval_started_at": {
+      "description": "ISO-8601",
+      "title": "Eval Started At",
+      "type": "string"
+    },
+    "evaluator_model_profile_id": {
+      "minLength": 1,
+      "title": "Evaluator Model Profile Id",
+      "type": "string"
+    },
+    "evidence_pack_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Pack Id"
+    },
+    "programmatic_validators": {
+      "description": "实际运行的程序化校验器 IDs",
+      "items": {
+        "type": "string"
+      },
+      "title": "Programmatic Validators",
+      "type": "array"
+    },
+    "target_artifact_hash": {
+      "description": "被审产物的稳定 hash",
+      "minLength": 1,
+      "title": "Target Artifact Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "eval_started_at",
+    "eval_finished_at",
+    "evaluator_model_profile_id",
+    "context_pack_id",
+    "target_artifact_hash",
+    "criteria_hash",
+    "eval_hash"
+  ],
+  "title": "EvalProvenance",
+  "type": "object"
+}

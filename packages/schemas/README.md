@@ -32,19 +32,9 @@ src/cw_schemas/
 ├── types.py                # 基础类型 / 枚举（FailureType / Severity / NodeType / EdgeType / ...）
 ├── ids.py                  # ID 字段约束（ULID-shaped string）
 ├── metadata.py             # metadata 命名空间 helper
-└── workflow/
-    ├── __init__.py
-    ├── graph.py            # WorkflowGraph + Edge + 顶层 Policy
-    ├── nodes.py            # 8 类 WorkflowNode 差异化字段（start/end/exec/eval/repair/human/tool/memory/subflow）
-    └── policies.py         # ExecutionPolicy / ReviewPolicy / WorkflowModelPolicy
-```
-
-后续 milestone 内追加：
-
-```
-src/cw_schemas/
-├── contract/         # NodeContract（M1.2 W1.2.3）
-├── packs/            # ContextPack / EvidencePack / ExecutionPack（M1.2 W1.2.4）
-├── runtime/          # EvaluationResult / RepairPatch / NodeAttempt（M1.2 W1.2.5）
-└── events/           # StreamEvent（M1.2 W1.2.6）
+├── workflow/                # WorkflowGraph / WorkflowNode / policies
+├── contract/                # NodeContract（M1.2 W1.2.3）
+├── packs/                   # ContextPack / EvidencePack / ExecutionPack（M1.2 W1.2.4）
+├── runtime/                 # EvaluationResult / RepairPatch / NodeAttempt（M1.2 W1.2.5）
+└── events/                  # StreamEvent 12 大 category envelope（M1.2 W1.2.6）
 ```

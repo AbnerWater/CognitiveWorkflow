@@ -388,6 +388,44 @@ class EventCategory(StrEnum):
     SYSTEM = "system"
 
 
+class EventPhase(StrEnum):
+    """StreamEvent.phase（stream_event.md §1.3）。"""
+
+    RUN_CREATED = "run.created"
+    RUN_STARTED = "run.started"
+    RUN_PAUSED = "run.paused"
+    RUN_RESUMED = "run.resumed"
+    RUN_COMPLETED = "run.completed"
+    RUN_FAILED = "run.failed"
+    RUN_CANCELLED = "run.cancelled"
+    NODE_IDLE = "node.idle"
+    NODE_READY = "node.ready"
+    NODE_RUNNING = "node.running"
+    NODE_VALIDATING = "node.validating"
+    NODE_REVIEWING = "node.reviewing"
+    NODE_PASSED = "node.passed"
+    NODE_REVIEW_FAILED = "node.review_failed"
+    NODE_REPAIRING = "node.repairing"
+    NODE_RETRYING = "node.retrying"
+    NODE_WAITING_USER = "node.waiting_user"
+    NODE_SKIPPED = "node.skipped"
+    NODE_FAILED = "node.failed"
+    ATTEMPT_STARTED = "attempt.started"
+    ATTEMPT_STREAMING = "attempt.streaming"
+    ATTEMPT_TOOL_CALLING = "attempt.tool_calling"
+    ATTEMPT_VALIDATING = "attempt.validating"
+    ATTEMPT_COMPLETED = "attempt.completed"
+    ATTEMPT_FAILED = "attempt.failed"
+    PLANNING_EXPLORING = "planning.exploring"
+    PLANNING_UNDERSTANDING = "planning.understanding"
+    PLANNING_CLARIFYING = "planning.clarifying"
+    PLANNING_PLANNING = "planning.planning"
+    PLANNING_VALIDATING = "planning.validating"
+    PLANNING_PREVIEWING = "planning.previewing"
+    PLANNING_REVISING = "planning.revising"
+    PLANNING_CREATED = "planning.created"
+
+
 class DisplayLevel(StrEnum):
     """UI 折叠分级。"""
 
@@ -471,6 +509,7 @@ __all__ = [
     "DisplayLevel",
     "EdgeType",
     "EventCategory",
+    "EventPhase",
     "EvidenceConflictKind",
     "ExecutionMode",
     "FailureType",

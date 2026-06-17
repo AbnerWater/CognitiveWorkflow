@@ -1,0 +1,85 @@
+{
+  "additionalProperties": false,
+  "description": "attempt 源信息（agent_adapter.md §6.1）。",
+  "properties": {
+    "adapter_id": {
+      "minLength": 1,
+      "title": "Adapter Id",
+      "type": "string"
+    },
+    "adapter_version": {
+      "minLength": 1,
+      "title": "Adapter Version",
+      "type": "string"
+    },
+    "context_pack_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Context Pack Id",
+      "type": "string"
+    },
+    "evidence_pack_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Pack Id"
+    },
+    "model_profile_id": {
+      "minLength": 1,
+      "title": "Model Profile Id",
+      "type": "string"
+    },
+    "model_settings_hash": {
+      "description": "实际使用的设置 hash",
+      "minLength": 1,
+      "title": "Model Settings Hash",
+      "type": "string"
+    },
+    "outcome_hash": {
+      "minLength": 1,
+      "title": "Outcome Hash",
+      "type": "string"
+    },
+    "pydantic_ai_traceparent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Adapter=PydanticAI 时回填",
+      "title": "Pydantic Ai Traceparent"
+    },
+    "tools_used": {
+      "description": "调用过的 tool / skill / mcp ID",
+      "items": {
+        "type": "string"
+      },
+      "title": "Tools Used",
+      "type": "array"
+    }
+  },
+  "required": [
+    "adapter_id",
+    "adapter_version",
+    "model_profile_id",
+    "model_settings_hash",
+    "context_pack_id",
+    "outcome_hash"
+  ],
+  "title": "AttemptProvenance",
+  "type": "object"
+}

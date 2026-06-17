@@ -1,0 +1,277 @@
+{
+  "$defs": {
+    "CriterionKind": {
+      "description": "EvaluationCriterion.kind。",
+      "enum": [
+        "rubric",
+        "programmatic",
+        "regex",
+        "schema",
+        "citation",
+        "numeric_threshold"
+      ],
+      "title": "CriterionKind",
+      "type": "string"
+    },
+    "CriterionResult": {
+      "additionalProperties": false,
+      "description": "单条审查规则的判定结果（§2.1）。",
+      "properties": {
+        "criterion_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Criterion Id",
+          "type": "string"
+        },
+        "description": {
+          "description": "复制自契约（便于审计快速阅读）",
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "evaluator_kind": {
+          "enum": [
+            "llm_rubric",
+            "programmatic_validator",
+            "hybrid",
+            "human"
+          ],
+          "title": "Evaluator Kind",
+          "type": "string"
+        },
+        "evaluator_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "LLM judge profile_id 或 validator_id",
+          "title": "Evaluator Ref"
+        },
+        "evidence_used_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Used Ids",
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/CriterionKind"
+        },
+        "latency_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latency Ms"
+        },
+        "passed_for_this_criterion": {
+          "title": "Passed For This Criterion",
+          "type": "boolean"
+        },
+        "score_for_this_criterion": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score For This Criterion",
+          "type": "number"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "tokens_estimate": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokens Estimate"
+        },
+        "weight": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "criterion_id",
+        "description",
+        "kind",
+        "severity",
+        "weight",
+        "passed_for_this_criterion",
+        "score_for_this_criterion",
+        "evaluator_kind"
+      ],
+      "title": "CriterionResult",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "单项发现（§2.2）。",
+      "properties": {
+        "finding_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Finding Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "format_violation",
+            "missing_field",
+            "wrong_type",
+            "unsupported_claim",
+            "dangling_citation",
+            "numeric_out_of_range",
+            "regex_mismatch",
+            "rubric_violation",
+            "schema_violation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "JSONPath 指向被审产物中的具体位置",
+          "title": "Path"
+        },
+        "proposed_fix_hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proposed Fix Hint"
+        },
+        "related_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Related Evidence Ids",
+          "type": "array"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity",
+          "default": "major",
+          "description": "该 finding 自身严重度（可低于 criterion.severity）"
+        }
+      },
+      "required": [
+        "finding_id",
+        "kind",
+        "message"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "Severity": {
+      "description": "4 级严重度（failure_taxonomy.md §8）。",
+      "enum": [
+        "blocker",
+        "major",
+        "minor",
+        "info"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "单个 judge 的独立判定（§5.1）。",
+  "properties": {
+    "criterion_results": {
+      "items": {
+        "$ref": "#/$defs/CriterionResult"
+      },
+      "title": "Criterion Results",
+      "type": "array"
+    },
+    "judge_id": {
+      "description": "claude-sonnet-judge / programmatic_v1 / 等",
+      "minLength": 1,
+      "title": "Judge Id",
+      "type": "string"
+    },
+    "judge_kind": {
+      "enum": [
+        "llm",
+        "programmatic",
+        "human"
+      ],
+      "title": "Judge Kind",
+      "type": "string"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Score",
+      "type": "number"
+    }
+  },
+  "required": [
+    "judge_id",
+    "judge_kind",
+    "passed",
+    "score"
+  ],
+  "title": "JudgeResult",
+  "type": "object"
+}

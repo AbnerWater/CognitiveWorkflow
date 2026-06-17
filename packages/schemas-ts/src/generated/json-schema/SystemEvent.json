@@ -1,0 +1,371 @@
+{
+  "$defs": {
+    "ArtifactRef": {
+      "additionalProperties": false,
+      "description": "节点产物引用（stream_event.md §1.5 + agent_adapter.md §6 复用）。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "kind": {
+          "description": "artifact / pack / evaluation / patch / file / image / chart",
+          "title": "Kind",
+          "type": "string"
+        },
+        "mime_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mime Type"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "项目相对路径",
+          "title": "Path"
+        },
+        "preview_text": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preview Text"
+        },
+        "size_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size Bytes"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "kind",
+        "display_name"
+      ],
+      "title": "ArtifactRef",
+      "type": "object"
+    },
+    "DisplayLevel": {
+      "description": "UI 折叠分级。",
+      "enum": [
+        "minimal",
+        "default",
+        "detailed"
+      ],
+      "title": "DisplayLevel",
+      "type": "string"
+    },
+    "EventPhase": {
+      "description": "StreamEvent.phase（stream_event.md §1.3）。",
+      "enum": [
+        "run.created",
+        "run.started",
+        "run.paused",
+        "run.resumed",
+        "run.completed",
+        "run.failed",
+        "run.cancelled",
+        "node.idle",
+        "node.ready",
+        "node.running",
+        "node.validating",
+        "node.reviewing",
+        "node.passed",
+        "node.review_failed",
+        "node.repairing",
+        "node.retrying",
+        "node.waiting_user",
+        "node.skipped",
+        "node.failed",
+        "attempt.started",
+        "attempt.streaming",
+        "attempt.tool_calling",
+        "attempt.validating",
+        "attempt.completed",
+        "attempt.failed",
+        "planning.exploring",
+        "planning.understanding",
+        "planning.clarifying",
+        "planning.planning",
+        "planning.validating",
+        "planning.previewing",
+        "planning.revising",
+        "planning.created"
+      ],
+      "title": "EventPhase",
+      "type": "string"
+    },
+    "Sensitivity": {
+      "description": "三级隐私分级（D-SE-5 / D-RH-3）。",
+      "enum": [
+        "public",
+        "project",
+        "sensitive"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    },
+    "StreamSeverity": {
+      "description": "StreamEvent.severity（与 EvaluationCriterion.severity 不同的语义；这里偏配色）。",
+      "enum": [
+        "info",
+        "success",
+        "warning",
+        "error",
+        "fatal"
+      ],
+      "title": "StreamSeverity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "系统级通知 / 心跳（§3.12）。\n\n`system.heartbeat` 默认 15s 一次（D-SE-3）。",
+  "properties": {
+    "artifact_refs": {
+      "description": "关联产物引用",
+      "items": {
+        "$ref": "#/$defs/ArtifactRef"
+      },
+      "title": "Artifact Refs",
+      "type": "array"
+    },
+    "attempt_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempt Id"
+    },
+    "category": {
+      "const": "system",
+      "default": "system",
+      "title": "Category",
+      "type": "string"
+    },
+    "content": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "受限 Markdown 子集",
+      "title": "Content"
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "OTel TraceID",
+      "title": "Correlation Id"
+    },
+    "created_at": {
+      "description": "ISO-8601 UTC（含毫秒）",
+      "title": "Created At",
+      "type": "string"
+    },
+    "display_level": {
+      "$ref": "#/$defs/DisplayLevel",
+      "default": "default",
+      "description": "UI 折叠分级"
+    },
+    "event_id": {
+      "description": "ULID/UUIDv7；全局唯一",
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "expandable": {
+      "description": "是否允许展开查看 detail",
+      "title": "Expandable",
+      "type": "boolean"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "description": "命名空间化扩展字段",
+      "title": "Metadata",
+      "type": "object"
+    },
+    "node_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Node Id"
+    },
+    "parent_event_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Event Id"
+    },
+    "payload": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "结构化载荷；大对象走 artifact_refs",
+      "title": "Payload"
+    },
+    "phase": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EventPhase"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "节点 / Run / Attempt / Planning 生命周期相位"
+    },
+    "run_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "description": "本 spec 版本",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sensitivity": {
+      "$ref": "#/$defs/Sensitivity",
+      "default": "project",
+      "description": "三级隐私分级（D-SE-5）"
+    },
+    "seq": {
+      "description": "同 run / attempt 流内单调递增",
+      "minimum": 0,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "severity": {
+      "$ref": "#/$defs/StreamSeverity",
+      "default": "info"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "折叠态副标题；不含敏感正文",
+      "title": "Summary"
+    },
+    "title": {
+      "description": "前端折叠态显示标题",
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "system.runtime_ready",
+        "system.heartbeat",
+        "system.runtime_shutting_down"
+      ],
+      "title": "Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "seq",
+    "run_id",
+    "type",
+    "title",
+    "expandable",
+    "created_at"
+  ],
+  "title": "SystemEvent",
+  "type": "object"
+}

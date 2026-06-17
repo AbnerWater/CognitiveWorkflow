@@ -1,0 +1,427 @@
+{
+  "$defs": {
+    "AdapterError": {
+      "additionalProperties": false,
+      "description": "Adapter 错误结构化记录（agent_adapter.md §7）。",
+      "properties": {
+        "error_kind": {
+          "$ref": "#/$defs/AdapterErrorKind"
+        },
+        "failure_type": {
+          "$ref": "#/$defs/FailureType",
+          "description": "对齐 8+1 类"
+        },
+        "http_status": {
+          "anyOf": [
+            {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Http Status"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "payload": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payload"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "error_kind",
+        "failure_type",
+        "message",
+        "retryable"
+      ],
+      "title": "AdapterError",
+      "type": "object"
+    },
+    "AdapterErrorKind": {
+      "description": "AdapterError.error_kind。",
+      "enum": [
+        "prepare_failed",
+        "invalid_pack",
+        "model_request_failed",
+        "tool_failed",
+        "mcp_transport",
+        "approval_required",
+        "deferred_tool",
+        "output_validation",
+        "retry_limit_reached",
+        "usage_limit_exceeded",
+        "provider_forbidden",
+        "cancelled",
+        "timeout",
+        "adapter_internal"
+      ],
+      "title": "AdapterErrorKind",
+      "type": "string"
+    },
+    "ArtifactRef": {
+      "additionalProperties": false,
+      "description": "节点产物引用（stream_event.md §1.5 + agent_adapter.md §6 复用）。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "kind": {
+          "description": "artifact / pack / evaluation / patch / file / image / chart",
+          "title": "Kind",
+          "type": "string"
+        },
+        "mime_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mime Type"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "项目相对路径",
+          "title": "Path"
+        },
+        "preview_text": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preview Text"
+        },
+        "size_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size Bytes"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "kind",
+        "display_name"
+      ],
+      "title": "ArtifactRef",
+      "type": "object"
+    },
+    "AttemptState": {
+      "description": "AgentAdapter.AttemptState（agent_adapter.md §4.1）。",
+      "enum": [
+        "prepared",
+        "running",
+        "awaiting_human",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "title": "AttemptState",
+      "type": "string"
+    },
+    "FailureType": {
+      "description": "8+1 类失败分类（D-FT-1 锁定，不允许扩充至 v0.2）。",
+      "enum": [
+        "format_error",
+        "missing_output",
+        "missing_evidence",
+        "logic_gap",
+        "model_capability_limit",
+        "tool_error",
+        "ambiguous_requirement",
+        "review_rule_too_strict",
+        "unknown"
+      ],
+      "title": "FailureType",
+      "type": "string"
+    },
+    "RunUsage": {
+      "additionalProperties": false,
+      "description": "模型调用 token / cost 用量。\n\n字段与 Pydantic AI `RunUsage` 兼容，便于 Adapter 直接转译。",
+      "properties": {
+        "cache_creation_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cache Creation Input Tokens",
+          "type": "integer"
+        },
+        "cache_read_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cache Read Input Tokens",
+          "type": "integer"
+        },
+        "est_cost_usd": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Est Cost Usd"
+        },
+        "input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "requests": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Requests",
+          "type": "integer"
+        },
+        "total_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Total Tokens",
+          "type": "integer"
+        }
+      },
+      "title": "RunUsage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "运行时 NodeAttempt（runtime_harness.md §3.2）。\n\n与 AttemptOutcome 的关系：NodeAttempt 是 Engine 持久化形态（含 attempt_index / state 流转 /\noverlay 引用 / 错误数组等运行期字段），AttemptOutcome 是 Adapter 返回的\"一次性结果包\"。\nEngine 会把 AttemptOutcome 拍扁后归并入 NodeAttempt。",
+  "properties": {
+    "adapter_id": {
+      "minLength": 1,
+      "title": "Adapter Id",
+      "type": "string"
+    },
+    "adapter_version": {
+      "minLength": 1,
+      "title": "Adapter Version",
+      "type": "string"
+    },
+    "attempt_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "attempt_index": {
+      "description": "0-based；retry 后 +1",
+      "minimum": 0,
+      "title": "Attempt Index",
+      "type": "integer"
+    },
+    "context_pack_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Context Pack Id",
+      "type": "string"
+    },
+    "effective_prompt_overlay_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "指向 runs/<run_id>/overlays/<attempt_id>.json",
+      "title": "Effective Prompt Overlay Ref"
+    },
+    "errors": {
+      "items": {
+        "$ref": "#/$defs/AdapterError"
+      },
+      "title": "Errors",
+      "type": "array"
+    },
+    "evidence_pack_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Pack Id"
+    },
+    "execution_pack_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Execution Pack Id",
+      "type": "string"
+    },
+    "finished_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "ISO-8601；进入终态后写入",
+      "title": "Finished At"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "model_profile_id": {
+      "minLength": 1,
+      "title": "Model Profile Id",
+      "type": "string"
+    },
+    "node_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Node Id",
+      "type": "string"
+    },
+    "outcome_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Outcome Hash"
+    },
+    "output_artifact_refs": {
+      "items": {
+        "$ref": "#/$defs/ArtifactRef"
+      },
+      "title": "Output Artifact Refs",
+      "type": "array"
+    },
+    "output_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Output Hash"
+    },
+    "run_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "started_at": {
+      "description": "ISO-8601",
+      "title": "Started At",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/$defs/AttemptState"
+    },
+    "usage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunUsage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "attempt_id",
+    "run_id",
+    "node_id",
+    "attempt_index",
+    "state",
+    "started_at",
+    "adapter_id",
+    "adapter_version",
+    "model_profile_id",
+    "context_pack_id",
+    "execution_pack_id"
+  ],
+  "title": "NodeAttempt",
+  "type": "object"
+}

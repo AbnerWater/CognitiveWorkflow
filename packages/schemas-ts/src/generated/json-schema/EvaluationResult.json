@@ -1,0 +1,835 @@
+{
+  "$defs": {
+    "ArbitrationMode": {
+      "description": "EvaluationContract.arbitration（架构 §9 多 Agent 辩论 / D-ER-6）。",
+      "enum": [
+        "single_judge",
+        "multi_judge",
+        "programmatic_first"
+      ],
+      "title": "ArbitrationMode",
+      "type": "string"
+    },
+    "ArbitrationOutcome": {
+      "additionalProperties": false,
+      "description": "多 judge 仲裁过程记录（§5）。",
+      "properties": {
+        "aggregation": {
+          "enum": [
+            "majority",
+            "unanimous",
+            "programmatic_overrides_llm",
+            "weighted"
+          ],
+          "title": "Aggregation",
+          "type": "string"
+        },
+        "disagreement_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Disagreement Score",
+          "type": "number"
+        },
+        "final_decision_source": {
+          "description": "决定 passed 的最终 judge / 规则标识",
+          "minLength": 1,
+          "title": "Final Decision Source",
+          "type": "string"
+        },
+        "judge_count": {
+          "minimum": 1,
+          "title": "Judge Count",
+          "type": "integer"
+        },
+        "judge_results": {
+          "items": {
+            "$ref": "#/$defs/JudgeResult"
+          },
+          "minItems": 1,
+          "title": "Judge Results",
+          "type": "array"
+        },
+        "mode": {
+          "$ref": "#/$defs/ArbitrationMode"
+        }
+      },
+      "required": [
+        "mode",
+        "judge_count",
+        "judge_results",
+        "aggregation",
+        "disagreement_score",
+        "final_decision_source"
+      ],
+      "title": "ArbitrationOutcome",
+      "type": "object"
+    },
+    "CriterionKind": {
+      "description": "EvaluationCriterion.kind。",
+      "enum": [
+        "rubric",
+        "programmatic",
+        "regex",
+        "schema",
+        "citation",
+        "numeric_threshold"
+      ],
+      "title": "CriterionKind",
+      "type": "string"
+    },
+    "CriterionResult": {
+      "additionalProperties": false,
+      "description": "单条审查规则的判定结果（§2.1）。",
+      "properties": {
+        "criterion_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Criterion Id",
+          "type": "string"
+        },
+        "description": {
+          "description": "复制自契约（便于审计快速阅读）",
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "evaluator_kind": {
+          "enum": [
+            "llm_rubric",
+            "programmatic_validator",
+            "hybrid",
+            "human"
+          ],
+          "title": "Evaluator Kind",
+          "type": "string"
+        },
+        "evaluator_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "LLM judge profile_id 或 validator_id",
+          "title": "Evaluator Ref"
+        },
+        "evidence_used_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Used Ids",
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/CriterionKind"
+        },
+        "latency_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latency Ms"
+        },
+        "passed_for_this_criterion": {
+          "title": "Passed For This Criterion",
+          "type": "boolean"
+        },
+        "score_for_this_criterion": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score For This Criterion",
+          "type": "number"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "tokens_estimate": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokens Estimate"
+        },
+        "weight": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "criterion_id",
+        "description",
+        "kind",
+        "severity",
+        "weight",
+        "passed_for_this_criterion",
+        "score_for_this_criterion",
+        "evaluator_kind"
+      ],
+      "title": "CriterionResult",
+      "type": "object"
+    },
+    "EvalProvenance": {
+      "additionalProperties": false,
+      "description": "评价过程源信息（§6）。",
+      "properties": {
+        "context_pack_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Context Pack Id",
+          "type": "string"
+        },
+        "criteria_hash": {
+          "minLength": 1,
+          "title": "Criteria Hash",
+          "type": "string"
+        },
+        "eval_finished_at": {
+          "description": "ISO-8601",
+          "title": "Eval Finished At",
+          "type": "string"
+        },
+        "eval_hash": {
+          "description": "EvaluationResult 整体（去时间戳）的稳定 hash",
+          "minLength": 1,
+          "title": "Eval Hash",
+          "type": "string"
+        },
+        "eval_started_at": {
+          "description": "ISO-8601",
+          "title": "Eval Started At",
+          "type": "string"
+        },
+        "evaluator_model_profile_id": {
+          "minLength": 1,
+          "title": "Evaluator Model Profile Id",
+          "type": "string"
+        },
+        "evidence_pack_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 3,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Pack Id"
+        },
+        "programmatic_validators": {
+          "description": "实际运行的程序化校验器 IDs",
+          "items": {
+            "type": "string"
+          },
+          "title": "Programmatic Validators",
+          "type": "array"
+        },
+        "target_artifact_hash": {
+          "description": "被审产物的稳定 hash",
+          "minLength": 1,
+          "title": "Target Artifact Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "eval_started_at",
+        "eval_finished_at",
+        "evaluator_model_profile_id",
+        "context_pack_id",
+        "target_artifact_hash",
+        "criteria_hash",
+        "eval_hash"
+      ],
+      "title": "EvalProvenance",
+      "type": "object"
+    },
+    "EvidenceFeedback": {
+      "additionalProperties": false,
+      "description": "写回 EvidencePack 的反馈（§7）。",
+      "properties": {
+        "dangling_citation_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dangling Citation Ids",
+          "type": "array"
+        },
+        "evidence_pack_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Evidence Pack Id",
+          "type": "string"
+        },
+        "suggested_topics": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Suggested Topics",
+          "type": "array"
+        },
+        "under_used_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Under Used Evidence Ids",
+          "type": "array"
+        },
+        "unsupported_claim_estimates": {
+          "minimum": 0,
+          "title": "Unsupported Claim Estimates",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "evidence_pack_id",
+        "unsupported_claim_estimates"
+      ],
+      "title": "EvidenceFeedback",
+      "type": "object"
+    },
+    "FailureDiagnosis": {
+      "additionalProperties": false,
+      "description": "失败诊断（§3）。",
+      "properties": {
+        "failed_criteria": {
+          "description": "失败的 criterion_id（≥1）",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Failed Criteria",
+          "type": "array"
+        },
+        "failure_type": {
+          "$ref": "#/$defs/FailureType"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "suggested_repair_targets": {
+          "description": "JSONPath 列表",
+          "items": {
+            "type": "string"
+          },
+          "title": "Suggested Repair Targets",
+          "type": "array"
+        },
+        "summary": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        }
+      },
+      "required": [
+        "failure_type",
+        "failed_criteria",
+        "severity",
+        "summary"
+      ],
+      "title": "FailureDiagnosis",
+      "type": "object"
+    },
+    "FailureType": {
+      "description": "8+1 类失败分类（D-FT-1 锁定，不允许扩充至 v0.2）。",
+      "enum": [
+        "format_error",
+        "missing_output",
+        "missing_evidence",
+        "logic_gap",
+        "model_capability_limit",
+        "tool_error",
+        "ambiguous_requirement",
+        "review_rule_too_strict",
+        "unknown"
+      ],
+      "title": "FailureType",
+      "type": "string"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "单项发现（§2.2）。",
+      "properties": {
+        "finding_id": {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "title": "Finding Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "format_violation",
+            "missing_field",
+            "wrong_type",
+            "unsupported_claim",
+            "dangling_citation",
+            "numeric_out_of_range",
+            "regex_mismatch",
+            "rubric_violation",
+            "schema_violation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "JSONPath 指向被审产物中的具体位置",
+          "title": "Path"
+        },
+        "proposed_fix_hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proposed Fix Hint"
+        },
+        "related_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Related Evidence Ids",
+          "type": "array"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity",
+          "default": "major",
+          "description": "该 finding 自身严重度（可低于 criterion.severity）"
+        }
+      },
+      "required": [
+        "finding_id",
+        "kind",
+        "message"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "JudgeResult": {
+      "additionalProperties": false,
+      "description": "单个 judge 的独立判定（§5.1）。",
+      "properties": {
+        "criterion_results": {
+          "items": {
+            "$ref": "#/$defs/CriterionResult"
+          },
+          "title": "Criterion Results",
+          "type": "array"
+        },
+        "judge_id": {
+          "description": "claude-sonnet-judge / programmatic_v1 / 等",
+          "minLength": 1,
+          "title": "Judge Id",
+          "type": "string"
+        },
+        "judge_kind": {
+          "enum": [
+            "llm",
+            "programmatic",
+            "human"
+          ],
+          "title": "Judge Kind",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "judge_id",
+        "judge_kind",
+        "passed",
+        "score"
+      ],
+      "title": "JudgeResult",
+      "type": "object"
+    },
+    "RecommendedAction": {
+      "additionalProperties": false,
+      "description": "Engine 路由动作（§4）。",
+      "properties": {
+        "action": {
+          "enum": [
+            "pass_to_next",
+            "repair_with_patch",
+            "retry_same",
+            "request_evidence",
+            "human_checkpoint",
+            "abort"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "note_to_user": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note To User"
+        },
+        "target_human_node_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 3,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "action=human_checkpoint 时必填",
+          "title": "Target Human Node Id"
+        },
+        "target_repair_node_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 3,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "action=repair_with_patch 时必填",
+          "title": "Target Repair Node Id"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "RecommendedAction",
+      "type": "object"
+    },
+    "RepairKind": {
+      "description": "6 类 patch_kind（D-RP-1 锁定）。",
+      "enum": [
+        "prompt_patch",
+        "context_patch",
+        "evidence_patch",
+        "model_escalation",
+        "workflow_patch",
+        "human_checkpoint"
+      ],
+      "title": "RepairKind",
+      "type": "string"
+    },
+    "RunUsage": {
+      "additionalProperties": false,
+      "description": "模型调用 token / cost 用量。\n\n字段与 Pydantic AI `RunUsage` 兼容，便于 Adapter 直接转译。",
+      "properties": {
+        "cache_creation_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cache Creation Input Tokens",
+          "type": "integer"
+        },
+        "cache_read_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cache Read Input Tokens",
+          "type": "integer"
+        },
+        "est_cost_usd": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Est Cost Usd"
+        },
+        "input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "requests": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Requests",
+          "type": "integer"
+        },
+        "total_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Total Tokens",
+          "type": "integer"
+        }
+      },
+      "title": "RunUsage",
+      "type": "object"
+    },
+    "Severity": {
+      "description": "4 级严重度（failure_taxonomy.md §8）。",
+      "enum": [
+        "blocker",
+        "major",
+        "minor",
+        "info"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "评价节点输出（§1）。\n\n强约束（D-ER-1）：写一次即不可变；多次评价由多次 attempt + ArbitrationOutcome 表达。",
+  "properties": {
+    "arbitration": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArbitrationOutcome"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "criterion_results": {
+      "items": {
+        "$ref": "#/$defs/CriterionResult"
+      },
+      "minItems": 1,
+      "title": "Criterion Results",
+      "type": "array"
+    },
+    "eval_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Eval Id",
+      "type": "string"
+    },
+    "evaluator_attempt_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Evaluator Attempt Id",
+      "type": "string"
+    },
+    "evaluator_node_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Evaluator Node Id",
+      "type": "string"
+    },
+    "evidence_feedback": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EvidenceFeedback"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "failure_diagnosis": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FailureDiagnosis"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "passed=false 时必填"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "provenance": {
+      "$ref": "#/$defs/EvalProvenance"
+    },
+    "recommended_action": {
+      "$ref": "#/$defs/RecommendedAction"
+    },
+    "recommended_strategy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RepairKind"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "建议的修复策略；从 NodeContract.repair_strategies 中选择"
+    },
+    "run_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Score",
+      "type": "number"
+    },
+    "target_attempt_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Target Attempt Id",
+      "type": "string"
+    },
+    "target_node_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Target Node Id",
+      "type": "string"
+    },
+    "usage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunUsage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "eval_id",
+    "evaluator_node_id",
+    "target_node_id",
+    "target_attempt_id",
+    "evaluator_attempt_id",
+    "run_id",
+    "passed",
+    "score",
+    "criterion_results",
+    "recommended_action",
+    "provenance"
+  ],
+  "title": "EvaluationResult",
+  "type": "object"
+}
