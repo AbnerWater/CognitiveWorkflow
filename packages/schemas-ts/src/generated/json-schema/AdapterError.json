@@ -85,12 +85,7 @@
       "type": "boolean"
     }
   },
-  "required": [
-    "error_kind",
-    "failure_type",
-    "message",
-    "retryable"
-  ],
+  "required": ["error_kind", "failure_type", "message", "retryable"],
   "title": "AdapterError",
   "type": "object"
 }

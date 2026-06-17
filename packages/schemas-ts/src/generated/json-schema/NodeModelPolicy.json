@@ -2,11 +2,7 @@
   "$defs": {
     "ProviderKind": {
       "description": "ModelProfile.provider_kind / AdapterCapabilities.provider_kinds。",
-      "enum": [
-        "cloud",
-        "private",
-        "local"
-      ],
+      "enum": ["cloud", "private", "local"],
       "title": "ProviderKind",
       "type": "string"
     }
@@ -63,9 +59,7 @@
       "title": "Seed"
     }
   },
-  "required": [
-    "primary_model_profile_id"
-  ],
+  "required": ["primary_model_profile_id"],
   "title": "NodeModelPolicy",
   "type": "object"
 }

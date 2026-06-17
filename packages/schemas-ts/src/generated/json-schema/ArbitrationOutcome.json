@@ -2,11 +2,7 @@
   "$defs": {
     "ArbitrationMode": {
       "description": "EvaluationContract.arbitration（架构 §9 多 Agent 辩论 / D-ER-6）。",
-      "enum": [
-        "single_judge",
-        "multi_judge",
-        "programmatic_first"
-      ],
+      "enum": ["single_judge", "multi_judge", "programmatic_first"],
       "title": "ArbitrationMode",
       "type": "string"
     },
@@ -41,12 +37,7 @@
           "type": "string"
         },
         "evaluator_kind": {
-          "enum": [
-            "llm_rubric",
-            "programmatic_validator",
-            "hybrid",
-            "human"
-          ],
+          "enum": ["llm_rubric", "programmatic_validator", "hybrid", "human"],
           "title": "Evaluator Kind",
           "type": "string"
         },
@@ -208,11 +199,7 @@
           "description": "该 finding 自身严重度（可低于 criterion.severity）"
         }
       },
-      "required": [
-        "finding_id",
-        "kind",
-        "message"
-      ],
+      "required": ["finding_id", "kind", "message"],
       "title": "Finding",
       "type": "object"
     },
@@ -234,11 +221,7 @@
           "type": "string"
         },
         "judge_kind": {
-          "enum": [
-            "llm",
-            "programmatic",
-            "human"
-          ],
+          "enum": ["llm", "programmatic", "human"],
           "title": "Judge Kind",
           "type": "string"
         },
@@ -265,23 +248,13 @@
           "type": "number"
         }
       },
-      "required": [
-        "judge_id",
-        "judge_kind",
-        "passed",
-        "score"
-      ],
+      "required": ["judge_id", "judge_kind", "passed", "score"],
       "title": "JudgeResult",
       "type": "object"
     },
     "Severity": {
       "description": "4 级严重度（failure_taxonomy.md §8）。",
-      "enum": [
-        "blocker",
-        "major",
-        "minor",
-        "info"
-      ],
+      "enum": ["blocker", "major", "minor", "info"],
       "title": "Severity",
       "type": "string"
     }

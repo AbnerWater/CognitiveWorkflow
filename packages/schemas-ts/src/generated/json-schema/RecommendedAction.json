@@ -59,9 +59,7 @@
       "title": "Target Repair Node Id"
     }
   },
-  "required": [
-    "action"
-  ],
+  "required": ["action"],
   "title": "RecommendedAction",
   "type": "object"
 }

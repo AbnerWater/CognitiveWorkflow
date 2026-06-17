@@ -48,12 +48,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "error_kind",
-        "failure_type",
-        "message",
-        "retryable"
-      ],
+      "required": ["error_kind", "failure_type", "message", "retryable"],
       "title": "AdapterError",
       "type": "object"
     },
@@ -151,11 +146,7 @@
           "title": "Size Bytes"
         }
       },
-      "required": [
-        "artifact_id",
-        "kind",
-        "display_name"
-      ],
+      "required": ["artifact_id", "kind", "display_name"],
       "title": "ArtifactRef",
       "type": "object"
     },

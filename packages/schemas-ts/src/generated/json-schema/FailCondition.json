@@ -4,12 +4,7 @@
   "properties": {
     "combinator": {
       "description": "组合方式",
-      "enum": [
-        "all_pass",
-        "any_pass",
-        "weighted_score",
-        "custom"
-      ],
+      "enum": ["all_pass", "any_pass", "weighted_score", "custom"],
       "title": "Combinator",
       "type": "string"
     },
@@ -35,9 +30,7 @@
       "title": "Threshold"
     }
   },
-  "required": [
-    "combinator"
-  ],
+  "required": ["combinator"],
   "title": "FailCondition",
   "type": "object"
 }

@@ -18,12 +18,7 @@
     },
     "Severity": {
       "description": "4 级严重度（failure_taxonomy.md §8）。",
-      "enum": [
-        "blocker",
-        "major",
-        "minor",
-        "info"
-      ],
+      "enum": ["blocker", "major", "minor", "info"],
       "title": "Severity",
       "type": "string"
     }
@@ -81,12 +76,7 @@
       "type": "array"
     }
   },
-  "required": [
-    "failure_type",
-    "failed_criteria",
-    "severity",
-    "summary"
-  ],
+  "required": ["failure_type", "failed_criteria", "severity", "summary"],
   "title": "FailureDiagnosis",
   "type": "object"
 }

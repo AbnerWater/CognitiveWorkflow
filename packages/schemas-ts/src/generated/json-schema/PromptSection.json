@@ -2,11 +2,7 @@
   "$defs": {
     "TemplateEngine": {
       "description": "PromptSection.template_engine（D-NC-1 默认 handlebars）。",
-      "enum": [
-        "handlebars",
-        "jinja2_minimal",
-        "none"
-      ],
+      "enum": ["handlebars", "jinja2_minimal", "none"],
       "title": "TemplateEngine",
       "type": "string"
     }
@@ -64,9 +60,7 @@
       "type": "string"
     }
   },
-  "required": [
-    "user_prompt_template"
-  ],
+  "required": ["user_prompt_template"],
   "title": "PromptSection",
   "type": "object"
 }

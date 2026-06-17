@@ -21,9 +21,7 @@
       "type": "string"
     }
   },
-  "required": [
-    "server_id"
-  ],
+  "required": ["server_id"],
   "title": "MCPToolRef",
   "type": "object"
 }

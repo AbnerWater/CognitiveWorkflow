@@ -2,11 +2,7 @@
   "$defs": {
     "BackoffStrategy": {
       "description": "RetryPolicy.backoff。",
-      "enum": [
-        "none",
-        "linear",
-        "exponential"
-      ],
+      "enum": ["none", "linear", "exponential"],
       "title": "BackoffStrategy",
       "type": "string"
     }

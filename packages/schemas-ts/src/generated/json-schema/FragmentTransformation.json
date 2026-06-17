@@ -51,12 +51,7 @@
       "title": "Summarizer Model"
     }
   },
-  "required": [
-    "kind",
-    "original_tokens",
-    "final_tokens",
-    "at"
-  ],
+  "required": ["kind", "original_tokens", "final_tokens", "at"],
   "title": "FragmentTransformation",
   "type": "object"
 }

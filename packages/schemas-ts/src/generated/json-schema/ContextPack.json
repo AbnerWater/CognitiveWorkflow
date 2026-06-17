@@ -208,10 +208,7 @@
           "type": "integer"
         }
       },
-      "required": [
-        "model_context_window_tokens",
-        "hard_limit_tokens"
-      ],
+      "required": ["model_context_window_tokens", "hard_limit_tokens"],
       "title": "ContextBudget",
       "type": "object"
     },
@@ -466,10 +463,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "evidence_pack_id",
-        "evidence_id"
-      ],
+      "required": ["evidence_pack_id", "evidence_id"],
       "title": "EvidenceFragmentSource",
       "type": "object"
     },
@@ -495,9 +489,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "attempt_ids"
-      ],
+      "required": ["attempt_ids"],
       "title": "FailureHistorySource",
       "type": "object"
     },
@@ -554,12 +546,7 @@
           "title": "Summarizer Model"
         }
       },
-      "required": [
-        "kind",
-        "original_tokens",
-        "final_tokens",
-        "at"
-      ],
+      "required": ["kind", "original_tokens", "final_tokens", "at"],
       "title": "FragmentTransformation",
       "type": "object"
     },
@@ -585,9 +572,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "injected_by"
-      ],
+      "required": ["injected_by"],
       "title": "InjectedSource",
       "type": "object"
     },
@@ -618,12 +603,7 @@
           "type": "array"
         },
         "kind": {
-          "enum": [
-            "schema_only",
-            "schema_with_example",
-            "few_shot",
-            "none"
-          ],
+          "enum": ["schema_only", "schema_with_example", "few_shot", "none"],
           "title": "Kind",
           "type": "string"
         },
@@ -640,20 +620,13 @@
           "title": "Style Notes"
         }
       },
-      "required": [
-        "kind"
-      ],
+      "required": ["kind"],
       "title": "OutputFormatHint",
       "type": "object"
     },
     "Priority": {
       "description": "ContextFragment.priority / Evidence.priority。",
-      "enum": [
-        "critical",
-        "high",
-        "normal",
-        "low"
-      ],
+      "enum": ["critical", "high", "normal", "low"],
       "title": "Priority",
       "type": "string"
     },
@@ -684,9 +657,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "memory_key"
-      ],
+      "required": ["memory_key"],
       "title": "ProjectMemorySource",
       "type": "object"
     },
@@ -745,11 +716,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "reference_id",
-        "chunk_id",
-        "chunk_index"
-      ],
+      "required": ["reference_id", "chunk_id", "chunk_index"],
       "title": "ReferenceChunkSource",
       "type": "object"
     },
@@ -769,9 +736,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "contract_field_path"
-      ],
+      "required": ["contract_field_path"],
       "title": "StaticTextSource",
       "type": "object"
     },
@@ -810,10 +775,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "from_node_id",
-        "artifact_field"
-      ],
+      "required": ["from_node_id", "artifact_field"],
       "title": "UpstreamArtifactSource",
       "type": "object"
     },
@@ -832,9 +794,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "input_field"
-      ],
+      "required": ["input_field"],
       "title": "UserInputSource",
       "type": "object"
     }

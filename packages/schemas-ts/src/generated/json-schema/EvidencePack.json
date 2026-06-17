@@ -227,12 +227,7 @@
           "$ref": "#/$defs/Severity"
         }
       },
-      "required": [
-        "conflict_id",
-        "evidence_ids",
-        "kind",
-        "severity"
-      ],
+      "required": ["conflict_id", "evidence_ids", "kind", "severity"],
       "title": "EvidenceConflict",
       "type": "object"
     },
@@ -308,11 +303,7 @@
           "title": "Unsupported Claim Estimates"
         }
       },
-      "required": [
-        "coverage_ratio",
-        "avg_relevance",
-        "avg_confidence"
-      ],
+      "required": ["coverage_ratio", "avg_relevance", "avg_confidence"],
       "title": "EvidenceCoverage",
       "type": "object"
     },
@@ -416,21 +407,13 @@
           "type": "string"
         }
       },
-      "required": [
-        "server_id",
-        "resource_uri"
-      ],
+      "required": ["server_id", "resource_uri"],
       "title": "McpResourceEvidenceSource",
       "type": "object"
     },
     "Priority": {
       "description": "ContextFragment.priority / Evidence.priority。",
-      "enum": [
-        "critical",
-        "high",
-        "normal",
-        "low"
-      ],
+      "enum": ["critical", "high", "normal", "low"],
       "title": "Priority",
       "type": "string"
     },
@@ -461,9 +444,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "memory_key"
-      ],
+      "required": ["memory_key"],
       "title": "ProjectMemoryEvidenceSource",
       "type": "object"
     },
@@ -607,23 +588,13 @@
     },
     "Severity": {
       "description": "4 级严重度（failure_taxonomy.md §8）。",
-      "enum": [
-        "blocker",
-        "major",
-        "minor",
-        "info"
-      ],
+      "enum": ["blocker", "major", "minor", "info"],
       "title": "Severity",
       "type": "string"
     },
     "SupportPolarity": {
       "description": "Evidence.support_polarity。",
-      "enum": [
-        "supports",
-        "refutes",
-        "contextual",
-        "unclear"
-      ],
+      "enum": ["supports", "refutes", "contextual", "unclear"],
       "title": "SupportPolarity",
       "type": "string"
     },
@@ -658,12 +629,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "tool_id",
-        "invocation_id",
-        "arguments_hash",
-        "invoked_at"
-      ],
+      "required": ["tool_id", "invocation_id", "arguments_hash", "invoked_at"],
       "title": "ToolResultEvidenceSource",
       "type": "object"
     },
@@ -701,10 +667,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "from_node_id",
-        "artifact_field"
-      ],
+      "required": ["from_node_id", "artifact_field"],
       "title": "UpstreamArtifactEvidenceSource",
       "type": "object"
     },
@@ -740,10 +703,7 @@
           "title": "User Id"
         }
       },
-      "required": [
-        "input_field",
-        "asserted_at"
-      ],
+      "required": ["input_field", "asserted_at"],
       "title": "UserInputEvidenceSource",
       "type": "object"
     }

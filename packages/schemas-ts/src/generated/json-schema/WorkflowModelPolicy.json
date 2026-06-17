@@ -24,9 +24,7 @@
       "type": "boolean"
     }
   },
-  "required": [
-    "default_model_profile_id"
-  ],
+  "required": ["default_model_profile_id"],
   "title": "WorkflowModelPolicy",
   "type": "object"
 }

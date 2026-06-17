@@ -21,9 +21,7 @@
       "type": "string"
     }
   },
-  "required": [
-    "skill_id"
-  ],
+  "required": ["skill_id"],
   "title": "SkillRef",
   "type": "object"
 }

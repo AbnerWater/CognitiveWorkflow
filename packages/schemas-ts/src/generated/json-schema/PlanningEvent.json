@@ -73,21 +73,13 @@
           "title": "Size Bytes"
         }
       },
-      "required": [
-        "artifact_id",
-        "kind",
-        "display_name"
-      ],
+      "required": ["artifact_id", "kind", "display_name"],
       "title": "ArtifactRef",
       "type": "object"
     },
     "DisplayLevel": {
       "description": "UI 折叠分级。",
-      "enum": [
-        "minimal",
-        "default",
-        "detailed"
-      ],
+      "enum": ["minimal", "default", "detailed"],
       "title": "DisplayLevel",
       "type": "string"
     },
@@ -152,23 +144,13 @@
     },
     "Sensitivity": {
       "description": "三级隐私分级（D-SE-5 / D-RH-3）。",
-      "enum": [
-        "public",
-        "project",
-        "sensitive"
-      ],
+      "enum": ["public", "project", "sensitive"],
       "title": "Sensitivity",
       "type": "string"
     },
     "StreamSeverity": {
       "description": "StreamEvent.severity（与 EvaluationCriterion.severity 不同的语义；这里偏配色）。",
-      "enum": [
-        "info",
-        "success",
-        "warning",
-        "error",
-        "fatal"
-      ],
+      "enum": ["info", "success", "warning", "error", "fatal"],
       "title": "StreamSeverity",
       "type": "string"
     }

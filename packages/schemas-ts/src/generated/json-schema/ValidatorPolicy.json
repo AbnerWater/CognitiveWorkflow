@@ -2,11 +2,7 @@
   "$defs": {
     "ArbitrationMode": {
       "description": "EvaluationContract.arbitration（架构 §9 多 Agent 辩论 / D-ER-6）。",
-      "enum": [
-        "single_judge",
-        "multi_judge",
-        "programmatic_first"
-      ],
+      "enum": ["single_judge", "multi_judge", "programmatic_first"],
       "title": "ArbitrationMode",
       "type": "string"
     },
@@ -27,19 +23,13 @@
           "type": "string"
         }
       },
-      "required": [
-        "validator_id"
-      ],
+      "required": ["validator_id"],
       "title": "ExtraValidatorRef",
       "type": "object"
     },
     "ValidatorMode": {
       "description": "ValidatorPolicy.mode。",
-      "enum": [
-        "strict",
-        "lenient",
-        "programmatic_only"
-      ],
+      "enum": ["strict", "lenient", "programmatic_only"],
       "title": "ValidatorMode",
       "type": "string"
     }

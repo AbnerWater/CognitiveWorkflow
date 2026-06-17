@@ -46,13 +46,7 @@
       "type": "string"
     }
   },
-  "required": [
-    "fragment_id",
-    "action",
-    "before_tokens",
-    "after_tokens",
-    "at"
-  ],
+  "required": ["fragment_id", "action", "before_tokens", "after_tokens", "at"],
   "title": "CompressionLogEntry",
   "type": "object"
 }

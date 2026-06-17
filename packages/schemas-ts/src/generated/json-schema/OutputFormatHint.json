@@ -25,12 +25,7 @@
       "type": "array"
     },
     "kind": {
-      "enum": [
-        "schema_only",
-        "schema_with_example",
-        "few_shot",
-        "none"
-      ],
+      "enum": ["schema_only", "schema_with_example", "few_shot", "none"],
       "title": "Kind",
       "type": "string"
     },
@@ -47,9 +42,7 @@
       "title": "Style Notes"
     }
   },
-  "required": [
-    "kind"
-  ],
+  "required": ["kind"],
   "title": "OutputFormatHint",
   "type": "object"
 }

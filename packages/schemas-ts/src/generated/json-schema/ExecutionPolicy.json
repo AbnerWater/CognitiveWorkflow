@@ -2,21 +2,13 @@
   "$defs": {
     "ExecutionMode": {
       "description": "ExecutionPolicy.mode；与 UIUX FR-007 三种模式对齐。",
-      "enum": [
-        "step",
-        "semi_auto",
-        "auto"
-      ],
+      "enum": ["step", "semi_auto", "auto"],
       "title": "ExecutionMode",
       "type": "string"
     },
     "OnNodeFailure": {
       "description": "ExecutionPolicy.on_node_failure。",
-      "enum": [
-        "stop",
-        "continue_safe_branches",
-        "human"
-      ],
+      "enum": ["stop", "continue_safe_branches", "human"],
       "title": "OnNodeFailure",
       "type": "string"
     }

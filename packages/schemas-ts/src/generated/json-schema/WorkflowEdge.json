@@ -50,9 +50,7 @@
           "title": "Requires Capability"
         }
       },
-      "required": [
-        "kind"
-      ],
+      "required": ["kind"],
       "title": "EdgeCondition",
       "type": "object"
     },
@@ -177,12 +175,7 @@
       "$ref": "#/$defs/EdgeType"
     }
   },
-  "required": [
-    "edge_id",
-    "source_node_id",
-    "target_node_id",
-    "type"
-  ],
+  "required": ["edge_id", "source_node_id", "target_node_id", "type"],
   "title": "WorkflowEdge",
   "type": "object"
 }

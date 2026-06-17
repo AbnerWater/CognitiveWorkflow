@@ -13,9 +13,7 @@
           "$ref": "#/$defs/ContextRequirement"
         }
       },
-      "required": [
-        "requirement"
-      ],
+      "required": ["requirement"],
       "title": "AddContextRequirementOp",
       "type": "object"
     },
@@ -44,11 +42,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "example_input",
-        "example_output",
-        "rationale"
-      ],
+      "required": ["example_input", "example_output", "rationale"],
       "title": "AddFewShotExampleOp",
       "type": "object"
     },
@@ -64,11 +58,7 @@
           "type": "array"
         },
         "kind": {
-          "enum": [
-            "schema_only",
-            "schema_with_example",
-            "few_shot"
-          ],
+          "enum": ["schema_only", "schema_with_example", "few_shot"],
           "title": "Kind",
           "type": "string"
         },
@@ -91,9 +81,7 @@
           "title": "Style Notes"
         }
       },
-      "required": [
-        "kind"
-      ],
+      "required": ["kind"],
       "title": "AddOutputFormatHintOp",
       "type": "object"
     },
@@ -125,9 +113,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "topic"
-      ],
+      "required": ["topic"],
       "title": "AddTopicCoverageOp",
       "type": "object"
     },
@@ -146,9 +132,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "text"
-      ],
+      "required": ["text"],
       "title": "AppendToInstructionsOp",
       "type": "object"
     },
@@ -167,9 +151,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "text"
-      ],
+      "required": ["text"],
       "title": "AppendToSystemPromptOp",
       "type": "object"
     },
@@ -188,9 +170,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "text"
-      ],
+      "required": ["text"],
       "title": "AppendToUserPromptTemplateOp",
       "type": "object"
     },
@@ -222,10 +202,7 @@
           "$ref": "#/$defs/Priority"
         }
       },
-      "required": [
-        "from",
-        "to"
-      ],
+      "required": ["from", "to"],
       "title": "BumpPriorityOp",
       "type": "object"
     },
@@ -267,9 +244,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "delta"
-      ],
+      "required": ["delta"],
       "title": "BumpTemperatureOp",
       "type": "object"
     },
@@ -353,11 +328,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "key",
-        "kind",
-        "selector"
-      ],
+      "required": ["key", "kind", "selector"],
       "title": "ContextRequirement",
       "type": "object"
     },
@@ -365,11 +336,7 @@
       "additionalProperties": false,
       "properties": {
         "level": {
-          "enum": [
-            "low",
-            "medium",
-            "high"
-          ],
+          "enum": ["low", "medium", "high"],
           "title": "Level",
           "type": "string"
         },
@@ -380,9 +347,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "level"
-      ],
+      "required": ["level"],
       "title": "EnableThinkingOp",
       "type": "object"
     },
@@ -401,9 +366,7 @@
           "type": "integer"
         }
       },
-      "required": [
-        "value"
-      ],
+      "required": ["value"],
       "title": "ExtendMaxOutputTokensOp",
       "type": "object"
     },
@@ -451,9 +414,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "edge"
-      ],
+      "required": ["edge"],
       "title": "InsertEdgeOp",
       "type": "object"
     },
@@ -479,10 +440,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "node",
-        "after_node_id"
-      ],
+      "required": ["node", "after_node_id"],
       "title": "InsertNodeOp",
       "type": "object"
     },
@@ -508,10 +466,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "conflict_id",
-        "resolution_note"
-      ],
+      "required": ["conflict_id", "resolution_note"],
       "title": "MarkConflictResolvedOp",
       "type": "object"
     },
@@ -553,22 +508,13 @@
           "type": "string"
         }
       },
-      "required": [
-        "from_node_id",
-        "artifact_field",
-        "as_key"
-      ],
+      "required": ["from_node_id", "artifact_field", "as_key"],
       "title": "PinUpstreamArtifactOp",
       "type": "object"
     },
     "Priority": {
       "description": "ContextFragment.priority / Evidence.priority。",
-      "enum": [
-        "critical",
-        "high",
-        "normal",
-        "low"
-      ],
+      "enum": ["critical", "high", "normal", "low"],
       "title": "Priority",
       "type": "string"
     },
@@ -588,9 +534,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "memory_key"
-      ],
+      "required": ["memory_key"],
       "title": "ProjectMemorySelector",
       "type": "object"
     },
@@ -624,9 +568,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "reference_id"
-      ],
+      "required": ["reference_id"],
       "title": "ReferenceSelector",
       "type": "object"
     },
@@ -648,12 +590,7 @@
           "type": "string"
         },
         "new_severity": {
-          "enum": [
-            "blocker",
-            "major",
-            "minor",
-            "info"
-          ],
+          "enum": ["blocker", "major", "minor", "info"],
           "title": "New Severity",
           "type": "string"
         },
@@ -664,11 +601,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "evaluation_node_id",
-        "criterion_id",
-        "new_severity"
-      ],
+      "required": ["evaluation_node_id", "criterion_id", "new_severity"],
       "title": "RelaxReviewRuleOp",
       "type": "object"
     },
@@ -687,9 +620,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "requirement_key"
-      ],
+      "required": ["requirement_key"],
       "title": "RemoveContextRequirementOp",
       "type": "object"
     },
@@ -710,9 +641,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "edge_id"
-      ],
+      "required": ["edge_id"],
       "title": "RemoveEdgeOp",
       "type": "object"
     },
@@ -733,9 +662,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "node_id"
-      ],
+      "required": ["node_id"],
       "title": "RemoveNodeOp",
       "type": "object"
     },
@@ -835,10 +762,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "criterion_id",
-        "min_count"
-      ],
+      "required": ["criterion_id", "min_count"],
       "title": "ReplaceEvidenceSetOp",
       "type": "object"
     },
@@ -865,9 +789,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "question"
-      ],
+      "required": ["question"],
       "title": "RequestUserClarificationOp",
       "type": "object"
     },
@@ -907,10 +829,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "prompt_to_user",
-        "decisions"
-      ],
+      "required": ["prompt_to_user", "decisions"],
       "title": "RequestUserDecisionOp",
       "type": "object"
     },
@@ -934,10 +853,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "target_artifact_path",
-        "edit_hint"
-      ],
+      "required": ["target_artifact_path", "edit_hint"],
       "title": "RequestUserEditOp",
       "type": "object"
     },
@@ -961,10 +877,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "input_schema",
-        "prompt_to_user"
-      ],
+      "required": ["input_schema", "prompt_to_user"],
       "title": "RequestUserInputOp",
       "type": "object"
     },
@@ -1142,29 +1055,19 @@
           "title": "Notes"
         }
       },
-      "required": [
-        "mode"
-      ],
+      "required": ["mode"],
       "title": "ReversalHint",
       "type": "object"
     },
     "ReversalMode": {
       "description": "RepairPatch.reversal_hint.mode。",
-      "enum": [
-        "auto",
-        "explicit",
-        "non_reversible"
-      ],
+      "enum": ["auto", "explicit", "non_reversible"],
       "title": "ReversalMode",
       "type": "string"
     },
     "RiskLevel": {
       "description": "RepairPatch.risk_level + node_contract.NodeCapabilityRequirement.risk_level。",
-      "enum": [
-        "low",
-        "medium",
-        "high"
-      ],
+      "enum": ["low", "medium", "high"],
       "title": "RiskLevel",
       "type": "string"
     },
@@ -1251,10 +1154,7 @@
           "type": "array"
         }
       },
-      "required": [
-        "node_id",
-        "split_into"
-      ],
+      "required": ["node_id", "split_into"],
       "title": "SplitNodeOp",
       "type": "object"
     },
@@ -1273,9 +1173,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "text"
-      ],
+      "required": ["text"],
       "title": "StaticTextSelector",
       "type": "object"
     },
@@ -1299,10 +1197,7 @@
           "type": "integer"
         }
       },
-      "required": [
-        "above_tokens",
-        "target_tokens"
-      ],
+      "required": ["above_tokens", "target_tokens"],
       "title": "SummarizeLongFragmentsOp",
       "type": "object"
     },
@@ -1326,10 +1221,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "model_profile_id",
-        "reason"
-      ],
+      "required": ["model_profile_id", "reason"],
       "title": "SwitchToModelProfileOp",
       "type": "object"
     },
@@ -1349,9 +1241,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "min_confidence"
-      ],
+      "required": ["min_confidence"],
       "title": "TightenConfidenceThresholdOp",
       "type": "object"
     },
@@ -1370,9 +1260,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "constraint_text"
-      ],
+      "required": ["constraint_text"],
       "title": "TightenConstraintOp",
       "type": "object"
     },
@@ -1392,9 +1280,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "min_relevance"
-      ],
+      "required": ["min_relevance"],
       "title": "TightenRelevanceThresholdOp",
       "type": "object"
     },
@@ -1418,10 +1304,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "requirement_key",
-        "patch"
-      ],
+      "required": ["requirement_key", "patch"],
       "title": "UpdateContextRequirementOp",
       "type": "object"
     },
@@ -1447,10 +1330,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "node_id",
-        "changes"
-      ],
+      "required": ["node_id", "changes"],
       "title": "UpdateNodeOp",
       "type": "object"
     },
@@ -1492,10 +1372,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "from_node_id",
-        "artifact_field"
-      ],
+      "required": ["from_node_id", "artifact_field"],
       "title": "UpstreamArtifactSelector",
       "type": "object"
     },
@@ -1515,9 +1392,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "input_field"
-      ],
+      "required": ["input_field"],
       "title": "UserInputSelector",
       "type": "object"
     }

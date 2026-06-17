@@ -15,9 +15,7 @@
       "type": "string"
     }
   },
-  "required": [
-    "validator_id"
-  ],
+  "required": ["validator_id"],
   "title": "ExtraValidatorRef",
   "type": "object"
 }

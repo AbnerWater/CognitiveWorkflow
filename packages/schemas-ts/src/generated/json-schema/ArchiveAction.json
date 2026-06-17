@@ -26,9 +26,7 @@
       "title": "To"
     }
   },
-  "required": [
-    "kind"
-  ],
+  "required": ["kind"],
   "title": "ArchiveAction",
   "type": "object"
 }

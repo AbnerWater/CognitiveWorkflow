@@ -2,12 +2,7 @@
   "$defs": {
     "Priority": {
       "description": "ContextFragment.priority / Evidence.priority。",
-      "enum": [
-        "critical",
-        "high",
-        "normal",
-        "low"
-      ],
+      "enum": ["critical", "high", "normal", "low"],
       "title": "Priority",
       "type": "string"
     }

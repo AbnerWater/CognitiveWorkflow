@@ -37,9 +37,7 @@
       "title": "Note"
     }
   },
-  "required": [
-    "evidence_id"
-  ],
+  "required": ["evidence_id"],
   "title": "Citation",
   "type": "object"
 }

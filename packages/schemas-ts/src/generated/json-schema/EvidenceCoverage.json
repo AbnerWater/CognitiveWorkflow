@@ -58,11 +58,7 @@
       "title": "Unsupported Claim Estimates"
     }
   },
-  "required": [
-    "coverage_ratio",
-    "avg_relevance",
-    "avg_confidence"
-  ],
+  "required": ["coverage_ratio", "avg_relevance", "avg_confidence"],
   "title": "EvidenceCoverage",
   "type": "object"
 }

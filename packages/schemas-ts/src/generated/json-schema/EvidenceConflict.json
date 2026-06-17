@@ -14,12 +14,7 @@
     },
     "Severity": {
       "description": "4 级严重度（failure_taxonomy.md §8）。",
-      "enum": [
-        "blocker",
-        "major",
-        "minor",
-        "info"
-      ],
+      "enum": ["blocker", "major", "minor", "info"],
       "title": "Severity",
       "type": "string"
     }
@@ -74,12 +69,7 @@
       "$ref": "#/$defs/Severity"
     }
   },
-  "required": [
-    "conflict_id",
-    "evidence_ids",
-    "kind",
-    "severity"
-  ],
+  "required": ["conflict_id", "evidence_ids", "kind", "severity"],
   "title": "EvidenceConflict",
   "type": "object"
 }

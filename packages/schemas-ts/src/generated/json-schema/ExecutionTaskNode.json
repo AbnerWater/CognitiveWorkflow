@@ -2,21 +2,13 @@
   "$defs": {
     "ArbitrationMode": {
       "description": "EvaluationContract.arbitration（架构 §9 多 Agent 辩论 / D-ER-6）。",
-      "enum": [
-        "single_judge",
-        "multi_judge",
-        "programmatic_first"
-      ],
+      "enum": ["single_judge", "multi_judge", "programmatic_first"],
       "title": "ArbitrationMode",
       "type": "string"
     },
     "BackoffStrategy": {
       "description": "RetryPolicy.backoff。",
-      "enum": [
-        "none",
-        "linear",
-        "exponential"
-      ],
+      "enum": ["none", "linear", "exponential"],
       "title": "BackoffStrategy",
       "type": "string"
     },
@@ -100,11 +92,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "key",
-        "kind",
-        "selector"
-      ],
+      "required": ["key", "kind", "selector"],
       "title": "ContextRequirement",
       "type": "object"
     },
@@ -363,11 +351,7 @@
           "type": "number"
         }
       },
-      "required": [
-        "criterion_id",
-        "description",
-        "kind"
-      ],
+      "required": ["criterion_id", "description", "kind"],
       "title": "EvaluationCriterion",
       "type": "object"
     },
@@ -403,9 +387,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "required_for"
-      ],
+      "required": ["required_for"],
       "title": "EvidenceRequirement",
       "type": "object"
     },
@@ -551,11 +533,7 @@
           "description": "输出校验策略"
         }
       },
-      "required": [
-        "contract_id",
-        "goal",
-        "model_policy"
-      ],
+      "required": ["contract_id", "goal", "model_policy"],
       "title": "ExecutionContract",
       "type": "object"
     },
@@ -576,9 +554,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "validator_id"
-      ],
+      "required": ["validator_id"],
       "title": "ExtraValidatorRef",
       "type": "object"
     },
@@ -588,12 +564,7 @@
       "properties": {
         "combinator": {
           "description": "组合方式",
-          "enum": [
-            "all_pass",
-            "any_pass",
-            "weighted_score",
-            "custom"
-          ],
+          "enum": ["all_pass", "any_pass", "weighted_score", "custom"],
           "title": "Combinator",
           "type": "string"
         },
@@ -619,9 +590,7 @@
           "title": "Threshold"
         }
       },
-      "required": [
-        "combinator"
-      ],
+      "required": ["combinator"],
       "title": "FailCondition",
       "type": "object"
     },
@@ -667,9 +636,7 @@
           "title": "Label"
         }
       },
-      "required": [
-        "key"
-      ],
+      "required": ["key"],
       "title": "HumanDecision",
       "type": "object"
     },
@@ -896,9 +863,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "server_id"
-      ],
+      "required": ["server_id"],
       "title": "MCPToolRef",
       "type": "object"
     },
@@ -1011,12 +976,7 @@
         },
         "operation": {
           "description": "操作类型",
-          "enum": [
-            "read",
-            "write",
-            "upsert",
-            "delete"
-          ],
+          "enum": ["read", "write", "upsert", "delete"],
           "title": "Operation",
           "type": "string"
         },
@@ -1058,10 +1018,7 @@
         },
         "target": {
           "description": "操作对象",
-          "enum": [
-            "project_memory",
-            "reflection_memory"
-          ],
+          "enum": ["project_memory", "reflection_memory"],
           "title": "Target",
           "type": "string"
         },
@@ -1147,9 +1104,7 @@
           "title": "Seed"
         }
       },
-      "required": [
-        "primary_model_profile_id"
-      ],
+      "required": ["primary_model_profile_id"],
       "title": "NodeModelPolicy",
       "type": "object"
     },
@@ -1177,12 +1132,7 @@
       "properties": {
         "combinator": {
           "description": "组合方式",
-          "enum": [
-            "all_pass",
-            "any_pass",
-            "weighted_score",
-            "custom"
-          ],
+          "enum": ["all_pass", "any_pass", "weighted_score", "custom"],
           "title": "Combinator",
           "type": "string"
         },
@@ -1208,9 +1158,7 @@
           "title": "Threshold"
         }
       },
-      "required": [
-        "combinator"
-      ],
+      "required": ["combinator"],
       "title": "PassCondition",
       "type": "object"
     },
@@ -1230,9 +1178,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "memory_key"
-      ],
+      "required": ["memory_key"],
       "title": "ProjectMemorySelector",
       "type": "object"
     },
@@ -1290,19 +1236,13 @@
           "type": "string"
         }
       },
-      "required": [
-        "user_prompt_template"
-      ],
+      "required": ["user_prompt_template"],
       "title": "PromptSection",
       "type": "object"
     },
     "ProviderKind": {
       "description": "ModelProfile.provider_kind / AdapterCapabilities.provider_kinds。",
-      "enum": [
-        "cloud",
-        "private",
-        "local"
-      ],
+      "enum": ["cloud", "private", "local"],
       "title": "ProviderKind",
       "type": "string"
     },
@@ -1336,9 +1276,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "reference_id"
-      ],
+      "required": ["reference_id"],
       "title": "ReferenceSelector",
       "type": "object"
     },
@@ -1512,12 +1450,7 @@
           "description": "输出校验策略"
         }
       },
-      "required": [
-        "contract_id",
-        "goal",
-        "model_policy",
-        "repair_strategies"
-      ],
+      "required": ["contract_id", "goal", "model_policy", "repair_strategies"],
       "title": "RepairContract",
       "type": "object"
     },
@@ -1576,10 +1509,7 @@
           "type": "integer"
         }
       },
-      "required": [
-        "kind",
-        "applies_to_failure_types"
-      ],
+      "required": ["kind", "applies_to_failure_types"],
       "title": "RepairStrategy",
       "type": "object"
     },
@@ -1656,12 +1586,7 @@
     },
     "Severity": {
       "description": "4 级严重度（failure_taxonomy.md §8）。",
-      "enum": [
-        "blocker",
-        "major",
-        "minor",
-        "info"
-      ],
+      "enum": ["blocker", "major", "minor", "info"],
       "title": "Severity",
       "type": "string"
     },
@@ -1688,9 +1613,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "skill_id"
-      ],
+      "required": ["skill_id"],
       "title": "SkillRef",
       "type": "object"
     },
@@ -1709,29 +1632,19 @@
           "type": "string"
         }
       },
-      "required": [
-        "text"
-      ],
+      "required": ["text"],
       "title": "StaticTextSelector",
       "type": "object"
     },
     "TemplateEngine": {
       "description": "PromptSection.template_engine（D-NC-1 默认 handlebars）。",
-      "enum": [
-        "handlebars",
-        "jinja2_minimal",
-        "none"
-      ],
+      "enum": ["handlebars", "jinja2_minimal", "none"],
       "title": "TemplateEngine",
       "type": "string"
     },
     "TimeoutAction": {
       "description": "human_gate.timeout_action / WorkflowEdge human.",
-      "enum": [
-        "hold",
-        "fallback",
-        "abort"
-      ],
+      "enum": ["hold", "fallback", "abort"],
       "title": "TimeoutAction",
       "type": "string"
     },
@@ -1895,12 +1808,7 @@
           "description": "输出校验策略"
         }
       },
-      "required": [
-        "contract_id",
-        "goal",
-        "model_policy",
-        "tool_id"
-      ],
+      "required": ["contract_id", "goal", "model_policy", "tool_id"],
       "title": "ToolContract",
       "type": "object"
     },
@@ -1942,10 +1850,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "from_node_id",
-        "artifact_field"
-      ],
+      "required": ["from_node_id", "artifact_field"],
       "title": "UpstreamArtifactSelector",
       "type": "object"
     },
@@ -1965,19 +1870,13 @@
           "type": "string"
         }
       },
-      "required": [
-        "input_field"
-      ],
+      "required": ["input_field"],
       "title": "UserInputSelector",
       "type": "object"
     },
     "ValidatorMode": {
       "description": "ValidatorPolicy.mode。",
-      "enum": [
-        "strict",
-        "lenient",
-        "programmatic_only"
-      ],
+      "enum": ["strict", "lenient", "programmatic_only"],
       "title": "ValidatorMode",
       "type": "string"
     },
@@ -2122,10 +2021,7 @@
       "type": "string"
     }
   },
-  "required": [
-    "node_id",
-    "title"
-  ],
+  "required": ["node_id", "title"],
   "title": "ExecutionTaskNode",
   "type": "object"
 }

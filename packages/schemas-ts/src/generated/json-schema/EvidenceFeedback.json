@@ -36,10 +36,7 @@
       "type": "integer"
     }
   },
-  "required": [
-    "evidence_pack_id",
-    "unsupported_claim_estimates"
-  ],
+  "required": ["evidence_pack_id", "unsupported_claim_estimates"],
   "title": "EvidenceFeedback",
   "type": "object"
 }

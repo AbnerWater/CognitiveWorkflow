@@ -71,10 +71,7 @@
       "type": "integer"
     }
   },
-  "required": [
-    "kind",
-    "applies_to_failure_types"
-  ],
+  "required": ["kind", "applies_to_failure_types"],
   "title": "RepairStrategy",
   "type": "object"
 }

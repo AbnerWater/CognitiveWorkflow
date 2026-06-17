@@ -16,9 +16,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "memory_key"
-      ],
+      "required": ["memory_key"],
       "title": "ProjectMemorySelector",
       "type": "object"
     },
@@ -52,9 +50,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "reference_id"
-      ],
+      "required": ["reference_id"],
       "title": "ReferenceSelector",
       "type": "object"
     },
@@ -73,9 +69,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "text"
-      ],
+      "required": ["text"],
       "title": "StaticTextSelector",
       "type": "object"
     },
@@ -117,10 +111,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "from_node_id",
-        "artifact_field"
-      ],
+      "required": ["from_node_id", "artifact_field"],
       "title": "UpstreamArtifactSelector",
       "type": "object"
     },
@@ -140,9 +131,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "input_field"
-      ],
+      "required": ["input_field"],
       "title": "UserInputSelector",
       "type": "object"
     }
@@ -226,11 +215,7 @@
       "type": "boolean"
     }
   },
-  "required": [
-    "key",
-    "kind",
-    "selector"
-  ],
+  "required": ["key", "kind", "selector"],
   "title": "ContextRequirement",
   "type": "object"
 }
