@@ -28,6 +28,7 @@ from cw_schemas.packs import (
     ContextProvenance,
     ExecutionPack,
     StaticTextSource,
+    UsageLimits,
 )
 from cw_schemas.types import AdapterKind, AttemptState, CancelReason, Priority, ProviderKind, ResumptionKind
 
@@ -91,6 +92,15 @@ class FakeSDKResult:
         return "00-sdk-trace"
 
 
+class UsageLimitExceeded(RuntimeError):
+    pass
+
+
+class FakeSDKUsageLimits:
+    def __init__(self, **kwargs: Any) -> None:
+        self.kwargs = kwargs
+
+
 class FakeSDKAgent:
     instances: ClassVar[list[FakeSDKAgent]] = []
     stream_events: ClassVar[list[object] | None] = None
@@ -100,13 +110,22 @@ class FakeSDKAgent:
         self.kwargs = kwargs
         self.run_user_prompt: str | None = None
         self.run_model_settings: dict[str, Any] | None = None
+        self.run_usage_limits: object | None = None
         self.stream_user_prompt: str | None = None
         self.stream_model_settings: dict[str, Any] | None = None
+        self.stream_usage_limits: object | None = None
         FakeSDKAgent.instances.append(self)
 
-    async def run(self, user_prompt: str, *, model_settings: dict[str, Any] | None = None) -> FakeSDKResult:
+    async def run(
+        self,
+        user_prompt: str,
+        *,
+        model_settings: dict[str, Any] | None = None,
+        usage_limits: object | None = None,
+    ) -> FakeSDKResult:
         self.run_user_prompt = user_prompt
         self.run_model_settings = model_settings
+        self.run_usage_limits = usage_limits
         return FakeSDKResult()
 
     def run_stream_events(
@@ -114,9 +133,11 @@ class FakeSDKAgent:
         user_prompt: str,
         *,
         model_settings: dict[str, Any] | None = None,
+        usage_limits: object | None = None,
     ) -> FakeSDKEventStream:
         self.stream_user_prompt = user_prompt
         self.stream_model_settings = model_settings
+        self.stream_usage_limits = usage_limits
         events = FakeSDKAgent.stream_events
         return FakeSDKEventStream(_default_sdk_stream_events() if events is None else events)
 
@@ -129,11 +150,19 @@ class FakeSDKRunOnlyAgent:
         self.kwargs = kwargs
         self.run_user_prompt: str | None = None
         self.run_model_settings: dict[str, Any] | None = None
+        self.run_usage_limits: object | None = None
         FakeSDKRunOnlyAgent.instances.append(self)
 
-    async def run(self, user_prompt: str, *, model_settings: dict[str, Any] | None = None) -> FakeSDKResult:
+    async def run(
+        self,
+        user_prompt: str,
+        *,
+        model_settings: dict[str, Any] | None = None,
+        usage_limits: object | None = None,
+    ) -> FakeSDKResult:
         self.run_user_prompt = user_prompt
         self.run_model_settings = model_settings
+        self.run_usage_limits = usage_limits
         return FakeSDKResult()
 
 
@@ -163,6 +192,8 @@ class FakeSDKEventStream:
             raise StopAsyncIteration
         event = self._events[self._index]
         self._index += 1
+        if isinstance(event, BaseException):
+            raise event
         return event
 
 
@@ -189,6 +220,7 @@ def _install_fake_pydantic_ai_sdk(
 
     fake_sdk.__dict__["Agent"] = agent_cls
     fake_sdk.__dict__["StructuredDict"] = structured_dict
+    fake_sdk.__dict__["UsageLimits"] = FakeSDKUsageLimits
 
     def import_module(name: str) -> ModuleType:
         if name == "pydantic_ai":
@@ -265,7 +297,11 @@ async def _collect(events: AsyncIterator[StreamEventBase]) -> list[StreamEventBa
     return [event async for event in events]
 
 
-def _execution_pack(output_schema: dict[str, Any] | None = None) -> ExecutionPack:
+def _execution_pack(
+    output_schema: dict[str, Any] | None = None,
+    *,
+    usage_limits: UsageLimits | None = None,
+) -> ExecutionPack:
     return ExecutionPack(
         pack_id="exp_01",
         run_id="run_01",
@@ -320,6 +356,7 @@ def _execution_pack(output_schema: dict[str, Any] | None = None) -> ExecutionPac
         ),
         effective_model_profile_id="claude-sonnet-default",
         effective_model_settings={"temperature": 0.2},
+        usage_limits=usage_limits,
         cancel_token="tok_abc_01",
         correlation_id="trace_xyz",
     )
@@ -666,6 +703,88 @@ async def test_pydantic_ai_default_sdk_session_maps_retry_prompt_to_tool_failed(
 
 
 @pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_passes_token_usage_limits_to_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            usage_limits=UsageLimits(
+                max_input_tokens=100,
+                max_output_tokens=50,
+                max_total_tokens=120,
+            ),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    assert len(FakeSDKAgent.instances) == 1
+    usage_limits = FakeSDKAgent.instances[0].stream_usage_limits
+    assert isinstance(usage_limits, FakeSDKUsageLimits)
+    assert usage_limits.kwargs == {
+        "request_limit": None,
+        "input_tokens_limit": 100,
+        "output_tokens_limit": 50,
+        "total_tokens_limit": 120,
+    }
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_maps_usage_limit_exceeded_to_spec_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    FakeSDKAgent.stream_events = [UsageLimitExceeded("Exceeded the total_tokens_limit of 10")]
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            usage_limits=UsageLimits(max_total_tokens=10),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert events[-1].payload is not None
+    assert events[-1].payload["error_kind"] == "usage_limit_exceeded"
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_USAGE_LIMIT"
+    assert outcome.errors[0].payload["exception_type"] == "UsageLimitExceeded"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_unsupported_cost_usage_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            usage_limits=UsageLimits(max_cost_usd=0.01),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert events[-1].payload is not None
+    assert events[-1].payload["error_kind"] == "prepare_failed"
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_PREPARE_INCOMPATIBLE_ADAPTER"
+    assert outcome.errors[0].payload["usage_limit"] == "max_cost_usd"
+
+
+@pytest.mark.asyncio
 async def test_pydantic_ai_default_sdk_session_dedupes_builtin_tool_call_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -695,7 +814,12 @@ async def test_pydantic_ai_default_sdk_session_falls_back_to_run_when_stream_is_
 ) -> None:
     _install_fake_pydantic_ai_sdk(monkeypatch, agent_cls=FakeSDKRunOnlyAgent)
     adapter = PydanticAIAdapter()
-    handle = await adapter.prepare(_execution_pack({"type": "object", "required": ["answer"]}))
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            usage_limits=UsageLimits(max_output_tokens=50),
+        )
+    )
 
     events = await _collect(adapter.run(handle))
 
@@ -709,6 +833,11 @@ async def test_pydantic_ai_default_sdk_session_falls_back_to_run_when_stream_is_
     assert agent.run_user_prompt is not None
     assert "Answer with JSON." in agent.run_user_prompt
     assert agent.run_model_settings == {"temperature": 0.2}
+    assert isinstance(agent.run_usage_limits, FakeSDKUsageLimits)
+    assert agent.run_usage_limits.kwargs == {
+        "request_limit": None,
+        "output_tokens_limit": 50,
+    }
     outcome = await adapter.finalize(handle)
     assert outcome.state == AttemptState.COMPLETED
     assert outcome.output == {"answer": "sdk"}

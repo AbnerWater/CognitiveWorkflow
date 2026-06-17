@@ -61,6 +61,7 @@ class PydanticAIRunRequest(BaseModel):
     user_prompt: str = Field(..., min_length=1)
     output_schema: dict[str, Any] = Field(default_factory=dict)
     model_settings: dict[str, Any] = Field(default_factory=dict)
+    usage_limits: dict[str, Any] = Field(default_factory=dict)
     correlation_id: str = Field(..., min_length=1)
 
 
@@ -105,18 +106,20 @@ class PydanticAISDKSession:
     async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
         sdk = self._sdk()
         agent = _build_sdk_agent(sdk, request)
+        usage_limits = _sdk_usage_limits(sdk, request)
         stream_events = getattr(agent, "run_stream_events", None)
         if callable(stream_events):
             async with stream_events(
                 request.user_prompt,
                 model_settings=request.model_settings or None,
+                usage_limits=usage_limits,
             ) as stream:
                 async for sdk_event in stream:
                     for raw_event in _sdk_stream_event_to_raw(sdk_event):
                         yield raw_event
             return
 
-        async for raw_event in _run_sdk_agent_once(agent, request):
+        async for raw_event in _run_sdk_agent_once(agent, request, usage_limits):
             yield raw_event
 
     async def resume(self, request: PydanticAIResumeRequest) -> AsyncIterator[RawPydanticAIEvent]:
@@ -422,6 +425,9 @@ class PydanticAIAdapter:
             user_prompt=_render_user_prompt(pack),
             output_schema=dict(pack.node_contract_snapshot.output_schema),
             model_settings=dict(pack.effective_model_settings),
+            usage_limits={}
+            if pack.usage_limits is None
+            else pack.usage_limits.model_dump(mode="json", exclude_none=True),
             correlation_id=pack.correlation_id,
         )
 
@@ -440,16 +446,24 @@ class PydanticAIAdapter:
         except AdapterRuntimeError:
             raise
         except Exception as exc:
+            error_code: AgentAdapterErrorCode = (
+                "AA_RUN_USAGE_LIMIT" if _is_usage_limit_exceeded(exc) else "AA_RUN_INTERNAL"
+            )
+            message = (
+                "Pydantic AI session exceeded configured usage limits."
+                if error_code == "AA_RUN_USAGE_LIMIT"
+                else "Pydantic AI session raised an internal exception."
+            )
             error = build_adapter_error(
-                "AA_RUN_INTERNAL",
-                "Pydantic AI session raised an internal exception.",
+                error_code,
+                message,
                 retryable=False,
-                payload={"exception_type": type(exc).__name__},
+                payload={"exception_type": type(exc).__name__, "message": str(exc)},
             )
             self._errors[handle.handle_id] = [error]
             handle.state = AttemptState.FAILED
             handle.finished_at = utc_now_ms()
-            raise AdapterRuntimeError("AA_RUN_INTERNAL", error.message, payload=error.payload) from exc
+            raise AdapterRuntimeError(error_code, error.message, payload=error.payload) from exc
 
     def _translate_raw_event(self, handle: AttemptHandle, raw_event: RawPydanticAIEvent) -> list[StreamEventBase]:
         event_type = _required_str(raw_event, "type")
@@ -956,10 +970,44 @@ def _build_sdk_agent(sdk: ModuleType, request: PydanticAIRunRequest) -> Any:
     return agent_cls(request.model_profile_id, **kwargs)
 
 
-async def _run_sdk_agent_once(agent: Any, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
+def _sdk_usage_limits(sdk: ModuleType, request: PydanticAIRunRequest) -> object | None:
+    if not request.usage_limits:
+        return None
+    if "max_cost_usd" in request.usage_limits:
+        raise AdapterRuntimeError(
+            "AA_PREPARE_INCOMPATIBLE_ADAPTER",
+            "Pydantic AI SDK usage limits cannot enforce max_cost_usd.",
+            payload={"usage_limit": "max_cost_usd", "value": request.usage_limits["max_cost_usd"]},
+        )
+
+    usage_limits_cls = getattr(sdk, "UsageLimits", None)
+    if not callable(usage_limits_cls):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "pydantic_ai module does not expose UsageLimits.",
+            payload={"module": "pydantic_ai", "usage_limits": sorted(request.usage_limits)},
+        )
+
+    kwargs: dict[str, Any] = {"request_limit": None}
+    if "max_input_tokens" in request.usage_limits:
+        kwargs["input_tokens_limit"] = request.usage_limits["max_input_tokens"]
+    if "max_output_tokens" in request.usage_limits:
+        kwargs["output_tokens_limit"] = request.usage_limits["max_output_tokens"]
+    if "max_total_tokens" in request.usage_limits:
+        kwargs["total_tokens_limit"] = request.usage_limits["max_total_tokens"]
+    usage_limits: object = usage_limits_cls(**kwargs)
+    return usage_limits
+
+
+async def _run_sdk_agent_once(
+    agent: Any,
+    request: PydanticAIRunRequest,
+    usage_limits: object | None,
+) -> AsyncIterator[RawPydanticAIEvent]:
     result = await agent.run(
         request.user_prompt,
         model_settings=request.model_settings or None,
+        usage_limits=usage_limits,
     )
     for raw_event in _sdk_result_to_raw_events(result):
         yield raw_event
@@ -1164,6 +1212,10 @@ def _sdk_tool_result_message(part: object) -> str:
         if isinstance(value, str):
             return _summary_text(value)
     return _sdk_result_summary(getattr(part, "content", None))
+
+
+def _is_usage_limit_exceeded(exc: Exception) -> bool:
+    return type(exc).__name__ == "UsageLimitExceeded"
 
 
 def _summary_text(value: str, *, limit: int = 500) -> str:
