@@ -66,6 +66,17 @@ class PydanticAIToolsetRequest(BaseModel):
     mcp_tools: list[PydanticAIMCPToolRequest] = Field(default_factory=list)
 
 
+class PydanticAIRetryPolicy(BaseModel):
+    """Serializable retry policy subset passed to the SDK Agent constructor."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    model_retries: int = Field(default=0, ge=0)
+    model_retries_explicit: bool = False
+    output_validation_retries: int = Field(default=0, ge=0)
+    tool_retries: int | dict[str, int] = Field(default=0)
+
+
 class PydanticAIRunRequest(BaseModel):
     """Internal request passed to a Pydantic AI session implementation."""
 
@@ -84,6 +95,7 @@ class PydanticAIRunRequest(BaseModel):
     model_settings: dict[str, Any] = Field(default_factory=dict)
     usage_limits: dict[str, Any] = Field(default_factory=dict)
     toolsets: PydanticAIToolsetRequest = Field(default_factory=PydanticAIToolsetRequest)
+    retry_policy: PydanticAIRetryPolicy = Field(default_factory=PydanticAIRetryPolicy)
     correlation_id: str = Field(..., min_length=1)
 
 
@@ -483,6 +495,12 @@ class PydanticAIAdapter:
             if pack.usage_limits is None
             else pack.usage_limits.model_dump(mode="json", exclude_none=True),
             toolsets=_toolset_request(pack),
+            retry_policy=PydanticAIRetryPolicy(
+                model_retries=pack.retry_policy.model_retries,
+                model_retries_explicit="model_retries" in pack.retry_policy.model_fields_set,
+                output_validation_retries=pack.retry_policy.output_validation_retries,
+                tool_retries=pack.retry_policy.tool_retries,
+            ),
             correlation_id=pack.correlation_id,
         )
 
@@ -1054,7 +1072,27 @@ def _build_sdk_agent(
     toolsets = _sdk_toolsets(sdk, request.toolsets, toolset_factory)
     if toolsets:
         kwargs["toolsets"] = toolsets
+    kwargs["retries"] = _sdk_agent_retries(request.retry_policy)
     return agent_cls(request.model_profile_id, **kwargs)
+
+
+def _sdk_agent_retries(retry_policy: PydanticAIRetryPolicy) -> dict[str, int]:
+    if retry_policy.model_retries_explicit and retry_policy.model_retries:
+        raise AdapterRuntimeError(
+            "AA_PREPARE_INCOMPATIBLE_ADAPTER",
+            "Pydantic AI SDK AgentRetries cannot enforce model_retries.",
+            payload={"model_retries": retry_policy.model_retries},
+        )
+    if isinstance(retry_policy.tool_retries, Mapping):
+        raise AdapterRuntimeError(
+            "AA_PREPARE_INCOMPATIBLE_ADAPTER",
+            "Pydantic AI SDK AgentRetries cannot enforce per-tool retry budgets.",
+            payload={"tool_retries": dict(retry_policy.tool_retries)},
+        )
+    return {
+        "tools": retry_policy.tool_retries,
+        "output": retry_policy.output_validation_retries,
+    }
 
 
 def _sdk_toolsets(
@@ -1641,6 +1679,7 @@ __all__ = [
     "PydanticAIMCPToolRequest",
     "PydanticAIMCPToolset",
     "PydanticAIResumeRequest",
+    "PydanticAIRetryPolicy",
     "PydanticAIRunRequest",
     "PydanticAISDKSession",
     "PydanticAISession",

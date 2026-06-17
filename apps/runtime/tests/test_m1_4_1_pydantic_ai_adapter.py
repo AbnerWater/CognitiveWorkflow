@@ -22,7 +22,7 @@ from cw_runtime.adapters import (
     RawPydanticAIEvent,
     build_pydantic_ai_descriptor,
 )
-from cw_schemas.contract import ExecutionContract, MCPToolRef, NodeModelPolicy, PromptSection, SkillRef
+from cw_schemas.contract import ExecutionContract, MCPToolRef, NodeModelPolicy, PromptSection, RetryPolicy, SkillRef
 from cw_schemas.events import StreamEventBase, ToolEvent
 from cw_schemas.packs import (
     ContextBudget,
@@ -325,6 +325,7 @@ def _execution_pack(
     mcp_tools: list[MCPToolRef] | None = None,
     effective_toolsets: ToolsetSpec | None = None,
     usage_limits: UsageLimits | None = None,
+    retry_policy: RetryPolicy | None = None,
 ) -> ExecutionPack:
     return ExecutionPack(
         pack_id="exp_01",
@@ -384,6 +385,7 @@ def _execution_pack(
         effective_model_profile_id="claude-sonnet-default",
         effective_model_settings={"temperature": 0.2},
         effective_toolsets=ToolsetSpec() if effective_toolsets is None else effective_toolsets,
+        retry_policy=RetryPolicy() if retry_policy is None else retry_policy,
         usage_limits=usage_limits,
         cancel_token="tok_abc_01",
         correlation_id="trace_xyz",
@@ -694,6 +696,7 @@ async def test_pydantic_ai_default_sdk_session_streams_events_and_records_outcom
     assert agent.kwargs["system_prompt"] == "You are running inside CW."
     assert agent.kwargs["instructions"] == ["Respect the output schema."]
     assert agent.kwargs["model_settings"] == {"temperature": 0.2}
+    assert agent.kwargs["retries"] == {"tools": 2, "output": 2}
     assert agent.kwargs["defer_model_check"] is True
     assert agent.kwargs["metadata"]["cw"]["execution_pack_id"] == "exp_01"
     assert agent.run_user_prompt is None
@@ -715,6 +718,76 @@ async def test_pydantic_ai_default_sdk_session_streams_events_and_records_outcom
     assert outcome.usage.requests == 1
     assert outcome.messages == [{"role": "assistant", "content": "sdk ok", "mode": "json"}]
     assert outcome.provenance.pydantic_ai_traceparent == "00-sdk-trace"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_passes_retry_policy_to_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            retry_policy=RetryPolicy(
+                max_attempts=4,
+                model_retries=0,
+                output_validation_retries=1,
+                tool_retries=3,
+            ),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    assert FakeSDKAgent.instances[0].kwargs["retries"] == {"tools": 3, "output": 1}
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_unsupported_model_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            retry_policy=RetryPolicy(model_retries=1),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_PREPARE_INCOMPATIBLE_ADAPTER"
+    assert outcome.errors[0].payload["model_retries"] == 1
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_per_tool_retry_map(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            retry_policy=RetryPolicy(tool_retries={"lookup": 1}),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_PREPARE_INCOMPATIBLE_ADAPTER"
+    assert outcome.errors[0].payload["tool_retries"] == {"lookup": 1}
 
 
 @pytest.mark.asyncio
