@@ -210,7 +210,7 @@ export type RequirementId = string;
 export type Satisfied = boolean;
 export type RequirementsResolved = RequirementResolution[];
 export type RunId = string;
-export type SchemaVersion = string;
+export type SchemaVersion = "0.1.0";
 
 /**
  * 事实声明的来源边界（§1.1）。

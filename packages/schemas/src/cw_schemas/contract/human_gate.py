@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic_core import PydanticCustomError
 
 from ..types import HumanDecisionKey, TimeoutAction
 from .base import NodeContractBase
@@ -54,15 +53,9 @@ class HumanGateContract(NodeContractBase):
         valid_standard = {k.value for k in HumanDecisionKey}
         for k in keys:
             if k not in valid_standard and not k.startswith("custom_"):
-                raise PydanticCustomError(
-                    "NC_L2_HUMAN_GATE_INVALID_DECISION_KEY",
-                    f"decision key={k!r} 非法：必须 ∈ {valid_standard} 或以 custom_ 开头",
-                )
+                raise ValueError(f"decision key={k!r} 非法：必须 ∈ {valid_standard} 或以 custom_ 开头")
         if HumanDecisionKey.CONTINUE.value not in keys:
-            raise PydanticCustomError(
-                "NC_L2_HUMAN_GATE_MISSING_CONTINUE",
-                "human_gate decisions 必须含 continue（用户审批通过路径）",
-            )
+            raise ValueError("human_gate decisions 必须含 continue（用户审批通过路径）")
         return self
 
 

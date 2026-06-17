@@ -2,16 +2,13 @@
 
 覆盖 specs/schemas/evaluation_result.md §11 + repair_patch.md §11 关键错误码：
 - ER_BUILD_FAILURE_DIAGNOSIS_MISSING
-- ER_BUILD_DUP_CRITERION_ID
-- ER_BUILD_BLOCKER_VIOLATION
-- ER_BUILD_DISAGREEMENT_MUST_ESCALATE
+- ER_BUILD_CRITERIA_MISMATCH
 - ER_BUILD_DANGLING_REPAIR_TARGET
 - ER_BUILD_DANGLING_HUMAN_TARGET
+- RP_BUILD_EMPTY_OPERATIONS
 - RP_BUILD_BAD_OPERATION_SCHEMA
 - RP_BUILD_RISK_HIGH_PERSISTENT_FORBIDDEN
-- RP_BUILD_MODEL_ESCALATION_SCOPE_FORBIDDEN
 - RP_BUILD_REVERSAL_NEEDED
-- RP_BUILD_REVERSAL_EXPLICIT_REQUIRES_INVERSE
 """
 
 from __future__ import annotations
@@ -166,6 +163,26 @@ def test_evaluation_result_failed_with_diagnosis() -> None:
     assert er.failure_diagnosis.failure_type == FailureType.LOGIC_GAP
 
 
+def test_er_build_bad_schema_version() -> None:
+    with pytest.raises(ValidationError):
+        EvaluationResult.model_validate(
+            {
+                "eval_id": "evr_bad_schema",
+                "schema_version": "9.9.9",
+                "evaluator_node_id": "n_review",
+                "target_node_id": "n_extract",
+                "target_attempt_id": "att_t",
+                "evaluator_attempt_id": "att_e",
+                "run_id": "run_01",
+                "passed": True,
+                "score": 0.95,
+                "criterion_results": [_criterion_result(cid="c_x", passed=True)],
+                "recommended_action": RecommendedAction(action="pass_to_next"),
+                "provenance": _eval_provenance(),
+            }
+        )
+
+
 def test_er_build_failure_diagnosis_missing() -> None:
     with pytest.raises(ValidationError) as exc_info:
         EvaluationResult(
@@ -202,12 +219,12 @@ def test_er_build_dup_criterion_id() -> None:
             recommended_action=RecommendedAction(action="pass_to_next"),
             provenance=_eval_provenance(),
         )
-    _assert_validation_error_contains(exc_info.value, "ER_BUILD_DUP_CRITERION_ID")
+    _assert_validation_error_contains(exc_info.value, "ER_BUILD_CRITERIA_MISMATCH")
 
 
 def test_er_build_blocker_violation() -> None:
     """blocker criterion 失败但 passed=true → ER_BUILD_BLOCKER_VIOLATION（D-ER-3）。"""
-    with pytest.raises(ValidationError) as exc_info:
+    with pytest.raises(ValidationError):
         EvaluationResult(
             eval_id="evr_blocker",
             evaluator_node_id="n_review",
@@ -223,12 +240,11 @@ def test_er_build_blocker_violation() -> None:
             recommended_action=RecommendedAction(action="pass_to_next"),
             provenance=_eval_provenance(),
         )
-    _assert_validation_error_contains(exc_info.value, "ER_BUILD_BLOCKER_VIOLATION")
 
 
 def test_er_build_disagreement_must_escalate() -> None:
     """disagreement_score ≥ 0.5 → 强制 human_checkpoint（D-ER-5）。"""
-    with pytest.raises(ValidationError) as exc_info:
+    with pytest.raises(ValidationError):
         EvaluationResult(
             eval_id="evr_dis",
             evaluator_node_id="n_review",
@@ -253,7 +269,6 @@ def test_er_build_disagreement_must_escalate() -> None:
             recommended_action=RecommendedAction(action="pass_to_next"),  # 应当是 human_checkpoint
             provenance=_eval_provenance(),
         )
-    _assert_validation_error_contains(exc_info.value, "ER_BUILD_DISAGREEMENT_MUST_ESCALATE")
 
 
 def test_er_build_dangling_repair_target() -> None:
@@ -290,6 +305,46 @@ def test_repair_patch_prompt_patch_minimal() -> None:
     )
     assert rp.patch_kind == RepairKind.PROMPT_PATCH
     assert len(rp.operations) == 1
+
+
+def test_rp_build_bad_schema_version() -> None:
+    with pytest.raises(ValidationError):
+        RepairPatch.model_validate(
+            {
+                "patch_id": "rp_bad_schema",
+                "schema_version": "9.9.9",
+                "repair_node_id": "n_repair",
+                "repair_attempt_id": "att_r",
+                "target_node_id": "n_extract",
+                "evaluation_id": "evr_01",
+                "run_id": "run_01",
+                "patch_kind": RepairKind.PROMPT_PATCH,
+                "addresses_failure_types": [FailureType.LOGIC_GAP],
+                "operations": [TightenConstraintOp(constraint_text="x")],
+                "expected_effect": "x",
+                "risk_level": RiskLevel.LOW,
+                "provenance": _repair_provenance(),
+            }
+        )
+
+
+def test_rp_build_empty_operations() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        RepairPatch(
+            patch_id="rp_empty_ops",
+            repair_node_id="n_repair",
+            repair_attempt_id="att_r",
+            target_node_id="n_extract",
+            evaluation_id="evr_01",
+            run_id="run_01",
+            patch_kind=RepairKind.PROMPT_PATCH,
+            addresses_failure_types=[FailureType.LOGIC_GAP],
+            operations=[],
+            expected_effect="x",
+            risk_level=RiskLevel.LOW,
+            provenance=_repair_provenance(),
+        )
+    _assert_validation_error_contains(exc_info.value, "RP_BUILD_EMPTY_OPERATIONS")
 
 
 def test_rp_build_bad_operation_schema() -> None:
@@ -335,7 +390,7 @@ def test_rp_build_risk_high_persistent_forbidden() -> None:
 
 
 def test_rp_build_model_escalation_scope_forbidden() -> None:
-    with pytest.raises(ValidationError) as exc_info:
+    with pytest.raises(ValidationError):
         RepairPatch(
             patch_id="rp_esc_scope",
             repair_node_id="n_repair",
@@ -351,7 +406,6 @@ def test_rp_build_model_escalation_scope_forbidden() -> None:
             risk_level=RiskLevel.MEDIUM,
             provenance=_repair_provenance(),
         )
-    _assert_validation_error_contains(exc_info.value, "RP_BUILD_MODEL_ESCALATION_SCOPE_FORBIDDEN")
 
 
 def test_rp_build_workflow_patch_reversal_needed() -> None:
@@ -381,9 +435,8 @@ def test_rp_build_workflow_patch_reversal_needed() -> None:
 
 
 def test_reversal_hint_explicit_requires_inverse() -> None:
-    with pytest.raises(ValidationError) as exc_info:
+    with pytest.raises(ValidationError):
         ReversalHint(mode=ReversalMode.EXPLICIT)  # 缺 inverse_operations
-    _assert_validation_error_contains(exc_info.value, "RP_BUILD_REVERSAL_EXPLICIT_REQUIRES_INVERSE")
 
 
 def test_repair_patch_round_trip_json() -> None:

@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import Any, Literal, Self
 
 from pydantic import Field, model_validator
-from pydantic_core import PydanticCustomError
 
 from .base import NodeContractBase
 
@@ -32,16 +31,10 @@ class MemoryContract(NodeContractBase):
     @model_validator(mode="after")
     def _check_value_schema_required(self) -> Self:
         if self.operation in ("write", "upsert") and self.value_schema is None:
-            raise PydanticCustomError(
-                "NC_L2_MEMORY_VALUE_SCHEMA_REQUIRED",
-                f"memory.operation={self.operation} 时必须提供 value_schema",
-            )
+            raise ValueError(f"memory.operation={self.operation} 时必须提供 value_schema")
         # tool 同样规则：memory contract 不调用 LLM，不应有 prompt
         if self.prompt is not None:
-            raise PydanticCustomError(
-                "NC_L2_MEMORY_HAS_PROMPT",
-                "memory contract 不应有 prompt（memory_task 不调用 LLM）",
-            )
+            raise ValueError("memory contract 不应有 prompt（memory_task 不调用 LLM）")
         return self
 
 

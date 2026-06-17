@@ -282,7 +282,7 @@ export type RequirementsHash = string;
  */
 export type Tokenizer = string;
 export type RunId = string;
-export type SchemaVersion = string;
+export type SchemaVersion = "0.1.0";
 /**
  * 来自项目 Memory.constraints
  */
@@ -502,7 +502,7 @@ export type RequirementId = string;
 export type Satisfied = boolean;
 export type RequirementsResolved = RequirementResolution[];
 export type RunId1 = string;
-export type SchemaVersion1 = string;
+export type SchemaVersion1 = "0.1.0";
 /**
  * 本次 attempt 生效的契约（已应用 overlay）
  */

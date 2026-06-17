@@ -346,10 +346,7 @@ class ReversalHint(BaseModel):
     @model_validator(mode="after")
     def _check_explicit_has_inverse(self) -> Self:
         if self.mode == ReversalMode.EXPLICIT and not self.inverse_operations:
-            raise PydanticCustomError(
-                "RP_BUILD_REVERSAL_EXPLICIT_REQUIRES_INVERSE",
-                "ReversalHint.mode=explicit 时必须提供 inverse_operations",
-            )
+            raise ValueError("ReversalHint.mode=explicit 时必须提供 inverse_operations")
         return self
 
 
@@ -386,7 +383,7 @@ class RepairPatch(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     patch_id: LooseId
-    schema_version: str = Field(default=REPAIR_PATCH_SCHEMA_VERSION)
+    schema_version: Literal["0.1.0"] = Field(default="0.1.0")
     repair_node_id: LooseId
     repair_attempt_id: LooseId
     target_node_id: LooseId
@@ -395,7 +392,7 @@ class RepairPatch(BaseModel):
 
     patch_kind: RepairKind
     addresses_failure_types: list[FailureType] = Field(..., min_length=1)
-    operations: list[Operation] = Field(..., min_length=1)
+    operations: list[Operation] = Field(..., json_schema_extra={"minItems": 1})
     expected_effect: str = Field(..., min_length=1, max_length=2000)
     rationale: str | None = Field(default=None, max_length=4000)
     applies_to_attempts: list[LooseId] = Field(default_factory=list)
@@ -408,13 +405,6 @@ class RepairPatch(BaseModel):
 
     @model_validator(mode="after")
     def _check_invariants(self) -> Self:
-        # schema_version 已知
-        if self.schema_version != REPAIR_PATCH_SCHEMA_VERSION:
-            raise PydanticCustomError(
-                "RP_BUILD_BAD_SCHEMA_VERSION",
-                f"RepairPatch.schema_version={self.schema_version!r} 未知",
-            )
-
         # operations 必须非空
         if not self.operations:
             raise PydanticCustomError(
@@ -441,10 +431,7 @@ class RepairPatch(BaseModel):
 
         # model_escalation 不允许 scope=this_attempt_only
         if self.patch_kind == RepairKind.MODEL_ESCALATION and self.scope == PatchScope.THIS_ATTEMPT_ONLY:
-            raise PydanticCustomError(
-                "RP_BUILD_MODEL_ESCALATION_SCOPE_FORBIDDEN",
-                "model_escalation 不允许 scope=this_attempt_only（升级后必须至少 until_pass）",
-            )
+            raise ValueError("model_escalation 不允许 scope=this_attempt_only（升级后必须至少 until_pass）")
 
         # workflow_patch 必须 reversal_hint.mode=explicit
         if self.patch_kind == RepairKind.WORKFLOW_PATCH:

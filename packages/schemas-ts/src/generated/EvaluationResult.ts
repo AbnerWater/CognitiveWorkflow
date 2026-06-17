@@ -181,7 +181,7 @@ export type RepairKind =
   | "workflow_patch"
   | "human_checkpoint";
 export type RunId = string;
-export type SchemaVersion = string;
+export type SchemaVersion = "0.1.0";
 export type Score1 = number;
 export type TargetAttemptId = string;
 export type TargetNodeId = string;

@@ -63,7 +63,7 @@ class ContextPack(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     pack_id: LooseId
-    schema_version: str = Field(default=CONTEXT_PACK_SCHEMA_VERSION)
+    schema_version: Literal["0.1.0"] = Field(default="0.1.0")
     node_id: LooseId
     attempt_id: LooseId
     run_id: LooseId
@@ -81,21 +81,11 @@ class ContextPack(BaseModel):
 
     @model_validator(mode="after")
     def _check_invariants(self) -> Self:
-        # §1.2: schema_version 已知
-        if self.schema_version != CONTEXT_PACK_SCHEMA_VERSION:
-            raise PydanticCustomError(
-                "CP_BUILD_BAD_SCHEMA_VERSION",
-                f"ContextPack.schema_version={self.schema_version!r} 未知；当前 {CONTEXT_PACK_SCHEMA_VERSION!r}",
-            )
-
         # §1.2: fragment_id 不重复
         seen_ids: set[str] = set()
         for f in self.fragments:
             if f.fragment_id in seen_ids:
-                raise PydanticCustomError(
-                    "CP_BUILD_DUP_FRAGMENT_ID",
-                    f"fragment_id 重复：{f.fragment_id}",
-                )
+                raise ValueError(f"fragment_id 重复：{f.fragment_id}")
             seen_ids.add(f.fragment_id)
 
         # §1.2: sum(tokens_estimate) ≤ budget.hard_limit_tokens

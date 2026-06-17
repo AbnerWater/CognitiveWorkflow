@@ -175,10 +175,7 @@ class WorkflowGraph(BaseModel):
         # ID 形态校验（兜底；StringConstraints 已粗筛）
         for nid in [self.workflow_id, self.entry_node_id, *self.terminal_node_ids]:
             if not is_valid_id(nid):
-                raise PydanticCustomError(
-                    "WG_L2_BAD_ID",
-                    f"ID 不合法：{nid!r}",
-                )
+                raise ValueError(f"ID 不合法：{nid!r}")
 
         # ---- §11 校验：节点 ID 唯一 ----
         seen_node_ids: set[str] = set()

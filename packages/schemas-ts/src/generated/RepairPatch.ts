@@ -364,7 +364,7 @@ export type Notes = string | null;
  */
 export type RiskLevel = "low" | "medium" | "high";
 export type RunId = string;
-export type SchemaVersion = string;
+export type SchemaVersion = "0.1.0";
 /**
  * RepairPatch.scope。
  */

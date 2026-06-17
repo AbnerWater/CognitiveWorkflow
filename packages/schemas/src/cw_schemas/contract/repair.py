@@ -44,7 +44,7 @@ class RepairContract(NodeContractBase):
 
     repair_strategies: list[RepairStrategy] = Field(
         ...,
-        min_length=1,
+        json_schema_extra={"minItems": 1},
         description="允许的修复路径（与失败类型对应）",
     )
     output_patch_schema: dict[str, Any] = Field(

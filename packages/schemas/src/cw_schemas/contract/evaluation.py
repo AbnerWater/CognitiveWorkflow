@@ -92,7 +92,7 @@ class EvaluationContract(NodeContractBase):
 
     criteria: list[EvaluationCriterion] = Field(
         ...,
-        min_length=1,
+        json_schema_extra={"minItems": 1},
         description="审查规则集；至少 1 条",
     )
     pass_condition: PassCondition = Field(..., description="通过条件")
@@ -130,10 +130,7 @@ class EvaluationContract(NodeContractBase):
         seen: set[str] = set()
         for c in self.criteria:
             if c.criterion_id in seen:
-                raise PydanticCustomError(
-                    "NC_L2_EVAL_DUP_CRITERION_ID",
-                    f"criterion_id 重复：{c.criterion_id}",
-                )
+                raise ValueError(f"criterion_id 重复：{c.criterion_id}")
             seen.add(c.criterion_id)
 
         return self

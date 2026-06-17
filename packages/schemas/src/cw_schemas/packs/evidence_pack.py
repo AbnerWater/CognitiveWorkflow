@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
@@ -40,10 +40,7 @@ class EvidenceCoverage(BaseModel):
     def _check_covered_subset(self) -> Self:
         for topic in self.required_topics_covered:
             if topic not in self.required_topics:
-                raise PydanticCustomError(
-                    "EP_BUILD_COVERAGE_INCONSISTENT",
-                    f"required_topics_covered 中 {topic!r} 不在 required_topics 集合内",
-                )
+                raise ValueError(f"required_topics_covered 中 {topic!r} 不在 required_topics 集合内")
         return self
 
 
@@ -105,7 +102,7 @@ class EvidencePack(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     pack_id: LooseId
-    schema_version: str = Field(default=EVIDENCE_PACK_SCHEMA_VERSION)
+    schema_version: Literal["0.1.0"] = Field(default="0.1.0")
     node_id: LooseId
     attempt_id: LooseId
     run_id: LooseId
@@ -120,13 +117,6 @@ class EvidencePack(BaseModel):
 
     @model_validator(mode="after")
     def _check_invariants(self) -> Self:
-        # schema_version 已知
-        if self.schema_version != EVIDENCE_PACK_SCHEMA_VERSION:
-            raise PydanticCustomError(
-                "EP_BUILD_BAD_SCHEMA_VERSION",
-                f"EvidencePack.schema_version={self.schema_version!r} 未知",
-            )
-
         # evidence_id 唯一
         seen: set[str] = set()
         for e in self.evidences:
@@ -149,19 +139,13 @@ class EvidencePack(BaseModel):
         for c in self.conflicts:
             for eid in c.evidence_ids:
                 if eid not in seen:
-                    raise PydanticCustomError(
-                        "EP_BUILD_CONFLICT_DANGLING_EVIDENCE",
-                        f"conflict={c.conflict_id} 引用了不存在的 evidence_id={eid}",
-                    )
+                    raise ValueError(f"conflict={c.conflict_id} 引用了不存在的 evidence_id={eid}")
 
         # required_topics_covered 中各 topic 必须能在 evidences 找到至少一条 relevance ≥ 0.5
         for topic in self.coverage.required_topics_covered:
             ok = any(topic in e.topics and e.relevance >= 0.5 for e in self.evidences)
             if not ok:
-                raise PydanticCustomError(
-                    "EP_BUILD_COVERAGE_INCONSISTENT",
-                    f"topic={topic} 被标记为已覆盖，但无 evidence relevance ≥ 0.5 支撑",
-                )
+                raise ValueError(f"topic={topic} 被标记为已覆盖，但无 evidence relevance ≥ 0.5 支撑")
 
         return self
 

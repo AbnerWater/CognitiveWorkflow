@@ -92,7 +92,7 @@ class WorkflowNodeBase(BaseModel):
         if self.contract is None:
             if self.type in _NODE_TYPES_REQUIRING_CONTRACT:
                 raise PydanticCustomError(
-                    "NC_L2_CONTRACT_REQUIRED",
+                    "NC_L2_KIND_MISMATCH",
                     f"节点 type={self.type} 必填 contract，但实际为 None",
                 )
             return self
@@ -166,6 +166,16 @@ class EvaluationTaskNode(WorkflowNodeBase):
     on_pass_next_node_id: LooseId | None = Field(default=None, description="二选一：本字段或对应 pass 边")
     on_fail_next_node_id: LooseId | None = Field(default=None, description="二选一：本字段或对应 fail 边")
     max_retry: int = Field(..., ge=0, description="不通过后允许的回流次数；超过转 human_checkpoint")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _check_target_present(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "target_node_id" not in data:
+            raise PydanticCustomError(
+                "WG_L2_EVAL_MISSING_TARGET",
+                "evaluation_task 缺 target_node_id",
+            )
+        return data
 
 
 class RepairTaskNode(WorkflowNodeBase):

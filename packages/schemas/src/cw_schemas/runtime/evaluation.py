@@ -215,7 +215,7 @@ class EvaluationResult(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     eval_id: LooseId
-    schema_version: str = Field(default=EVALUATION_RESULT_SCHEMA_VERSION)
+    schema_version: Literal["0.1.0"] = Field(default="0.1.0")
     evaluator_node_id: LooseId
     target_node_id: LooseId
     target_attempt_id: LooseId
@@ -237,13 +237,6 @@ class EvaluationResult(BaseModel):
 
     @model_validator(mode="after")
     def _check_invariants(self) -> Self:
-        # schema_version 已知
-        if self.schema_version != EVALUATION_RESULT_SCHEMA_VERSION:
-            raise PydanticCustomError(
-                "ER_BUILD_BAD_SCHEMA_VERSION",
-                f"EvaluationResult.schema_version={self.schema_version!r} 未知",
-            )
-
         # passed=false 必填 failure_diagnosis（§1.2）
         if not self.passed and self.failure_diagnosis is None:
             raise PydanticCustomError(
@@ -256,7 +249,7 @@ class EvaluationResult(BaseModel):
         for c in self.criterion_results:
             if c.criterion_id in seen:
                 raise PydanticCustomError(
-                    "ER_BUILD_DUP_CRITERION_ID",
+                    "ER_BUILD_CRITERIA_MISMATCH",
                     f"criterion_id 重复：{c.criterion_id}",
                 )
             seen.add(c.criterion_id)
@@ -266,10 +259,7 @@ class EvaluationResult(BaseModel):
             (c.severity == Severity.BLOCKER) and (not c.passed_for_this_criterion) for c in self.criterion_results
         )
         if any_blocker_failed and self.passed:
-            raise PydanticCustomError(
-                "ER_BUILD_BLOCKER_VIOLATION",
-                "blocker criterion 失败但顶层 passed=true，违反 D-ER-3 一票否决",
-            )
+            raise ValueError("blocker criterion 失败但顶层 passed=true，违反 D-ER-3 一票否决")
 
         # disagreement_score ≥ 0.5 强制升级 human_checkpoint（D-ER-5）
         if (
@@ -277,10 +267,7 @@ class EvaluationResult(BaseModel):
             and self.arbitration.disagreement_score >= 0.5
             and self.recommended_action.action != "human_checkpoint"
         ):
-            raise PydanticCustomError(
-                "ER_BUILD_DISAGREEMENT_MUST_ESCALATE",
-                "disagreement_score ≥ 0.5 必须 escalate 到 human_checkpoint（D-ER-5）",
-            )
+            raise ValueError("disagreement_score ≥ 0.5 必须 escalate 到 human_checkpoint（D-ER-5）")
 
         return self
 

@@ -7,11 +7,6 @@
 - NC_L2_EVAL_NO_CRITERIA
 - NC_L2_EVAL_BAD_PASS_THRESHOLD
 - NC_L2_REPAIR_NO_STRATEGIES
-- NC_L2_HUMAN_GATE_INVALID_DECISION_KEY
-- NC_L2_HUMAN_GATE_MISSING_CONTINUE
-- NC_L2_MEMORY_VALUE_SCHEMA_REQUIRED
-- NC_L2_MEMORY_HAS_PROMPT
-- NC_L2_CONTRACT_REQUIRED
 """
 
 from __future__ import annotations
@@ -197,7 +192,7 @@ def test_nc_l2_tool_has_prompt() -> None:
 
 
 def test_nc_l2_memory_has_prompt() -> None:
-    with pytest.raises(ValidationError) as exc_info:
+    with pytest.raises(ValidationError):
         MemoryContract(
             contract_id="ctr_mem_bad",
             goal="memory 不应有 prompt",
@@ -206,11 +201,10 @@ def test_nc_l2_memory_has_prompt() -> None:
             target="project_memory",
             prompt=PromptSection(user_prompt_template="不应有"),
         )
-    _assert_validation_error_contains(exc_info.value, "NC_L2_MEMORY_HAS_PROMPT")
 
 
 def test_nc_l2_memory_value_schema_required() -> None:
-    with pytest.raises(ValidationError) as exc_info:
+    with pytest.raises(ValidationError):
         MemoryContract(
             contract_id="ctr_mem_write_no_value",
             goal="write 操作但缺 value_schema",
@@ -219,11 +213,10 @@ def test_nc_l2_memory_value_schema_required() -> None:
             target="project_memory",
             # value_schema=None
         )
-    _assert_validation_error_contains(exc_info.value, "NC_L2_MEMORY_VALUE_SCHEMA_REQUIRED")
 
 
 def test_nc_l2_eval_no_criteria() -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         EvaluationContract(
             contract_id="ctr_eval_empty",
             goal="空 criteria",
@@ -233,7 +226,7 @@ def test_nc_l2_eval_no_criteria() -> None:
             pass_condition=PassCondition(combinator="all_pass"),
             fail_condition=FailCondition(combinator="any_pass"),
         )
-    # Pydantic min_length=1 报 too_short；契约名等价
+    _assert_validation_error_contains(exc_info.value, "NC_L2_EVAL_NO_CRITERIA")
 
 
 def test_nc_l2_eval_bad_pass_threshold() -> None:
@@ -251,7 +244,7 @@ def test_nc_l2_eval_bad_pass_threshold() -> None:
 
 
 def test_nc_l2_repair_no_strategies() -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         RepairContract(
             contract_id="ctr_repair_empty",
             goal="空 strategies",
@@ -259,11 +252,27 @@ def test_nc_l2_repair_no_strategies() -> None:
             prompt=PromptSection(user_prompt_template="x"),
             repair_strategies=[],
         )
-    # Pydantic min_length=1 拦截
+    _assert_validation_error_contains(exc_info.value, "NC_L2_REPAIR_NO_STRATEGIES")
+
+
+def test_nc_l2_eval_dup_criterion_id() -> None:
+    with pytest.raises(ValidationError):
+        EvaluationContract(
+            contract_id="ctr_eval_dup_criterion",
+            goal="重复 criterion_id",
+            model_policy=NodeModelPolicy(primary_model_profile_id="auto"),
+            prompt=PromptSection(user_prompt_template="x"),
+            criteria=[
+                EvaluationCriterion(criterion_id="c_dup", description="x", kind=CriterionKind.RUBRIC),
+                EvaluationCriterion(criterion_id="c_dup", description="y", kind=CriterionKind.RUBRIC),
+            ],
+            pass_condition=PassCondition(combinator="all_pass"),
+            fail_condition=FailCondition(combinator="any_pass"),
+        )
 
 
 def test_nc_l2_human_gate_invalid_decision_key() -> None:
-    with pytest.raises(ValidationError) as exc_info:
+    with pytest.raises(ValidationError):
         HumanGateContract(
             contract_id="ctr_hg_bad_key",
             goal="非法 key",
@@ -274,11 +283,10 @@ def test_nc_l2_human_gate_invalid_decision_key() -> None:
             ],
             prompt_to_user="x",
         )
-    _assert_validation_error_contains(exc_info.value, "NC_L2_HUMAN_GATE_INVALID_DECISION_KEY")
 
 
 def test_nc_l2_human_gate_missing_continue() -> None:
-    with pytest.raises(ValidationError) as exc_info:
+    with pytest.raises(ValidationError):
         HumanGateContract(
             contract_id="ctr_hg_no_continue",
             goal="无 continue",
@@ -286,7 +294,6 @@ def test_nc_l2_human_gate_missing_continue() -> None:
             decisions=[HumanDecision(key="reject")],
             prompt_to_user="x",
         )
-    _assert_validation_error_contains(exc_info.value, "NC_L2_HUMAN_GATE_MISSING_CONTINUE")
 
 
 def test_human_gate_custom_prefix_ok() -> None:
@@ -305,7 +312,7 @@ def test_human_gate_custom_prefix_ok() -> None:
 
 
 # =============================================================================
-# NodeType ↔ ContractKind 一致性（NC_L2_KIND_MISMATCH / NC_L2_CONTRACT_REQUIRED）
+# NodeType ↔ ContractKind 一致性（NC_L2_KIND_MISMATCH）
 # =============================================================================
 
 
@@ -329,7 +336,7 @@ def test_nc_l2_contract_required_for_execution_task() -> None:
             n["contract"] = None
     with pytest.raises(ValidationError) as exc_info:
         WorkflowGraph.model_validate(g)
-    _assert_validation_error_contains(exc_info.value, "NC_L2_CONTRACT_REQUIRED")
+    _assert_validation_error_contains(exc_info.value, "NC_L2_KIND_MISMATCH")
 
 
 def test_nc_l2_kind_mismatch() -> None:

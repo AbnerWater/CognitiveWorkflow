@@ -6,6 +6,7 @@
 - WG_L2_BAD_SCHEMA_VERSION
 - WG_L2_MISSING_ENTRY_NODE
 - WG_L2_MISSING_TERMINAL_NODES
+- WG_L2_EVAL_MISSING_TARGET
 - WG_L2_EVAL_NO_PASS_ROUTE
 - WG_L2_EVAL_NO_FAIL_ROUTE
 - WG_L2_EVAL_PASS_ROUTE_MISMATCH
@@ -274,6 +275,14 @@ def test_wg_l2_eval_no_fail_route() -> None:
     with pytest.raises(ValidationError) as exc_info:
         WorkflowGraph.model_validate(g)
     _assert_validation_error_contains(exc_info.value, "WG_L2_EVAL_NO_FAIL_ROUTE")
+
+
+def test_wg_l2_eval_missing_target() -> None:
+    g = make_minimal_graph_dict()
+    g["nodes"][2].pop("target_node_id")
+    with pytest.raises(ValidationError) as exc_info:
+        WorkflowGraph.model_validate(g)
+    _assert_validation_error_contains(exc_info.value, "WG_L2_EVAL_MISSING_TARGET")
 
 
 def test_wg_l2_eval_pass_route_mismatch() -> None:
