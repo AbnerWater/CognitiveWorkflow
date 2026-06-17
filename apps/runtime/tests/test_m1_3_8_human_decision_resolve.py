@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from importlib import import_module
 from pathlib import Path
@@ -27,7 +28,7 @@ from cw_runtime.runs import (
     read_workflow_run,
 )
 from cw_runtime.settings import RuntimeSettings
-from cw_schemas.types import ExecutionMode, RunState
+from cw_schemas.types import ExecutionMode, NodeRuntimeState, RunState
 
 pytest.importorskip("fastapi")
 pytest.importorskip("starlette.testclient")
@@ -97,6 +98,17 @@ def _human_graph_payload() -> dict[str, Any]:
         "last_modified_at": "2026-06-17T00:00:00Z",
         "metadata": {},
     }
+
+
+def _human_edit_graph_payload() -> dict[str, Any]:
+    payload = copy.deepcopy(_human_graph_payload())
+    human_node = payload["nodes"][1]
+    human_node["decisions"] = [{"key": "continue"}, {"key": "reject"}, {"key": "edit"}]
+    human_node["routing_map"]["edit"] = "n_edit"
+    human_node["contract"]["decisions"] = [{"key": "continue"}, {"key": "reject"}, {"key": "edit"}]
+    payload["nodes"].append({"node_id": "n_edit", "type": "end", "title": "Edit End", "archive_actions": []})
+    payload["terminal_node_ids"].append("n_edit")
+    return payload
 
 
 def _write_workflow(project_root: Path, payload: dict[str, Any]) -> None:
@@ -209,6 +221,99 @@ def test_resolve_human_decision_routes_run_forward_and_appends_record(tmp_path: 
     assert completed.run.state == RunState.COMPLETED
 
 
+def test_resolve_human_reject_marks_node_and_run_failed(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _human_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+    _enter_waiting_user(project_root, run_id)
+
+    record = resolve_human_decision(
+        project_root,
+        run_id,
+        HumanDecisionRequest(schema_version="0.1.0", human_node_id="n_human", decision="reject", by="tester"),
+    )
+
+    assert record.decision == "reject"
+    run = read_workflow_run(project_root, run_id)
+    assert run.state == RunState.FAILED
+    assert run.previous_state == RunState.WAITING_USER
+    assert run.current_node_ids == []
+    assert run.failed_at is not None
+    assert run.paused_at is None
+    assert run.failure_summary is not None
+    assert run.failure_summary.failed_node_id == "n_human"
+    assert run.failure_summary.error_code is None
+    assert run.metadata["cw"]["node_states"]["n_human"] == NodeRuntimeState.FAILED.value
+
+    events = list_stream_events(project_root, run_id)
+    assert [event.type for event in events][-4:] == [
+        "human.gate_resolved",
+        "attempt.failed",
+        "node.state_changed",
+        "run.failed",
+    ]
+    assert events[-4].phase == "node.failed"
+    assert events[-4].payload is not None
+    assert events[-4].payload["decision"] == "reject"
+    assert events[-3].payload is not None
+    assert events[-3].payload["error_kind"] == "human_rejected"
+    assert events[-3].payload["will_retry"] is False
+    assert events[-3].payload["next_action"] == "run.failed"
+    assert events[-1].payload is not None
+    assert events[-1].payload["error_kind"] == "human_rejected"
+
+
+def test_resolve_human_edit_records_user_edit_resumption_and_routes_retry(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _human_edit_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+    _enter_waiting_user(project_root, run_id)
+
+    record = resolve_human_decision(
+        project_root,
+        run_id,
+        HumanDecisionRequest(
+            schema_version="0.1.0",
+            human_node_id="n_human",
+            decision="edit",
+            custom_value={"edited_artifacts": [{"artifact_id": "art_01"}]},
+            by="tester",
+        ),
+    )
+
+    assert record.decision == "edit"
+    run = read_workflow_run(project_root, run_id)
+    assert run.state == RunState.RUNNING
+    assert run.previous_state == RunState.WAITING_USER
+    assert run.current_node_ids == ["n_human"]
+    assert run.paused_at is None
+    assert run.resumed_at is not None
+    assert run.metadata["cw"]["node_states"]["n_human"] == NodeRuntimeState.RETRYING.value
+    resumption = run.metadata["cw"]["human_resumptions"]["n_human"]
+    assert resumption["kind"] == "user_edit"
+    assert resumption["decision"] == "edit"
+    assert resumption["custom_value"] == {"edited_artifacts": [{"artifact_id": "art_01"}]}
+    assert resumption["next_node_ids"] == ["n_edit"]
+
+    events = list_stream_events(project_root, run_id)
+    assert [event.type for event in events][-3:] == ["human.gate_resolved", "node.state_changed", "run.resumed"]
+    assert events[-3].phase == "node.retrying"
+    assert events[-1].payload is not None
+    assert events[-1].payload["resumption_kind"] == "user_edit"
+    assert events[-1].payload["next_node_ids"] == ["n_human"]
+    assert events[-1].payload["resumption_target_node_ids"] == ["n_edit"]
+
+    routed = advance_workflow_run(project_root, run_id)
+    assert routed.node_id == "n_human"
+    assert routed.node_state == NodeRuntimeState.PASSED
+    assert routed.next_node_ids == ["n_edit"]
+    run_after_route = read_workflow_run(project_root, run_id)
+    assert run_after_route.current_node_ids == ["n_edit"]
+    assert run_after_route.metadata["cw"]["node_states"]["n_human"] == NodeRuntimeState.PASSED.value
+    assert run_after_route.metadata["cw"]["human_resumptions"]["n_human"]["consumed_at"] is not None
+
+    completed = advance_workflow_run(project_root, run_id)
+    assert completed.run.state == RunState.COMPLETED
+
+
 def test_resolve_human_decision_rejects_non_waiting_and_undeclared_decisions(tmp_path: Path) -> None:
     project_root, workflow_id = _create_project_with_graph(tmp_path, _human_graph_payload())
     run_id = _start_run(project_root, workflow_id)
@@ -258,20 +363,20 @@ def test_run_decision_endpoint_resolves_waiting_user_and_replays_idempotently(tm
     _enter_waiting_user(project_root, run_id)
 
     headers = {"Authorization": "Bearer expected-token", "Idempotency-Key": "idem-decision-1"}
-    body = {"schema_version": "0.1.0", "human_node_id": "n_human", "decision": "reject", "by": "tester"}
+    body = {"schema_version": "0.1.0", "human_node_id": "n_human", "decision": "continue", "by": "tester"}
     first = client.post(f"/cw/v1/runs/{run_id}/decisions", headers=headers, json=body)
     second = client.post(f"/cw/v1/runs/{run_id}/decisions", headers=headers, json=body)
 
     assert first.status_code == 200
     assert first.json()["schema_version"] == "0.1.0"
-    assert first.json()["decision"] == "reject"
+    assert first.json()["decision"] == "continue"
     assert second.status_code == 200
     assert second.headers["idempotent-replay"] == "true"
     assert second.json() == first.json()
 
     run = read_workflow_run(project_root, run_id)
     assert run.state == RunState.RUNNING
-    assert run.current_node_ids == ["n_reject"]
+    assert run.current_node_ids == ["n_continue"]
 
 
 def test_run_decision_endpoint_returns_run_error_envelope(tmp_path: Path) -> None:

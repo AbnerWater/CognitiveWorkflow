@@ -83,6 +83,7 @@ from cw_schemas.types import (
     EdgeType,
     EventPhase,
     FailureType,
+    HumanDecisionKey,
     NodeRuntimeState,
     RepairKind,
     RiskLevel,
@@ -374,35 +375,186 @@ def resolve_human_decision(
             custom_value=request.custom_value,
         )
         append_run_jsonl_locked(root, run.run_id, "decisions.jsonl", record.model_dump(mode="json"))
-        run = _emit_human_gate_resolved(root, run, node, request, now)
-        run = _transition_node(root, run, node.node_id, NodeRuntimeState.PASSED)
-        run = run.model_copy(
-            update={
-                "state": RunState.RUNNING,
-                "previous_state": run.state,
-                "resumed_at": now,
-                "paused_at": None,
-                "last_heartbeat_at": now,
-                "current_node_ids": next_node_ids,
-            }
-        )
-        run = write_workflow_run_locked(root, run)
-        resumed_event = _lifecycle_event(
-            root,
-            run,
-            event_type="run.resumed",
-            phase=EventPhase.RUN_RESUMED,
-            title="Run resumed by human decision",
-            payload={
-                "reason": "human_decision",
-                "human_node_id": node.node_id,
-                "decision": request.decision,
-                "next_node_ids": next_node_ids,
-            },
-            expandable=False,
-        )
-        append_run_event_locked(root, run, resumed_event)
+        if request.decision == HumanDecisionKey.REJECT.value:
+            _resolve_human_reject(root, run, node, request, now, next_node_ids)
+        elif request.decision == HumanDecisionKey.EDIT.value:
+            _resolve_human_edit(root, run, node, request, now, next_node_ids)
+        else:
+            _resolve_human_continue(root, run, node, request, now, next_node_ids)
         return record
+
+
+def _resolve_human_continue(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node: HumanCheckpointNode,
+    request: HumanDecisionRequest,
+    decided_at: str,
+    next_node_ids: list[str],
+) -> WorkflowRunDocument:
+    run = _emit_human_gate_resolved(
+        project_root,
+        run,
+        node,
+        request,
+        decided_at,
+        phase=EventPhase.NODE_PASSED,
+    )
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.PASSED)
+    run = run.model_copy(
+        update={
+            "state": RunState.RUNNING,
+            "previous_state": run.state,
+            "resumed_at": decided_at,
+            "paused_at": None,
+            "last_heartbeat_at": decided_at,
+            "current_node_ids": next_node_ids,
+        }
+    )
+    run = write_workflow_run_locked(project_root, run)
+    resumed_event = _lifecycle_event(
+        project_root,
+        run,
+        event_type="run.resumed",
+        phase=EventPhase.RUN_RESUMED,
+        title="Run resumed by human decision",
+        payload={
+            "reason": "human_decision",
+            "human_node_id": node.node_id,
+            "decision": request.decision,
+            "next_node_ids": next_node_ids,
+        },
+        expandable=False,
+    )
+    return append_run_event_locked(project_root, run, resumed_event)
+
+
+def _resolve_human_reject(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node: HumanCheckpointNode,
+    request: HumanDecisionRequest,
+    decided_at: str,
+    rejected_route_node_ids: list[str],
+) -> WorkflowRunDocument:
+    run = _emit_human_gate_resolved(
+        project_root,
+        run,
+        node,
+        request,
+        decided_at,
+        phase=EventPhase.NODE_FAILED,
+    )
+    failed_attempt_event = _lifecycle_event(
+        project_root,
+        run,
+        event_type="attempt.failed",
+        phase=EventPhase.ATTEMPT_FAILED,
+        title="Human decision rejected",
+        payload={
+            "error_kind": "human_rejected",
+            "will_retry": False,
+            "next_action": "run.failed",
+            "human_node_id": node.node_id,
+            "decision": request.decision,
+            "rejected_route_node_ids": rejected_route_node_ids,
+        },
+        expandable=True,
+        node_id=node.node_id,
+    )
+    run = append_run_event_locked(project_root, run, failed_attempt_event)
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.FAILED)
+    message = f"Human decision rejected checkpoint {node.node_id}."
+    summary = RunFailureSummary(
+        failure_type=FailureType.UNKNOWN.value,
+        failed_node_id=node.node_id,
+        message=message,
+        error_code=None,
+        traceback_id=None,
+    )
+    run = run.model_copy(
+        update={
+            "state": RunState.FAILED,
+            "previous_state": run.state,
+            "failed_at": decided_at,
+            "paused_at": None,
+            "last_heartbeat_at": decided_at,
+            "current_node_ids": [],
+            "failure_summary": summary,
+        }
+    )
+    run = write_workflow_run_locked(project_root, run)
+    failed_event = _lifecycle_event(
+        project_root,
+        run,
+        event_type="run.failed",
+        phase=EventPhase.RUN_FAILED,
+        title="Run failed by human decision",
+        payload={"error_kind": "human_rejected", "message": message, "human_node_id": node.node_id},
+        expandable=True,
+    )
+    return append_run_event_locked(project_root, run, failed_event)
+
+
+def _resolve_human_edit(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node: HumanCheckpointNode,
+    request: HumanDecisionRequest,
+    decided_at: str,
+    next_node_ids: list[str],
+) -> WorkflowRunDocument:
+    run = _emit_human_gate_resolved(
+        project_root,
+        run,
+        node,
+        request,
+        decided_at,
+        phase=EventPhase.NODE_RETRYING,
+    )
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RETRYING)
+    _store_runtime_value(
+        run,
+        "human_resumptions",
+        node.node_id,
+        {
+            "kind": "user_edit",
+            "decision": request.decision,
+            "by": request.by,
+            "decided_at": decided_at,
+            "custom_value": request.custom_value,
+            "next_node_ids": next_node_ids,
+        },
+    )
+    run = run.model_copy(
+        update={
+            "state": RunState.RUNNING,
+            "previous_state": run.state,
+            "resumed_at": decided_at,
+            "paused_at": None,
+            "last_heartbeat_at": decided_at,
+            "current_node_ids": [node.node_id],
+            "metadata": run.metadata,
+        }
+    )
+    run = write_workflow_run_locked(project_root, run)
+    resumed_event = _lifecycle_event(
+        project_root,
+        run,
+        event_type="run.resumed",
+        phase=EventPhase.RUN_RESUMED,
+        title="Run resumed by user edit",
+        payload={
+            "reason": "human_decision",
+            "resumption_kind": "user_edit",
+            "human_node_id": node.node_id,
+            "decision": request.decision,
+            "next_node_ids": [node.node_id],
+            "resumption_target_node_ids": next_node_ids,
+        },
+        expandable=False,
+    )
+    return append_run_event_locked(project_root, run, resumed_event)
 
 
 def _advance_start(
@@ -812,6 +964,9 @@ def _advance_human_gate(
     node: HumanCheckpointNode,
     input_data: HumanGateAdvanceInput | None,
 ) -> NodeAdvanceResult:
+    if _node_state(run, node.node_id) == NodeRuntimeState.RETRYING:
+        return _advance_human_edit_resumption(project_root, run, node)
+
     gate_input = HumanGateAdvanceInput() if input_data is None else input_data
     now = utc_now_ms()
     prompt_to_user = gate_input.prompt_to_user
@@ -892,6 +1047,54 @@ def _advance_human_gate(
     )
 
 
+def _advance_human_edit_resumption(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node: HumanCheckpointNode,
+) -> NodeAdvanceResult:
+    resumption = _human_resumption_for(run, node.node_id)
+    next_node_ids = _resumption_next_node_ids(run, node.node_id, resumption)
+    consumed = dict(resumption)
+    consumed["consumed_at"] = utc_now_ms()
+    _store_runtime_value(run, "human_resumptions", node.node_id, consumed)
+    run = _persist_runtime_metadata(project_root, run)
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RUNNING)
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.PASSED)
+    run = _update_run_current_nodes(project_root, run, next_node_ids, RunState.RUNNING)
+    return NodeAdvanceResult(
+        run=run,
+        node_id=node.node_id,
+        node_state=NodeRuntimeState.PASSED,
+        next_node_ids=next_node_ids,
+    )
+
+
+def _human_resumption_for(run: WorkflowRunDocument, node_id: str) -> dict[str, Any]:
+    cw_metadata = run.metadata.get("cw")
+    if not isinstance(cw_metadata, dict):
+        raise _metadata_corrupted(run, "human_resumptions", node_id, None)
+    resumptions = cw_metadata.get("human_resumptions")
+    if not isinstance(resumptions, dict):
+        raise _metadata_corrupted(run, "human_resumptions", node_id, resumptions)
+    resumption = resumptions.get(node_id)
+    if not isinstance(resumption, dict):
+        raise _metadata_corrupted(run, "human_resumptions", node_id, resumption)
+    kind = resumption.get("kind")
+    if kind != "user_edit":
+        raise _metadata_corrupted(run, "human_resumptions", node_id, resumption)
+    return cast(dict[str, Any], resumption)
+
+
+def _resumption_next_node_ids(run: WorkflowRunDocument, node_id: str, resumption: Mapping[str, Any]) -> list[str]:
+    raw_next_node_ids = resumption.get("next_node_ids")
+    if not isinstance(raw_next_node_ids, list):
+        raise _metadata_corrupted(run, "human_resumptions", node_id, raw_next_node_ids)
+    next_node_ids = [item for item in raw_next_node_ids if isinstance(item, str) and item]
+    if len(next_node_ids) != len(raw_next_node_ids) or not next_node_ids:
+        raise _metadata_corrupted(run, "human_resumptions", node_id, raw_next_node_ids)
+    return next_node_ids
+
+
 def _ensure_human_decision_allowed(node: HumanCheckpointNode, decision: str) -> None:
     allowed = {definition.key for definition in node.decisions}
     if decision not in allowed:
@@ -948,6 +1151,8 @@ def _emit_human_gate_resolved(
     node: HumanCheckpointNode,
     request: HumanDecisionRequest,
     created_at: str,
+    *,
+    phase: EventPhase,
 ) -> WorkflowRunDocument:
     event = HumanEvent(
         event_id=new_runtime_id(),
@@ -956,7 +1161,7 @@ def _emit_human_gate_resolved(
         node_id=node.node_id,
         attempt_id=None,
         type="human.gate_resolved",
-        phase=EventPhase.NODE_PASSED,
+        phase=phase,
         title="Human decision resolved",
         summary=None,
         content=None,
