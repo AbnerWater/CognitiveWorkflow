@@ -24,6 +24,15 @@ from .claude_code_adapter import (
     SessionFactory,
     build_claude_code_descriptor,
 )
+from .pydantic_ai_adapter import (
+    PydanticAIAdapter,
+    PydanticAIResumeRequest,
+    PydanticAIRunRequest,
+    PydanticAISession,
+    PydanticAISessionFactory,
+    RawPydanticAIEvent,
+    build_pydantic_ai_descriptor,
+)
 
 __all__ = [
     "AdapterConfig",
@@ -40,8 +49,15 @@ __all__ = [
     "ClaudeCodeRunRequest",
     "ClaudeCodeSession",
     "HumanDecisionResolution",
+    "PydanticAIAdapter",
+    "PydanticAIResumeRequest",
+    "PydanticAIRunRequest",
+    "PydanticAISession",
+    "PydanticAISessionFactory",
     "RawClaudeCodeEvent",
+    "RawPydanticAIEvent",
     "SessionFactory",
     "build_adapter_error",
     "build_claude_code_descriptor",
+    "build_pydantic_ai_descriptor",
 ]
