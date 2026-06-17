@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -18,7 +18,24 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ValidationError
 
 from cw_runtime import __version__
+from cw_runtime.engine import WorkflowValidationError, load_workflow_graph
 from cw_runtime.harness import HarnessError, ProjectCreateRequest, initialize_project, read_project
+from cw_runtime.runs import (
+    RunActionRequest,
+    RunError,
+    WorkflowRunDocument,
+    WorkflowRunStartRequest,
+    cancel_active_workflow_run,
+    cancel_workflow_run,
+    create_workflow_run,
+    list_stream_events,
+    parse_display_levels,
+    parse_event_categories,
+    pause_active_workflow_run,
+    read_workflow_run,
+    resume_active_workflow_run,
+    stream_sse_events,
+)
 from cw_runtime.settings import RUNTIME_SCHEMA_VERSION, RuntimeSettings
 
 from .auth import AuthenticationError, validate_bearer_authorization
@@ -79,7 +96,9 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
         openapi_url=None,
     )
     json_response: Any = responses.JSONResponse
+    streaming_response: Any = responses.StreamingResponse
     project_locations: dict[str, Path] = {}
+    run_locations: dict[str, Path] = {}
     idempotency_cache: dict[tuple[str, str], tuple[float, str, int, dict[str, object]]] = {}
 
     def secure_json_response(
@@ -134,9 +153,62 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
     def post_system_shutdown() -> dict[str, object]:
         return {"schema_version": RUNTIME_SCHEMA_VERSION, "accepted": True}
 
+    def idempotency_replay_response(request: Any, body: object) -> Any | None:
+        cache_key = _idempotency_cache_key(request)
+        if cache_key is None:
+            return None
+        body_signature = _body_signature(body)
+        cached = idempotency_cache.get(cache_key)
+        if cached is None:
+            return None
+        cached_at, cached_signature, cached_status, cached_content = cached
+        if time.monotonic() - cached_at > _IDEMPOTENCY_TTL_SECONDS:
+            return secure_json_response(
+                status_code=409,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.IDEMPOTENCY_KEY_REUSE_OUTSIDE_WINDOW,
+                        message="Idempotency-Key was reused outside the 24h replay window.",
+                    )
+                ),
+            )
+        if cached_signature != body_signature:
+            return secure_json_response(
+                status_code=409,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.IDEMPOTENCY_KEY_BODY_MISMATCH,
+                        message="Idempotency-Key was reused with a different request body.",
+                    )
+                ),
+            )
+        return secure_json_response(
+            status_code=cached_status,
+            content=cached_content,
+            headers={"Idempotent-Replay": "true"},
+        )
+
+    def remember_idempotency_response(
+        request: Any,
+        body: object,
+        *,
+        status_code: int,
+        content: dict[str, object],
+    ) -> None:
+        cache_key = _idempotency_cache_key(request)
+        if cache_key is None:
+            return
+        idempotency_cache[cache_key] = (time.monotonic(), _body_signature(body), status_code, content)
+
+    async def read_json_body(request: Any) -> object:
+        try:
+            return await request.json()
+        except ValueError as exc:
+            raise ValueError("Request body must be valid JSON with schema_version.") from exc
+
     async def post_projects(request: Any) -> Any:
         try:
-            body = await request.json()
+            body = await read_json_body(request)
         except ValueError:
             return secure_json_response(
                 status_code=400,
@@ -147,36 +219,9 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
                     )
                 ),
             )
-        body_signature = _body_signature(body)
-        idempotency_key = request.headers.get("idempotency-key")
-        cache_key = (str(request.url.path), idempotency_key) if idempotency_key else None
-        if cache_key is not None and cache_key in idempotency_cache:
-            cached_at, cached_signature, cached_status, cached_content = idempotency_cache[cache_key]
-            if time.monotonic() - cached_at > _IDEMPOTENCY_TTL_SECONDS:
-                return secure_json_response(
-                    status_code=409,
-                    content=_dump_model(
-                        build_error_envelope(
-                            error_code=APIErrorCode.IDEMPOTENCY_KEY_REUSE_OUTSIDE_WINDOW,
-                            message="Idempotency-Key was reused outside the 24h replay window.",
-                        )
-                    ),
-                )
-            if cached_signature != body_signature:
-                return secure_json_response(
-                    status_code=409,
-                    content=_dump_model(
-                        build_error_envelope(
-                            error_code=APIErrorCode.IDEMPOTENCY_KEY_BODY_MISMATCH,
-                            message="Idempotency-Key was reused with a different request body.",
-                        )
-                    ),
-                )
-            return secure_json_response(
-                status_code=cached_status,
-                content=cached_content,
-                headers={"Idempotent-Replay": "true"},
-            )
+        replay = idempotency_replay_response(request, body)
+        if replay is not None:
+            return replay
 
         try:
             create_request = ProjectCreateRequest.model_validate(body)
@@ -197,8 +242,7 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
 
         content = _dump_model(create_response)
         project_locations[create_response.project_id] = Path(create_response.host_path)
-        if cache_key is not None:
-            idempotency_cache[cache_key] = (time.monotonic(), body_signature, 201, content)
+        remember_idempotency_response(request, body, status_code=201, content=content)
         return secure_json_response(status_code=201, content=content)
 
     def get_project(project_id: str) -> Any:
@@ -229,7 +273,222 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
             )
         return _dump_model(project)
 
+    async def post_workflow_run(workflow_id: str, request: Any) -> Any:
+        body_or_response = await _body_or_error_response(request)
+        if not isinstance(body_or_response, dict):
+            return body_or_response
+        body = body_or_response
+        replay = idempotency_replay_response(request, body)
+        if replay is not None:
+            return replay
+        project_root = _project_root_for_workflow(project_locations.values(), workflow_id)
+        if project_root is None:
+            return secure_json_response(
+                status_code=404,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.RES_NOT_FOUND,
+                        message="Workflow is not registered in this runtime process.",
+                        details={"workflow_id": workflow_id},
+                    )
+                ),
+            )
+        try:
+            start_request = WorkflowRunStartRequest.model_validate(body)
+            start_response = create_workflow_run(project_root, workflow_id, start_request)
+        except ValidationError as exc:
+            return secure_json_response(status_code=400, content=_dump_model(_validation_error_envelope(exc)))
+        except WorkflowValidationError as exc:
+            return secure_json_response(
+                status_code=_workflow_validation_status(exc),
+                content=_dump_model(
+                    build_error_envelope(error_code=exc.error_code, message=str(exc), details=exc.details)
+                ),
+            )
+        except RunError as exc:
+            return _run_error_response(exc)
+        content = _dump_model(start_response)
+        run_locations[start_response.run_id] = project_root
+        remember_idempotency_response(request, body, status_code=201, content=content)
+        return secure_json_response(status_code=201, content=content)
+
+    async def post_workflow_pause(workflow_id: str, request: Any) -> Any:
+        return await _workflow_action(workflow_id, request, pause_active_workflow_run)
+
+    async def post_workflow_resume(workflow_id: str, request: Any) -> Any:
+        return await _workflow_action(workflow_id, request, resume_active_workflow_run)
+
+    async def post_workflow_cancel(workflow_id: str, request: Any) -> Any:
+        return await _workflow_action(workflow_id, request, cancel_active_workflow_run)
+
+    def get_run(run_id: str) -> Any:
+        project_root = run_locations.get(run_id)
+        if project_root is None:
+            return _resource_not_found("Run is not registered in this runtime process.", {"run_id": run_id})
+        try:
+            run = read_workflow_run(project_root, run_id)
+        except RunError as exc:
+            return _run_error_response(exc)
+        return _dump_model(run)
+
+    async def post_run_cancel(run_id: str, request: Any) -> Any:
+        return await _run_action(run_id, request, cancel_workflow_run)
+
+    async def _workflow_action(
+        workflow_id: str,
+        request: Any,
+        action: Callable[[Path, str, RunActionRequest], WorkflowRunDocument],
+    ) -> Any:
+        body_or_response = await _body_or_error_response(request)
+        if not isinstance(body_or_response, dict):
+            return body_or_response
+        body = body_or_response
+        replay = idempotency_replay_response(request, body)
+        if replay is not None:
+            return replay
+        project_root = _project_root_for_workflow(project_locations.values(), workflow_id)
+        if project_root is None:
+            return secure_json_response(
+                status_code=404,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.RES_NOT_FOUND,
+                        message="Workflow is not registered in this runtime process.",
+                        details={"workflow_id": workflow_id},
+                    )
+                ),
+            )
+        try:
+            action_request = RunActionRequest.model_validate(body)
+            run = action(project_root, workflow_id, action_request)
+        except ValidationError as exc:
+            return secure_json_response(status_code=400, content=_dump_model(_validation_error_envelope(exc)))
+        except RunError as exc:
+            return _run_error_response(exc)
+        run_locations[run.run_id] = project_root
+        content = _dump_model(run)
+        remember_idempotency_response(request, body, status_code=200, content=content)
+        return secure_json_response(status_code=200, content=content)
+
+    async def _run_action(
+        run_id: str,
+        request: Any,
+        action: Callable[[Path, str, RunActionRequest], BaseModel],
+    ) -> Any:
+        body_or_response = await _body_or_error_response(request)
+        if not isinstance(body_or_response, dict):
+            return body_or_response
+        body = body_or_response
+        replay = idempotency_replay_response(request, body)
+        if replay is not None:
+            return replay
+        project_root = run_locations.get(run_id)
+        if project_root is None:
+            return _resource_not_found("Run is not registered in this runtime process.", {"run_id": run_id})
+        try:
+            action_request = RunActionRequest.model_validate(body)
+            run = action(project_root, run_id, action_request)
+        except ValidationError as exc:
+            return secure_json_response(status_code=400, content=_dump_model(_validation_error_envelope(exc)))
+        except RunError as exc:
+            return _run_error_response(exc)
+        content = _dump_model(run)
+        remember_idempotency_response(request, body, status_code=200, content=content)
+        return secure_json_response(status_code=200, content=content)
+
+    def get_run_stream(run_id: str, request: Any) -> Any:
+        project_root = run_locations.get(run_id)
+        if project_root is None:
+            return _resource_not_found("Run is not registered in this runtime process.", {"run_id": run_id})
+        try:
+            since_seq = _optional_int(request.query_params.get("since_seq"))
+            until_seq = _optional_int(request.query_params.get("until_seq"))
+            categories = parse_event_categories(request.query_params.get("category"))
+            display_levels = parse_display_levels(request.query_params.get("level"))
+            after_event_id = request.headers.get("last-event-id")
+            list_stream_events(
+                project_root,
+                run_id,
+                after_event_id=after_event_id,
+                since_seq=since_seq,
+                until_seq=until_seq,
+                categories=categories,
+                display_levels=display_levels,
+            )
+        except ValueError as exc:
+            return secure_json_response(
+                status_code=400,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code="SE_BUILD_BAD_TYPE",
+                        message=str(exc),
+                    )
+                ),
+            )
+        except RunError as exc:
+            return _run_error_response(exc)
+        response = streaming_response(
+            stream_sse_events(
+                project_root,
+                run_id,
+                after_event_id=after_event_id,
+                since_seq=since_seq,
+                until_seq=until_seq,
+                categories=categories,
+                display_levels=display_levels,
+            ),
+            media_type="text/event-stream",
+        )
+        _apply_security_headers(response)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    async def _body_or_error_response(request: Any) -> Any:
+        try:
+            body = await read_json_body(request)
+        except ValueError:
+            return secure_json_response(
+                status_code=400,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.SCHEMA_VERSION_MISSING,
+                        message="Request body must be valid JSON with schema_version.",
+                    )
+                ),
+            )
+        if not isinstance(body, dict):
+            return secure_json_response(
+                status_code=400,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.SCHEMA_VERSION_MISSING,
+                        message="Request body must be a JSON object with schema_version.",
+                    )
+                ),
+            )
+        return cast(dict[str, object], body)
+
+    def _run_error_response(exc: RunError) -> Any:
+        return secure_json_response(
+            status_code=exc.status_code,
+            content=_dump_model(build_error_envelope(error_code=exc.error_code, message=str(exc), details=exc.details)),
+        )
+
+    def _resource_not_found(message: str, details: dict[str, object]) -> Any:
+        return secure_json_response(
+            status_code=404,
+            content=_dump_model(
+                build_error_envelope(error_code=APIErrorCode.RES_NOT_FOUND, message=message, details=details)
+            ),
+        )
+
     post_projects.__annotations__["request"] = requests.Request
+    post_workflow_run.__annotations__["request"] = requests.Request
+    post_workflow_pause.__annotations__["request"] = requests.Request
+    post_workflow_resume.__annotations__["request"] = requests.Request
+    post_workflow_cancel.__annotations__["request"] = requests.Request
+    post_run_cancel.__annotations__["request"] = requests.Request
+    get_run_stream.__annotations__["request"] = requests.Request
 
     app.middleware("http")(runtime_api_guard)
     app.get(f"{settings.api_prefix}/system/info")(get_system_info)
@@ -238,12 +497,46 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
     app.post(f"{settings.api_prefix}/system/shutdown", status_code=202)(post_system_shutdown)
     app.post(f"{settings.api_prefix}/projects")(post_projects)
     app.get(f"{settings.api_prefix}/projects/{{project_id}}")(get_project)
+    app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/run")(post_workflow_run)
+    app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/pause")(post_workflow_pause)
+    app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/resume")(post_workflow_resume)
+    app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/cancel")(post_workflow_cancel)
+    app.get(f"{settings.api_prefix}/runs/{{run_id}}")(get_run)
+    app.post(f"{settings.api_prefix}/runs/{{run_id}}/cancel")(post_run_cancel)
+    app.get(f"{settings.api_prefix}/runs/{{run_id}}/stream")(get_run_stream)
+    app.get(f"{settings.api_prefix}/observability/runs/{{run_id}}/stream")(get_run_stream)
 
     return cast(AsgiApp, app)
 
 
 def _body_signature(body: object) -> str:
     return json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _idempotency_cache_key(request: Any) -> tuple[str, str] | None:
+    idempotency_key = request.headers.get("idempotency-key")
+    return (str(request.url.path), idempotency_key) if idempotency_key else None
+
+
+def _project_root_for_workflow(project_roots: Iterable[Path], workflow_id: str) -> Path | None:
+    for project_root in project_roots:
+        try:
+            graph = load_workflow_graph(project_root)
+        except WorkflowValidationError:
+            continue
+        if graph.workflow_id == workflow_id:
+            return project_root
+    return None
+
+
+def _workflow_validation_status(exc: WorkflowValidationError) -> int:
+    return 400 if exc.level in ("L1", "L2") else 422
+
+
+def _optional_int(raw: str | None) -> int | None:
+    if raw is None or raw == "":
+        return None
+    return int(raw)
 
 
 def _validation_error_envelope(exc: ValidationError) -> BaseModel:

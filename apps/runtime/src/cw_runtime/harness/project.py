@@ -34,6 +34,8 @@ _GITIGNORE_LINES: Final = [
     ".agent-workflow/secure/",
     ".agent-workflow/locks/",
     ".agent-workflow/traces/",
+    ".agent-workflow/runs/*/stream-events/",
+    ".agent-workflow/planning_sessions/*/stream-events.jsonl",
     "",
     "# OS",
     ".DS_Store",
@@ -136,13 +138,13 @@ class ProjectDocument(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class _RuntimeLock:
+class RuntimeLock:
     def __init__(self, lock_path: Path, *, timeout_seconds: float = 60.0) -> None:
         self._lock_path = lock_path
         self._timeout_seconds = timeout_seconds
         self._fd: int | None = None
 
-    def __enter__(self) -> _RuntimeLock:
+    def __enter__(self) -> RuntimeLock:
         deadline = time.monotonic() + self._timeout_seconds
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
         while True:
@@ -243,8 +245,7 @@ def update_manifest_json(
         )
 
     agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
-    lock_path = agent_root / "locks" / RUNTIME_LOCK_FILE
-    with _RuntimeLock(lock_path, timeout_seconds=timeout_seconds):
+    with acquire_runtime_lock(project_root, timeout_seconds=timeout_seconds):
         revision = _read_json(agent_root / MANIFEST_REVISION_FILE)
         if manifest_name not in revision:
             raise HarnessError(
@@ -265,6 +266,11 @@ def update_manifest_json(
         current_revision = int(current["revision"])
         revision[manifest_name] = {"revision": current_revision + 1, "modified_at": _utc_now()}
         _write_json_atomic(agent_root / MANIFEST_REVISION_FILE, revision)
+
+
+def acquire_runtime_lock(project_root: Path, *, timeout_seconds: float = 60.0) -> RuntimeLock:
+    agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
+    return RuntimeLock(agent_root / "locks" / RUNTIME_LOCK_FILE, timeout_seconds=timeout_seconds)
 
 
 def _resolve_project_root(host_path: str) -> Path:
@@ -550,6 +556,14 @@ if printf '%s\n' "$tracked" | grep -E '(^|/)\\.agent-workflow/(secure|cache)/' >
   echo 'CW pre-commit: secure/cache files must not be committed' >&2
   exit 1
 fi
+if printf '%s\n' "$tracked" | grep -E '^\\.agent-workflow/runs/[^/]+/stream-events/' >/dev/null; then
+  echo 'CW pre-commit: run stream-events must not be committed' >&2
+  exit 1
+fi
+if printf '%s\n' "$tracked" | grep -E '^\\.agent-workflow/planning_sessions/[^/]+/stream-events\\.jsonl$' >/dev/null; then
+  echo 'CW pre-commit: planning stream-events must not be committed' >&2
+  exit 1
+fi
 if printf '%s\n' "$tracked" | grep -E '\\.encrypted\\.sqlite$' | grep -v '^\\.agent-workflow/secure/' >/dev/null; then
   echo 'CW pre-commit: encrypted sqlite files outside secure/ are forbidden' >&2
   exit 1
@@ -629,6 +643,8 @@ __all__ = [
     "ProjectCreateRequest",
     "ProjectCreateResponse",
     "ProjectDocument",
+    "RuntimeLock",
+    "acquire_runtime_lock",
     "initialize_project",
     "read_project",
     "update_manifest_json",
