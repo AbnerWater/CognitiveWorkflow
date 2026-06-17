@@ -113,6 +113,10 @@ def _create_project_with_graph(tmp_path: Path, payload: dict[str, Any]) -> tuple
         )
     )
     project_root = Path(response.host_path)
+    settings_path = project_root / ".agent-workflow" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    settings["models"]["escalation_chain"] = []
+    settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     _write_workflow(project_root, payload)
     return project_root, str(payload["workflow_id"])
 

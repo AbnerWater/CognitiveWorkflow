@@ -8,7 +8,13 @@ from typing import Any
 
 import pytest
 
-from cw_runtime.builders import PackBuildError, StaticAttemptPackRequest, build_static_evidence_pack
+from cw_runtime.builders import (
+    PackBuildError,
+    StaticAttemptPackRequest,
+    build_static_context_pack,
+    build_static_evidence_pack,
+    build_static_execution_pack,
+)
 from cw_runtime.harness import ProjectCreateRequest, initialize_project
 from cw_runtime.runner import ExecutionAdvanceInput, NodeAdvanceRequest, advance_workflow_run
 from cw_runtime.runs import WorkflowRunStartRequest, create_workflow_run, list_stream_events
@@ -165,6 +171,10 @@ def _create_project_with_graph(tmp_path: Path, payload: dict[str, Any]) -> tuple
         )
     )
     project_root = Path(response.host_path)
+    settings_path = project_root / ".agent-workflow" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    settings["models"]["escalation_chain"] = []
+    settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     workflow_path = project_root / ".agent-workflow" / "workflow.flow.json"
     workflow_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     return project_root, str(payload["workflow_id"])
@@ -246,6 +256,20 @@ def test_static_context_builder_persists_user_input_and_static_text(tmp_path: Pa
     assert "context.build_started" in event_types
     assert "context.build_completed" in event_types
     assert event_types.index("context.build_completed") < event_types.index("attempt.started")
+
+
+def test_static_execution_pack_falls_back_to_contract_model_settings() -> None:
+    contract_payload = _execution_contract()
+    contract_payload["model_policy"] = {
+        **_MODEL_POLICY,
+        "model_settings": {"temperature": 0.2, "top_p": 0.9, "max_tokens": 256},
+    }
+    contract = ExecutionContract.model_validate(contract_payload)
+    request = _static_request(contract)
+    context_pack = build_static_context_pack(request, None)
+    execution_pack = build_static_execution_pack(request, context_pack, None)
+
+    assert execution_pack.effective_model_settings == {"temperature": 0.2, "top_p": 0.9, "max_tokens": 256}
 
 
 def test_static_evidence_builder_persists_user_assertions_and_context_projection(tmp_path: Path) -> None:

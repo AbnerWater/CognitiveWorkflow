@@ -1,0 +1,51 @@
+"""Static Phase 1 ModelRouter foundation."""
+
+from __future__ import annotations
+
+from .router import (
+    AdapterCapabilities,
+    AdapterDescriptor,
+    ModelCapabilities,
+    ModelCostProfile,
+    ModelPerformanceProfile,
+    ModelProfile,
+    ModelProfileOverride,
+    ModelRouterError,
+    NodeCapabilityRequirement,
+    ProjectModelSettings,
+    ResolvedProfileRegistry,
+    RoutingCandidate,
+    RoutingDecision,
+    RoutingEscalationTrigger,
+    RoutingRequest,
+    RoutingTrace,
+    build_routing_request,
+    build_routing_trace,
+    load_project_model_settings,
+    resolve_model_profile_registry,
+    route_model,
+)
+
+__all__ = [
+    "AdapterCapabilities",
+    "AdapterDescriptor",
+    "ModelCapabilities",
+    "ModelCostProfile",
+    "ModelPerformanceProfile",
+    "ModelProfile",
+    "ModelProfileOverride",
+    "ModelRouterError",
+    "NodeCapabilityRequirement",
+    "ProjectModelSettings",
+    "ResolvedProfileRegistry",
+    "RoutingCandidate",
+    "RoutingDecision",
+    "RoutingEscalationTrigger",
+    "RoutingRequest",
+    "RoutingTrace",
+    "build_routing_request",
+    "build_routing_trace",
+    "load_project_model_settings",
+    "resolve_model_profile_registry",
+    "route_model",
+]

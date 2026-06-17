@@ -28,6 +28,14 @@ from cw_runtime.builders import (
 )
 from cw_runtime.engine import EngineWorkflowIR, compile_workflow_graph, load_workflow_graph
 from cw_runtime.harness.project import acquire_runtime_lock
+from cw_runtime.model_router import (
+    ModelRouterError,
+    build_routing_request,
+    build_routing_trace,
+    load_project_model_settings,
+    resolve_model_profile_registry,
+    route_model,
+)
 from cw_runtime.runs.lifecycle import (
     RunError,
     RunFailureSummary,
@@ -254,6 +262,7 @@ class _AttemptArtifacts(BaseModel):
 
     attempt_id: str
     attempt_index: int
+    adapter_id: str
     context_pack_id: str
     evidence_pack_id: str | None = None
     execution_pack_id: str
@@ -443,7 +452,7 @@ def _advance_execution(
 ) -> NodeAdvanceResult:
     execution = ExecutionAdvanceInput() if input_data is None else input_data
     try:
-        artifacts = _prepare_attempt(project_root, run, node, execution.model_profile_id)
+        artifacts = _prepare_attempt(project_root, graph, run, node, execution.model_profile_id)
     except PackBuildError as exc:
         return _route_pack_build_failure(project_root, graph, compiled, run, node, exc)
     if _node_state(run, node.node_id) == NodeRuntimeState.RETRYING:
@@ -499,7 +508,7 @@ def _advance_evaluation(
 ) -> NodeAdvanceResult:
     evaluation = _normalize_evaluation_input(graph, compiled, node, input_data)
     try:
-        artifacts = _prepare_attempt(project_root, run, node, evaluation.model_profile_id)
+        artifacts = _prepare_attempt(project_root, graph, run, node, evaluation.model_profile_id)
     except PackBuildError as exc:
         return _route_pack_build_failure(project_root, graph, compiled, run, node, exc)
     target_attempt_id = _runtime_string(run, "last_attempt_ids", node.target_node_id)
@@ -624,7 +633,7 @@ def _advance_repair(
 ) -> NodeAdvanceResult:
     repair = RepairAdvanceInput() if input_data is None else input_data
     try:
-        artifacts = _prepare_attempt(project_root, run, node, repair.model_profile_id)
+        artifacts = _prepare_attempt(project_root, graph, run, node, repair.model_profile_id)
     except PackBuildError as exc:
         return _route_pack_build_failure(project_root, graph, compiled, run, node, exc)
     evaluation_id = _runtime_string(run, "last_evaluation_by_target", node.repair_target_node_id)
@@ -947,6 +956,7 @@ def _emit_human_gate_resolved(
 
 def _prepare_attempt(
     project_root: Path,
+    graph: WorkflowGraph,
     run: WorkflowRunDocument,
     node: AttemptNode,
     model_profile_id: str | None,
@@ -970,9 +980,6 @@ def _prepare_attempt(
     context_pack_id = new_runtime_id()
     execution_pack_id = new_runtime_id()
     evidence_pack_id = new_runtime_id() if contract.evidence_requirements else None
-    resolved_model_profile_id = (
-        model_profile_id or contract.model_policy.primary_model_profile_id or _DEFAULT_MODEL_PROFILE_ID
-    )
     pending_overlay = _consume_pending_prompt_overlay(run, node.node_id)
     effective_prompt_overlay = None
     if pending_overlay is not None:
@@ -989,7 +996,7 @@ def _prepare_attempt(
         evidence_pack_id=evidence_pack_id,
         execution_pack_id=execution_pack_id,
         contract=contract,
-        model_profile_id=resolved_model_profile_id,
+        model_profile_id=_DEFAULT_MODEL_PROFILE_ID,
         built_at=now,
         initial_input=_initial_input_from_run(run),
         effective_prompt_overlay=effective_prompt_overlay,
@@ -1039,12 +1046,47 @@ def _prepare_attempt(
         append_run_event_locked(project_root, run, context_started)
 
         context_pack = build_static_context_pack(pack_request, evidence_pack)
+        routing_request = build_routing_request(
+            run_id=run.run_id,
+            node_id=node.node_id,
+            attempt_index=attempt_index,
+            node_contract=contract,
+            workflow_model_policy=graph.model_policy,
+            project_settings_models=load_project_model_settings(project_root),
+            context_required_tokens=sum(fragment.tokens_estimate for fragment in context_pack.fragments),
+            request_id=new_runtime_id(),
+            correlation_id=attempt_id,
+            primary_model_profile_id=model_profile_id,
+        )
+        routing_decision = route_model(
+            routing_request,
+            resolve_model_profile_registry(routing_request.project_settings_models),
+            decided_at=now,
+        )
+        append_run_jsonl_locked(
+            project_root,
+            run.run_id,
+            "routing.jsonl",
+            build_routing_trace(routing_request, routing_decision).model_dump(mode="json"),
+        )
+        pack_request = pack_request.model_copy(
+            update={
+                "model_profile_id": routing_decision.model_profile_id,
+                "effective_model_settings": routing_decision.effective_model_settings,
+            }
+        )
         execution_pack = build_static_execution_pack(pack_request, context_pack, evidence_pack)
     except PackBuildError as exc:
         raise _attempt_pack_build_error(exc, attempt_id=attempt_id, attempt_index=attempt_index) from exc
     except ValidationError as exc:
         pack_error = _pack_build_error_from_validation(exc)
         raise _attempt_pack_build_error(pack_error, attempt_id=attempt_id, attempt_index=attempt_index) from exc
+    except ModelRouterError as exc:
+        raise RunError(
+            exc.error_code,
+            str(exc),
+            details={**exc.details, "run_id": run.run_id, "node_id": node.node_id, "attempt_index": attempt_index},
+        ) from exc
 
     pack_bundle = AttemptPackBundle(
         context_pack=context_pack,
@@ -1086,11 +1128,12 @@ def _prepare_attempt(
     return _AttemptArtifacts(
         attempt_id=attempt_id,
         attempt_index=attempt_index,
+        adapter_id=routing_decision.adapter_id,
         context_pack_id=context_pack_id,
         evidence_pack_id=None if pack_bundle.evidence_pack is None else pack_bundle.evidence_pack.pack_id,
         execution_pack_id=execution_pack_id,
         started_at=now,
-        model_profile_id=resolved_model_profile_id,
+        model_profile_id=routing_decision.model_profile_id,
         effective_prompt_overlay_ref=None if pending_overlay is None else f"overlays/{attempt_id}.json",
         source_patch_id=None if pending_overlay is None else pending_overlay.patch_id,
     )
@@ -1186,7 +1229,7 @@ def _completed_attempt(
         state=AttemptState.COMPLETED,
         started_at=artifacts.started_at,
         finished_at=finished_at,
-        adapter_id=_RUNNER_ID,
+        adapter_id=artifacts.adapter_id,
         adapter_version=_RUNNER_VERSION,
         model_profile_id=artifacts.model_profile_id,
         effective_prompt_overlay_ref=resolved_overlay_ref,
@@ -1217,7 +1260,7 @@ def _failed_attempt(
         state=AttemptState.FAILED,
         started_at=artifacts.started_at,
         finished_at=finished_at,
-        adapter_id=_RUNNER_ID,
+        adapter_id=artifacts.adapter_id,
         adapter_version=_RUNNER_VERSION,
         model_profile_id=artifacts.model_profile_id,
         context_pack_id=artifacts.context_pack_id,

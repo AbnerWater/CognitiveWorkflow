@@ -182,6 +182,7 @@ def create_workflow_run(
         _write_text_atomic(run_root / "evaluations.jsonl", "")
         _write_text_atomic(run_root / "repairs.jsonl", "")
         _write_text_atomic(run_root / "decisions.jsonl", "")
+        _write_text_atomic(run_root / "routing.jsonl", "")
         _write_text_atomic(run_root / "usage.jsonl", "")
         _write_text_atomic(run_root / "metrics.jsonl", "")
         _write_json_atomic(run_root / "skill_lock.json", {"skills": []})

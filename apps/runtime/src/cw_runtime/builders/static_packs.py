@@ -64,6 +64,7 @@ class StaticAttemptPackRequest(BaseModel):
     evidence_pack_id: str | None = None
     contract: NodeContractBase
     model_profile_id: str
+    effective_model_settings: dict[str, Any] = Field(default_factory=dict)
     built_at: str
     initial_input: dict[str, Any] = Field(default_factory=dict)
     effective_prompt_overlay: PromptOverlay | None = None
@@ -111,6 +112,7 @@ def build_static_execution_pack(
 ) -> ExecutionPack:
     """Build the ExecutionPack wrapper for one attempt."""
 
+    effective_model_settings = request.effective_model_settings or request.contract.model_policy.model_settings
     execution_pack = ExecutionPack(
         pack_id=request.execution_pack_id,
         run_id=request.run_id,
@@ -120,7 +122,7 @@ def build_static_execution_pack(
         context_pack=context_pack,
         evidence_pack=evidence_pack,
         effective_prompt_overlay=request.effective_prompt_overlay,
-        effective_model_settings=dict(request.contract.model_policy.model_settings),
+        effective_model_settings=dict(effective_model_settings),
         effective_model_profile_id=request.model_profile_id,
         retry_policy=request.contract.retry_policy,
         validator_policy=request.contract.validator_policy,
