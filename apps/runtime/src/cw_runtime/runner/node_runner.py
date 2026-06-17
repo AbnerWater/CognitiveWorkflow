@@ -36,6 +36,12 @@ from cw_runtime.model_router import (
     resolve_model_profile_registry,
     route_model,
 )
+from cw_runtime.reflection_memory import (
+    ReflectionKind,
+    ReflectionLookupRequest,
+    lookup_reflection_memory,
+    record_evaluation_reflections_locked,
+)
 from cw_runtime.runs.lifecycle import (
     RunError,
     RunFailureSummary,
@@ -121,7 +127,7 @@ _ALLOWED_NODE_TRANSITIONS: Mapping[NodeRuntimeState, frozenset[NodeRuntimeState]
     NodeRuntimeState.REVIEWING: frozenset(
         {NodeRuntimeState.PASSED, NodeRuntimeState.REVIEW_FAILED, NodeRuntimeState.WAITING_USER}
     ),
-    NodeRuntimeState.REVIEW_FAILED: frozenset({NodeRuntimeState.REPAIRING}),
+    NodeRuntimeState.REVIEW_FAILED: frozenset({NodeRuntimeState.READY, NodeRuntimeState.REPAIRING}),
     NodeRuntimeState.REPAIRING: frozenset({NodeRuntimeState.RETRYING, NodeRuntimeState.FAILED}),
     NodeRuntimeState.RETRYING: frozenset({NodeRuntimeState.RUNNING, NodeRuntimeState.PASSED, NodeRuntimeState.FAILED}),
     NodeRuntimeState.WAITING_USER: frozenset(
@@ -562,6 +568,23 @@ def _advance_evaluation(
     append_run_jsonl_locked(project_root, run.run_id, "evaluations.jsonl", eval_result.model_dump(mode="json"))
     _store_runtime_value(run, "last_evaluation_ids", node.node_id, eval_result.eval_id)
     _store_runtime_value(run, "last_evaluation_by_target", node.target_node_id, eval_result.eval_id)
+    if eval_result.failure_diagnosis is None:
+        _remove_runtime_value(run, "last_failure_types", node.target_node_id)
+    else:
+        _store_runtime_value(
+            run,
+            "last_failure_types",
+            node.target_node_id,
+            eval_result.failure_diagnosis.failure_type.value,
+        )
+    target_node = _node_by_id(graph)[node.target_node_id]
+    record_evaluation_reflections_locked(
+        project_root,
+        eval_result,
+        target_node_type=target_node.type,
+        evaluator_node_type=node.type,
+        domain_signals=_reflection_domain_signals(run),
+    )
 
     output = {"eval_id": eval_result.eval_id, "passed": eval_result.passed, "score": eval_result.score}
     output_hash = _stable_hash(output)
@@ -1000,6 +1023,18 @@ def _prepare_attempt(
         built_at=now,
         initial_input=_initial_input_from_run(run),
         effective_prompt_overlay=effective_prompt_overlay,
+        reflection_lookup_result=lookup_reflection_memory(
+            project_root,
+            ReflectionLookupRequest(
+                node_id=node.node_id,
+                contract_kind=contract.contract_kind,
+                node_type=node.type,
+                failure_type_hint=_runtime_string(run, "last_failure_types", node.node_id),
+                domain_signals=_reflection_domain_signals(run),
+                include_kinds=cast(set[ReflectionKind], {"patch_pattern", "prompt_pattern"}),
+                sample_count_min=1,
+            ),
+        ),
     )
     try:
         evidence_pack = build_static_evidence_pack(pack_request)
@@ -1221,6 +1256,9 @@ def _completed_attempt(
     resolved_overlay_ref = (
         artifacts.effective_prompt_overlay_ref if effective_prompt_overlay_ref is None else effective_prompt_overlay_ref
     )
+    base_metadata: dict[str, Any] = {"cw": {"foundation_runner": True}}
+    if artifacts.source_patch_id is not None:
+        base_metadata["cw"]["source_patch_id"] = artifacts.source_patch_id
     return NodeAttempt(
         attempt_id=artifacts.attempt_id,
         run_id=run.run_id,
@@ -1241,7 +1279,7 @@ def _completed_attempt(
         usage=RunUsage(),
         errors=[],
         outcome_hash=_stable_hash({"output_hash": output_hash, "finished_at": finished_at}),
-        metadata=_merge_metadata({"cw": {"foundation_runner": True}}, metadata),
+        metadata=_merge_metadata(base_metadata, metadata),
     )
 
 
@@ -2145,6 +2183,17 @@ def _initial_input_from_run(run: WorkflowRunDocument) -> dict[str, Any]:
     if not isinstance(raw_initial_input, dict):
         return {}
     return dict(raw_initial_input)
+
+
+def _reflection_domain_signals(run: WorkflowRunDocument) -> list[str]:
+    initial_input = _initial_input_from_run(run)
+    raw_domain_signals = initial_input.get("domain_signals")
+    if isinstance(raw_domain_signals, Sequence) and not isinstance(raw_domain_signals, str | bytes | bytearray):
+        return [str(signal) for signal in raw_domain_signals if str(signal)]
+    raw_domain = initial_input.get("domain")
+    if isinstance(raw_domain, str) and raw_domain:
+        return [raw_domain]
+    return []
 
 
 def _evaluation_contract(node: EvaluationTaskNode) -> EvaluationContract:

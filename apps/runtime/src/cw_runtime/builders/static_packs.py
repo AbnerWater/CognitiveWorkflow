@@ -15,6 +15,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cw_runtime.reflection_memory import ReflectionLookupResult, render_reflection_instruction
 from cw_schemas.contract import EvidenceRequirement, NodeContractBase, StaticTextSelector, UserInputSelector
 from cw_schemas.packs import (
     CacheMeta,
@@ -29,6 +30,7 @@ from cw_schemas.packs import (
     EvidenceProvenance,
     ExecutionPack,
     FragmentTransformation,
+    InjectedSource,
     PromptOverlay,
     RequirementResolution,
     StaticTextSource,
@@ -68,6 +70,7 @@ class StaticAttemptPackRequest(BaseModel):
     built_at: str
     initial_input: dict[str, Any] = Field(default_factory=dict)
     effective_prompt_overlay: PromptOverlay | None = None
+    reflection_lookup_result: ReflectionLookupResult | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -391,6 +394,39 @@ def _build_context_pack(request: StaticAttemptPackRequest, evidence_pack: Eviden
         rendered_evidence = "\n".join(evidence_lines)
         template_inputs["evidence"] = rendered_evidence
         deps["evidence"] = rendered_evidence
+
+    if request.reflection_lookup_result is not None and request.reflection_lookup_result.total_count > 0:
+        reflection_lines: list[str] = []
+        for kind, entries in sorted(request.reflection_lookup_result.entries_by_kind.items()):
+            for entry in entries:
+                text = render_reflection_instruction(entry)
+                reflection_lines.append(text)
+                fragments.append(
+                    _context_fragment(
+                        request=request,
+                        fragment_id=_derived_id("frag_reflection", request.node_id, entry.memory_id),
+                        key=f"reflection_memory.{kind}.{entry.memory_id}",
+                        kind="instruction_addendum",
+                        priority=Priority.HIGH if entry.confidence >= 0.8 else Priority.NORMAL,
+                        required=False,
+                        text=text,
+                        payload={
+                            "memory_id": entry.memory_id,
+                            "kind": entry.kind,
+                            "confidence": entry.confidence,
+                            "sample_count": entry.sample_count,
+                            "query_hash": request.reflection_lookup_result.query_hash,
+                        },
+                        source=InjectedSource(
+                            injected_by="reflection_memory",
+                            reason=",".join(entry.topic_keys),
+                        ),
+                    )
+                )
+        if reflection_lines:
+            rendered_reflections = "\n".join(reflection_lines)
+            template_inputs["reflection_memory"] = rendered_reflections
+            deps["reflection_memory"] = rendered_reflections
 
     fragments = _sort_fragments(fragments)
     budget = ContextBudget(
