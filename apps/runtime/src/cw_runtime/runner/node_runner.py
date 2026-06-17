@@ -18,6 +18,14 @@ from typing import Any, Literal, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from cw_runtime.builders import (
+    AttemptPackBundle,
+    PackBuildError,
+    StaticAttemptPackRequest,
+    build_static_context_pack,
+    build_static_evidence_pack,
+    build_static_execution_pack,
+)
 from cw_runtime.engine import EngineWorkflowIR, compile_workflow_graph, load_workflow_graph
 from cw_runtime.harness.project import acquire_runtime_lock
 from cw_runtime.runs.lifecycle import (
@@ -36,16 +44,8 @@ from cw_runtime.runs.lifecycle import (
 )
 from cw_schemas import WorkflowGraph
 from cw_schemas.contract import EvaluationContract, NodeContractBase
-from cw_schemas.events import EvaluationEvent, HumanEvent, LifecycleEvent, RepairEvent
-from cw_schemas.packs import (
-    ContextBudget,
-    ContextFragment,
-    ContextPack,
-    ContextProvenance,
-    ExecutionPack,
-    PromptOverlay,
-    StaticTextSource,
-)
+from cw_schemas.events import ContextEvent, EvaluationEvent, HumanEvent, LifecycleEvent, RepairEvent
+from cw_schemas.packs import PromptOverlay
 from cw_schemas.runtime import (
     AdapterError,
     ArtifactRef,
@@ -69,7 +69,6 @@ from cw_schemas.types import (
     EventPhase,
     FailureType,
     NodeRuntimeState,
-    Priority,
     RepairKind,
     RiskLevel,
     RunState,
@@ -227,6 +226,7 @@ class _AttemptArtifacts(BaseModel):
     attempt_id: str
     attempt_index: int
     context_pack_id: str
+    evidence_pack_id: str | None = None
     execution_pack_id: str
     started_at: str
     model_profile_id: str
@@ -275,7 +275,7 @@ def advance_workflow_run(
         elif isinstance(node, EvaluationTaskNode):
             result = _advance_evaluation(root, graph, compiled, run, node, advance_request.evaluation)
         elif isinstance(node, RepairTaskNode):
-            result = _advance_repair(root, compiled, run, node, advance_request.repair)
+            result = _advance_repair(root, graph, compiled, run, node, advance_request.repair)
         elif isinstance(node, HumanCheckpointNode):
             result = _advance_human_gate(root, run, node, advance_request.human_gate)
         else:
@@ -342,7 +342,10 @@ def _advance_execution(
     input_data: ExecutionAdvanceInput | None,
 ) -> NodeAdvanceResult:
     execution = ExecutionAdvanceInput() if input_data is None else input_data
-    artifacts = _prepare_attempt(project_root, run, node, execution.model_profile_id)
+    try:
+        artifacts = _prepare_attempt(project_root, run, node, execution.model_profile_id)
+    except PackBuildError as exc:
+        return _route_pack_build_failure(project_root, graph, compiled, run, node, exc)
     if _node_state(run, node.node_id) == NodeRuntimeState.RETRYING:
         pass
     else:
@@ -395,7 +398,10 @@ def _advance_evaluation(
     input_data: EvaluationAdvanceInput | None,
 ) -> NodeAdvanceResult:
     evaluation = _normalize_evaluation_input(graph, compiled, node, input_data)
-    artifacts = _prepare_attempt(project_root, run, node, evaluation.model_profile_id)
+    try:
+        artifacts = _prepare_attempt(project_root, run, node, evaluation.model_profile_id)
+    except PackBuildError as exc:
+        return _route_pack_build_failure(project_root, graph, compiled, run, node, exc)
     target_attempt_id = _runtime_string(run, "last_attempt_ids", node.target_node_id)
     target_hash = _runtime_string(run, "last_output_hashes", node.target_node_id)
     if target_attempt_id is None or target_hash is None:
@@ -510,13 +516,17 @@ def _advance_evaluation(
 
 def _advance_repair(
     project_root: Path,
+    graph: WorkflowGraph,
     compiled: EngineWorkflowIR,
     run: WorkflowRunDocument,
     node: RepairTaskNode,
     input_data: RepairAdvanceInput | None,
 ) -> NodeAdvanceResult:
     repair = RepairAdvanceInput() if input_data is None else input_data
-    artifacts = _prepare_attempt(project_root, run, node, repair.model_profile_id)
+    try:
+        artifacts = _prepare_attempt(project_root, run, node, repair.model_profile_id)
+    except PackBuildError as exc:
+        return _route_pack_build_failure(project_root, graph, compiled, run, node, exc)
     evaluation_id = _runtime_string(run, "last_evaluation_by_target", node.repair_target_node_id)
     target_attempt_id = _runtime_string(run, "last_attempt_ids", node.repair_target_node_id)
     if evaluation_id is None or target_attempt_id is None:
@@ -774,27 +784,125 @@ def _prepare_attempt(
     attempt_id = new_runtime_id()
     context_pack_id = new_runtime_id()
     execution_pack_id = new_runtime_id()
+    evidence_pack_id = new_runtime_id() if contract.evidence_requirements else None
     resolved_model_profile_id = (
         model_profile_id or contract.model_policy.primary_model_profile_id or _DEFAULT_MODEL_PROFILE_ID
     )
     pending_overlay = _consume_pending_prompt_overlay(run, node.node_id)
-    _write_foundation_packs(
-        project_root=project_root,
-        run=run,
-        node=node,
-        contract=contract,
+    effective_prompt_overlay = None
+    if pending_overlay is not None:
+        effective_prompt_overlay = PromptOverlay(
+            append_to_instructions=[pending_overlay.instruction_text],
+            source_patch_id=pending_overlay.patch_id,
+        )
+
+    pack_request = StaticAttemptPackRequest(
+        run_id=run.run_id,
+        node_id=node.node_id,
         attempt_id=attempt_id,
         context_pack_id=context_pack_id,
+        evidence_pack_id=evidence_pack_id,
         execution_pack_id=execution_pack_id,
+        contract=contract,
         model_profile_id=resolved_model_profile_id,
         built_at=now,
-        pending_overlay=pending_overlay,
+        initial_input=_initial_input_from_run(run),
+        effective_prompt_overlay=effective_prompt_overlay,
     )
+    try:
+        evidence_pack = build_static_evidence_pack(pack_request)
+        if evidence_pack is not None:
+            write_run_json_locked(
+                project_root,
+                run.run_id,
+                f"evidence_packs/{evidence_pack.pack_id}.json",
+                evidence_pack.model_dump(mode="json"),
+            )
+            evidence_completed = _context_event(
+                project_root=project_root,
+                run=run,
+                event_type="evidence.build_completed",
+                title="Evidence build completed",
+                payload={
+                    "pack_id": evidence_pack.pack_id,
+                    "evidences_count": len(evidence_pack.evidences),
+                    "coverage_ratio": evidence_pack.coverage.coverage_ratio,
+                    "conflicts_count": len(evidence_pack.conflicts),
+                },
+                expandable=True,
+                node=node,
+                attempt_id=attempt_id,
+                evidence_pack_id=evidence_pack.pack_id,
+            )
+            append_run_event_locked(project_root, run, evidence_completed)
+
+        context_started = _context_event(
+            project_root=project_root,
+            run=run,
+            event_type="context.build_started",
+            title="Context build started",
+            payload={
+                "requirements_hash": _stable_hash(
+                    [item.model_dump(mode="json") for item in contract.context_requirements]
+                )
+            },
+            expandable=False,
+            node=node,
+            attempt_id=attempt_id,
+            context_pack_id=context_pack_id,
+        )
+        append_run_event_locked(project_root, run, context_started)
+
+        context_pack = build_static_context_pack(pack_request, evidence_pack)
+        execution_pack = build_static_execution_pack(pack_request, context_pack, evidence_pack)
+    except PackBuildError as exc:
+        raise _attempt_pack_build_error(exc, attempt_id=attempt_id, attempt_index=attempt_index) from exc
+    except ValidationError as exc:
+        pack_error = _pack_build_error_from_validation(exc)
+        raise _attempt_pack_build_error(pack_error, attempt_id=attempt_id, attempt_index=attempt_index) from exc
+
+    pack_bundle = AttemptPackBundle(
+        context_pack=context_pack,
+        evidence_pack=evidence_pack,
+        execution_pack=execution_pack,
+    )
+
+    _write_attempt_pack_bundle(
+        project_root=project_root,
+        run=run,
+        attempt_id=attempt_id,
+        bundle=pack_bundle,
+        pending_overlay=pending_overlay,
+        effective_prompt_overlay=effective_prompt_overlay,
+        evidence_pack_already_written=pack_bundle.evidence_pack is not None,
+    )
+
+    context_completed = _context_event(
+        project_root=project_root,
+        run=run,
+        event_type="context.build_completed",
+        title="Context build completed",
+        payload={
+            "pack_id": pack_bundle.context_pack.pack_id,
+            "pack_hash": pack_bundle.context_pack.provenance.pack_hash,
+            "fragments_count": len(pack_bundle.context_pack.fragments),
+            "total_tokens": sum(fragment.tokens_estimate for fragment in pack_bundle.context_pack.fragments),
+            "hard_limit": pack_bundle.context_pack.budget.hard_limit_tokens,
+        },
+        expandable=True,
+        node=node,
+        attempt_id=attempt_id,
+        context_pack_id=pack_bundle.context_pack.pack_id,
+        evidence_pack_id=None if pack_bundle.evidence_pack is None else pack_bundle.evidence_pack.pack_id,
+    )
+    append_run_event_locked(project_root, run, context_completed)
+
     _store_runtime_value(run, "attempt_counts", node.node_id, attempt_index + 1)
     return _AttemptArtifacts(
         attempt_id=attempt_id,
         attempt_index=attempt_index,
         context_pack_id=context_pack_id,
+        evidence_pack_id=None if pack_bundle.evidence_pack is None else pack_bundle.evidence_pack.pack_id,
         execution_pack_id=execution_pack_id,
         started_at=now,
         model_profile_id=resolved_model_profile_id,
@@ -803,68 +911,39 @@ def _prepare_attempt(
     )
 
 
-def _write_foundation_packs(
+def _attempt_pack_build_error(exc: PackBuildError, *, attempt_id: str, attempt_index: int) -> PackBuildError:
+    details = dict(exc.details)
+    details["attempt_id"] = attempt_id
+    details["attempt_index"] = attempt_index
+    return PackBuildError(exc.error_code, str(exc), details=details)
+
+
+def _pack_build_error_from_validation(exc: ValidationError) -> PackBuildError:
+    first_code = "CP_BUILD_REQ_UNRESOLVED"
+    validation_errors = exc.errors(include_context=False)
+    for error in validation_errors:
+        raw_type = error.get("type")
+        if isinstance(raw_type, str) and (raw_type.startswith("CP_BUILD_") or raw_type.startswith("EP_BUILD_")):
+            first_code = raw_type
+            break
+    return PackBuildError(
+        first_code,
+        str(exc),
+        details={"validation_errors": validation_errors},
+    )
+
+
+def _write_attempt_pack_bundle(
     *,
     project_root: Path,
     run: WorkflowRunDocument,
-    node: AttemptNode,
-    contract: NodeContractBase,
     attempt_id: str,
-    context_pack_id: str,
-    execution_pack_id: str,
-    model_profile_id: str,
-    built_at: str,
+    bundle: AttemptPackBundle,
     pending_overlay: _PendingPromptOverlay | None,
+    effective_prompt_overlay: PromptOverlay | None,
+    evidence_pack_already_written: bool = False,
 ) -> None:
-    fragment = ContextFragment(
-        fragment_id=f"frag_{node.node_id}_goal",
-        key="node_goal",
-        kind="node_goal",
-        priority=Priority.CRITICAL,
-        required=True,
-        tokens_estimate=max(1, len(contract.goal.split())),
-        text=contract.goal,
-        payload=None,
-        source=StaticTextSource(contract_field_path="goal"),
-        transformation=None,
-        created_at=built_at,
-        metadata={"cw": {"foundation_stub": True}},
-    )
-    context_pack = ContextPack(
-        pack_id=context_pack_id,
-        node_id=node.node_id,
-        attempt_id=attempt_id,
-        run_id=run.run_id,
-        node_goal=contract.goal,
-        global_summary=None,
-        user_constraints=[],
-        fragments=[fragment],
-        template_inputs={"node_goal": contract.goal},
-        budget=ContextBudget(
-            model_context_window_tokens=8192,
-            reserved_for_output_tokens=1024,
-            reserved_for_history_tokens=0,
-            reserved_for_tools_tokens=512,
-            safety_margin_tokens=512,
-            hard_limit_tokens=6144,
-        ),
-        provenance=ContextProvenance(
-            builder_version="foundation-stub",
-            built_at=built_at,
-            model_profile_id=model_profile_id,
-            tokenizer="foundation-tokenizer",
-            requirements_hash=_stable_hash([item.model_dump(mode="json") for item in contract.context_requirements]),
-            inputs_hash=_stable_hash({"run_id": run.run_id, "node_id": node.node_id}),
-            pack_hash=_stable_hash({"node_goal": contract.goal, "attempt_id": attempt_id}),
-        ),
-        metadata={"cw": {"foundation_stub": True}},
-    )
-    effective_prompt_overlay = None
-    if pending_overlay is not None:
-        effective_prompt_overlay = PromptOverlay(
-            append_to_instructions=[pending_overlay.instruction_text],
-            source_patch_id=pending_overlay.patch_id,
-        )
+    if pending_overlay is not None and effective_prompt_overlay is not None:
         write_run_json_locked(
             project_root,
             run.run_id,
@@ -878,33 +957,24 @@ def _write_foundation_packs(
                 "applies_to_attempt_id": attempt_id,
             },
         )
-
-    execution_pack = ExecutionPack(
-        pack_id=execution_pack_id,
-        run_id=run.run_id,
-        node_id=node.node_id,
-        attempt_id=attempt_id,
-        node_contract_snapshot=cast(Any, contract),
-        context_pack=context_pack,
-        evidence_pack=None,
-        effective_prompt_overlay=effective_prompt_overlay,
-        effective_model_settings=dict(contract.model_policy.model_settings),
-        effective_model_profile_id=model_profile_id,
-        retry_policy=contract.retry_policy,
-        validator_policy=contract.validator_policy,
-        usage_limits=None,
-        cancel_token=new_runtime_id(),
-        correlation_id=attempt_id,
-        metadata={"cw": {"foundation_stub": True}},
-    )
+    if bundle.evidence_pack is not None and not evidence_pack_already_written:
+        write_run_json_locked(
+            project_root,
+            run.run_id,
+            f"evidence_packs/{bundle.evidence_pack.pack_id}.json",
+            bundle.evidence_pack.model_dump(mode="json"),
+        )
     write_run_json_locked(
-        project_root, run.run_id, f"context_packs/{context_pack_id}.json", context_pack.model_dump(mode="json")
+        project_root,
+        run.run_id,
+        f"context_packs/{bundle.context_pack.pack_id}.json",
+        bundle.context_pack.model_dump(mode="json"),
     )
     write_run_json_locked(
         project_root,
         run.run_id,
-        f"execution_packs/{execution_pack_id}.json",
-        execution_pack.model_dump(mode="json"),
+        f"execution_packs/{bundle.execution_pack.pack_id}.json",
+        bundle.execution_pack.model_dump(mode="json"),
     )
 
 
@@ -936,7 +1006,7 @@ def _completed_attempt(
         model_profile_id=artifacts.model_profile_id,
         effective_prompt_overlay_ref=resolved_overlay_ref,
         context_pack_id=artifacts.context_pack_id,
-        evidence_pack_id=None,
+        evidence_pack_id=artifacts.evidence_pack_id,
         execution_pack_id=artifacts.execution_pack_id,
         output_hash=output_hash,
         output_artifact_refs=output_artifact_refs,
@@ -966,7 +1036,7 @@ def _failed_attempt(
         adapter_version=_RUNNER_VERSION,
         model_profile_id=artifacts.model_profile_id,
         context_pack_id=artifacts.context_pack_id,
-        evidence_pack_id=None,
+        evidence_pack_id=artifacts.evidence_pack_id,
         execution_pack_id=artifacts.execution_pack_id,
         output_hash=None,
         usage=RunUsage(),
@@ -1042,6 +1112,219 @@ def _fail_attempt_and_run(
         next_node_ids=[],
         attempt_id=artifacts.attempt_id,
     )
+
+
+def _route_pack_build_failure(
+    project_root: Path,
+    graph: WorkflowGraph,
+    compiled: EngineWorkflowIR,
+    run: WorkflowRunDocument,
+    node: AttemptNode,
+    exc: PackBuildError,
+) -> NodeAdvanceResult:
+    run = _ensure_node_running_for_failure(project_root, run, node.node_id)
+    attempt_id = _pack_error_attempt_id(exc)
+    attempt_index = _pack_error_attempt_index(exc)
+    _store_runtime_value(
+        run,
+        "pack_build_failures",
+        node.node_id,
+        {
+            "error_code": exc.error_code,
+            "message": str(exc),
+            "attempt_id": attempt_id,
+            "attempt_index": attempt_index,
+            "details": exc.details,
+        },
+    )
+    run = _persist_runtime_metadata(project_root, run)
+
+    repair_target_id = _first_pack_failure_repair_target(graph, compiled, node)
+    if repair_target_id is not None:
+        run = _emit_pack_build_attempt_failed(
+            project_root,
+            run,
+            node,
+            exc,
+            attempt_id=attempt_id,
+            attempt_index=attempt_index,
+            next_action="repair",
+            next_node_id=repair_target_id,
+        )
+        run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.REPAIRING)
+        run = _update_run_current_nodes(project_root, run, [repair_target_id], RunState.RUNNING)
+        return NodeAdvanceResult(
+            run=run,
+            node_id=node.node_id,
+            node_state=NodeRuntimeState.REPAIRING,
+            next_node_ids=[repair_target_id],
+            attempt_id=attempt_id,
+        )
+
+    human_target_id = _first_pack_failure_human_target(graph, compiled, node) or _pack_failure_human_fallback(graph)
+    if human_target_id is not None:
+        run = _emit_pack_build_attempt_failed(
+            project_root,
+            run,
+            node,
+            exc,
+            attempt_id=attempt_id,
+            attempt_index=attempt_index,
+            next_action="human_checkpoint",
+            next_node_id=human_target_id,
+        )
+        run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.WAITING_USER)
+        run = _update_run_current_nodes(project_root, run, [human_target_id], RunState.RUNNING)
+        return NodeAdvanceResult(
+            run=run,
+            node_id=node.node_id,
+            node_state=NodeRuntimeState.WAITING_USER,
+            next_node_ids=[human_target_id],
+            attempt_id=attempt_id,
+        )
+
+    run = _emit_pack_build_attempt_failed(
+        project_root,
+        run,
+        node,
+        exc,
+        attempt_id=attempt_id,
+        attempt_index=attempt_index,
+        next_action="run.failed",
+        next_node_id=None,
+    )
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.FAILED)
+    now = utc_now_ms()
+    summary = RunFailureSummary(
+        failure_type=FailureType.UNKNOWN.value,
+        failed_node_id=node.node_id,
+        message=str(exc),
+        error_code=exc.error_code,
+        traceback_id=None,
+    )
+    run = run.model_copy(
+        update={
+            "state": RunState.FAILED,
+            "previous_state": run.state,
+            "failed_at": now,
+            "last_heartbeat_at": now,
+            "current_node_ids": [],
+            "failure_summary": summary,
+        }
+    )
+    failed_event = _lifecycle_event(
+        project_root,
+        run,
+        event_type="run.failed",
+        phase=EventPhase.RUN_FAILED,
+        title="Run failed",
+        payload={"error_kind": exc.error_code, "message": str(exc), "failed_node_id": node.node_id},
+        expandable=True,
+    )
+    run = append_run_event_locked(project_root, run, failed_event)
+    return NodeAdvanceResult(
+        run=run,
+        node_id=node.node_id,
+        node_state=NodeRuntimeState.FAILED,
+        next_node_ids=[],
+        attempt_id=attempt_id,
+    )
+
+
+def _ensure_node_running_for_failure(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node_id: str,
+) -> WorkflowRunDocument:
+    state = _node_state(run, node_id)
+    if state == NodeRuntimeState.IDLE:
+        run = _transition_node(project_root, run, node_id, NodeRuntimeState.READY)
+        return _transition_node(project_root, run, node_id, NodeRuntimeState.RUNNING)
+    if state in {NodeRuntimeState.READY, NodeRuntimeState.RETRYING}:
+        return _transition_node(project_root, run, node_id, NodeRuntimeState.RUNNING)
+    return run
+
+
+def _emit_pack_build_attempt_failed(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node: AttemptNode,
+    exc: PackBuildError,
+    *,
+    attempt_id: str | None,
+    attempt_index: int | None,
+    next_action: str,
+    next_node_id: str | None,
+) -> WorkflowRunDocument:
+    event = _lifecycle_event(
+        project_root,
+        run,
+        event_type="attempt.failed",
+        phase=EventPhase.ATTEMPT_FAILED,
+        title="Attempt preparation failed",
+        payload={
+            "error_kind": exc.error_code,
+            "message": str(exc),
+            "will_retry": next_action == "repair",
+            "next_action": next_action,
+            "next_node_id": next_node_id,
+            "node_id": node.node_id,
+            "attempt_index": attempt_index,
+        },
+        expandable=True,
+        node_id=node.node_id,
+        attempt_id=attempt_id,
+    )
+    return append_run_event_locked(project_root, run, event)
+
+
+def _first_pack_failure_repair_target(
+    graph: WorkflowGraph,
+    compiled: EngineWorkflowIR,
+    node: AttemptNode,
+) -> str | None:
+    nodes = _node_by_id(graph)
+    for edge in compiled.edges:
+        if edge.source_node_id != node.node_id or edge.type not in {EdgeType.FAIL, EdgeType.REPAIR, EdgeType.RETRY}:
+            continue
+        target = nodes.get(edge.target_node_id)
+        if isinstance(target, RepairTaskNode) and target.repair_target_node_id == node.node_id:
+            return target.node_id
+    return None
+
+
+def _first_pack_failure_human_target(
+    graph: WorkflowGraph,
+    compiled: EngineWorkflowIR,
+    node: AttemptNode,
+) -> str | None:
+    nodes = _node_by_id(graph)
+    for edge in compiled.edges:
+        if edge.source_node_id != node.node_id or edge.type not in {EdgeType.FAIL, EdgeType.HUMAN}:
+            continue
+        target = nodes.get(edge.target_node_id)
+        if isinstance(target, HumanCheckpointNode):
+            return target.node_id
+    return None
+
+
+def _pack_failure_human_fallback(graph: WorkflowGraph) -> str | None:
+    if graph.execution_policy.on_node_failure.value != "human":
+        return None
+    human_nodes = [node.node_id for node in graph.nodes if isinstance(node, HumanCheckpointNode)]
+    if len(human_nodes) != 1:
+        return None
+    return human_nodes[0]
+
+
+def _pack_error_attempt_id(exc: PackBuildError) -> str | None:
+    raw_attempt_id = exc.details.get("attempt_id")
+    return raw_attempt_id if isinstance(raw_attempt_id, str) else None
+
+
+def _pack_error_attempt_index(exc: PackBuildError) -> int | None:
+    raw_attempt_index = exc.details.get("attempt_index")
+    return raw_attempt_index if isinstance(raw_attempt_index, int) else None
 
 
 def _normalize_evaluation_input(
@@ -1193,7 +1476,7 @@ def _build_evaluation_result(
             evaluator_model_profile_id=artifacts.model_profile_id,
             programmatic_validators=[_RUNNER_ID],
             context_pack_id=artifacts.context_pack_id,
-            evidence_pack_id=None,
+            evidence_pack_id=artifacts.evidence_pack_id,
             target_artifact_hash=target_hash,
             criteria_hash=_stable_hash([criterion.model_dump(mode="json") for criterion in contract.criteria]),
             eval_hash=_stable_hash(payload_for_hash),
@@ -1435,6 +1718,41 @@ def _lifecycle_event(
     )
 
 
+def _context_event(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    *,
+    event_type: Literal["context.build_started", "context.build_completed", "evidence.build_completed"],
+    title: str,
+    payload: dict[str, Any],
+    expandable: bool,
+    node: AttemptNode,
+    attempt_id: str,
+    context_pack_id: str | None = None,
+    evidence_pack_id: str | None = None,
+) -> ContextEvent:
+    return ContextEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node.node_id,
+        attempt_id=attempt_id,
+        type=event_type,
+        phase=None,
+        title=title,
+        summary=None,
+        content=None,
+        payload=payload,
+        display_level=DisplayLevel.DEFAULT,
+        severity=StreamSeverity.INFO,
+        sensitivity=Sensitivity.PROJECT,
+        expandable=expandable,
+        created_at=utc_now_ms(),
+        context_pack_id=context_pack_id,
+        evidence_pack_id=evidence_pack_id,
+    )
+
+
 def _update_run_current_nodes(
     project_root: Path,
     run: WorkflowRunDocument,
@@ -1574,6 +1892,16 @@ def _require_contract(node: AttemptNode) -> NodeContractBase:
             details={"node_id": node.node_id, "node_type": node.type},
         )
     return cast(NodeContractBase, node.contract)
+
+
+def _initial_input_from_run(run: WorkflowRunDocument) -> dict[str, Any]:
+    cw_metadata = run.metadata.get("cw")
+    if not isinstance(cw_metadata, dict):
+        return {}
+    raw_initial_input = cw_metadata.get("initial_input")
+    if not isinstance(raw_initial_input, dict):
+        return {}
+    return dict(raw_initial_input)
 
 
 def _evaluation_contract(node: EvaluationTaskNode) -> EvaluationContract:
