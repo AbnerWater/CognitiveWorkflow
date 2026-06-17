@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 from cw_runtime import __version__
 from cw_runtime.engine import WorkflowValidationError, load_workflow_graph
 from cw_runtime.harness import HarnessError, ProjectCreateRequest, initialize_project, read_project
+from cw_runtime.runner import HumanDecisionRequest, resolve_human_decision
 from cw_runtime.runs import (
     RunActionRequest,
     RunError,
@@ -334,6 +335,28 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
     async def post_run_cancel(run_id: str, request: Any) -> Any:
         return await _run_action(run_id, request, cancel_workflow_run)
 
+    async def post_run_decision(run_id: str, request: Any) -> Any:
+        body_or_response = await _body_or_error_response(request)
+        if not isinstance(body_or_response, dict):
+            return body_or_response
+        body = body_or_response
+        replay = idempotency_replay_response(request, body)
+        if replay is not None:
+            return replay
+        project_root = run_locations.get(run_id)
+        if project_root is None:
+            return _resource_not_found("Run is not registered in this runtime process.", {"run_id": run_id})
+        try:
+            decision_request = HumanDecisionRequest.model_validate(body)
+            record = resolve_human_decision(project_root, run_id, decision_request)
+        except ValidationError as exc:
+            return secure_json_response(status_code=400, content=_dump_model(_validation_error_envelope(exc)))
+        except RunError as exc:
+            return _run_error_response(exc)
+        content = {"schema_version": RUNTIME_SCHEMA_VERSION, **_dump_model(record)}
+        remember_idempotency_response(request, body, status_code=200, content=content)
+        return secure_json_response(status_code=200, content=content)
+
     async def _workflow_action(
         workflow_id: str,
         request: Any,
@@ -487,6 +510,7 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
     post_workflow_pause.__annotations__["request"] = requests.Request
     post_workflow_resume.__annotations__["request"] = requests.Request
     post_workflow_cancel.__annotations__["request"] = requests.Request
+    post_run_decision.__annotations__["request"] = requests.Request
     post_run_cancel.__annotations__["request"] = requests.Request
     get_run_stream.__annotations__["request"] = requests.Request
 
@@ -502,6 +526,7 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/resume")(post_workflow_resume)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/cancel")(post_workflow_cancel)
     app.get(f"{settings.api_prefix}/runs/{{run_id}}")(get_run)
+    app.post(f"{settings.api_prefix}/runs/{{run_id}}/decisions")(post_run_decision)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/cancel")(post_run_cancel)
     app.get(f"{settings.api_prefix}/runs/{{run_id}}/stream")(get_run_stream)
     app.get(f"{settings.api_prefix}/observability/runs/{{run_id}}/stream")(get_run_stream)

@@ -38,6 +38,7 @@ from cw_runtime.runs.lifecycle import (
     new_runtime_id,
     next_event_seq,
     read_workflow_run,
+    run_directory,
     utc_now_ms,
     write_run_json_locked,
     write_workflow_run_locked,
@@ -115,7 +116,9 @@ _ALLOWED_NODE_TRANSITIONS: Mapping[NodeRuntimeState, frozenset[NodeRuntimeState]
     NodeRuntimeState.REVIEW_FAILED: frozenset({NodeRuntimeState.REPAIRING}),
     NodeRuntimeState.REPAIRING: frozenset({NodeRuntimeState.RETRYING, NodeRuntimeState.FAILED}),
     NodeRuntimeState.RETRYING: frozenset({NodeRuntimeState.RUNNING, NodeRuntimeState.PASSED, NodeRuntimeState.FAILED}),
-    NodeRuntimeState.WAITING_USER: frozenset(),
+    NodeRuntimeState.WAITING_USER: frozenset(
+        {NodeRuntimeState.PASSED, NodeRuntimeState.FAILED, NodeRuntimeState.RETRYING}
+    ),
     NodeRuntimeState.PASSED: frozenset(),
     NodeRuntimeState.SKIPPED: frozenset(),
     NodeRuntimeState.FAILED: frozenset(),
@@ -189,6 +192,32 @@ class HumanGateAdvanceInput(BaseModel):
 
     prompt_to_user: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class HumanDecisionRequest(BaseModel):
+    """Submit a deterministic human checkpoint decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["0.1.0"]
+    human_node_id: str = Field(min_length=1)
+    decision: str = Field(min_length=1, max_length=64)
+    custom_value: Any | None = None
+    by: str = Field(min_length=1, max_length=200)
+
+
+class HumanDecisionRecord(BaseModel):
+    """Append-only ``decisions.jsonl`` record for a resolved human gate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    human_node_id: str
+    status: Literal["resolved"]
+    decision: str
+    by: str
+    decided_at: str
+    requested_at: str
+    custom_value: Any | None = None
 
 
 class NodeAdvanceRequest(BaseModel):
@@ -288,6 +317,77 @@ def advance_workflow_run(
         after_events = list_stream_events(root, run_id)
         new_event_ids = [event.event_id for event in after_events[before_event_count:]]
         return result.model_copy(update={"event_ids": new_event_ids})
+
+
+def resolve_human_decision(
+    project_root: str | PathLike[str],
+    run_id: str,
+    request: HumanDecisionRequest,
+) -> HumanDecisionRecord:
+    """Resolve the current human checkpoint and route the run forward."""
+
+    root = Path(project_root)
+    with acquire_runtime_lock(root):
+        graph = load_workflow_graph(root)
+        compiled = compile_workflow_graph(graph)
+        run = read_workflow_run(root, run_id)
+        if run.state != RunState.WAITING_USER:
+            raise RunError(
+                "WR_STATE_FORBIDDEN_TRANSITION",
+                "Human decisions can only be resolved while the WorkflowRun is waiting_user.",
+                details={"run_id": run.run_id, "state": run.state.value},
+            )
+        current_node_id = _resolve_current_node_id(run, request.human_node_id)
+        node = _node_by_id(graph)[current_node_id]
+        if not isinstance(node, HumanCheckpointNode):
+            raise RunError(
+                "NL_STATE_FORBIDDEN_TRANSITION",
+                "Current WorkflowRun node is not a human_checkpoint.",
+                details={"run_id": run.run_id, "node_id": current_node_id},
+            )
+        _ensure_human_decision_allowed(node, request.decision)
+        next_node_ids = _human_route_targets(compiled, node.node_id, request.decision)
+        requested_at = _pending_decision_requested_at(root, run.run_id, node.node_id)
+        now = utc_now_ms()
+        record = HumanDecisionRecord(
+            human_node_id=node.node_id,
+            status="resolved",
+            decision=request.decision,
+            by=request.by,
+            decided_at=now,
+            requested_at=requested_at,
+            custom_value=request.custom_value,
+        )
+        append_run_jsonl_locked(root, run.run_id, "decisions.jsonl", record.model_dump(mode="json"))
+        run = _emit_human_gate_resolved(root, run, node, request, now)
+        run = _transition_node(root, run, node.node_id, NodeRuntimeState.PASSED)
+        run = run.model_copy(
+            update={
+                "state": RunState.RUNNING,
+                "previous_state": run.state,
+                "resumed_at": now,
+                "paused_at": None,
+                "last_heartbeat_at": now,
+                "current_node_ids": next_node_ids,
+            }
+        )
+        run = write_workflow_run_locked(root, run)
+        resumed_event = _lifecycle_event(
+            root,
+            run,
+            event_type="run.resumed",
+            phase=EventPhase.RUN_RESUMED,
+            title="Run resumed by human decision",
+            payload={
+                "reason": "human_decision",
+                "human_node_id": node.node_id,
+                "decision": request.decision,
+                "next_node_ids": next_node_ids,
+            },
+            expandable=False,
+        )
+        append_run_event_locked(root, run, resumed_event)
+        return record
 
 
 def _advance_start(
@@ -758,6 +858,91 @@ def _advance_human_gate(
         node_state=NodeRuntimeState.WAITING_USER,
         next_node_ids=[node.node_id],
     )
+
+
+def _ensure_human_decision_allowed(node: HumanCheckpointNode, decision: str) -> None:
+    allowed = {definition.key for definition in node.decisions}
+    if decision not in allowed:
+        raise RunError(
+            "NL_STATE_FORBIDDEN_TRANSITION",
+            "Human decision is not declared on the current human_checkpoint node.",
+            details={"node_id": node.node_id, "decision": decision, "allowed": sorted(allowed)},
+        )
+
+
+def _pending_decision_requested_at(project_root: Path, run_id: str, human_node_id: str) -> str:
+    decisions_path = run_directory(project_root, run_id) / "decisions.jsonl"
+    requested_at: str | None = None
+    try:
+        lines = decisions_path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError as exc:
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run is waiting_user but decisions.jsonl is missing.",
+            status_code=500,
+            details={"run_id": run_id, "human_node_id": human_node_id},
+        ) from exc
+    for raw_line in lines:
+        if not raw_line.strip():
+            continue
+        try:
+            loaded = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            raise RunError(
+                "RH_RUN_DIR_CORRUPTED",
+                "decisions.jsonl contains invalid JSON.",
+                status_code=500,
+                details={"run_id": run_id, "human_node_id": human_node_id},
+            ) from exc
+        if not isinstance(loaded, dict):
+            continue
+        if loaded.get("human_node_id") != human_node_id:
+            continue
+        if loaded.get("status") == "pending" and isinstance(loaded.get("requested_at"), str):
+            requested_at = str(loaded["requested_at"])
+    if requested_at is None:
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run is waiting_user but has no pending human decision record.",
+            status_code=500,
+            details={"run_id": run_id, "human_node_id": human_node_id},
+        )
+    return requested_at
+
+
+def _emit_human_gate_resolved(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node: HumanCheckpointNode,
+    request: HumanDecisionRequest,
+    created_at: str,
+) -> WorkflowRunDocument:
+    event = HumanEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node.node_id,
+        attempt_id=None,
+        type="human.gate_resolved",
+        phase=EventPhase.NODE_PASSED,
+        title="Human decision resolved",
+        summary=None,
+        content=None,
+        payload={
+            "human_node_id": node.node_id,
+            "decision": request.decision,
+            "by": request.by,
+            "custom_value": request.custom_value,
+        },
+        display_level=DisplayLevel.DEFAULT,
+        sensitivity=Sensitivity.PROJECT,
+        expandable=False,
+        created_at=created_at,
+        human_node_id=node.node_id,
+        decision_key=request.decision,
+        user_id=request.by,
+    )
+    return append_run_event_locked(project_root, run, event)
 
 
 def _prepare_attempt(
@@ -1789,6 +1974,21 @@ def _route_targets(compiled: EngineWorkflowIR, source_node_id: str, route_key: R
             "NL_STATE_FORBIDDEN_TRANSITION",
             "No compiled route exists for the requested node transition.",
             details={"workflow_id": compiled.workflow_id, "node_id": source_node_id, "route_key": route_key},
+        )
+    return candidates
+
+
+def _human_route_targets(compiled: EngineWorkflowIR, source_node_id: str, decision: str) -> list[str]:
+    candidates = [
+        edge.target_node_id
+        for edge in compiled.edges
+        if edge.source_node_id == source_node_id and edge.type == EdgeType.HUMAN and edge.route_key == decision
+    ]
+    if not candidates:
+        raise RunError(
+            "NL_STATE_FORBIDDEN_TRANSITION",
+            "No compiled human route exists for the submitted decision.",
+            details={"workflow_id": compiled.workflow_id, "node_id": source_node_id, "decision": decision},
         )
     return candidates
 
