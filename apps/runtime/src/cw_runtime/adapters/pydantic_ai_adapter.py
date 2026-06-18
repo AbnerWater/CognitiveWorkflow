@@ -482,24 +482,82 @@ class PydanticAIAdapter:
             },
         )
 
-        try:
-            session = self._session_for(handle)
-            request = self._run_request(handle)
-            async for raw_event in self._iterate_session(
-                handle,
-                session,
-                session.run(request),
-                timeout_seconds=request.retry_policy.timeout_seconds,
-                operation="run",
-            ):
-                for event in self._translate_raw_event(handle, raw_event):
-                    yield event
-                if handle.state in {AttemptState.AWAITING_HUMAN, AttemptState.COMPLETED, AttemptState.FAILED}:
-                    return
-            if handle.state == AttemptState.RUNNING:
-                yield self._unterminated_session_event(handle, operation="run")
-        except AdapterRuntimeError as exc:
-            yield self._failed_event_from_exception(handle, exc)
+        request = self._run_request(handle)
+        model_retry_attempts = 0
+        while True:
+            emitted_raw_events = 0
+            try:
+                session = self._session_for(handle)
+                async for raw_event in self._iterate_session(
+                    handle,
+                    session,
+                    session.run(request),
+                    timeout_seconds=request.retry_policy.timeout_seconds,
+                    operation="run",
+                ):
+                    emitted_raw_events += 1
+                    for event in self._translate_raw_event(handle, raw_event):
+                        yield event
+                    if handle.state in {AttemptState.AWAITING_HUMAN, AttemptState.COMPLETED, AttemptState.FAILED}:
+                        return
+                if handle.state == AttemptState.RUNNING:
+                    yield self._unterminated_session_event(handle, operation="run")
+                return
+            except AdapterRuntimeError as exc:
+                if self._should_retry_model_request(
+                    request,
+                    exc,
+                    model_retry_attempts=model_retry_attempts,
+                    emitted_raw_events=emitted_raw_events,
+                ):
+                    model_retry_attempts += 1
+                    self._record_model_retry(handle, exc, retry_number=model_retry_attempts)
+                    await self._discard_session_for_retry(handle)
+                    handle.state = AttemptState.RUNNING
+                    handle.finished_at = None
+                    continue
+                if _is_exhausted_model_retry_error(request, exc, model_retry_attempts, emitted_raw_events):
+                    exc = _model_retry_exhausted_error(request, exc, model_retry_attempts)
+                yield self._failed_event_from_exception(handle, exc)
+                return
+
+    def _should_retry_model_request(
+        self,
+        request: PydanticAIRunRequest,
+        exc: AdapterRuntimeError,
+        *,
+        model_retry_attempts: int,
+        emitted_raw_events: int,
+    ) -> bool:
+        return (
+            _is_model_retry_candidate(exc)
+            and emitted_raw_events == 0
+            and model_retry_attempts < request.retry_policy.model_retries
+        )
+
+    def _record_model_retry(self, handle: AttemptHandle, exc: AdapterRuntimeError, *, retry_number: int) -> None:
+        cw_metadata = handle.metadata.setdefault("cw", {})
+        if not isinstance(cw_metadata, dict):
+            return
+        retries = cw_metadata.setdefault("pydantic_ai_model_retries", [])
+        if not isinstance(retries, list):
+            return
+        payload = exc.adapter_error.payload or {}
+        retries.append(
+            {
+                "retry_number": retry_number,
+                "error_code": exc.error_code,
+                "exception_type": payload.get("exception_type"),
+                "message": payload.get("message"),
+            }
+        )
+
+    async def _discard_session_for_retry(self, handle: AttemptHandle) -> None:
+        session = self._sessions.pop(handle.handle_id, None)
+        if session is None:
+            return
+        with suppress(Exception):
+            await session.aclose()
 
     async def resume(
         self,
@@ -753,24 +811,29 @@ class PydanticAIAdapter:
         except AdapterRuntimeError:
             raise
         except Exception as exc:
-            error_code: AgentAdapterErrorCode = (
-                "AA_RUN_USAGE_LIMIT" if _is_usage_limit_exceeded(exc) else "AA_RUN_INTERNAL"
-            )
-            message = (
-                "Pydantic AI session exceeded configured usage limits."
-                if error_code == "AA_RUN_USAGE_LIMIT"
-                else "Pydantic AI session raised an internal exception."
-            )
-            error = build_adapter_error(
+            retryable_model_exception = _is_retryable_model_exception(exc)
+            if _is_usage_limit_exceeded(exc):
+                error_code: AgentAdapterErrorCode = "AA_RUN_USAGE_LIMIT"
+                message = "Pydantic AI session exceeded configured usage limits."
+            elif retryable_model_exception or _is_http_status_model_exception(exc):
+                error_code = "AA_RUN_STREAM_INTERRUPTED"
+                message = "Pydantic AI session model request failed."
+            else:
+                error_code = "AA_RUN_INTERNAL"
+                message = "Pydantic AI session raised an internal exception."
+            status_code = _http_status_code(exc)
+            raise AdapterRuntimeError(
                 error_code,
                 message,
-                retryable=False,
-                payload={"exception_type": type(exc).__name__, "message": str(exc)},
-            )
-            self._errors[handle.handle_id] = [error]
-            handle.state = AttemptState.FAILED
-            handle.finished_at = utc_now_ms()
-            raise AdapterRuntimeError(error_code, error.message, payload=error.payload) from exc
+                retryable=retryable_model_exception,
+                http_status=status_code,
+                payload={
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                    "retryable_model_exception": retryable_model_exception,
+                    **({} if status_code is None else {"status_code": status_code}),
+                },
+            ) from exc
 
     async def _events_until_control(
         self,
@@ -1498,12 +1561,6 @@ def _build_sdk_agent(
 
 
 def _sdk_agent_retries(retry_policy: PydanticAIRetryPolicy) -> dict[str, int]:
-    if retry_policy.model_retries_explicit and retry_policy.model_retries:
-        raise AdapterRuntimeError(
-            "AA_PREPARE_INCOMPATIBLE_ADAPTER",
-            "Pydantic AI SDK AgentRetries cannot enforce model_retries.",
-            payload={"model_retries": retry_policy.model_retries},
-        )
     if isinstance(retry_policy.tool_retries, Mapping):
         raise AdapterRuntimeError(
             "AA_PREPARE_INCOMPATIBLE_ADAPTER",
@@ -1530,7 +1587,20 @@ def _sdk_toolsets(
             payload={"toolsets": toolset_request.model_dump(mode="json")},
         )
 
-    bundle = toolset_factory(sdk, toolset_request)
+    try:
+        bundle = toolset_factory(sdk, toolset_request)
+    except AdapterRuntimeError:
+        raise
+    except Exception as exc:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Pydantic AI toolset factory failed while resolving requested toolsets.",
+            payload={
+                "exception_type": type(exc).__name__,
+                "message": str(exc),
+                "toolsets": toolset_request.model_dump(mode="json"),
+            },
+        ) from exc
     function_toolsets = list(bundle.function_toolsets)
     mcp_toolsets_by_server = {mcp_toolset.server_id: mcp_toolset.toolset for mcp_toolset in bundle.mcp_toolsets}
     if (toolset_request.builtin_tools or toolset_request.skill_ids_resolved) and not function_toolsets:
@@ -1914,6 +1984,93 @@ def _sdk_tool_result_message(part: object) -> str:
 
 def _is_usage_limit_exceeded(exc: Exception) -> bool:
     return type(exc).__name__ == "UsageLimitExceeded"
+
+
+def _is_retryable_model_exception(exc: Exception) -> bool:
+    if _is_usage_limit_exceeded(exc):
+        return False
+    exc_name = type(exc).__name__
+    if _is_http_status_model_exception(exc):
+        return _is_retryable_http_status(_http_status_code(exc))
+    if isinstance(exc, TimeoutError | ConnectionError):
+        return True
+    retryable_names = {
+        "APIConnectionError",
+        "APITimeoutError",
+        "ConnectError",
+        "ConnectTimeout",
+        "ConnectionError",
+        "ConnectionTimeout",
+        "HTTPTimeoutError",
+        "ReadError",
+        "ReadTimeout",
+        "RemoteProtocolError",
+        "RequestError",
+        "TimeoutException",
+        "TransportError",
+        "WriteError",
+        "WriteTimeout",
+    }
+    return exc_name in retryable_names
+
+
+def _is_http_status_model_exception(exc: Exception) -> bool:
+    return type(exc).__name__ in {"APIStatusError", "HTTPStatusError", "ModelHTTPError"}
+
+
+def _http_status_code(exc: Exception) -> int | None:
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int) and not isinstance(status_code, bool):
+        return status_code
+    response = getattr(exc, "response", None)
+    response_status_code = getattr(response, "status_code", None)
+    if isinstance(response_status_code, int) and not isinstance(response_status_code, bool):
+        return response_status_code
+    return None
+
+
+def _is_retryable_http_status(status_code: int | None) -> bool:
+    if status_code is None:
+        return False
+    return status_code == 408 or status_code == 429 or status_code >= 500
+
+
+def _is_model_retry_candidate(exc: AdapterRuntimeError) -> bool:
+    return exc.error_code == "AA_RUN_STREAM_INTERRUPTED" and exc.adapter_error.retryable
+
+
+def _is_exhausted_model_retry_error(
+    request: PydanticAIRunRequest,
+    exc: AdapterRuntimeError,
+    model_retry_attempts: int,
+    emitted_raw_events: int,
+) -> bool:
+    return (
+        _is_model_retry_candidate(exc)
+        and emitted_raw_events == 0
+        and request.retry_policy.model_retries > 0
+        and model_retry_attempts >= request.retry_policy.model_retries
+    )
+
+
+def _model_retry_exhausted_error(
+    request: PydanticAIRunRequest,
+    exc: AdapterRuntimeError,
+    model_retry_attempts: int,
+) -> AdapterRuntimeError:
+    payload = exc.adapter_error.payload or {}
+    return AdapterRuntimeError(
+        "AA_RUN_STREAM_INTERRUPTED",
+        "Pydantic AI session model request failed after retry_policy.model_retries was exhausted.",
+        retryable=False,
+        payload={
+            "exception_type": payload.get("exception_type"),
+            "message": payload.get("message"),
+            "model_retries": request.retry_policy.model_retries,
+            "model_retry_attempts": model_retry_attempts,
+            "model_retries_exhausted": True,
+        },
+    )
 
 
 def _summary_text(value: str, *, limit: int = 500) -> str:

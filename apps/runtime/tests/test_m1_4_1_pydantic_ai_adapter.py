@@ -112,6 +112,18 @@ class ErrorPydanticAISession(FakePydanticAISession):
         raise self._exception
 
 
+class ErrorAfterEventsPydanticAISession(FakePydanticAISession):
+    def __init__(self, *, run_events: list[RawPydanticAIEvent], exception: Exception) -> None:
+        super().__init__(run_events=run_events)
+        self._exception = exception
+
+    async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
+        self.run_request = request
+        for event in self._run_events:
+            yield event
+        raise self._exception
+
+
 class BlockingPydanticAISession(FakePydanticAISession):
     def __init__(
         self,
@@ -185,6 +197,12 @@ class FakeSDKResult:
 
 class UsageLimitExceeded(RuntimeError):
     pass
+
+
+class ModelHTTPError(RuntimeError):
+    def __init__(self, status_code: int, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class FakeSDKUsageLimits:
@@ -459,6 +477,17 @@ def _sdk_builtin_dual_shape_stream_events() -> list[object]:
 def _factory_for(session: FakePydanticAISession) -> PydanticAISessionFactory:
     def factory() -> PydanticAISession:
         return session
+
+    return factory
+
+
+def _sequence_factory(sessions: list[PydanticAISession]) -> PydanticAISessionFactory:
+    remaining = list(sessions)
+
+    def factory() -> PydanticAISession:
+        if not remaining:
+            raise AssertionError("No fake Pydantic AI sessions remain.")
+        return remaining.pop(0)
 
     return factory
 
@@ -965,10 +994,10 @@ async def test_pydantic_ai_resume_timeout_cancels_attempt() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pydantic_ai_sdk_timeout_without_retry_timeout_is_not_cancelled() -> None:
+async def test_pydantic_ai_sdk_timeout_without_retry_timeout_is_model_request_failure() -> None:
     session = ErrorPydanticAISession(exception=TimeoutError("sdk request timed out"))
     adapter = PydanticAIAdapter(session_factory=_factory_for(session))
-    handle = await adapter.prepare(_execution_pack())
+    handle = await adapter.prepare(_execution_pack(retry_policy=RetryPolicy(model_retries=0)))
 
     events = await _collect(adapter.run(handle))
 
@@ -977,16 +1006,47 @@ async def test_pydantic_ai_sdk_timeout_without_retry_timeout_is_not_cancelled() 
     outcome = await adapter.finalize(handle)
     assert outcome.state == AttemptState.FAILED
     assert outcome.errors[0].payload is not None
-    assert outcome.errors[0].payload["error_code"] == "AA_RUN_INTERNAL"
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_STREAM_INTERRUPTED"
     assert outcome.errors[0].payload["exception_type"] == "TimeoutError"
 
 
 @pytest.mark.asyncio
-async def test_pydantic_ai_default_sdk_session_rejects_unsupported_model_retries(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _install_fake_pydantic_ai_sdk(monkeypatch)
-    adapter = PydanticAIAdapter()
+async def test_pydantic_ai_model_retries_retryable_session_error() -> None:
+    first_session = ErrorPydanticAISession(exception=TimeoutError("temporary model timeout"))
+    second_session = FakePydanticAISession(run_events=[{"type": "completed", "output": {"answer": "retried"}}])
+    adapter = PydanticAIAdapter(session_factory=_sequence_factory([first_session, second_session]))
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            retry_policy=RetryPolicy(model_retries=1),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.completed"]
+    assert first_session.closed is True
+    assert second_session.run_request is not None
+    assert handle.metadata["cw"]["pydantic_ai_model_retries"] == [
+        {
+            "retry_number": 1,
+            "error_code": "AA_RUN_STREAM_INTERRUPTED",
+            "exception_type": "TimeoutError",
+            "message": "temporary model timeout",
+        }
+    ]
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.COMPLETED
+    assert outcome.output == {"answer": "retried"}
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_model_retries_exhaust_retryable_session_errors() -> None:
+    sessions: list[PydanticAISession] = [
+        ErrorPydanticAISession(exception=TimeoutError("first model timeout")),
+        ErrorPydanticAISession(exception=TimeoutError("second model timeout")),
+    ]
+    adapter = PydanticAIAdapter(session_factory=_sequence_factory(sessions))
     handle = await adapter.prepare(
         _execution_pack(
             {"type": "object", "required": ["answer"]},
@@ -1000,8 +1060,124 @@ async def test_pydantic_ai_default_sdk_session_rejects_unsupported_model_retries
     outcome = await adapter.finalize(handle)
     assert outcome.state == AttemptState.FAILED
     assert outcome.errors[0].payload is not None
-    assert outcome.errors[0].payload["error_code"] == "AA_PREPARE_INCOMPATIBLE_ADAPTER"
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_STREAM_INTERRUPTED"
     assert outcome.errors[0].payload["model_retries"] == 1
+    assert outcome.errors[0].payload["model_retry_attempts"] == 1
+    assert outcome.errors[0].payload["model_retries_exhausted"] is True
+    assert outcome.errors[0].payload["exception_type"] == "TimeoutError"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_model_retries_http_status_errors_only_when_retryable() -> None:
+    bad_request_session = ErrorPydanticAISession(exception=ModelHTTPError(400, "bad request"))
+    adapter = PydanticAIAdapter(
+        session_factory=_sequence_factory(
+            [
+                bad_request_session,
+                FakePydanticAISession(run_events=[{"type": "completed", "output": {"answer": "no retry"}}]),
+            ]
+        )
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            retry_policy=RetryPolicy(model_retries=1),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert bad_request_session.closed is False
+    assert "pydantic_ai_model_retries" not in handle.metadata["cw"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_STREAM_INTERRUPTED"
+    assert outcome.errors[0].payload["exception_type"] == "ModelHTTPError"
+    assert outcome.errors[0].payload["status_code"] == 400
+    assert outcome.errors[0].retryable is False
+
+    transient_session = ErrorPydanticAISession(exception=ModelHTTPError(500, "server overloaded"))
+    retry_adapter = PydanticAIAdapter(
+        session_factory=_sequence_factory(
+            [
+                transient_session,
+                FakePydanticAISession(run_events=[{"type": "completed", "output": {"answer": "retried"}}]),
+            ]
+        )
+    )
+    retry_handle = await retry_adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            retry_policy=RetryPolicy(model_retries=1),
+        )
+    )
+
+    retried_events = await _collect(retry_adapter.run(retry_handle))
+
+    assert [event.type for event in retried_events] == ["attempt.started", "attempt.completed"]
+    assert transient_session.closed is True
+    retry_outcome = await retry_adapter.finalize(retry_handle)
+    assert retry_outcome.output == {"answer": "retried"}
+    assert retry_handle.metadata["cw"]["pydantic_ai_model_retries"][0]["exception_type"] == "ModelHTTPError"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_model_retries_do_not_replay_after_partial_stream() -> None:
+    first_session = ErrorAfterEventsPydanticAISession(
+        run_events=[{"type": "text_delta", "text": "partial", "start": True}],
+        exception=TimeoutError("stream interrupted after delta"),
+    )
+    second_session = FakePydanticAISession(run_events=[{"type": "completed", "output": {"answer": "retry"}}])
+    adapter = PydanticAIAdapter(session_factory=_sequence_factory([first_session, second_session]))
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            retry_policy=RetryPolicy(model_retries=1),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "model.text_delta", "attempt.failed"]
+    assert first_session.closed is False
+    assert second_session.run_request is None
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_STREAM_INTERRUPTED"
+    assert "pydantic_ai_model_retries" not in handle.metadata["cw"]
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_model_retries_do_not_retry_toolset_factory_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        raise TimeoutError("toolset registry unavailable")
+
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["lookup"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["lookup"]),
+            retry_policy=RetryPolicy(model_retries=1),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert len(FakeSDKAgent.instances) == 0
+    assert "pydantic_ai_model_retries" not in handle.metadata["cw"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["exception_type"] == "TimeoutError"
 
 
 @pytest.mark.asyncio
