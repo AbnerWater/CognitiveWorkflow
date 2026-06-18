@@ -9,6 +9,7 @@ from typing import Any, ClassVar
 import pytest
 
 from cw_runtime.adapters import (
+    AdapterConfig,
     AttemptResumption,
     ClaudeCodeAdapter,
     ClaudeCodeResumeRequest,
@@ -133,6 +134,19 @@ def _factory_for(session: FakeClaudeCodeSession) -> SessionFactory:
         return session
 
     return factory
+
+
+def _adapter_config_with_mcp_servers(*server_ids: str) -> AdapterConfig:
+    mcp_servers = {
+        "github": {"type": "http", "url": "https://mcp.example.test/github"},
+        "db": {"command": "db-mcp", "args": ["--stdio"]},
+        "slack": {"type": "sse", "url": "https://mcp.example.test/slack/sse"},
+        "unused": {"type": "http", "url": "https://mcp.example.test/unused"},
+    }
+    return AdapterConfig(
+        adapter_id="claude_code",
+        settings={"mcp_servers": {server_id: mcp_servers[server_id] for server_id in server_ids}},
+    )
 
 
 async def _collect(events: AsyncIterator[StreamEventBase]) -> list[StreamEventBase]:
@@ -315,7 +329,10 @@ async def test_claude_code_adapter_streams_and_finalizes_completed_attempt() -> 
 @pytest.mark.asyncio
 async def test_claude_code_allowed_tools_project_contract_and_effective_toolsets() -> None:
     session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
-    adapter = ClaudeCodeAdapter(session_factory=_factory_for(session))
+    adapter = ClaudeCodeAdapter(
+        config=_adapter_config_with_mcp_servers("github", "db", "slack"),
+        session_factory=_factory_for(session),
+    )
     handle = await adapter.prepare(
         _execution_pack(
             {"type": "object", "required": ["answer"]},
@@ -342,6 +359,36 @@ async def test_claude_code_allowed_tools_project_contract_and_effective_toolsets
         "mcp__db__query",
         "mcp__slack__*",
     ]
+    assert session.run_request.mcp_servers == {
+        "github": {"type": "http", "url": "https://mcp.example.test/github"},
+        "db": {"command": "db-mcp", "args": ["--stdio"]},
+        "slack": {"type": "sse", "url": "https://mcp.example.test/slack/sse"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_claude_code_missing_mcp_server_config_fails_closed() -> None:
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(session_factory=_factory_for(session))
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["github"]),
+            mcp_tools=[MCPToolRef(server_id="db", tool_name="query")],
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert session.run_request is None
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert len(outcome.errors) == 1
+    error_payload = outcome.errors[0].payload
+    assert error_payload is not None
+    assert error_payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert error_payload["missing_mcp_server_ids"] == ["github", "db"]
 
 
 @pytest.mark.asyncio
@@ -386,6 +433,7 @@ async def test_claude_code_default_sdk_session_streams_and_finalizes(monkeypatch
     assert len(client.queries) == 1
     assert "Return a short answer" in client.queries[0]
     assert client.options.kwargs["allowed_tools"] == []
+    assert client.options.kwargs["mcp_servers"] == {}
     assert client.options.kwargs["setting_sources"] == []
     assert client.options.kwargs["system_prompt"] == {"type": "preset", "preset": "claude_code"}
 
@@ -402,7 +450,7 @@ async def test_claude_code_default_sdk_receives_allowed_tools_projection(
     FakeClaudeSDKClient.response_messages = [
         FakeResultMessage(result='{"answer":"sdk"}'),
     ]
-    adapter = ClaudeCodeAdapter()
+    adapter = ClaudeCodeAdapter(config=_adapter_config_with_mcp_servers("github", "db", "unused"))
     handle = await adapter.prepare(
         _execution_pack(
             {"type": "object", "required": ["answer"]},
@@ -421,6 +469,10 @@ async def test_claude_code_default_sdk_receives_allowed_tools_projection(
         "mcp__github__*",
         "mcp__db__query",
     ]
+    assert FakeClaudeSDKClient.instances[0].options.kwargs["mcp_servers"] == {
+        "github": {"type": "http", "url": "https://mcp.example.test/github"},
+        "db": {"command": "db-mcp", "args": ["--stdio"]},
+    }
 
 
 @pytest.mark.asyncio

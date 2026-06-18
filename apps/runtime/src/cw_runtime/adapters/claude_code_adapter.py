@@ -62,6 +62,7 @@ class ClaudeCodeRunRequest(BaseModel):
     model_profile_id: str = Field(..., min_length=1)
     prompt: str = Field(..., min_length=1)
     allowed_tools: list[str] = Field(default_factory=list)
+    mcp_servers: dict[str, Any] = Field(default_factory=dict)
     correlation_id: str = Field(..., min_length=1)
 
 
@@ -421,6 +422,7 @@ class ClaudeCodeAdapter:
             model_profile_id=pack.effective_model_profile_id,
             prompt=_render_prompt(pack),
             allowed_tools=_claude_allowed_tools(pack),
+            mcp_servers=_claude_mcp_servers(self._config, pack),
             correlation_id=pack.correlation_id,
         )
 
@@ -866,6 +868,59 @@ def _claude_allowed_tools(pack: ExecutionPack) -> list[str]:
     return _unique_strings(allowed_tools)
 
 
+def _claude_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str, Any]:
+    requested_server_ids = _claude_requested_mcp_server_ids(pack)
+    if not requested_server_ids:
+        return {}
+    configured_servers = _configured_mcp_servers(config)
+    missing_server_ids = [server_id for server_id in requested_server_ids if server_id not in configured_servers]
+    if missing_server_ids:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Claude Code MCP server configuration is missing for requested MCP tools.",
+            payload={
+                "missing_mcp_server_ids": missing_server_ids,
+                "requested_mcp_server_ids": requested_server_ids,
+            },
+        )
+    return {server_id: configured_servers[server_id] for server_id in requested_server_ids}
+
+
+def _claude_requested_mcp_server_ids(pack: ExecutionPack) -> list[str]:
+    requested_server_ids: list[str] = []
+    requested_server_ids.extend(pack.effective_toolsets.mcp_server_ids)
+    requested_server_ids.extend(tool.server_id for tool in pack.node_contract_snapshot.mcp_tools)
+    return _unique_strings(requested_server_ids)
+
+
+def _configured_mcp_servers(config: AdapterConfig) -> dict[str, Any]:
+    raw_servers = config.settings.get("mcp_servers", {})
+    if raw_servers is None:
+        return {}
+    if not isinstance(raw_servers, Mapping):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "ClaudeCodeAdapter settings.mcp_servers must be a mapping of server id to SDK MCP server config.",
+            payload={"mcp_servers_type": type(raw_servers).__name__},
+        )
+    configured_servers: dict[str, Any] = {}
+    for raw_server_id, raw_server_config in raw_servers.items():
+        if not isinstance(raw_server_id, str) or not raw_server_id:
+            raise AdapterRuntimeError(
+                "AA_RUN_INTERNAL",
+                "ClaudeCodeAdapter settings.mcp_servers contains a non-string server id.",
+                payload={"server_id_type": type(raw_server_id).__name__},
+            )
+        if raw_server_config is None:
+            raise AdapterRuntimeError(
+                "AA_RUN_INTERNAL",
+                "ClaudeCodeAdapter settings.mcp_servers contains an empty server config.",
+                payload={"server_id": raw_server_id},
+            )
+        configured_servers[raw_server_id] = raw_server_config
+    return configured_servers
+
+
 def _claude_mcp_tool_ref(server_id: str, tool_name: str) -> str:
     return _claude_mcp_server_tool(server_id) if tool_name == "*" else f"mcp__{server_id}__{tool_name}"
 
@@ -901,6 +956,7 @@ def _sdk_options_kwargs(request: ClaudeCodeRunRequest) -> dict[str, Any]:
     return {
         "tools": {"type": "preset", "preset": "claude_code"},
         "allowed_tools": list(request.allowed_tools),
+        "mcp_servers": dict(request.mcp_servers),
         "system_prompt": {"type": "preset", "preset": "claude_code"},
         "setting_sources": [],
     }
