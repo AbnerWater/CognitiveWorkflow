@@ -14,6 +14,9 @@ from cw_runtime.harness import (
     HarnessError,
     ProjectCreateRequest,
     ProjectMCPDiscoveredTools,
+    ProjectMCPDiscoveryError,
+    ProjectMCPDiscoveryRunner,
+    ProjectMCPHealthCheck,
     ProjectMCPServerConfig,
     initialize_project,
     load_project_mcp_server_configs,
@@ -286,6 +289,274 @@ def test_project_tool_lock_snapshot_can_use_injected_mcp_discovery(tmp_path: Pat
             "tools_snapshot": [],
         },
     ]
+
+
+class FakeMCPDiscoveryClient:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        healthy: bool = True,
+        close_raises: bool = False,
+    ) -> None:
+        self._events = events
+        self._healthy = healthy
+        self._close_raises = close_raises
+
+    def start(self, config: ProjectMCPServerConfig) -> None:
+        self._events.append(f"start:{config.server_id}")
+
+    def health_check(self) -> ProjectMCPHealthCheck:
+        self._events.append("health")
+        return ProjectMCPHealthCheck(healthy=self._healthy)
+
+    def discover_tools(self) -> ProjectMCPDiscoveredTools | None:
+        self._events.append("discover")
+        return ProjectMCPDiscoveredTools(
+            version="0.5.1",
+            tools_snapshot=[{"name": "run", "description": "Run local Python."}],
+        )
+
+    def close(self) -> None:
+        self._events.append("close")
+        if self._close_raises:
+            raise RuntimeError("close failed with fake secret value")
+
+
+class DirtyErrorMCPDiscoveryClient(FakeMCPDiscoveryClient):
+    def start(self, config: ProjectMCPServerConfig) -> None:
+        self._events.append(f"start:{config.server_id}")
+        raise ProjectMCPDiscoveryError(
+            config.server_id,
+            "fake-secret-stage",
+            "dirty client error with fake secret",
+            details={
+                "command_or_url": config.command_or_url,
+                "secret_ref": config.secret_ref or "secure://fake",
+            },
+        )
+
+
+def test_project_mcp_discovery_runner_executes_lifecycle_for_lock_snapshot(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_discovery_runner_project"
+    initialize_project(_request("MCP Discovery Runner", project_root))
+    agent_root = project_root / ".agent-workflow"
+    events: list[str] = []
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_local_python",
+                "transport": "stdio",
+                "command_or_url": "python -m local_mcp",
+            }
+        ],
+    )
+
+    def client_factory(config: ProjectMCPServerConfig) -> FakeMCPDiscoveryClient:
+        events.append(f"factory:{config.server_id}")
+        return FakeMCPDiscoveryClient(events)
+
+    locks = load_project_tool_lock_snapshot(
+        project_root,
+        mcp_tool_discovery=ProjectMCPDiscoveryRunner(client_factory),
+    )
+
+    assert events == ["factory:mcp_local_python", "start:mcp_local_python", "health", "discover", "close"]
+    assert [entry.model_dump(mode="json") for entry in locks.mcps] == [
+        {
+            "server_id": "mcp_local_python",
+            "version": "0.5.1",
+            "tools_snapshot": [{"name": "run", "description": "Run local Python."}],
+        }
+    ]
+
+
+def test_project_mcp_discovery_runner_unhealthy_fails_closed_and_closes(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_discovery_unhealthy_project"
+    initialize_project(_request("MCP Discovery Unhealthy", project_root))
+    agent_root = project_root / ".agent-workflow"
+    events: list[str] = []
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_secure",
+                "transport": "stdio",
+                "command_or_url": "python -m local_mcp",
+                "secret_ref": "secure://mcp/local-python",
+            }
+        ],
+    )
+
+    def client_factory(config: ProjectMCPServerConfig) -> FakeMCPDiscoveryClient:
+        events.append(f"factory:{config.server_id}")
+        return FakeMCPDiscoveryClient(events, healthy=False)
+
+    with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+        load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(client_factory),
+        )
+
+    assert events == ["factory:mcp_secure", "start:mcp_secure", "health", "close"]
+    assert exc_info.value.server_id == "mcp_secure"
+    assert exc_info.value.stage == "health_check"
+    assert exc_info.value.details == {"server_id": "mcp_secure", "transport": "stdio"}
+    assert "secure://mcp/local-python" not in str(exc_info.value.details)
+
+
+def test_project_mcp_discovery_runner_sanitizes_dirty_client_error(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_discovery_dirty_client_project"
+    initialize_project(_request("MCP Discovery Dirty Client", project_root))
+    agent_root = project_root / ".agent-workflow"
+    events: list[str] = []
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_secure",
+                "transport": "stdio",
+                "command_or_url": "python -m local_mcp",
+                "secret_ref": "secure://mcp/local-python",
+            }
+        ],
+    )
+
+    def client_factory(config: ProjectMCPServerConfig) -> DirtyErrorMCPDiscoveryClient:
+        events.append(f"factory:{config.server_id}")
+        return DirtyErrorMCPDiscoveryClient(events)
+
+    with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+        load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(client_factory),
+        )
+
+    assert events == ["factory:mcp_secure", "start:mcp_secure", "close"]
+    assert exc_info.value.server_id == "mcp_secure"
+    assert exc_info.value.stage == "client_lifecycle"
+    assert exc_info.value.details == {
+        "server_id": "mcp_secure",
+        "transport": "stdio",
+        "exception_type": "ProjectMCPDiscoveryError",
+    }
+    assert "fake secret" not in str(exc_info.value)
+    assert "command_or_url" not in str(exc_info.value.details)
+    assert "secure://mcp/local-python" not in str(exc_info.value.details)
+
+
+def test_project_mcp_discovery_provider_exception_is_sanitized(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_discovery_exception_project"
+    initialize_project(_request("MCP Discovery Exception", project_root))
+    agent_root = project_root / ".agent-workflow"
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_local_python",
+                "transport": "stdio",
+                "command_or_url": "python -m local_mcp",
+            }
+        ],
+    )
+
+    def discover(config: ProjectMCPServerConfig) -> ProjectMCPDiscoveredTools | None:
+        raise RuntimeError(f"failed with fake secret for {config.server_id}")
+
+    with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+        load_project_tool_lock_snapshot(project_root, mcp_tool_discovery=discover)
+
+    assert exc_info.value.server_id == "mcp_local_python"
+    assert exc_info.value.stage == "discover_tools"
+    assert exc_info.value.details == {
+        "server_id": "mcp_local_python",
+        "transport": "stdio",
+        "exception_type": "RuntimeError",
+    }
+    assert "fake secret" not in str(exc_info.value)
+    assert "fake secret" not in str(exc_info.value.details)
+
+
+def test_project_mcp_discovery_provider_dirty_error_is_sanitized(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_discovery_dirty_error_project"
+    initialize_project(_request("MCP Discovery Dirty Error", project_root))
+    agent_root = project_root / ".agent-workflow"
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_secure",
+                "transport": "stdio",
+                "command_or_url": "python -m local_mcp",
+                "secret_ref": "secure://mcp/local-python",
+            }
+        ],
+    )
+
+    def discover(config: ProjectMCPServerConfig) -> ProjectMCPDiscoveredTools | None:
+        raise ProjectMCPDiscoveryError(
+            config.server_id,
+            "fake-secret-stage",
+            "dirty provider error with fake secret",
+            details={
+                "command_or_url": config.command_or_url,
+                "secret_ref": config.secret_ref or "secure://fake",
+            },
+        )
+
+    with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+        load_project_tool_lock_snapshot(project_root, mcp_tool_discovery=discover)
+
+    assert exc_info.value.server_id == "mcp_secure"
+    assert exc_info.value.stage == "discover_tools"
+    assert exc_info.value.details == {
+        "server_id": "mcp_secure",
+        "transport": "stdio",
+        "exception_type": "ProjectMCPDiscoveryError",
+    }
+    assert "fake secret" not in str(exc_info.value)
+    assert "command_or_url" not in str(exc_info.value.details)
+    assert "secure://mcp/local-python" not in str(exc_info.value.details)
+
+
+def test_project_mcp_discovery_provider_bad_result_fails_closed(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_discovery_bad_result_project"
+    initialize_project(_request("MCP Discovery Bad Result", project_root))
+    agent_root = project_root / ".agent-workflow"
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_local_python",
+                "transport": "stdio",
+                "command_or_url": "python -m local_mcp",
+            }
+        ],
+    )
+
+    class InvalidDiscoveryResult:
+        pass
+
+    def discover(config: ProjectMCPServerConfig) -> ProjectMCPDiscoveredTools | None:
+        return cast(ProjectMCPDiscoveredTools, InvalidDiscoveryResult())
+
+    with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+        load_project_tool_lock_snapshot(project_root, mcp_tool_discovery=discover)
+
+    assert exc_info.value.server_id == "mcp_local_python"
+    assert exc_info.value.stage == "discover_tools"
+    assert exc_info.value.details == {
+        "server_id": "mcp_local_python",
+        "transport": "stdio",
+        "result_type": "InvalidDiscoveryResult",
+    }
 
 
 def test_project_tool_availability_treats_invalid_manifest_entries_as_disabled(tmp_path: Path) -> None:

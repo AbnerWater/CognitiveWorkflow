@@ -14,7 +14,7 @@ import subprocess
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Final, Literal, cast
+from typing import Any, Final, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -61,6 +61,13 @@ _REVISION_MANIFESTS: Final = [
     "mcp.config.json",
     "adapters.config.json",
 ]
+_MCP_DISCOVERY_ERROR_STAGES: Final = {
+    "client_factory",
+    "client_lifecycle",
+    "health_check",
+    "discover_tools",
+    "close",
+}
 _TRACKED_INIT_PATHS: Final = [
     ".gitignore",
     ".gitattributes",
@@ -177,6 +184,15 @@ class ProjectMCPDiscoveredTools(BaseModel):
     tools_snapshot: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ProjectMCPHealthCheck(BaseModel):
+    """Provider-owned MCP server health result used before tool discovery."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    healthy: bool
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ProjectMCPServerConfig(BaseModel):
     """Enabled project MCP server config from ``mcp.config.json``."""
 
@@ -189,7 +205,109 @@ class ProjectMCPServerConfig(BaseModel):
     secret_ref: str | None = None
 
 
+class ProjectMCPDiscoveryError(RuntimeError):
+    """Raised when explicit MCP discovery cannot safely produce a lock snapshot."""
+
+    def __init__(
+        self,
+        server_id: str,
+        stage: str,
+        message: str,
+        *,
+        details: Mapping[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.server_id = server_id
+        self.stage = stage
+        self.details = {} if details is None else dict(details)
+        self._cw_sanitized = False
+
+    @property
+    def sanitized(self) -> bool:
+        return self._cw_sanitized
+
+
+class ProjectMCPDiscoveryClient(Protocol):
+    """Provider-backed MCP lifecycle client used by ``ProjectMCPDiscoveryRunner``."""
+
+    def start(self, config: ProjectMCPServerConfig) -> None: ...
+
+    def health_check(self) -> ProjectMCPHealthCheck: ...
+
+    def discover_tools(self) -> ProjectMCPDiscoveredTools | None: ...
+
+    def close(self) -> None: ...
+
+
+ProjectMCPDiscoveryClientFactory = Callable[[ProjectMCPServerConfig], ProjectMCPDiscoveryClient]
 ProjectMCPToolDiscovery = Callable[[ProjectMCPServerConfig], ProjectMCPDiscoveredTools | None]
+
+
+class ProjectMCPDiscoveryRunner:
+    """Run a provider-backed MCP client through start, health, discover, close."""
+
+    def __init__(self, client_factory: ProjectMCPDiscoveryClientFactory) -> None:
+        self._client_factory = client_factory
+
+    def __call__(self, config: ProjectMCPServerConfig) -> ProjectMCPDiscoveredTools | None:
+        client = self._create_client(config)
+        primary_error: BaseException | None = None
+        try:
+            try:
+                client.start(config)
+                health = client.health_check()
+                if not isinstance(health, ProjectMCPHealthCheck):
+                    raise _mcp_discovery_error(
+                        config,
+                        stage="health_check",
+                        message="Project MCP discovery client returned an invalid health result.",
+                        details={"result_type": type(health).__name__},
+                    )
+                if not health.healthy:
+                    raise _mcp_discovery_error(
+                        config,
+                        stage="health_check",
+                        message="Project MCP server health check failed before tool discovery.",
+                    )
+                return client.discover_tools()
+            except ProjectMCPDiscoveryError as exc:
+                primary_error = _sanitize_mcp_discovery_error(
+                    config,
+                    exc,
+                    default_stage="client_lifecycle",
+                    message="Project MCP discovery client failed.",
+                )
+                raise primary_error from exc
+            except Exception as exc:
+                primary_error = exc
+                raise _mcp_discovery_error(
+                    config,
+                    stage="client_lifecycle",
+                    message="Project MCP discovery client failed.",
+                    details={"exception_type": type(exc).__name__},
+                ) from exc
+        finally:
+            try:
+                client.close()
+            except Exception as exc:
+                if primary_error is None:
+                    raise _mcp_discovery_error(
+                        config,
+                        stage="close",
+                        message="Project MCP discovery client close failed.",
+                        details={"exception_type": type(exc).__name__},
+                    ) from exc
+
+    def _create_client(self, config: ProjectMCPServerConfig) -> ProjectMCPDiscoveryClient:
+        try:
+            return self._client_factory(config)
+        except Exception as exc:
+            raise _mcp_discovery_error(
+                config,
+                stage="client_factory",
+                message="Project MCP discovery client factory failed.",
+                details={"exception_type": type(exc).__name__},
+            ) from exc
 
 
 class ProjectToolLockSnapshot(BaseModel):
@@ -820,12 +938,92 @@ def _mcp_lock_entry(
     mcp_config: ProjectMCPServerConfig | None,
     mcp_tool_discovery: ProjectMCPToolDiscovery | None,
 ) -> ProjectMCPLockEntry:
-    discovered = mcp_tool_discovery(mcp_config) if mcp_tool_discovery is not None and mcp_config is not None else None
+    discovered = (
+        _discover_mcp_tools(mcp_config, mcp_tool_discovery)
+        if mcp_tool_discovery is not None and mcp_config is not None
+        else None
+    )
     return ProjectMCPLockEntry(
         server_id=cast(str, entry["server_id"]).strip(),
         version="latest" if discovered is None else discovered.version,
         tools_snapshot=[] if discovered is None else discovered.tools_snapshot,
     )
+
+
+def _discover_mcp_tools(
+    mcp_config: ProjectMCPServerConfig,
+    mcp_tool_discovery: ProjectMCPToolDiscovery,
+) -> ProjectMCPDiscoveredTools | None:
+    try:
+        discovered: object | None = mcp_tool_discovery(mcp_config)
+    except ProjectMCPDiscoveryError as exc:
+        raise _sanitize_mcp_discovery_error(
+            mcp_config,
+            exc,
+            default_stage="discover_tools",
+            message="Project MCP tool discovery provider failed.",
+        ) from exc
+    except Exception as exc:
+        raise _mcp_discovery_error(
+            mcp_config,
+            stage="discover_tools",
+            message="Project MCP tool discovery provider failed.",
+            details={"exception_type": type(exc).__name__},
+        ) from exc
+    if discovered is None:
+        return None
+    if not isinstance(discovered, ProjectMCPDiscoveredTools):
+        raise _mcp_discovery_error(
+            mcp_config,
+            stage="discover_tools",
+            message="Project MCP tool discovery provider returned an invalid snapshot.",
+            details={"result_type": type(discovered).__name__},
+        )
+    return discovered
+
+
+def _mcp_discovery_error(
+    mcp_config: ProjectMCPServerConfig,
+    *,
+    stage: str,
+    message: str,
+    details: Mapping[str, object] | None = None,
+) -> ProjectMCPDiscoveryError:
+    error_details: dict[str, object] = {
+        "server_id": mcp_config.server_id,
+        "transport": mcp_config.transport,
+    }
+    if details is not None:
+        error_details.update(details)
+    error = ProjectMCPDiscoveryError(
+        mcp_config.server_id,
+        stage,
+        message,
+        details=error_details,
+    )
+    error._cw_sanitized = True
+    return error
+
+
+def _sanitize_mcp_discovery_error(
+    mcp_config: ProjectMCPServerConfig,
+    error: ProjectMCPDiscoveryError,
+    *,
+    default_stage: str,
+    message: str,
+) -> ProjectMCPDiscoveryError:
+    if error.sanitized:
+        return error
+    return _mcp_discovery_error(
+        mcp_config,
+        stage=_safe_mcp_discovery_stage(error.stage, default=default_stage),
+        message=message,
+        details={"exception_type": type(error).__name__},
+    )
+
+
+def _safe_mcp_discovery_stage(stage: str, *, default: str) -> str:
+    return stage if stage in _MCP_DISCOVERY_ERROR_STAGES else default
 
 
 def _mcp_server_config_entry(
@@ -897,6 +1095,11 @@ __all__ = [
     "ProjectCreateResponse",
     "ProjectDocument",
     "ProjectMCPDiscoveredTools",
+    "ProjectMCPDiscoveryClient",
+    "ProjectMCPDiscoveryClientFactory",
+    "ProjectMCPDiscoveryError",
+    "ProjectMCPDiscoveryRunner",
+    "ProjectMCPHealthCheck",
     "ProjectMCPLockEntry",
     "ProjectMCPServerConfig",
     "ProjectMCPToolDiscovery",
