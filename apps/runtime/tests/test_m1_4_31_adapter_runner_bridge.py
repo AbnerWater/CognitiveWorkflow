@@ -13,6 +13,7 @@ from cw_runtime.adapters import AdapterRegistry, AttemptHandle, build_pydantic_a
 from cw_runtime.harness import ProjectCreateRequest, initialize_project
 from cw_runtime.model_router import AdapterCapabilities
 from cw_runtime.runner import (
+    EvaluationAdvanceInput,
     ExecutionAdvanceInput,
     NodeAdvanceRequest,
     advance_workflow_run,
@@ -23,7 +24,7 @@ from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_schemas import ExecutionPack
 from cw_schemas.events import LifecycleEvent, ModelEvent, StreamEventBase
 from cw_schemas.runtime import AttemptOutcome, AttemptProvenance, RunUsage
-from cw_schemas.types import AttemptState, DisplayLevel, EventPhase, ExecutionMode, RunState
+from cw_schemas.types import AttemptState, DisplayLevel, EventPhase, ExecutionMode, FailureType, RunState
 
 
 def _execution_contract() -> dict[str, Any]:
@@ -37,6 +38,44 @@ def _execution_contract() -> dict[str, Any]:
             "template_engine": "handlebars",
         },
         "retry_policy": {"max_attempts": 3},
+    }
+
+
+def _evaluation_contract() -> dict[str, Any]:
+    return {
+        "contract_id": "ctr_review",
+        "contract_kind": "evaluation",
+        "goal": "Review task",
+        "model_policy": {"primary_model_profile_id": "claude-sonnet-default"},
+        "prompt": {
+            "user_prompt_template": "Review {{ node_goal }}",
+            "template_engine": "handlebars",
+        },
+        "criteria": [
+            {
+                "criterion_id": "c_quality",
+                "description": "Output is acceptable",
+                "kind": "rubric",
+                "severity": "blocker",
+                "weight": 1.0,
+            }
+        ],
+        "pass_condition": {"combinator": "all_pass", "must_pass_blockers": True},
+        "fail_condition": {"combinator": "any_pass", "must_pass_blockers": True},
+    }
+
+
+def _repair_contract() -> dict[str, Any]:
+    return {
+        "contract_id": "ctr_repair",
+        "contract_kind": "repair",
+        "goal": "Repair task",
+        "model_policy": {"primary_model_profile_id": "claude-sonnet-default"},
+        "prompt": {
+            "user_prompt_template": "Repair {{ node_goal }}",
+            "template_engine": "handlebars",
+        },
+        "repair_strategies": [{"kind": "prompt_patch", "applies_to_failure_types": ["format_error"], "max_uses": 2}],
     }
 
 
@@ -96,7 +135,82 @@ def _runner_graph_payload() -> dict[str, Any]:
     }
 
 
-def _create_project_with_graph(tmp_path: Path) -> tuple[Path, str]:
+def _review_repair_graph_payload() -> dict[str, Any]:
+    return {
+        "workflow_id": "wf_adapter_review_repair",
+        "version": "0.1.0",
+        "schema_version": "0.1.0",
+        "title": "Adapter Review Repair Workflow",
+        "nodes": [
+            {"node_id": "n_start", "type": "start", "title": "Start", "trigger": "manual"},
+            {
+                "node_id": "n_execute",
+                "type": "execution_task",
+                "title": "Execute",
+                "contract": _execution_contract(),
+            },
+            {
+                "node_id": "n_review",
+                "type": "evaluation_task",
+                "title": "Review",
+                "target_node_id": "n_execute",
+                "on_pass_next_node_id": "n_end",
+                "on_fail_next_node_id": "n_repair",
+                "max_retry": 2,
+                "contract": _evaluation_contract(),
+            },
+            {
+                "node_id": "n_repair",
+                "type": "repair_task",
+                "title": "Repair",
+                "repair_target_node_id": "n_execute",
+                "failure_input_ref": "$last_evaluation",
+                "on_repair_next_node_id": "n_execute",
+                "contract": _repair_contract(),
+            },
+            {"node_id": "n_end", "type": "end", "title": "End", "archive_actions": []},
+        ],
+        "edges": [
+            {
+                "edge_id": "e_start_execute",
+                "source_node_id": "n_start",
+                "target_node_id": "n_execute",
+                "type": "normal",
+            },
+            {
+                "edge_id": "e_execute_review",
+                "source_node_id": "n_execute",
+                "target_node_id": "n_review",
+                "type": "normal",
+            },
+        ],
+        "entry_node_id": "n_start",
+        "terminal_node_ids": ["n_end"],
+        "global_context_refs": [],
+        "execution_policy": {
+            "mode": "semi_auto",
+            "max_concurrent_nodes": 1,
+            "default_timeout_seconds": 600,
+            "on_node_failure": "human",
+        },
+        "review_policy": {
+            "default_max_retry": 2,
+            "escalate_after_repairs": 3,
+            "evidence_required_for_factual_outputs": True,
+        },
+        "model_policy": {
+            "default_model_profile_id": "claude-sonnet-default",
+            "escalation_chain": [],
+            "forbid_remote_for_sensitive": False,
+        },
+        "created_by": "ai_planning",
+        "created_at": "2026-06-19T00:00:00Z",
+        "last_modified_at": "2026-06-19T00:00:00Z",
+        "metadata": {},
+    }
+
+
+def _create_project_with_graph(tmp_path: Path, payload: dict[str, Any] | None = None) -> tuple[Path, str]:
     response = initialize_project(
         ProjectCreateRequest(
             schema_version="0.1.0",
@@ -106,9 +220,13 @@ def _create_project_with_graph(tmp_path: Path) -> tuple[Path, str]:
     )
     project_root = Path(response.host_path)
     workflow_path = project_root / ".agent-workflow" / "workflow.flow.json"
-    payload = _runner_graph_payload()
-    workflow_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-    return project_root, str(payload["workflow_id"])
+    workflow_payload = _runner_graph_payload() if payload is None else payload
+    workflow_path.write_text(
+        json.dumps(workflow_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return project_root, str(workflow_payload["workflow_id"])
 
 
 def _start_run(project_root: Path, workflow_id: str, metadata: dict[str, Any] | None = None) -> str:
@@ -355,3 +473,155 @@ def test_deterministic_advance_still_accepts_hand_supplied_execution_output(tmp_
     attempts = _read_jsonl(project_root / ".agent-workflow" / "runs" / run_id / "attempts.jsonl")
     assert attempts[0]["output_hash"]
     assert attempts[0]["metadata"]["cw"]["foundation_runner"] is True
+
+
+@pytest.mark.asyncio
+async def test_adapter_evaluation_bridge_persists_result_and_routes_to_repair(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _review_repair_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+    adapter = _FakeAdapter(
+        usage=RunUsage(input_tokens=200, output_tokens=300, total_tokens=500, requests=1),
+        output={
+            "passed": False,
+            "score": 0.25,
+            "failure_type": "format_error",
+            "finding_message": "Adapter found a format gap.",
+            "recommended_action": "repair_with_patch",
+            "target_repair_node_id": "n_repair",
+            "metadata": {"source": "adapter_eval"},
+        },
+    )
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "needs review"})),
+    )
+    advanced = await advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
+
+    assert advanced.node_id == "n_review"
+    assert advanced.node_state == "review_failed"
+    assert advanced.next_node_ids == ["n_repair"]
+    assert advanced.eval_id is not None
+    assert adapter.closed is True
+    execution_pack = adapter.execution_pack
+    assert execution_pack is not None
+    assert execution_pack.node_contract_snapshot.contract_kind == "evaluation"
+
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    evaluations = _read_jsonl(run_root / "evaluations.jsonl")
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    evaluation = evaluations[0]
+    evaluation_attempt = attempts[-1]
+
+    assert evaluation["passed"] is False
+    assert evaluation["recommended_action"]["action"] == "repair_with_patch"
+    assert evaluation["recommended_action"]["target_repair_node_id"] == "n_repair"
+    assert evaluation["metadata"]["cw"]["adapter_bridge"] is True
+    assert "foundation_runner" not in evaluation["metadata"]["cw"]
+    assert evaluation["metadata"]["source"] == "adapter_eval"
+    assert evaluation_attempt["adapter_id"] == "pydantic_ai"
+    assert evaluation_attempt["adapter_version"] == "test.1"
+    assert evaluation_attempt["metadata"]["cw"]["adapter_bridge"] is True
+    assert evaluation_attempt["output_hash"] != "hash_adapter_output"
+    assert usage[-1]["attempt_id"] == evaluation_attempt["attempt_id"]
+    assert usage[-1]["est_cost_usd"] == pytest.approx(0.0051)
+
+
+@pytest.mark.asyncio
+async def test_adapter_repair_bridge_persists_patch_and_prompt_overlay(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _review_repair_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+    adapter = _FakeAdapter(
+        usage=RunUsage(input_tokens=300, output_tokens=400, total_tokens=700, requests=1),
+        output={
+            "failure_type": "format_error",
+            "instruction_text": "Always return JSON with the required key.",
+            "expected_effect": "The next attempt emits the required JSON shape.",
+            "metadata": {"source": "adapter_repair"},
+        },
+    )
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "invalid"})),
+    )
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                passed=False,
+                score=0.2,
+                failure_type=FailureType.FORMAT_ERROR,
+                finding_message="Format is invalid.",
+                recommended_action="repair_with_patch",
+                target_repair_node_id="n_repair",
+            )
+        ),
+    )
+    advanced = await advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
+
+    assert advanced.node_id == "n_repair"
+    assert advanced.node_state == "passed"
+    assert advanced.next_node_ids == ["n_execute"]
+    assert advanced.patch_id is not None
+    execution_pack = adapter.execution_pack
+    assert execution_pack is not None
+    assert execution_pack.node_contract_snapshot.contract_kind == "repair"
+
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    repair = repairs[0]
+    repair_attempt = attempts[-1]
+
+    assert repair["operations"] == [
+        {"op": "append_to_instructions", "text": "Always return JSON with the required key."}
+    ]
+    assert repair["metadata"]["cw"]["adapter_bridge"] is True
+    assert "foundation_runner" not in repair["metadata"]["cw"]
+    assert repair["metadata"]["source"] == "adapter_repair"
+    assert repair_attempt["adapter_id"] == "pydantic_ai"
+    assert repair_attempt["metadata"]["cw"]["adapter_bridge"] is True
+    assert repair_attempt["output_hash"] != "hash_adapter_output"
+    assert usage[-1]["attempt_id"] == repair_attempt["attempt_id"]
+    assert usage[-1]["est_cost_usd"] == pytest.approx(0.0069)
+
+    run_json = _read_run_json(project_root, run_id)
+    pending_overlay = run_json["metadata"]["cw"]["pending_prompt_overlays"]["n_execute"]
+    assert pending_overlay["patch_id"] == advanced.patch_id
+    assert pending_overlay["instruction_text"] == "Always return JSON with the required key."
+
+
+@pytest.mark.asyncio
+async def test_adapter_evaluation_bridge_rejects_invalid_output(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _review_repair_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+    adapter = _FakeAdapter(
+        usage=RunUsage(input_tokens=10, output_tokens=10, total_tokens=20, requests=1),
+        output={"score": "not-a-number"},
+    )
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "needs review"})),
+    )
+    failed = await advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
+
+    assert failed.run.state == RunState.FAILED
+    assert adapter.closed is True
+    attempts = _read_jsonl(project_root / ".agent-workflow" / "runs" / run_id / "attempts.jsonl")
+    error_payload = attempts[-1]["errors"][0]["payload"]
+    assert error_payload["error_code"] == "AA_RUN_OUTPUT_VALIDATION_FAILED"
+    assert error_payload["node_kind"] == "evaluation"
+    assert error_payload["output_type"] == "dict"
+    assert error_payload["validation_error_count"] == 1
+    assert "score" not in error_payload

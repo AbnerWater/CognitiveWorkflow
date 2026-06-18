@@ -403,6 +403,26 @@ async def advance_workflow_run_with_adapters(
                 adapter_factory,
                 adapter_configs={} if adapter_configs is None else adapter_configs,
             )
+        elif isinstance(node, EvaluationTaskNode) and advance_request.evaluation is None:
+            result = await _advance_evaluation_with_adapter(
+                root,
+                graph,
+                compiled,
+                run,
+                node,
+                adapter_factory,
+                adapter_configs={} if adapter_configs is None else adapter_configs,
+            )
+        elif isinstance(node, RepairTaskNode) and advance_request.repair is None:
+            result = await _advance_repair_with_adapter(
+                root,
+                graph,
+                compiled,
+                run,
+                node,
+                adapter_factory,
+                adapter_configs={} if adapter_configs is None else adapter_configs,
+            )
         elif isinstance(node, StartNode):
             result = _advance_start(root, compiled, run, node)
         elif isinstance(node, EndNode):
@@ -782,32 +802,20 @@ async def _advance_execution_with_adapter(
     run = _emit_attempt_started(project_root, run, node.node_id, artifacts)
     run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RUNNING)
 
-    adapter: AgentAdapter | None = None
     try:
-        adapter = adapter_factory.create(
-            artifacts.adapter_id,
-            adapter_configs.get(artifacts.adapter_id, AdapterConfig(adapter_id=artifacts.adapter_id)),
+        run, outcome = await _run_adapter_attempt(
+            project_root,
+            run,
+            artifacts,
+            adapter_factory,
+            adapter_configs=adapter_configs,
         )
-        handle = await adapter.prepare(artifacts.execution_pack)
-        async for event in adapter.run(handle):
-            run = _append_adapter_stream_event(project_root, run, artifacts, event)
-        outcome = await adapter.finalize(handle)
     except AdapterRuntimeError as exc:
         return _fail_attempt_and_run(project_root, run, node, artifacts, [exc.adapter_error], usage=None)
-    finally:
-        if adapter is not None:
-            await adapter.aclose()
 
     outcome_usage = _usage_with_profile_estimated_cost(artifacts, outcome.usage)
     if outcome.state != AttemptState.COMPLETED:
-        errors = outcome.errors or [
-            build_adapter_error(
-                "AA_FINALIZE_NO_RESULT",
-                "Adapter finalized without a completed execution output.",
-                retryable=False,
-                payload={"adapter_state": outcome.state.value},
-            )
-        ]
+        errors = _adapter_incomplete_result_errors(outcome, "Adapter finalized without a completed execution output.")
         attempt = _attempt_from_adapter_outcome(
             run, node.node_id, artifacts, outcome, usage=outcome_usage, errors=errors
         )
@@ -851,6 +859,81 @@ async def _advance_execution_with_adapter(
         next_node_ids=next_node_ids,
         attempt_id=artifacts.attempt_id,
     )
+
+
+async def _run_adapter_attempt(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    artifacts: _AttemptArtifacts,
+    adapter_factory: AdapterFactory,
+    *,
+    adapter_configs: Mapping[str, AdapterConfig],
+) -> tuple[WorkflowRunDocument, AttemptOutcome]:
+    adapter: AgentAdapter | None = None
+    try:
+        adapter = adapter_factory.create(
+            artifacts.adapter_id,
+            adapter_configs.get(artifacts.adapter_id, AdapterConfig(adapter_id=artifacts.adapter_id)),
+        )
+        handle = await adapter.prepare(artifacts.execution_pack)
+        async for event in adapter.run(handle):
+            run = _append_adapter_stream_event(project_root, run, artifacts, event)
+        outcome = await adapter.finalize(handle)
+        return run, outcome
+    finally:
+        if adapter is not None:
+            await adapter.aclose()
+
+
+def _adapter_incomplete_result_errors(outcome: AttemptOutcome, message: str) -> list[AdapterError]:
+    if outcome.errors:
+        return outcome.errors
+    return [
+        build_adapter_error(
+            "AA_FINALIZE_NO_RESULT",
+            message,
+            retryable=False,
+            payload={"adapter_state": outcome.state.value},
+        )
+    ]
+
+
+def _adapter_output_validation_error(
+    *,
+    node_kind: Literal["evaluation", "repair"],
+    outcome: AttemptOutcome,
+    exc: ValidationError | None = None,
+) -> AdapterError:
+    payload: dict[str, Any] = {
+        "node_kind": node_kind,
+        "output_type": type(outcome.output).__name__,
+    }
+    if exc is not None:
+        payload["validation_error_count"] = len(exc.errors(include_context=False))
+    return build_adapter_error(
+        "AA_RUN_OUTPUT_VALIDATION_FAILED",
+        f"Adapter {node_kind} output did not match the runner bridge contract.",
+        retryable=False,
+        payload=payload,
+    )
+
+
+def _evaluation_input_from_adapter_outcome(outcome: AttemptOutcome) -> EvaluationAdvanceInput | AdapterError:
+    if outcome.output is None:
+        return _adapter_output_validation_error(node_kind="evaluation", outcome=outcome)
+    try:
+        return EvaluationAdvanceInput.model_validate(outcome.output)
+    except ValidationError as exc:
+        return _adapter_output_validation_error(node_kind="evaluation", outcome=outcome, exc=exc)
+
+
+def _repair_input_from_adapter_outcome(outcome: AttemptOutcome) -> RepairAdvanceInput | AdapterError:
+    if outcome.output is None:
+        return _adapter_output_validation_error(node_kind="repair", outcome=outcome)
+    try:
+        return RepairAdvanceInput.model_validate(outcome.output)
+    except ValidationError as exc:
+        return _adapter_output_validation_error(node_kind="repair", outcome=outcome, exc=exc)
 
 
 def _advance_evaluation(
@@ -953,6 +1036,208 @@ def _advance_evaluation(
         output_artifact_refs=[],
         usage=evaluation_usage,
         metadata=evaluation.metadata,
+    )
+    append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
+    run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
+    _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
+    _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
+    run = _persist_runtime_metadata(project_root, run)
+
+    completed_event = EvaluationEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node.node_id,
+        attempt_id=artifacts.attempt_id,
+        type="evaluation.completed",
+        phase=EventPhase.NODE_PASSED if eval_result.passed else EventPhase.NODE_REVIEW_FAILED,
+        title="Evaluation completed",
+        summary=None,
+        content=None,
+        payload={
+            "eval_id": eval_result.eval_id,
+            "passed": eval_result.passed,
+            "score": eval_result.score,
+            "failure_type": None
+            if eval_result.failure_diagnosis is None
+            else eval_result.failure_diagnosis.failure_type.value,
+            "recommended_action": eval_result.recommended_action.action,
+        },
+        display_level=DisplayLevel.DEFAULT,
+        expandable=True,
+        created_at=utc_now_ms(),
+        eval_id=eval_result.eval_id,
+        target_node_id=node.target_node_id,
+    )
+    run = append_run_event_locked(project_root, run, completed_event)
+    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts, usage=attempt.usage)
+
+    if eval_result.passed:
+        run = _transition_node(project_root, run, node.target_node_id, NodeRuntimeState.PASSED)
+        run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.PASSED)
+        next_node_ids = _route_targets(compiled, node.node_id, "pass")
+    else:
+        run = _transition_node(project_root, run, node.target_node_id, NodeRuntimeState.REVIEW_FAILED)
+        run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.REVIEW_FAILED)
+        next_node_ids = _next_nodes_for_failed_evaluation(graph, compiled, node, eval_result)
+
+    run = _update_run_current_nodes(project_root, run, next_node_ids, RunState.RUNNING)
+    return NodeAdvanceResult(
+        run=run,
+        node_id=node.node_id,
+        node_state=NodeRuntimeState.PASSED if eval_result.passed else NodeRuntimeState.REVIEW_FAILED,
+        next_node_ids=next_node_ids,
+        attempt_id=artifacts.attempt_id,
+        eval_id=eval_result.eval_id,
+    )
+
+
+async def _advance_evaluation_with_adapter(
+    project_root: Path,
+    graph: WorkflowGraph,
+    compiled: EngineWorkflowIR,
+    run: WorkflowRunDocument,
+    node: EvaluationTaskNode,
+    adapter_factory: AdapterFactory,
+    *,
+    adapter_configs: Mapping[str, AdapterConfig],
+) -> NodeAdvanceResult:
+    try:
+        artifacts = _prepare_attempt(project_root, graph, run, node, model_profile_id=None)
+    except PackBuildError as exc:
+        return _route_pack_build_failure(project_root, graph, compiled, run, node, exc)
+    target_attempt_id = _runtime_string(run, "last_attempt_ids", node.target_node_id)
+    target_hash = _runtime_string(run, "last_output_hashes", node.target_node_id)
+    if target_attempt_id is None or target_hash is None:
+        raise RunError(
+            "NL_STATE_FORBIDDEN_TRANSITION",
+            "Evaluation node cannot run before its target attempt has completed.",
+            details={"run_id": run.run_id, "node_id": node.node_id, "target_node_id": node.target_node_id},
+        )
+
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.READY)
+    run = _emit_attempt_started(project_root, run, node.node_id, artifacts)
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RUNNING)
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.REVIEWING)
+    run = _transition_node(project_root, run, node.target_node_id, NodeRuntimeState.REVIEWING)
+
+    started_event = EvaluationEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node.node_id,
+        attempt_id=artifacts.attempt_id,
+        type="evaluation.started",
+        phase=EventPhase.NODE_REVIEWING,
+        title="Evaluation started",
+        summary=None,
+        content=None,
+        payload={
+            "evaluator_node_id": node.node_id,
+            "target_node_id": node.target_node_id,
+            "target_attempt_id": target_attempt_id,
+            "arbitration": _evaluation_contract(node).arbitration.value,
+        },
+        display_level=DisplayLevel.DEFAULT,
+        expandable=False,
+        created_at=utc_now_ms(),
+        eval_id=None,
+        target_node_id=node.target_node_id,
+    )
+    run = append_run_event_locked(project_root, run, started_event)
+
+    try:
+        run, outcome = await _run_adapter_attempt(
+            project_root,
+            run,
+            artifacts,
+            adapter_factory,
+            adapter_configs=adapter_configs,
+        )
+    except AdapterRuntimeError as exc:
+        return _fail_attempt_and_run(project_root, run, node, artifacts, [exc.adapter_error], usage=None)
+
+    outcome_usage = _usage_with_profile_estimated_cost(artifacts, outcome.usage)
+    if outcome.state != AttemptState.COMPLETED:
+        errors = _adapter_incomplete_result_errors(outcome, "Adapter finalized without a completed evaluation output.")
+        attempt = _attempt_from_adapter_outcome(
+            run, node.node_id, artifacts, outcome, usage=outcome_usage, errors=errors
+        )
+        return _fail_attempt_and_run(project_root, run, node, artifacts, errors, usage=outcome_usage, attempt=attempt)
+
+    evaluation_or_error = _evaluation_input_from_adapter_outcome(outcome)
+    if isinstance(evaluation_or_error, AdapterError):
+        attempt = _attempt_from_adapter_outcome(
+            run,
+            node.node_id,
+            artifacts,
+            outcome,
+            usage=outcome_usage,
+            state=AttemptState.FAILED,
+            errors=[evaluation_or_error],
+        )
+        return _fail_attempt_and_run(
+            project_root, run, node, artifacts, [evaluation_or_error], usage=outcome_usage, attempt=attempt
+        )
+    evaluation = _normalize_evaluation_input(graph, compiled, node, evaluation_or_error)
+    if outcome_usage is not None:
+        evaluation = evaluation.model_copy(update={"usage": outcome_usage})
+
+    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, outcome_usage)
+    if budget_error is not None:
+        attempt = _attempt_from_adapter_outcome(
+            run,
+            node.node_id,
+            artifacts,
+            outcome,
+            usage=outcome_usage,
+            state=AttemptState.FAILED,
+            errors=[budget_error],
+        )
+        return _fail_attempt_and_run(
+            project_root, run, node, artifacts, [budget_error], usage=outcome_usage, attempt=attempt
+        )
+
+    eval_result = _build_evaluation_result(
+        run=run,
+        node=node,
+        artifacts=artifacts,
+        input_data=evaluation,
+        target_attempt_id=target_attempt_id,
+        target_hash=target_hash,
+        metadata_base={"cw": {"adapter_bridge": True}},
+    )
+    append_run_jsonl_locked(project_root, run.run_id, "evaluations.jsonl", eval_result.model_dump(mode="json"))
+    _store_runtime_value(run, "last_evaluation_ids", node.node_id, eval_result.eval_id)
+    _store_runtime_value(run, "last_evaluation_by_target", node.target_node_id, eval_result.eval_id)
+    if eval_result.failure_diagnosis is None:
+        _remove_runtime_value(run, "last_failure_types", node.target_node_id)
+    else:
+        _store_runtime_value(
+            run,
+            "last_failure_types",
+            node.target_node_id,
+            eval_result.failure_diagnosis.failure_type.value,
+        )
+    target_node = _node_by_id(graph)[node.target_node_id]
+    record_evaluation_reflections_locked(
+        project_root,
+        eval_result,
+        target_node_type=target_node.type,
+        evaluator_node_type=node.type,
+        domain_signals=_reflection_domain_signals(run),
+    )
+
+    output = {"eval_id": eval_result.eval_id, "passed": eval_result.passed, "score": eval_result.score}
+    output_hash = _stable_hash(output)
+    artifacts = artifacts.model_copy(update={"output_hash": output_hash})
+    attempt = _attempt_from_adapter_outcome(
+        run,
+        node.node_id,
+        artifacts,
+        outcome,
+        usage=outcome_usage,
+        output_hash=output_hash,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
     run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
@@ -1128,6 +1413,221 @@ def _advance_repair(
         output_artifact_refs=[],
         usage=repair_usage,
         metadata=repair.metadata,
+    )
+    append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
+    run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
+    _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
+    _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
+    _store_runtime_value(run, "last_patch_ids", node.node_id, patch.patch_id)
+    _store_runtime_value(run, "last_patch_ids", node.repair_target_node_id, patch.patch_id)
+    run = _persist_runtime_metadata(project_root, run)
+
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RETRYING)
+    run = _transition_node(project_root, run, node.repair_target_node_id, NodeRuntimeState.RETRYING)
+    applied_event = RepairEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node.node_id,
+        attempt_id=artifacts.attempt_id,
+        type="repair.patch_applied",
+        phase=EventPhase.NODE_RETRYING,
+        title="Repair patch applied",
+        summary=None,
+        content=None,
+        payload={
+            "patch_id": patch.patch_id,
+            "patch_kind": patch.patch_kind.value,
+            "side_effects": [f"pending_prompt_overlay_for_{node.repair_target_node_id}"],
+        },
+        display_level=DisplayLevel.DEFAULT,
+        expandable=False,
+        created_at=utc_now_ms(),
+        patch_id=patch.patch_id,
+        target_node_id=node.repair_target_node_id,
+        eval_id=evaluation_id,
+    )
+    run = append_run_event_locked(project_root, run, applied_event)
+    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts, usage=attempt.usage)
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.PASSED)
+
+    next_node_ids = _route_targets(compiled, node.node_id, "repair")
+    run = _update_run_current_nodes(project_root, run, next_node_ids, RunState.RUNNING)
+    return NodeAdvanceResult(
+        run=run,
+        node_id=node.node_id,
+        node_state=NodeRuntimeState.PASSED,
+        next_node_ids=next_node_ids,
+        attempt_id=artifacts.attempt_id,
+        patch_id=patch.patch_id,
+    )
+
+
+async def _advance_repair_with_adapter(
+    project_root: Path,
+    graph: WorkflowGraph,
+    compiled: EngineWorkflowIR,
+    run: WorkflowRunDocument,
+    node: RepairTaskNode,
+    adapter_factory: AdapterFactory,
+    *,
+    adapter_configs: Mapping[str, AdapterConfig],
+) -> NodeAdvanceResult:
+    try:
+        artifacts = _prepare_attempt(project_root, graph, run, node, model_profile_id=None)
+    except PackBuildError as exc:
+        return _route_pack_build_failure(project_root, graph, compiled, run, node, exc)
+    evaluation_id = _runtime_string(run, "last_evaluation_by_target", node.repair_target_node_id)
+    target_attempt_id = _runtime_string(run, "last_attempt_ids", node.repair_target_node_id)
+    if evaluation_id is None or target_attempt_id is None:
+        raise RunError(
+            "NL_STATE_FORBIDDEN_TRANSITION",
+            "Repair node cannot run before a failed evaluation for its target exists.",
+            details={"run_id": run.run_id, "node_id": node.node_id, "target_node_id": node.repair_target_node_id},
+        )
+
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.READY)
+    run = _emit_attempt_started(project_root, run, node.node_id, artifacts)
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RUNNING)
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.REPAIRING)
+    run = _transition_node(project_root, run, node.repair_target_node_id, NodeRuntimeState.REPAIRING)
+
+    started_event = RepairEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node.node_id,
+        attempt_id=artifacts.attempt_id,
+        type="repair.started",
+        phase=EventPhase.NODE_REPAIRING,
+        title="Repair started",
+        summary=None,
+        content=None,
+        payload={
+            "repair_node_id": node.node_id,
+            "target_node_id": node.repair_target_node_id,
+            "evaluation_id": evaluation_id,
+        },
+        display_level=DisplayLevel.DEFAULT,
+        expandable=False,
+        created_at=utc_now_ms(),
+        patch_id=None,
+        target_node_id=node.repair_target_node_id,
+        eval_id=evaluation_id,
+    )
+    run = append_run_event_locked(project_root, run, started_event)
+
+    try:
+        run, outcome = await _run_adapter_attempt(
+            project_root,
+            run,
+            artifacts,
+            adapter_factory,
+            adapter_configs=adapter_configs,
+        )
+    except AdapterRuntimeError as exc:
+        return _fail_attempt_and_run(project_root, run, node, artifacts, [exc.adapter_error], usage=None)
+
+    outcome_usage = _usage_with_profile_estimated_cost(artifacts, outcome.usage)
+    if outcome.state != AttemptState.COMPLETED:
+        errors = _adapter_incomplete_result_errors(outcome, "Adapter finalized without a completed repair output.")
+        attempt = _attempt_from_adapter_outcome(
+            run, node.node_id, artifacts, outcome, usage=outcome_usage, errors=errors
+        )
+        return _fail_attempt_and_run(project_root, run, node, artifacts, errors, usage=outcome_usage, attempt=attempt)
+
+    repair_or_error = _repair_input_from_adapter_outcome(outcome)
+    if isinstance(repair_or_error, AdapterError):
+        attempt = _attempt_from_adapter_outcome(
+            run,
+            node.node_id,
+            artifacts,
+            outcome,
+            usage=outcome_usage,
+            state=AttemptState.FAILED,
+            errors=[repair_or_error],
+        )
+        return _fail_attempt_and_run(
+            project_root, run, node, artifacts, [repair_or_error], usage=outcome_usage, attempt=attempt
+        )
+    repair = repair_or_error
+    if outcome_usage is not None:
+        repair = repair.model_copy(update={"usage": outcome_usage})
+
+    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, outcome_usage)
+    if budget_error is not None:
+        attempt = _attempt_from_adapter_outcome(
+            run,
+            node.node_id,
+            artifacts,
+            outcome,
+            usage=outcome_usage,
+            state=AttemptState.FAILED,
+            errors=[budget_error],
+        )
+        return _fail_attempt_and_run(
+            project_root, run, node, artifacts, [budget_error], usage=outcome_usage, attempt=attempt
+        )
+
+    patch = _build_repair_patch(
+        run=run,
+        node=node,
+        artifacts=artifacts,
+        input_data=repair,
+        evaluation_id=evaluation_id,
+        target_attempt_id=target_attempt_id,
+        metadata_base={"cw": {"adapter_bridge": True}},
+    )
+    append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
+    pending_overlay = _PendingPromptOverlay(
+        patch_id=patch.patch_id,
+        patch_kind=patch.patch_kind.value,
+        repair_node_id=node.node_id,
+        repair_attempt_id=artifacts.attempt_id,
+        evaluation_id=evaluation_id,
+        instruction_text=repair.instruction_text,
+    )
+    _store_runtime_value(
+        run, "pending_prompt_overlays", node.repair_target_node_id, pending_overlay.model_dump(mode="json")
+    )
+
+    proposed_event = RepairEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node.node_id,
+        attempt_id=artifacts.attempt_id,
+        type="repair.patch_proposed",
+        phase=EventPhase.NODE_REPAIRING,
+        title="Repair patch proposed",
+        summary=None,
+        content=None,
+        payload={
+            "patch_id": patch.patch_id,
+            "patch_kind": patch.patch_kind.value,
+            "addresses_failure_types": [failure_type.value for failure_type in patch.addresses_failure_types],
+            "risk_level": patch.risk_level.value,
+            "scope": patch.scope.value,
+        },
+        display_level=DisplayLevel.DEFAULT,
+        expandable=True,
+        created_at=utc_now_ms(),
+        patch_id=patch.patch_id,
+        target_node_id=node.repair_target_node_id,
+        eval_id=evaluation_id,
+    )
+    run = append_run_event_locked(project_root, run, proposed_event)
+
+    output = {"patch_id": patch.patch_id, "applied": True}
+    output_hash = _stable_hash(output)
+    artifacts = artifacts.model_copy(update={"output_hash": output_hash})
+    attempt = _attempt_from_adapter_outcome(
+        run,
+        node.node_id,
+        artifacts,
+        outcome,
+        usage=outcome_usage,
+        output_hash=output_hash,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
     run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
@@ -1734,6 +2234,7 @@ def _attempt_from_adapter_outcome(
     usage: RunUsage | None,
     state: AttemptState | None = None,
     errors: list[AdapterError] | None = None,
+    output_hash: str | None = None,
 ) -> NodeAttempt:
     attempt_state = outcome.state if state is None else state
     attempt_errors = outcome.errors if errors is None else errors
@@ -1752,7 +2253,7 @@ def _attempt_from_adapter_outcome(
         context_pack_id=artifacts.context_pack_id,
         evidence_pack_id=artifacts.evidence_pack_id,
         execution_pack_id=artifacts.execution_pack_id,
-        output_hash=outcome.output_hash,
+        output_hash=outcome.output_hash if output_hash is None else output_hash,
         output_artifact_refs=outcome.output_artifact_refs,
         usage=usage,
         errors=attempt_errors,
@@ -2212,6 +2713,7 @@ def _build_evaluation_result(
     input_data: EvaluationAdvanceInput,
     target_attempt_id: str,
     target_hash: str,
+    metadata_base: dict[str, Any] | None = None,
 ) -> EvaluationResult:
     now = utc_now_ms()
     contract = _evaluation_contract(node)
@@ -2282,7 +2784,10 @@ def _build_evaluation_result(
             criteria_hash=_stable_hash([criterion.model_dump(mode="json") for criterion in contract.criteria]),
             eval_hash=_stable_hash(payload_for_hash),
         ),
-        metadata=_merge_metadata({"cw": {"foundation_runner": True}}, input_data.metadata),
+        metadata=_merge_metadata(
+            {"cw": {"foundation_runner": True}} if metadata_base is None else metadata_base,
+            input_data.metadata,
+        ),
     )
 
 
@@ -2357,6 +2862,7 @@ def _build_repair_patch(
     input_data: RepairAdvanceInput,
     evaluation_id: str,
     target_attempt_id: str,
+    metadata_base: dict[str, Any] | None = None,
 ) -> RepairPatch:
     now = utc_now_ms()
     operation = AppendToInstructionsOp(text=input_data.instruction_text)
@@ -2389,7 +2895,10 @@ def _build_repair_patch(
             usage=input_data.usage,
             patch_hash=_stable_hash(payload_for_hash),
         ),
-        metadata=_merge_metadata({"cw": {"foundation_runner": True}}, input_data.metadata),
+        metadata=_merge_metadata(
+            {"cw": {"foundation_runner": True}} if metadata_base is None else metadata_base,
+            input_data.metadata,
+        ),
     )
 
 
