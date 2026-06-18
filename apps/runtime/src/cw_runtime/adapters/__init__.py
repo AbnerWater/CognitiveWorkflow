@@ -25,6 +25,8 @@ from .builtin_tools import (
 )
 from .claude_code_adapter import (
     ClaudeCodeAdapter,
+    ClaudeCodeMCPSecretResolution,
+    ClaudeCodeMCPSecretResolver,
     ClaudeCodeResumeRequest,
     ClaudeCodeRunRequest,
     ClaudeCodeSDKSession,
@@ -65,6 +67,8 @@ __all__ = [
     "AttemptResumption",
     "BuiltinToolFunc",
     "ClaudeCodeAdapter",
+    "ClaudeCodeMCPSecretResolution",
+    "ClaudeCodeMCPSecretResolver",
     "ClaudeCodeResumeRequest",
     "ClaudeCodeRunRequest",
     "ClaudeCodeSDKSession",

@@ -95,6 +95,21 @@ class ClaudeCodeSession(Protocol):
 SessionFactory: TypeAlias = Callable[[], ClaudeCodeSession]
 
 
+class ClaudeCodeMCPSecretResolution(BaseModel):
+    """Resolved project MCP secret material for SDK-local config projection."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    headers: dict[str, str] = Field(default_factory=dict)
+    env: dict[str, str] = Field(default_factory=dict)
+
+
+ClaudeCodeMCPSecretResolver: TypeAlias = Callable[
+    [ProjectMCPServerConfig],
+    ClaudeCodeMCPSecretResolution | None,
+]
+
+
 class ClaudeCodeSDKSession:
     """Default Claude Agent SDK-backed session.
 
@@ -874,7 +889,7 @@ def _claude_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str,
     requested_server_ids = _claude_requested_mcp_server_ids(pack)
     if not requested_server_ids:
         return {}
-    configured_servers = _project_mcp_servers(pack)
+    configured_servers = _project_mcp_servers(config, pack)
     if configured_servers is None:
         configured_servers = _configured_mcp_servers(config)
     missing_server_ids = [server_id for server_id in requested_server_ids if server_id not in configured_servers]
@@ -890,7 +905,7 @@ def _claude_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str,
     return {server_id: configured_servers[server_id] for server_id in requested_server_ids}
 
 
-def _project_mcp_servers(pack: ExecutionPack) -> dict[str, Any] | None:
+def _project_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str, Any] | None:
     project_root = _project_root_from_pack(pack)
     if project_root is None:
         return None
@@ -899,18 +914,39 @@ def _project_mcp_servers(pack: ExecutionPack) -> dict[str, Any] | None:
     requested_configs = {
         server_id: project_configs[server_id] for server_id in requested_server_ids if server_id in project_configs
     }
-    _reject_project_mcp_configs_requiring_future_lifecycle(requested_configs)
+    secret_resolver = (
+        _project_mcp_secret_resolver(config)
+        if _project_mcp_configs_require_secret_resolution(requested_configs)
+        else None
+    )
+    _reject_project_mcp_configs_requiring_future_lifecycle(
+        requested_configs,
+        secret_resolver_available=secret_resolver is not None,
+    )
     return {
-        server_id: _claude_project_mcp_server_config(project_config)
+        server_id: _claude_project_mcp_server_config(
+            project_config,
+            secret_resolution=_project_mcp_secret_resolution(project_config, secret_resolver),
+        )
         for server_id, project_config in requested_configs.items()
     }
 
 
+def _project_mcp_configs_require_secret_resolution(
+    project_configs: Mapping[str, ProjectMCPServerConfig],
+) -> bool:
+    return any(project_config.secret_ref for project_config in project_configs.values())
+
+
 def _reject_project_mcp_configs_requiring_future_lifecycle(
     project_configs: Mapping[str, ProjectMCPServerConfig],
+    *,
+    secret_resolver_available: bool,
 ) -> None:
     secret_server_ids = [
-        server_id for server_id, project_config in project_configs.items() if project_config.secret_ref
+        server_id
+        for server_id, project_config in project_configs.items()
+        if project_config.secret_ref and not secret_resolver_available
     ]
     approval_server_ids = [
         server_id for server_id, project_config in project_configs.items() if project_config.requires_approval
@@ -929,12 +965,76 @@ def _reject_project_mcp_configs_requiring_future_lifecycle(
     )
 
 
-def _claude_project_mcp_server_config(project_config: ProjectMCPServerConfig) -> dict[str, Any]:
+def _project_mcp_secret_resolver(config: AdapterConfig) -> ClaudeCodeMCPSecretResolver | None:
+    raw_resolver = config.settings.get("project_mcp_secret_resolver")
+    if raw_resolver is None:
+        return None
+    if not callable(raw_resolver):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "ClaudeCodeAdapter settings.project_mcp_secret_resolver must be callable.",
+            payload={"resolver_type": type(raw_resolver).__name__},
+        )
+    return cast(ClaudeCodeMCPSecretResolver, raw_resolver)
+
+
+def _project_mcp_secret_resolution(
+    project_config: ProjectMCPServerConfig,
+    secret_resolver: ClaudeCodeMCPSecretResolver | None,
+) -> ClaudeCodeMCPSecretResolution | None:
+    if project_config.secret_ref is None:
+        return None
+    if secret_resolver is None:
+        raise _unresolved_project_mcp_secret_error(project_config.server_id)
+    try:
+        secret_resolution: object | None = secret_resolver(project_config)
+    except AdapterRuntimeError:
+        raise
+    except Exception as exc:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Project MCP server secret resolver failed.",
+            payload={
+                "unresolved_secret_mcp_server_ids": [project_config.server_id],
+                "resolver_error_type": type(exc).__name__,
+            },
+        ) from exc
+    if secret_resolution is None:
+        raise _unresolved_project_mcp_secret_error(project_config.server_id)
+    if not isinstance(secret_resolution, ClaudeCodeMCPSecretResolution):
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Project MCP server secret resolver returned an invalid resolution.",
+            payload={
+                "unresolved_secret_mcp_server_ids": [project_config.server_id],
+                "resolver_result_type": type(secret_resolution).__name__,
+            },
+        )
+    return secret_resolution
+
+
+def _unresolved_project_mcp_secret_error(server_id: str) -> AdapterRuntimeError:
+    return AdapterRuntimeError(
+        "AA_RUN_TOOL_NOT_FOUND",
+        "Project MCP server secret could not be resolved by ClaudeCodeAdapter.",
+        payload={"unresolved_secret_mcp_server_ids": [server_id]},
+    )
+
+
+def _claude_project_mcp_server_config(
+    project_config: ProjectMCPServerConfig,
+    *,
+    secret_resolution: ClaudeCodeMCPSecretResolution | None,
+) -> dict[str, Any]:
     transport = project_config.transport
     if transport in {"http", "sse"}:
-        return {"type": transport, "url": project_config.command_or_url}
+        mcp_server_config: dict[str, Any] = {"type": transport, "url": project_config.command_or_url}
+        _apply_project_mcp_secret_resolution(mcp_server_config, secret_resolution)
+        return mcp_server_config
     if transport == "stdio":
-        return {"command": project_config.command_or_url}
+        mcp_server_config = {"command": project_config.command_or_url}
+        _apply_project_mcp_secret_resolution(mcp_server_config, secret_resolution)
+        return mcp_server_config
     raise AdapterRuntimeError(
         "AA_RUN_TOOL_NOT_FOUND",
         "Project MCP server transport is not supported by ClaudeCodeAdapter.",
@@ -944,6 +1044,18 @@ def _claude_project_mcp_server_config(project_config: ProjectMCPServerConfig) ->
             "supported_transports": ["http", "sse", "stdio"],
         },
     )
+
+
+def _apply_project_mcp_secret_resolution(
+    mcp_server_config: dict[str, Any],
+    secret_resolution: ClaudeCodeMCPSecretResolution | None,
+) -> None:
+    if secret_resolution is None:
+        return
+    if secret_resolution.headers:
+        mcp_server_config["headers"] = dict(secret_resolution.headers)
+    if secret_resolution.env:
+        mcp_server_config["env"] = dict(secret_resolution.env)
 
 
 def _project_root_from_pack(pack: ExecutionPack) -> str | None:

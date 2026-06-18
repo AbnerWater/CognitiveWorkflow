@@ -14,6 +14,7 @@ from cw_runtime.adapters import (
     AdapterConfig,
     AttemptResumption,
     ClaudeCodeAdapter,
+    ClaudeCodeMCPSecretResolution,
     ClaudeCodeResumeRequest,
     ClaudeCodeRunRequest,
     ClaudeCodeSession,
@@ -21,6 +22,7 @@ from cw_runtime.adapters import (
     RawClaudeCodeEvent,
     SessionFactory,
 )
+from cw_runtime.harness import ProjectMCPServerConfig
 from cw_schemas.contract import ExecutionContract, MCPToolRef, NodeModelPolicy, PromptSection
 from cw_schemas.events import StreamEventBase
 from cw_schemas.packs import (
@@ -493,6 +495,198 @@ async def test_claude_code_project_mcp_config_rejects_future_lifecycle_fields(tm
     assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
     assert outcome.errors[0].payload["unresolved_secret_mcp_server_ids"] == ["secure_server"]
     assert outcome.errors[0].payload["approval_required_mcp_server_ids"] == ["approval_server"]
+
+
+@pytest.mark.asyncio
+async def test_claude_code_project_mcp_config_uses_secret_resolver(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "secure_server",
+                "transport": "http",
+                "command_or_url": "https://mcp.example.test/secure",
+                "secret_ref": "secure://mcp/secure",
+            }
+        ],
+    )
+    resolved_server_ids: list[str] = []
+
+    def resolve_secret(project_config: ProjectMCPServerConfig) -> ClaudeCodeMCPSecretResolution | None:
+        resolved_server_ids.append(project_config.server_id)
+        return ClaudeCodeMCPSecretResolution(
+            headers={"Authorization": "Bearer fake-access-token"},
+            env={"CW_MCP_TOKEN": "fake-access-token"},
+        )
+
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(
+            adapter_id="claude_code",
+            settings={"project_mcp_secret_resolver": resolve_secret},
+        ),
+        session_factory=_factory_for(session),
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["secure_server"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.completed"]
+    assert resolved_server_ids == ["secure_server"]
+    assert session.run_request is not None
+    assert session.run_request.mcp_servers == {
+        "secure_server": {
+            "type": "http",
+            "url": "https://mcp.example.test/secure",
+            "headers": {"Authorization": "Bearer fake-access-token"},
+            "env": {"CW_MCP_TOKEN": "fake-access-token"},
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_claude_code_project_mcp_secret_resolver_none_fails_closed(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "secure_server",
+                "transport": "http",
+                "command_or_url": "https://mcp.example.test/secure",
+                "secret_ref": "secure://mcp/secure",
+            }
+        ],
+    )
+
+    def resolve_secret(project_config: ProjectMCPServerConfig) -> ClaudeCodeMCPSecretResolution | None:
+        return None
+
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(
+            adapter_id="claude_code",
+            settings={"project_mcp_secret_resolver": resolve_secret},
+        ),
+        session_factory=_factory_for(session),
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["secure_server"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert session.run_request is None
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["unresolved_secret_mcp_server_ids"] == ["secure_server"]
+
+
+@pytest.mark.asyncio
+async def test_claude_code_project_mcp_secret_resolver_exception_fails_closed(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "secure_server",
+                "transport": "http",
+                "command_or_url": "https://mcp.example.test/secure",
+                "secret_ref": "secure://mcp/secure",
+            }
+        ],
+    )
+
+    def resolve_secret(project_config: ProjectMCPServerConfig) -> ClaudeCodeMCPSecretResolution | None:
+        raise RuntimeError(f"failed with fake value for {project_config.server_id}")
+
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(
+            adapter_id="claude_code",
+            settings={"project_mcp_secret_resolver": resolve_secret},
+        ),
+        session_factory=_factory_for(session),
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["secure_server"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert session.run_request is None
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["unresolved_secret_mcp_server_ids"] == ["secure_server"]
+    assert outcome.errors[0].payload["resolver_error_type"] == "RuntimeError"
+    assert "fake value" not in str(outcome.errors[0].payload)
+
+
+@pytest.mark.asyncio
+async def test_claude_code_project_mcp_secret_resolver_bad_result_fails_closed(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "secure_server",
+                "transport": "http",
+                "command_or_url": "https://mcp.example.test/secure",
+                "secret_ref": "secure://mcp/secure",
+            }
+        ],
+    )
+
+    class InvalidSecretResolution:
+        pass
+
+    def resolve_secret(project_config: ProjectMCPServerConfig) -> object:
+        return InvalidSecretResolution()
+
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(
+            adapter_id="claude_code",
+            settings={"project_mcp_secret_resolver": resolve_secret},
+        ),
+        session_factory=_factory_for(session),
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["secure_server"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert session.run_request is None
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["unresolved_secret_mcp_server_ids"] == ["secure_server"]
+    assert outcome.errors[0].payload["resolver_result_type"] == "InvalidSecretResolution"
 
 
 @pytest.mark.asyncio
