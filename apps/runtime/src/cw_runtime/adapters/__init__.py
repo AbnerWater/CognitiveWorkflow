@@ -15,7 +15,13 @@ from .base import (
     HumanDecisionResolution,
     build_adapter_error,
 )
-from .builtin_tools import BuiltinToolFunc, default_builtin_tool_functions, default_builtin_tool_names, web_fetch
+from .builtin_tools import (
+    BuiltinToolFunc,
+    default_builtin_tool_functions,
+    default_builtin_tool_names,
+    file_io_for_project_root,
+    web_fetch,
+)
 from .claude_code_adapter import (
     ClaudeCodeAdapter,
     ClaudeCodeResumeRequest,
@@ -86,5 +92,6 @@ __all__ = [
     "build_pydantic_ai_descriptor",
     "default_builtin_tool_functions",
     "default_builtin_tool_names",
+    "file_io_for_project_root",
     "web_fetch",
 ]

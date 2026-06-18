@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 from types import ModuleType, SimpleNamespace, TracebackType
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 
@@ -608,6 +609,12 @@ async def _collect(events: AsyncIterator[StreamEventBase]) -> list[StreamEventBa
     return [event async for event in events]
 
 
+def _initialized_project_root(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / ".agent-workflow").mkdir()
+    return path
+
+
 def _execution_pack(
     output_schema: dict[str, Any] | None = None,
     *,
@@ -619,6 +626,7 @@ def _execution_pack(
     effective_toolsets: ToolsetSpec | None = None,
     usage_limits: UsageLimits | None = None,
     retry_policy: RetryPolicy | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ExecutionPack:
     return ExecutionPack(
         pack_id="exp_01",
@@ -684,6 +692,7 @@ def _execution_pack(
         usage_limits=usage_limits,
         cancel_token="tok_abc_01",
         correlation_id="trace_xyz",
+        metadata={} if metadata is None else metadata,
     )
 
 
@@ -1993,6 +2002,65 @@ async def test_pydantic_ai_default_sdk_session_auto_injects_web_fetch_tool(
 
 
 @pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_auto_injects_file_io_tool(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    project_root = _initialized_project_root(tmp_path)
+    (project_root / "input.txt").write_text("project text", encoding="utf-8")
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["file_io"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["file_io"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert len(sdk_toolsets) == 1
+    file_io_toolset = sdk_toolsets[0]
+    assert isinstance(file_io_toolset, FakeSDKFunctionToolset)
+    assert file_io_toolset.id == "cw_builtin_tools"
+    tool_name, file_io_tool = file_io_toolset.functions[0]
+    assert tool_name == "file_io"
+    result = cast(dict[str, Any], file_io_tool("read_text", "input.txt", max_bytes=64))
+    assert result["path"] == "input.txt"
+    assert result["text"] == "project text"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_file_io_without_project_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["file_io"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["file_io"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert len(FakeSDKAgent.instances) == 0
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_PREPARE_INVALID_PACK"
+    assert outcome.errors[0].payload["tool_id"] == "file_io"
+    assert outcome.errors[0].payload["missing_metadata"] == "cw.project_root"
+
+
+@pytest.mark.asyncio
 async def test_pydantic_ai_default_sdk_session_rejects_effective_builtin_not_allowed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2115,6 +2183,44 @@ async def test_pydantic_ai_default_sdk_session_keeps_web_fetch_out_of_external_f
     sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
     assert isinstance(sdk_toolsets[0], FakeSDKFunctionToolset)
     assert sdk_toolsets[0].functions == [("web_fetch", web_fetch)]
+    assert sdk_toolsets[1] is function_toolset
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_keeps_file_io_out_of_external_factory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    project_root = _initialized_project_root(tmp_path)
+    function_toolset = FakeSDKToolset("function")
+    captured_toolsets: PydanticAIToolsetRequest | None = None
+
+    def toolset_factory(_sdk: ModuleType, toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        nonlocal captured_toolsets
+        captured_toolsets = toolsets
+        return PydanticAIToolsets(function_toolsets=(function_toolset,))
+
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["file_io", "python_sandbox"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["file_io", "python_sandbox"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    assert captured_toolsets is not None
+    assert captured_toolsets.builtin_tools == ["python_sandbox"]
+    assert captured_toolsets.skill_ids_resolved == []
+    assert captured_toolsets.mcp_tools == []
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert isinstance(sdk_toolsets[0], FakeSDKFunctionToolset)
+    assert sdk_toolsets[0].functions[0][0] == "file_io"
     assert sdk_toolsets[1] is function_toolset
 
 

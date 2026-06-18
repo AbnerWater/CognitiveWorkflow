@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import ipaddress
 from http.client import HTTPMessage
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 import cw_runtime.adapters.builtin_tools as builtin_tools
-from cw_runtime.adapters import default_builtin_tool_functions, default_builtin_tool_names, web_fetch
+from cw_runtime.adapters import (
+    default_builtin_tool_functions,
+    default_builtin_tool_names,
+    file_io_for_project_root,
+    web_fetch,
+)
 
 
 class _FakeWebResponse:
@@ -26,11 +33,131 @@ class _FakeWebResponse:
         self.closed = True
 
 
+def _initialized_project_root(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / ".agent-workflow").mkdir()
+    return path
+
+
 def test_default_builtin_registry_exposes_web_fetch() -> None:
     functions = default_builtin_tool_functions()
 
-    assert default_builtin_tool_names() == ("web_fetch",)
+    assert default_builtin_tool_names() == ("file_io", "web_fetch")
     assert functions == {"web_fetch": web_fetch}
+
+
+def test_default_builtin_registry_exposes_project_scoped_file_io(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path)
+
+    functions = default_builtin_tool_functions(project_root=project_root)
+
+    assert set(functions) == {"file_io", "web_fetch"}
+    assert functions["web_fetch"] is web_fetch
+
+
+def test_file_io_reads_project_text_file(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path)
+    notes_dir = project_root / "notes"
+    notes_dir.mkdir()
+    (notes_dir / "a.txt").write_text("hello world", encoding="utf-8")
+    tool = file_io_for_project_root(project_root)
+
+    result = cast(dict[str, Any], tool("read_text", "notes/a.txt", max_bytes=5))
+
+    assert result == {
+        "action": "read_text",
+        "path": "notes/a.txt",
+        "bytes_read": 5,
+        "truncated": True,
+        "text": "hello",
+    }
+
+
+def test_file_io_lists_project_directory_without_following_symlinks(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path)
+    notes_dir = project_root / "notes"
+    notes_dir.mkdir()
+    (notes_dir / "a.txt").write_text("alpha", encoding="utf-8")
+    tool = file_io_for_project_root(project_root)
+
+    result = cast(dict[str, Any], tool("list_dir", "notes", max_entries=10))
+
+    assert result["action"] == "list_dir"
+    assert result["path"] == "notes"
+    assert result["truncated"] is False
+    assert result["entries"] == [
+        {
+            "name": "a.txt",
+            "path": "notes/a.txt",
+            "kind": "file",
+            "size_bytes": 5,
+        }
+    ]
+
+
+def test_file_io_root_listing_hides_internal_directories(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path)
+    (project_root / ".git").mkdir()
+    (project_root / "visible.txt").write_text("alpha", encoding="utf-8")
+    tool = file_io_for_project_root(project_root)
+
+    result = cast(dict[str, Any], tool("list_dir", ".", max_entries=10))
+
+    entries = cast(list[dict[str, Any]], result["entries"])
+    assert [entry["name"] for entry in entries] == ["visible.txt"]
+
+
+def test_file_io_nested_listing_hides_internal_directories(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path)
+    vendor_dir = project_root / "vendor"
+    vendor_dir.mkdir()
+    (vendor_dir / ".git").mkdir()
+    (vendor_dir / "visible.txt").write_text("alpha", encoding="utf-8")
+    tool = file_io_for_project_root(project_root)
+
+    result = cast(dict[str, Any], tool("list_dir", "vendor", max_entries=10))
+
+    entries = cast(list[dict[str, Any]], result["entries"])
+    assert [entry["name"] for entry in entries] == ["visible.txt"]
+
+
+def test_file_io_rejects_paths_outside_project_root(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "project")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+    tool = file_io_for_project_root(project_root)
+
+    with pytest.raises(PermissionError, match="inside project_root"):
+        tool("read_text", str(outside))
+
+
+def test_file_io_rejects_internal_runtime_paths(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path)
+    secure_dir = project_root / ".agent-workflow" / "secure"
+    secure_dir.mkdir(parents=True)
+    (secure_dir / "secret.txt").write_text("secret", encoding="utf-8")
+    tool = file_io_for_project_root(project_root)
+
+    with pytest.raises(PermissionError, match="internal runtime"):
+        tool("read_text", ".agent-workflow/secure/secret.txt")
+
+
+def test_file_io_rejects_nested_internal_paths(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path)
+    nested_git_dir = project_root / "vendor" / ".git"
+    nested_git_dir.mkdir(parents=True)
+    (nested_git_dir / "config").write_text("secret", encoding="utf-8")
+    tool = file_io_for_project_root(project_root)
+
+    with pytest.raises(PermissionError, match="internal runtime"):
+        tool("read_text", "vendor/.git/config")
+    with pytest.raises(PermissionError, match="internal runtime"):
+        tool("read_text", "vendor/.git/missing")
+
+
+def test_file_io_requires_initialized_project_root(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="initialized CW project root"):
+        file_io_for_project_root(tmp_path)
 
 
 def test_web_fetch_returns_public_text_response(monkeypatch: pytest.MonkeyPatch) -> None:

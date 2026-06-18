@@ -15,6 +15,7 @@ from collections.abc import Callable, Sequence
 from contextlib import closing
 from dataclasses import dataclass
 from http.client import HTTPMessage
+from pathlib import Path
 from typing import Any, Final, Protocol
 
 BuiltinToolFunc = Callable[..., Any]
@@ -24,6 +25,12 @@ _WEB_FETCH_DEFAULT_MAX_BYTES: Final = 64 * 1024
 _WEB_FETCH_ABSOLUTE_MAX_BYTES: Final = 256 * 1024
 _WEB_FETCH_USER_AGENT: Final = "CognitiveWorkflow/0.1 web_fetch"
 _ALLOWED_WEB_FETCH_SCHEMES: Final = frozenset({"http", "https"})
+_FILE_IO_DEFAULT_MAX_BYTES: Final = 64 * 1024
+_FILE_IO_ABSOLUTE_MAX_BYTES: Final = 256 * 1024
+_FILE_IO_DEFAULT_MAX_ENTRIES: Final = 200
+_FILE_IO_ABSOLUTE_MAX_ENTRIES: Final = 1000
+_FILE_IO_INTERNAL_ROOTS: Final = frozenset({".agent-workflow", ".git"})
+_FILE_IO_ACTIONS: Final = frozenset({"read_text", "list_dir", "stat"})
 
 
 @dataclass(frozen=True)
@@ -46,16 +53,167 @@ class _WebResponse(Protocol):
     def close(self) -> None: ...
 
 
-def default_builtin_tool_functions() -> dict[str, BuiltinToolFunc]:
+def default_builtin_tool_functions(*, project_root: str | Path | None = None) -> dict[str, BuiltinToolFunc]:
     """Return builtin functions implemented by the runtime adapter layer."""
 
-    return {"web_fetch": web_fetch}
+    functions: dict[str, BuiltinToolFunc] = {"web_fetch": web_fetch}
+    if project_root is not None:
+        functions["file_io"] = file_io_for_project_root(project_root)
+    return functions
 
 
 def default_builtin_tool_names() -> tuple[str, ...]:
     """Return stable builtin tool ids implemented by this module."""
 
-    return tuple(sorted(default_builtin_tool_functions()))
+    return tuple(sorted({"file_io", *default_builtin_tool_functions()}))
+
+
+def file_io_for_project_root(project_root: str | Path) -> BuiltinToolFunc:
+    """Return a read-only project file tool scoped to one CW project root."""
+
+    root = _validated_file_io_project_root(project_root)
+
+    def file_io(
+        action: str,
+        path: str,
+        max_bytes: int = _FILE_IO_DEFAULT_MAX_BYTES,
+        max_entries: int = _FILE_IO_DEFAULT_MAX_ENTRIES,
+    ) -> dict[str, Any]:
+        """Read project files with action=read_text, list_dir, or stat."""
+
+        return _file_io(root, action=action, path=path, max_bytes=max_bytes, max_entries=max_entries)
+
+    return file_io
+
+
+def _file_io(
+    project_root: Path,
+    *,
+    action: str,
+    path: str,
+    max_bytes: int,
+    max_entries: int,
+) -> dict[str, Any]:
+    if action not in _FILE_IO_ACTIONS:
+        raise ValueError("file_io action must be read_text, list_dir, or stat.")
+    target, relative_path = _validated_file_io_target(project_root, path)
+    if action == "read_text":
+        return _file_io_read_text(target, relative_path, max_bytes=max_bytes)
+    if action == "list_dir":
+        return _file_io_list_dir(target, relative_path, max_entries=max_entries)
+    return _file_io_stat(target, relative_path)
+
+
+def _file_io_read_text(target: Path, relative_path: str, *, max_bytes: int) -> dict[str, Any]:
+    if not target.is_file():
+        raise IsADirectoryError("file_io read_text target must be a file.")
+    read_limit = _normalized_file_io_max_bytes(max_bytes)
+    with target.open("rb") as file:
+        raw = file.read(read_limit + 1)
+    truncated = len(raw) > read_limit
+    if truncated:
+        raw = raw[:read_limit]
+    return {
+        "action": "read_text",
+        "path": relative_path,
+        "bytes_read": len(raw),
+        "truncated": truncated,
+        "text": raw.decode("utf-8", errors="replace"),
+    }
+
+
+def _file_io_list_dir(target: Path, relative_path: str, *, max_entries: int) -> dict[str, Any]:
+    if not target.is_dir():
+        raise NotADirectoryError("file_io list_dir target must be a directory.")
+    entry_limit = _normalized_file_io_max_entries(max_entries)
+    entries: list[dict[str, Any]] = []
+    truncated = False
+    for child in sorted(target.iterdir(), key=lambda item: item.name.lower()):
+        if _is_file_io_internal_component(child.name):
+            continue
+        if len(entries) >= entry_limit:
+            truncated = True
+            break
+        child_stat = child.lstat()
+        kind = "symlink" if child.is_symlink() else "directory" if child.is_dir() else "file"
+        child_relative_path = child.name if relative_path == "." else f"{relative_path}/{child.name}"
+        entries.append(
+            {
+                "name": child.name,
+                "path": child_relative_path,
+                "kind": kind,
+                "size_bytes": child_stat.st_size,
+            }
+        )
+    return {
+        "action": "list_dir",
+        "path": relative_path,
+        "entries": entries,
+        "truncated": truncated,
+    }
+
+
+def _file_io_stat(target: Path, relative_path: str) -> dict[str, Any]:
+    stat = target.stat()
+    return {
+        "action": "stat",
+        "path": relative_path,
+        "kind": "directory" if target.is_dir() else "file",
+        "size_bytes": stat.st_size,
+        "modified_at_ms": int(stat.st_mtime * 1000),
+    }
+
+
+def _validated_file_io_project_root(project_root: str | Path) -> Path:
+    root = Path(project_root).expanduser().resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("file_io project_root must be an existing directory.")
+    if not (root / ".agent-workflow").is_dir():
+        raise ValueError("file_io project_root must be an initialized CW project root.")
+    return root
+
+
+def _validated_file_io_target(project_root: Path, path: str) -> tuple[Path, str]:
+    if not path:
+        raise ValueError("file_io path must be non-empty.")
+    raw_path = Path(path)
+    if _has_file_io_internal_component(raw_path.parts):
+        raise PermissionError("file_io does not allow internal runtime or VCS paths.")
+    target = raw_path if raw_path.is_absolute() else project_root / raw_path
+    resolved = target.resolve(strict=True)
+    if not resolved.is_relative_to(project_root):
+        raise PermissionError("file_io path must stay inside project_root.")
+    relative_path = _relative_posix_path(resolved, project_root)
+    parts = Path(relative_path).parts
+    if _has_file_io_internal_component(parts):
+        raise PermissionError("file_io does not allow internal runtime or VCS paths.")
+    return resolved, relative_path
+
+
+def _has_file_io_internal_component(parts: Sequence[str]) -> bool:
+    return any(_is_file_io_internal_component(part) for part in parts)
+
+
+def _is_file_io_internal_component(part: str) -> bool:
+    return part.lower() in _FILE_IO_INTERNAL_ROOTS
+
+
+def _relative_posix_path(path: Path, root: Path) -> str:
+    relative = path.relative_to(root)
+    value = relative.as_posix()
+    return "." if value == "" else value
+
+
+def _normalized_file_io_max_bytes(max_bytes: int) -> int:
+    if max_bytes < 1:
+        raise ValueError("file_io max_bytes must be >= 1.")
+    return min(max_bytes, _FILE_IO_ABSOLUTE_MAX_BYTES)
+
+
+def _normalized_file_io_max_entries(max_entries: int) -> int:
+    if max_entries < 1:
+        raise ValueError("file_io max_entries must be >= 1.")
+    return min(max_entries, _FILE_IO_ABSOLUTE_MAX_ENTRIES)
 
 
 def web_fetch(url: str, max_bytes: int = _WEB_FETCH_DEFAULT_MAX_BYTES) -> dict[str, Any]:
@@ -205,5 +363,6 @@ __all__ = [
     "BuiltinToolFunc",
     "default_builtin_tool_functions",
     "default_builtin_tool_names",
+    "file_io_for_project_root",
     "web_fetch",
 ]

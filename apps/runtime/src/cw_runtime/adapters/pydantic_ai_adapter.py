@@ -29,7 +29,11 @@ from cw_runtime.adapters.base import (
     AttemptResumption,
     build_adapter_error,
 )
-from cw_runtime.adapters.builtin_tools import default_builtin_tool_functions, default_builtin_tool_names
+from cw_runtime.adapters.builtin_tools import (
+    default_builtin_tool_functions,
+    default_builtin_tool_names,
+    file_io_for_project_root,
+)
 from cw_runtime.model_router.router import AdapterCapabilities
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_schemas import ExecutionPack
@@ -124,6 +128,7 @@ class PydanticAIRunRequest(BaseModel):
     usage_limits: dict[str, Any] = Field(default_factory=dict)
     toolsets: PydanticAIToolsetRequest = Field(default_factory=PydanticAIToolsetRequest)
     evidence_pack: dict[str, Any] | None = None
+    project_root: str | None = None
     retry_policy: PydanticAIRetryPolicy = Field(default_factory=PydanticAIRetryPolicy)
     correlation_id: str = Field(..., min_length=1)
 
@@ -807,6 +812,7 @@ class PydanticAIAdapter:
             else pack.usage_limits.model_dump(mode="json", exclude_none=True),
             toolsets=_toolset_request(pack),
             evidence_pack=_evidence_pack_payload(pack),
+            project_root=_project_root_from_pack(pack),
             retry_policy=PydanticAIRetryPolicy(
                 model_retries=pack.retry_policy.model_retries,
                 model_retries_explicit="model_retries" in pack.retry_policy.model_fields_set,
@@ -1640,6 +1646,16 @@ def _evidence_pack_payload(pack: ExecutionPack) -> dict[str, Any] | None:
     return pack.evidence_pack.model_dump(mode="json")
 
 
+def _project_root_from_pack(pack: ExecutionPack) -> str | None:
+    cw_metadata = pack.metadata.get("cw")
+    if not isinstance(cw_metadata, Mapping):
+        return None
+    project_root = cw_metadata.get("project_root")
+    if not isinstance(project_root, str) or not project_root:
+        return None
+    return project_root
+
+
 def _authorized_builtin_tools(pack: ExecutionPack) -> list[str]:
     contract = pack.node_contract_snapshot
     contract_allowed_tools = _unique_strings(contract.allowed_tools)
@@ -1713,7 +1729,7 @@ def _build_sdk_agent(
         kwargs["instructions"] = request.instructions
     if request.model_settings:
         kwargs["model_settings"] = request.model_settings
-    toolsets = _sdk_toolsets(sdk, request.toolsets, toolset_factory, request.evidence_pack)
+    toolsets = _sdk_toolsets(sdk, request.toolsets, toolset_factory, request.evidence_pack, request.project_root)
     if toolsets:
         kwargs["toolsets"] = toolsets
     kwargs["retries"] = _sdk_agent_retries(request.retry_policy)
@@ -1738,11 +1754,13 @@ def _sdk_toolsets(
     toolset_request: PydanticAIToolsetRequest,
     toolset_factory: PydanticAIToolsetFactory | None,
     evidence_pack: Mapping[str, Any] | None,
+    project_root: str | None,
 ) -> list[object]:
     adapter_toolsets: list[object] = []
     adapter_builtin_functions, adapter_owned_builtin_tool_ids = _adapter_owned_builtin_tool_functions(
         toolset_request,
         evidence_pack,
+        project_root,
     )
     if adapter_builtin_functions:
         adapter_toolsets.append(_sdk_builtin_function_toolset(sdk, adapter_builtin_functions))
@@ -1830,6 +1848,7 @@ def _factory_sdk_toolsets(
 def _adapter_owned_builtin_tool_functions(
     toolset_request: PydanticAIToolsetRequest,
     evidence_pack: Mapping[str, Any] | None,
+    project_root: str | None,
 ) -> tuple[list[tuple[str, PydanticAIBuiltinToolFunc]], set[str]]:
     default_builtin_functions = default_builtin_tool_functions()
     functions: list[tuple[str, PydanticAIBuiltinToolFunc]] = []
@@ -1838,10 +1857,35 @@ def _adapter_owned_builtin_tool_functions(
         if tool_id == "evidence_lookup" and evidence_pack is not None:
             functions.append((tool_id, _evidence_lookup_tool(evidence_pack)))
             handled_tool_ids.add(tool_id)
+        elif tool_id == "file_io":
+            functions.append((tool_id, _file_io_tool(project_root)))
+            handled_tool_ids.add(tool_id)
         elif tool_id in default_builtin_functions:
             functions.append((tool_id, default_builtin_functions[tool_id]))
             handled_tool_ids.add(tool_id)
     return functions, handled_tool_ids
+
+
+def _file_io_tool(project_root: str | None) -> PydanticAIBuiltinToolFunc:
+    if project_root is None:
+        raise AdapterRuntimeError(
+            "AA_PREPARE_INVALID_PACK",
+            "Pydantic AI file_io builtin requires metadata.cw.project_root.",
+            payload={"tool_id": "file_io", "missing_metadata": "cw.project_root"},
+        )
+    try:
+        return file_io_for_project_root(project_root)
+    except (OSError, ValueError) as exc:
+        raise AdapterRuntimeError(
+            "AA_PREPARE_INVALID_PACK",
+            "Pydantic AI file_io builtin requires a valid initialized project_root.",
+            payload={
+                "tool_id": "file_io",
+                "project_root": project_root,
+                "exception_type": type(exc).__name__,
+                "message": str(exc),
+            },
+        ) from exc
 
 
 def _sdk_builtin_function_toolset(
