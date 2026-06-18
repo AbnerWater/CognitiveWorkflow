@@ -12,6 +12,7 @@ from .node_runner import (
     NodeAdvanceResult,
     RepairAdvanceInput,
     advance_workflow_run,
+    advance_workflow_run_with_adapters,
     resolve_human_decision,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "NodeAdvanceResult",
     "RepairAdvanceInput",
     "advance_workflow_run",
+    "advance_workflow_run_with_adapters",
     "resolve_human_decision",
 ]
