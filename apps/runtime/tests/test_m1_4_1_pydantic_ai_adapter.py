@@ -24,14 +24,28 @@ from cw_runtime.adapters import (
     RawPydanticAIEvent,
     build_pydantic_ai_descriptor,
 )
-from cw_schemas.contract import ExecutionContract, MCPToolRef, NodeModelPolicy, PromptSection, RetryPolicy, SkillRef
+from cw_schemas.contract import (
+    EvidenceRequirement,
+    ExecutionContract,
+    MCPToolRef,
+    NodeModelPolicy,
+    PromptSection,
+    RetryPolicy,
+    SkillRef,
+)
 from cw_schemas.events import StreamEventBase, ToolEvent
 from cw_schemas.packs import (
     ContextBudget,
     ContextFragment,
     ContextPack,
     ContextProvenance,
+    Evidence,
+    EvidenceCoverage,
+    EvidencePack,
+    EvidenceProvenance,
     ExecutionPack,
+    ReferenceChunkEvidenceSource,
+    RequirementResolution,
     StaticTextSource,
     ToolsetSpec,
     UsageLimits,
@@ -526,6 +540,8 @@ def _execution_pack(
     allowed_tools: list[str] | None = None,
     skills: list[SkillRef] | None = None,
     mcp_tools: list[MCPToolRef] | None = None,
+    evidence_requirements: list[EvidenceRequirement] | None = None,
+    evidence_pack: EvidencePack | None = None,
     effective_toolsets: ToolsetSpec | None = None,
     usage_limits: UsageLimits | None = None,
     retry_policy: RetryPolicy | None = None,
@@ -543,6 +559,7 @@ def _execution_pack(
             allowed_tools=[] if allowed_tools is None else allowed_tools,
             skills=[] if skills is None else skills,
             mcp_tools=[] if mcp_tools is None else mcp_tools,
+            evidence_requirements=[] if evidence_requirements is None else evidence_requirements,
             prompt=PromptSection(
                 system_prompt="You are running inside CW.",
                 instructions=["Respect the output schema."],
@@ -585,6 +602,7 @@ def _execution_pack(
                 pack_hash="pack_hash",
             ),
         ),
+        evidence_pack=evidence_pack,
         effective_model_profile_id="claude-sonnet-default",
         effective_model_settings={"temperature": 0.2},
         effective_toolsets=ToolsetSpec() if effective_toolsets is None else effective_toolsets,
@@ -592,6 +610,60 @@ def _execution_pack(
         usage_limits=usage_limits,
         cancel_token="tok_abc_01",
         correlation_id="trace_xyz",
+    )
+
+
+def _evidence_pack() -> EvidencePack:
+    return EvidencePack(
+        pack_id="ep_01",
+        node_id="n_extract",
+        attempt_id="att_01",
+        run_id="run_01",
+        purpose="Support the answer with evidence.",
+        evidences=[
+            Evidence(
+                evidence_id="ev_fact",
+                claim="CW uses structured workflows.",
+                quote="CognitiveWorkflow turns agent conversations into structured workflows.",
+                source=ReferenceChunkEvidenceSource(
+                    reference_id="ref_cw",
+                    reference_title="CW overview",
+                    chunk_id="chunk_01",
+                    chunk_index=0,
+                    position={"start": 0, "end": 68},
+                ),
+                relevance=0.9,
+                confidence=0.8,
+                topics=["workflow"],
+                priority=Priority.HIGH,
+                tokens_estimate=12,
+                created_at="2026-06-18T00:00:00.000Z",
+            )
+        ],
+        coverage=EvidenceCoverage(
+            required_topics=["workflow"],
+            required_topics_covered=["workflow"],
+            coverage_ratio=1.0,
+            avg_relevance=0.9,
+            avg_confidence=0.8,
+        ),
+        requirements_resolved=[
+            RequirementResolution(
+                requirement_id="req_answer",
+                required_for="answer",
+                min_coverage=1.0,
+                actual_coverage=1.0,
+                satisfied=True,
+                evidence_ids=["ev_fact"],
+            )
+        ],
+        provenance=EvidenceProvenance(
+            builder_version="test",
+            built_at="2026-06-18T00:00:00.000Z",
+            reference_index_snapshot_id="refs_01",
+            requirements_hash="req_hash",
+            pack_hash="pack_hash",
+        ),
     )
 
 
@@ -608,7 +680,7 @@ async def test_pydantic_ai_adapter_capabilities_descriptor_and_prepare() -> None
     assert capabilities.mcp is False
     assert capabilities.human_in_the_loop is False
     assert capabilities.deferred_tool_results is False
-    assert capabilities.evidence_lookup_tool is False
+    assert capabilities.evidence_lookup_tool is True
     assert capabilities.multi_modal == set()
     assert capabilities.max_tool_iterations == 0
     assert capabilities.cancel is False
@@ -1783,6 +1855,104 @@ async def test_pydantic_ai_toolset_registry_fails_closed_without_sdk_add_functio
     assert outcome.errors[0].payload is not None
     assert outcome.errors[0].payload["error_code"] == "AA_RUN_INTERNAL"
     assert outcome.errors[0].payload["toolset_type"] == "FakeSDKFunctionToolsetWithoutAddFunction"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_auto_injects_evidence_lookup_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            evidence_requirements=[EvidenceRequirement(requirement_id="req_answer", required_for="answer")],
+            evidence_pack=_evidence_pack(),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert len(sdk_toolsets) == 1
+    evidence_toolset = sdk_toolsets[0]
+    assert isinstance(evidence_toolset, FakeSDKFunctionToolset)
+    assert evidence_toolset.id == "cw_builtin_tools"
+    assert len(evidence_toolset.functions) == 1
+    tool_name, evidence_lookup = evidence_toolset.functions[0]
+    assert tool_name == "evidence_lookup"
+    evidence = evidence_lookup("ev_fact")
+    assert evidence["evidence_id"] == "ev_fact"
+    assert evidence["quote"] == "CognitiveWorkflow turns agent conversations into structured workflows."
+    with pytest.raises(LookupError, match="EP_RUNTIME_EVIDENCE_LOOKUP_MISS"):
+        evidence_lookup("ev_missing")
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_maps_evidence_lookup_miss_to_failed_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    FakeSDKAgent.stream_events = [
+        LookupError("EP_RUNTIME_EVIDENCE_LOOKUP_MISS: evidence_id='ev_missing' pack_id='ep_01'")
+    ]
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            evidence_requirements=[EvidenceRequirement(requirement_id="req_answer", required_for="answer")],
+            evidence_pack=_evidence_pack(),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["runtime_error_code"] == "EP_RUNTIME_EVIDENCE_LOOKUP_MISS"
+    assert outcome.errors[0].payload["exception_type"] == "LookupError"
+    assert outcome.errors[0].payload["retryable_model_exception"] is False
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_keeps_evidence_lookup_out_of_external_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    function_toolset = FakeSDKToolset("function")
+    captured_toolsets: PydanticAIToolsetRequest | None = None
+
+    def toolset_factory(_sdk: ModuleType, toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        nonlocal captured_toolsets
+        captured_toolsets = toolsets
+        return PydanticAIToolsets(function_toolsets=(function_toolset,))
+
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["python_sandbox"],
+            evidence_requirements=[EvidenceRequirement(requirement_id="req_answer", required_for="answer")],
+            evidence_pack=_evidence_pack(),
+            effective_toolsets=ToolsetSpec(builtin_tools=["python_sandbox"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    assert captured_toolsets is not None
+    assert captured_toolsets.builtin_tools == ["python_sandbox"]
+    assert captured_toolsets.skill_ids_resolved == []
+    assert captured_toolsets.mcp_tools == []
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert isinstance(sdk_toolsets[0], FakeSDKFunctionToolset)
+    assert sdk_toolsets[0].functions[0][0] == "evidence_lookup"
+    assert sdk_toolsets[1] is function_toolset
 
 
 @pytest.mark.asyncio

@@ -46,6 +46,7 @@ from cw_schemas.types import (
 )
 
 RawPydanticAIEvent: TypeAlias = Mapping[str, Any]
+_EVIDENCE_LOOKUP_MISS_CODE = "EP_RUNTIME_EVIDENCE_LOOKUP_MISS"
 
 
 class _AttemptTimeoutExpired(RuntimeError):
@@ -120,6 +121,7 @@ class PydanticAIRunRequest(BaseModel):
     model_settings: dict[str, Any] = Field(default_factory=dict)
     usage_limits: dict[str, Any] = Field(default_factory=dict)
     toolsets: PydanticAIToolsetRequest = Field(default_factory=PydanticAIToolsetRequest)
+    evidence_pack: dict[str, Any] | None = None
     retry_policy: PydanticAIRetryPolicy = Field(default_factory=PydanticAIRetryPolicy)
     correlation_id: str = Field(..., min_length=1)
 
@@ -451,7 +453,7 @@ class PydanticAIAdapter:
             long_context_tokens=200_000,
             max_tool_iterations=16 if tooling_enabled else 0,
             cancel=False,
-            evidence_lookup_tool=False,
+            evidence_lookup_tool=True,
             model_settings_passthrough=common_settings,
         )
 
@@ -770,6 +772,7 @@ class PydanticAIAdapter:
             if pack.usage_limits is None
             else pack.usage_limits.model_dump(mode="json", exclude_none=True),
             toolsets=_toolset_request(pack),
+            evidence_pack=_evidence_pack_payload(pack),
             retry_policy=PydanticAIRetryPolicy(
                 model_retries=pack.retry_policy.model_retries,
                 model_retries_explicit="model_retries" in pack.retry_policy.model_fields_set,
@@ -830,25 +833,39 @@ class PydanticAIAdapter:
             raise
         except Exception as exc:
             retryable_model_exception = _is_retryable_model_exception(exc)
-            if _is_usage_limit_exceeded(exc):
-                error_code: AgentAdapterErrorCode = "AA_RUN_USAGE_LIMIT"
+            error_code: AgentAdapterErrorCode
+            extra_payload: dict[str, Any]
+            if _is_evidence_lookup_miss(exc):
+                error_code = "AA_RUN_TOOL_NOT_FOUND"
+                message = "Pydantic AI evidence_lookup tool referenced a missing evidence_id."
+                retryable = False
+                extra_payload = {"runtime_error_code": _EVIDENCE_LOOKUP_MISS_CODE}
+            elif _is_usage_limit_exceeded(exc):
+                error_code = "AA_RUN_USAGE_LIMIT"
                 message = "Pydantic AI session exceeded configured usage limits."
+                retryable = retryable_model_exception
+                extra_payload = {}
             elif retryable_model_exception or _is_http_status_model_exception(exc):
                 error_code = "AA_RUN_STREAM_INTERRUPTED"
                 message = "Pydantic AI session model request failed."
+                retryable = retryable_model_exception
+                extra_payload = {}
             else:
                 error_code = "AA_RUN_INTERNAL"
                 message = "Pydantic AI session raised an internal exception."
+                retryable = retryable_model_exception
+                extra_payload = {}
             status_code = _http_status_code(exc)
             raise AdapterRuntimeError(
                 error_code,
                 message,
-                retryable=retryable_model_exception,
+                retryable=retryable,
                 http_status=status_code,
                 payload={
                     "exception_type": type(exc).__name__,
                     "message": str(exc),
                     "retryable_model_exception": retryable_model_exception,
+                    **extra_payload,
                     **({} if status_code is None else {"status_code": status_code}),
                 },
             ) from exc
@@ -1536,6 +1553,8 @@ def _prompt_text(value: str | list[str] | None) -> str | None:
 def _toolset_request(pack: ExecutionPack) -> PydanticAIToolsetRequest:
     contract = pack.node_contract_snapshot
     builtin_tools = _unique_strings([*pack.effective_toolsets.builtin_tools, *contract.allowed_tools])
+    if _should_enable_evidence_lookup(pack):
+        builtin_tools = _unique_strings([*builtin_tools, "evidence_lookup"])
     skill_ids_resolved = list(pack.effective_toolsets.skill_ids_resolved)
     if not skill_ids_resolved:
         skill_ids_resolved = _unique_strings([f"{skill.skill_id}@{skill.version}" for skill in contract.skills])
@@ -1556,6 +1575,22 @@ def _toolset_request(pack: ExecutionPack) -> PydanticAIToolsetRequest:
         skill_ids_resolved=_unique_strings(skill_ids_resolved),
         mcp_tools=mcp_tools,
     )
+
+
+def _should_enable_evidence_lookup(pack: ExecutionPack) -> bool:
+    if pack.evidence_pack is None:
+        return False
+    contract = pack.node_contract_snapshot
+    requested_tools = {*pack.effective_toolsets.builtin_tools, *contract.allowed_tools}
+    return bool(contract.evidence_requirements) or "evidence_lookup" in requested_tools
+
+
+def _evidence_pack_payload(pack: ExecutionPack) -> dict[str, Any] | None:
+    if not _should_enable_evidence_lookup(pack):
+        return None
+    if pack.evidence_pack is None:
+        return None
+    return pack.evidence_pack.model_dump(mode="json")
 
 
 def _build_sdk_agent(
@@ -1608,7 +1643,7 @@ def _build_sdk_agent(
         kwargs["instructions"] = request.instructions
     if request.model_settings:
         kwargs["model_settings"] = request.model_settings
-    toolsets = _sdk_toolsets(sdk, request.toolsets, toolset_factory)
+    toolsets = _sdk_toolsets(sdk, request.toolsets, toolset_factory, request.evidence_pack)
     if toolsets:
         kwargs["toolsets"] = toolsets
     kwargs["retries"] = _sdk_agent_retries(request.retry_policy)
@@ -1632,15 +1667,37 @@ def _sdk_toolsets(
     sdk: ModuleType,
     toolset_request: PydanticAIToolsetRequest,
     toolset_factory: PydanticAIToolsetFactory | None,
+    evidence_pack: Mapping[str, Any] | None,
 ) -> list[object]:
-    if not _has_toolset_request(toolset_request):
-        return []
+    adapter_toolsets: list[object] = []
+    factory_toolset_request = toolset_request
+    if evidence_pack is not None and "evidence_lookup" in toolset_request.builtin_tools:
+        adapter_toolsets.append(
+            _sdk_builtin_function_toolset(sdk, [("evidence_lookup", _evidence_lookup_tool(evidence_pack))])
+        )
+        factory_toolset_request = toolset_request.model_copy(
+            update={"builtin_tools": [tool for tool in toolset_request.builtin_tools if tool != "evidence_lookup"]}
+        )
+
+    if not _has_toolset_request(factory_toolset_request):
+        return adapter_toolsets
     if toolset_factory is None:
         raise AdapterRuntimeError(
             "AA_RUN_TOOL_NOT_FOUND",
             "Pydantic AI toolsets were requested, but no toolset factory is configured.",
-            payload={"toolsets": toolset_request.model_dump(mode="json")},
+            payload={"toolsets": factory_toolset_request.model_dump(mode="json")},
         )
+
+    return [*adapter_toolsets, *_factory_sdk_toolsets(sdk, factory_toolset_request, toolset_factory)]
+
+
+def _factory_sdk_toolsets(
+    sdk: ModuleType,
+    toolset_request: PydanticAIToolsetRequest,
+    toolset_factory: PydanticAIToolsetFactory,
+) -> list[object]:
+    if not _has_toolset_request(toolset_request):
+        return []
 
     try:
         bundle = toolset_factory(sdk, toolset_request)
@@ -1716,6 +1773,33 @@ def _sdk_builtin_function_toolset(
     for tool_id, func in builtin_tool_functions:
         add_function(func, name=tool_id)
     return toolset
+
+
+def _evidence_lookup_tool(evidence_pack: Mapping[str, Any]) -> PydanticAIBuiltinToolFunc:
+    pack_id = str(evidence_pack.get("pack_id", ""))
+    raw_evidences = evidence_pack.get("evidences")
+    evidences: dict[str, dict[str, Any]] = {}
+    if isinstance(raw_evidences, list):
+        for item in raw_evidences:
+            if not isinstance(item, Mapping):
+                continue
+            evidence_id = item.get("evidence_id")
+            if isinstance(evidence_id, str):
+                evidences[evidence_id] = dict(item)
+
+    def evidence_lookup(evidence_id: str) -> dict[str, Any]:
+        """Return one Evidence record from the attempt EvidencePack by evidence_id."""
+
+        evidence = evidences.get(evidence_id)
+        if evidence is None:
+            raise LookupError(f"{_EVIDENCE_LOOKUP_MISS_CODE}: evidence_id={evidence_id!r} pack_id={pack_id!r}")
+        return dict(evidence)
+
+    return evidence_lookup
+
+
+def _is_evidence_lookup_miss(exc: Exception) -> bool:
+    return isinstance(exc, LookupError) and _EVIDENCE_LOOKUP_MISS_CODE in str(exc)
 
 
 def _has_toolset_request(toolset_request: PydanticAIToolsetRequest) -> bool:
