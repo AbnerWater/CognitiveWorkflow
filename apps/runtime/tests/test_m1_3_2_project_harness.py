@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
 import subprocess
+import sys
+import textwrap
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -18,6 +22,7 @@ from cw_runtime.harness import (
     ProjectMCPDiscoveryRunner,
     ProjectMCPHealthCheck,
     ProjectMCPServerConfig,
+    ProjectMCPStdioDiscoveryClient,
     initialize_project,
     load_project_mcp_server_configs,
     load_project_tool_availability,
@@ -54,6 +59,17 @@ def _read_json_value(path: Path) -> object:
 
 def _write_json_value(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
+def _write_text_value(path: Path, payload: str) -> None:
+    path.write_text(payload, encoding="utf-8", newline="\n")
+
+
+def _python_script_command(script_path: Path, *extra_args: str) -> str:
+    args = [sys.executable, str(script_path), *extra_args]
+    if os.name == "nt":
+        return subprocess.list2cmdline(args)
+    return shlex.join(args)
 
 
 def _git_ls_files(project_root: Path) -> set[str]:
@@ -337,6 +353,72 @@ class DirtyErrorMCPDiscoveryClient(FakeMCPDiscoveryClient):
         )
 
 
+def _write_fake_mcp_stdio_server(script_path: Path) -> None:
+    _write_text_value(
+        script_path,
+        textwrap.dedent(
+            """
+            import json
+            import sys
+            import time
+
+            mode = sys.argv[1] if len(sys.argv) > 1 else "ok"
+
+            for line in sys.stdin:
+                message = json.loads(line)
+                method = message.get("method")
+                if method == "initialize":
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": message.get("id"),
+                        "result": {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {"tools": {}},
+                            "serverInfo": {"name": "fake-mcp", "version": "0.5.1"},
+                        },
+                    }
+                elif method == "notifications/initialized":
+                    continue
+                elif method == "tools/list" and mode == "error":
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": message.get("id"),
+                        "error": {"code": -32000, "message": "fake secret should not leak"},
+                    }
+                elif method == "tools/list" and mode == "noise":
+                    while True:
+                        print(json.dumps({"jsonrpc": "2.0", "id": "unrelated", "result": {}}), flush=True)
+                        time.sleep(0.01)
+                elif method == "tools/list":
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": message.get("id"),
+                        "result": {
+                            "tools": [
+                                {
+                                    "name": "run",
+                                    "title": "Run",
+                                    "description": "Run local Python.",
+                                    "inputSchema": {
+                                        "type": "object",
+                                        "properties": {"code": {"type": "string"}},
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                else:
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": message.get("id"),
+                        "error": {"code": -32601, "message": "method not found"},
+                    }
+                print(json.dumps(response), flush=True)
+            """
+        ).lstrip(),
+    )
+
+
 def test_project_mcp_discovery_runner_executes_lifecycle_for_lock_snapshot(tmp_path: Path) -> None:
     project_root = tmp_path / "mcp_discovery_runner_project"
     initialize_project(_request("MCP Discovery Runner", project_root))
@@ -371,6 +453,124 @@ def test_project_mcp_discovery_runner_executes_lifecycle_for_lock_snapshot(tmp_p
             "tools_snapshot": [{"name": "run", "description": "Run local Python."}],
         }
     ]
+
+
+def test_project_mcp_stdio_discovery_client_smoke_lists_tools(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_stdio_discovery_project"
+    initialize_project(_request("MCP Stdio Discovery", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server_script = tmp_path / "fake_mcp_server.py"
+    _write_fake_mcp_stdio_server(server_script)
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_stdio_python",
+                "transport": "stdio",
+                "command_or_url": _python_script_command(server_script),
+            }
+        ],
+    )
+
+    locks = load_project_tool_lock_snapshot(
+        project_root,
+        mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+            lambda config: ProjectMCPStdioDiscoveryClient(timeout_seconds=2.0)
+        ),
+    )
+
+    assert [entry.model_dump(mode="json") for entry in locks.mcps] == [
+        {
+            "server_id": "mcp_stdio_python",
+            "version": "0.5.1",
+            "tools_snapshot": [
+                {
+                    "name": "run",
+                    "title": "Run",
+                    "description": "Run local Python.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"code": {"type": "string"}},
+                    },
+                }
+            ],
+        }
+    ]
+
+
+def test_project_mcp_stdio_discovery_client_sanitizes_json_rpc_error(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_stdio_error_project"
+    initialize_project(_request("MCP Stdio Error", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server_script = tmp_path / "fake_mcp_server.py"
+    _write_fake_mcp_stdio_server(server_script)
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_stdio_python",
+                "transport": "stdio",
+                "command_or_url": _python_script_command(server_script, "error"),
+            }
+        ],
+    )
+
+    with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+        load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                lambda config: ProjectMCPStdioDiscoveryClient(timeout_seconds=2.0)
+            ),
+        )
+
+    assert exc_info.value.server_id == "mcp_stdio_python"
+    assert exc_info.value.stage == "discover_tools"
+    assert exc_info.value.details == {
+        "server_id": "mcp_stdio_python",
+        "transport": "stdio",
+        "jsonrpc_error_type": "int",
+    }
+    assert "fake secret" not in str(exc_info.value)
+    assert "fake secret" not in str(exc_info.value.details)
+    assert "command_or_url" not in str(exc_info.value.details)
+
+
+def test_project_mcp_stdio_discovery_client_times_out_on_unrelated_messages(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_stdio_noise_project"
+    initialize_project(_request("MCP Stdio Noise", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server_script = tmp_path / "fake_mcp_server.py"
+    _write_fake_mcp_stdio_server(server_script)
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_stdio_python",
+                "transport": "stdio",
+                "command_or_url": _python_script_command(server_script, "noise"),
+            }
+        ],
+    )
+
+    with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+        load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                lambda config: ProjectMCPStdioDiscoveryClient(timeout_seconds=0.2)
+            ),
+        )
+
+    assert exc_info.value.server_id == "mcp_stdio_python"
+    assert exc_info.value.stage == "discover_tools"
+    assert exc_info.value.details == {
+        "server_id": "mcp_stdio_python",
+        "transport": "stdio",
+        "timeout_seconds": 0.2,
+    }
+    assert "command_or_url" not in str(exc_info.value.details)
 
 
 def test_project_mcp_discovery_runner_unhealthy_fails_closed_and_closes(tmp_path: Path) -> None:

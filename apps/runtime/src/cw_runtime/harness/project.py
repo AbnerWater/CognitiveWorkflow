@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import secrets
+import shlex
 import subprocess
+import threading
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Final, Literal, Protocol, cast
+from typing import Any, Final, Literal, Protocol, TextIO, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -64,10 +67,12 @@ _REVISION_MANIFESTS: Final = [
 _MCP_DISCOVERY_ERROR_STAGES: Final = {
     "client_factory",
     "client_lifecycle",
+    "initialize",
     "health_check",
     "discover_tools",
     "close",
 }
+_MCP_PROTOCOL_VERSION: Final = "2025-06-18"
 _TRACKED_INIT_PATHS: Final = [
     ".gitignore",
     ".gitattributes",
@@ -308,6 +313,228 @@ class ProjectMCPDiscoveryRunner:
                 message="Project MCP discovery client factory failed.",
                 details={"exception_type": type(exc).__name__},
             ) from exc
+
+
+class ProjectMCPStdioDiscoveryClient:
+    """Minimal stdio MCP client for initialize + tools/list discovery."""
+
+    def __init__(self, *, timeout_seconds: float = 5.0) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._config: ProjectMCPServerConfig | None = None
+        self._process: subprocess.Popen[str] | None = None
+        self._stdout_queue: queue.Queue[str | None] = queue.Queue()
+        self._stdout_thread: threading.Thread | None = None
+        self._next_id = 1
+        self._version = "latest"
+
+    def start(self, config: ProjectMCPServerConfig) -> None:
+        self._config = config
+        if config.transport != "stdio":
+            raise self._error(
+                "client_lifecycle",
+                "Project MCP stdio discovery client only supports stdio transport.",
+                details={"transport": config.transport},
+            )
+        command = _stdio_command(config.command_or_url)
+        if command is None:
+            raise self._error(
+                "client_lifecycle",
+                "Project MCP stdio discovery command is empty.",
+            )
+        try:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            raise self._error(
+                "client_lifecycle",
+                "Project MCP stdio discovery client failed to start.",
+                details={"exception_type": type(exc).__name__},
+            ) from exc
+        self._process = process
+        if process.stdout is None:
+            raise self._error(
+                "client_lifecycle",
+                "Project MCP stdio discovery client stdout is unavailable.",
+            )
+        self._stdout_thread = threading.Thread(
+            target=_read_stdio_stdout,
+            args=(process.stdout, self._stdout_queue),
+            daemon=True,
+        )
+        self._stdout_thread.start()
+
+    def health_check(self) -> ProjectMCPHealthCheck:
+        result = self._request(
+            "initialize",
+            stage="initialize",
+            params={
+                "protocolVersion": _MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "cognitiveworkflow",
+                    "version": __version__,
+                },
+            },
+        )
+        protocol_version = _string_mapping_value(result, "protocolVersion")
+        if protocol_version is None:
+            raise self._error(
+                "initialize",
+                "Project MCP initialize response is missing protocolVersion.",
+            )
+        self._version = _mcp_server_version(result, default=protocol_version)
+        self._notify("notifications/initialized", stage="initialize")
+        return ProjectMCPHealthCheck(healthy=True, metadata={"protocol_version": protocol_version})
+
+    def discover_tools(self) -> ProjectMCPDiscoveredTools | None:
+        result = self._request("tools/list", stage="discover_tools")
+        tools_value = result.get("tools")
+        if not isinstance(tools_value, list):
+            raise self._error(
+                "discover_tools",
+                "Project MCP tools/list response is missing tools list.",
+                details={"result_type": type(tools_value).__name__},
+            )
+        return ProjectMCPDiscoveredTools(
+            version=self._version,
+            tools_snapshot=[_mcp_tool_snapshot(tool, self._require_config()) for tool in tools_value],
+        )
+
+    def close(self) -> None:
+        process = self._process
+        if process is None:
+            return
+        if process.stdin is not None and not process.stdin.closed:
+            process.stdin.close()
+        try:
+            process.wait(timeout=self._timeout_seconds)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=self._timeout_seconds)
+        finally:
+            if self._stdout_thread is not None:
+                self._stdout_thread.join(timeout=self._timeout_seconds)
+                self._stdout_thread = None
+            self._process = None
+
+    def _request(
+        self,
+        method: str,
+        *,
+        stage: str,
+        params: Mapping[str, object] | None = None,
+    ) -> Mapping[str, object]:
+        request_id = self._next_request_id()
+        message: dict[str, object] = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+        }
+        if params is not None:
+            message["params"] = dict(params)
+        self._write_json_rpc(message, stage=stage)
+        deadline = time.monotonic() + self._timeout_seconds
+        while True:
+            remaining_seconds = deadline - time.monotonic()
+            if remaining_seconds <= 0:
+                raise self._error(
+                    stage,
+                    "Project MCP stdio read timed out.",
+                    details={"timeout_seconds": self._timeout_seconds},
+                )
+            response = self._read_json_rpc(stage=stage, timeout_seconds=remaining_seconds)
+            if response.get("id") != request_id:
+                continue
+            error = response.get("error")
+            if isinstance(error, Mapping):
+                raise self._error(
+                    stage,
+                    "Project MCP JSON-RPC request failed.",
+                    details={"jsonrpc_error_type": type(error.get("code")).__name__},
+                )
+            result = response.get("result")
+            if not isinstance(result, Mapping):
+                raise self._error(
+                    stage,
+                    "Project MCP JSON-RPC response is missing object result.",
+                    details={"result_type": type(result).__name__},
+                )
+            return result
+
+    def _notify(self, method: str, *, stage: str) -> None:
+        self._write_json_rpc({"jsonrpc": "2.0", "method": method}, stage=stage)
+
+    def _write_json_rpc(self, message: Mapping[str, object], *, stage: str) -> None:
+        process = self._require_process(stage)
+        if process.stdin is None or process.stdin.closed:
+            raise self._error(stage, "Project MCP stdio stdin is unavailable.")
+        try:
+            process.stdin.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n")
+            process.stdin.flush()
+        except Exception as exc:
+            raise self._error(
+                stage,
+                "Project MCP stdio write failed.",
+                details={"exception_type": type(exc).__name__},
+            ) from exc
+
+    def _read_json_rpc(self, *, stage: str, timeout_seconds: float | None = None) -> Mapping[str, object]:
+        read_timeout = self._timeout_seconds if timeout_seconds is None else max(timeout_seconds, 0.0)
+        try:
+            line = self._stdout_queue.get(timeout=read_timeout)
+        except queue.Empty as exc:
+            raise self._error(
+                stage,
+                "Project MCP stdio read timed out.",
+                details={"timeout_seconds": self._timeout_seconds},
+            ) from exc
+        if line is None:
+            raise self._error(stage, "Project MCP stdio stream ended before response.")
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise self._error(
+                stage,
+                "Project MCP stdio response was not valid JSON.",
+                details={"exception_type": type(exc).__name__},
+            ) from exc
+        if not isinstance(message, Mapping):
+            raise self._error(
+                stage,
+                "Project MCP stdio response was not a JSON object.",
+                details={"result_type": type(message).__name__},
+            )
+        return message
+
+    def _next_request_id(self) -> int:
+        request_id = self._next_id
+        self._next_id += 1
+        return request_id
+
+    def _require_process(self, stage: str) -> subprocess.Popen[str]:
+        if self._process is None:
+            raise self._error(stage, "Project MCP stdio process is not started.")
+        return self._process
+
+    def _require_config(self) -> ProjectMCPServerConfig:
+        if self._config is None:
+            raise RuntimeError("ProjectMCPStdioDiscoveryClient used before start().")
+        return self._config
+
+    def _error(
+        self,
+        stage: str,
+        message: str,
+        *,
+        details: Mapping[str, object] | None = None,
+    ) -> ProjectMCPDiscoveryError:
+        return _mcp_discovery_error(self._require_config(), stage=stage, message=message, details=details)
 
 
 class ProjectToolLockSnapshot(BaseModel):
@@ -1026,6 +1253,68 @@ def _safe_mcp_discovery_stage(stage: str, *, default: str) -> str:
     return stage if stage in _MCP_DISCOVERY_ERROR_STAGES else default
 
 
+def _stdio_command(command_or_url: str) -> str | list[str] | None:
+    command = command_or_url.strip()
+    if command == "":
+        return None
+    if os.name == "nt":
+        return command
+    return shlex.split(command)
+
+
+def _read_stdio_stdout(stdout: TextIO, output_queue: queue.Queue[str | None]) -> None:
+    try:
+        for line in stdout:
+            output_queue.put(line)
+    finally:
+        stdout.close()
+        output_queue.put(None)
+
+
+def _mcp_server_version(result: Mapping[str, object], *, default: str) -> str:
+    server_info = result.get("serverInfo")
+    if isinstance(server_info, Mapping):
+        version = _string_mapping_value(server_info, "version")
+        if version is not None:
+            return version
+    return default
+
+
+def _mcp_tool_snapshot(tool: object, mcp_config: ProjectMCPServerConfig) -> dict[str, Any]:
+    if not isinstance(tool, Mapping):
+        raise _mcp_discovery_error(
+            mcp_config,
+            stage="discover_tools",
+            message="Project MCP tools/list returned a non-object tool.",
+            details={"result_type": type(tool).__name__},
+        )
+    name = _string_mapping_value(tool, "name")
+    if name is None:
+        raise _mcp_discovery_error(
+            mcp_config,
+            stage="discover_tools",
+            message="Project MCP tool is missing name.",
+        )
+    snapshot: dict[str, Any] = {"name": name}
+    title = _string_mapping_value(tool, "title")
+    if title is not None:
+        snapshot["title"] = title
+    description = _string_mapping_value(tool, "description")
+    if description is not None:
+        snapshot["description"] = description
+    input_schema = tool.get("inputSchema", tool.get("input_schema"))
+    if isinstance(input_schema, Mapping):
+        snapshot["input_schema"] = dict(input_schema)
+    return snapshot
+
+
+def _string_mapping_value(payload: Mapping[str, object], field: str) -> str | None:
+    value = payload.get(field)
+    if isinstance(value, str) and value.strip() != "":
+        return value.strip()
+    return None
+
+
 def _mcp_server_config_entry(
     server_id: str,
     entry: Mapping[str, object],
@@ -1102,6 +1391,7 @@ __all__ = [
     "ProjectMCPHealthCheck",
     "ProjectMCPLockEntry",
     "ProjectMCPServerConfig",
+    "ProjectMCPStdioDiscoveryClient",
     "ProjectMCPToolDiscovery",
     "ProjectSkillLockEntry",
     "ProjectToolAvailability",
