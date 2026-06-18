@@ -172,6 +172,11 @@ class FakeSDKUsage:
         return self.input_tokens + self.output_tokens
 
 
+class FakeSDKCostUsage(FakeSDKUsage):
+    def __init__(self, est_cost_usd: float) -> None:
+        self.est_cost_usd = est_cost_usd
+
+
 class FakeSDKMessage:
     def __init__(self, content: str = "sdk ok") -> None:
         self.content = content
@@ -390,6 +395,7 @@ def _install_fake_pydantic_ai_sdk(
     FakeSDKAgent.instances.clear()
     FakeSDKRunOnlyAgent.instances.clear()
     FakeSDKAgent.stream_events = None
+    FakeSDKResult.usage = FakeSDKUsage()
 
     def structured_dict(
         json_schema: dict[str, Any],
@@ -1887,7 +1893,32 @@ async def test_pydantic_ai_default_sdk_session_maps_usage_limit_exceeded_to_spec
 
 
 @pytest.mark.asyncio
-async def test_pydantic_ai_default_sdk_session_rejects_unsupported_cost_usage_limit(
+async def test_pydantic_ai_default_sdk_session_allows_reported_cost_within_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    FakeSDKResult.usage = FakeSDKCostUsage(est_cost_usd=0.005)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            usage_limits=UsageLimits(max_cost_usd=0.01),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    assert FakeSDKAgent.instances[0].stream_usage_limits is None
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.COMPLETED
+    assert outcome.output == {"answer": "sdk"}
+    assert outcome.usage is not None
+    assert outcome.usage.est_cost_usd == 0.005
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_fails_cost_limit_without_estimate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fake_pydantic_ai_sdk(monkeypatch)
@@ -1901,14 +1932,48 @@ async def test_pydantic_ai_default_sdk_session_rejects_unsupported_cost_usage_li
 
     events = await _collect(adapter.run(handle))
 
-    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert events[-1].type == "attempt.failed"
+    assert FakeSDKAgent.instances[0].stream_usage_limits is None
     assert events[-1].payload is not None
-    assert events[-1].payload["error_kind"] == "prepare_failed"
+    assert events[-1].payload["error_kind"] == "usage_limit_exceeded"
     outcome = await adapter.finalize(handle)
     assert outcome.state == AttemptState.FAILED
+    assert outcome.output is None
+    assert outcome.usage is None
     assert outcome.errors[0].payload is not None
-    assert outcome.errors[0].payload["error_code"] == "AA_PREPARE_INCOMPATIBLE_ADAPTER"
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_USAGE_LIMIT"
     assert outcome.errors[0].payload["usage_limit"] == "max_cost_usd"
+    assert outcome.errors[0].payload["reason"] == "missing_est_cost_usd"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_fails_reported_cost_above_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    FakeSDKResult.usage = FakeSDKCostUsage(est_cost_usd=0.02)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            usage_limits=UsageLimits(max_cost_usd=0.01),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.failed"
+    assert events[-1].payload is not None
+    assert events[-1].payload["error_kind"] == "usage_limit_exceeded"
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.output is None
+    assert outcome.usage is None
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_USAGE_LIMIT"
+    assert outcome.errors[0].payload["usage_limit"] == "max_cost_usd"
+    assert outcome.errors[0].payload["limit"] == 0.01
+    assert outcome.errors[0].payload["est_cost_usd"] == 0.02
 
 
 @pytest.mark.asyncio

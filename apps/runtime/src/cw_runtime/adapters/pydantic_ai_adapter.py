@@ -1189,8 +1189,23 @@ class PydanticAIAdapter:
                 )
             ]
 
-        self._outputs[handle.handle_id] = output
         usage = _usage_from_raw(raw_event)
+        cost_error = self._validate_cost_usage_limit(handle, usage)
+        if cost_error is not None:
+            self._errors[handle.handle_id] = [cost_error]
+            handle.state = AttemptState.FAILED
+            handle.finished_at = utc_now_ms()
+            return [
+                self._lifecycle_event(
+                    handle,
+                    event_type="attempt.failed",
+                    phase=EventPhase.ATTEMPT_FAILED,
+                    title="Pydantic AI attempt failed",
+                    payload=_attempt_failed_payload(cost_error, self._packs[handle.handle_id]),
+                )
+            ]
+
+        self._outputs[handle.handle_id] = output
         if usage is not None:
             self._usage[handle.handle_id] = usage
         messages = _messages_from_raw(raw_event)
@@ -1215,6 +1230,28 @@ class PydanticAIAdapter:
                 },
             )
         ]
+
+    def _validate_cost_usage_limit(self, handle: AttemptHandle, usage: RunUsage | None) -> AdapterError | None:
+        pack = self._packs[handle.handle_id]
+        if pack.usage_limits is None or pack.usage_limits.max_cost_usd is None:
+            return None
+
+        limit = pack.usage_limits.max_cost_usd
+        if usage is None or usage.est_cost_usd is None:
+            return build_adapter_error(
+                "AA_RUN_USAGE_LIMIT",
+                "Pydantic AI completed without estimated cost for max_cost_usd enforcement.",
+                retryable=False,
+                payload={"usage_limit": "max_cost_usd", "limit": limit, "reason": "missing_est_cost_usd"},
+            )
+        if usage.est_cost_usd > limit:
+            return build_adapter_error(
+                "AA_RUN_USAGE_LIMIT",
+                "Pydantic AI completed above configured max_cost_usd.",
+                retryable=False,
+                payload={"usage_limit": "max_cost_usd", "limit": limit, "est_cost_usd": usage.est_cost_usd},
+            )
+        return None
 
     def _fail_attempt(
         self,
@@ -1686,12 +1723,9 @@ def _approval_wrapped_mcp_toolsets(
 def _sdk_usage_limits(sdk: ModuleType, request: PydanticAIRunRequest) -> object | None:
     if not request.usage_limits:
         return None
-    if "max_cost_usd" in request.usage_limits:
-        raise AdapterRuntimeError(
-            "AA_PREPARE_INCOMPATIBLE_ADAPTER",
-            "Pydantic AI SDK usage limits cannot enforce max_cost_usd.",
-            payload={"usage_limit": "max_cost_usd", "value": request.usage_limits["max_cost_usd"]},
-        )
+    token_limit_keys = ("max_input_tokens", "max_output_tokens", "max_total_tokens")
+    if not any(key in request.usage_limits for key in token_limit_keys):
+        return None
 
     usage_limits_cls = getattr(sdk, "UsageLimits", None)
     if not callable(usage_limits_cls):
