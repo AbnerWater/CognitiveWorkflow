@@ -52,6 +52,14 @@ class _AttemptTimeoutExpired(RuntimeError):
     """Internal sentinel for adapter-owned ``retry_policy.timeout_seconds`` expiry."""
 
 
+class _AttemptCancelled(RuntimeError):
+    """Internal sentinel for adapter-owned user/system cancellation."""
+
+    def __init__(self, reason: CancelReason) -> None:
+        super().__init__(reason.value)
+        self.reason = reason
+
+
 class PydanticAIMCPToolRequest(BaseModel):
     """Serializable MCP tool request projected from a NodeContract."""
 
@@ -317,6 +325,8 @@ class PydanticAIAdapter:
         self._usage: dict[str, RunUsage] = {}
         self._messages: dict[str, list[dict[str, Any]]] = {}
         self._stream_seq: dict[str, int] = {}
+        self._cancel_events: dict[str, asyncio.Event] = {}
+        self._cancel_reasons: dict[str, CancelReason] = {}
 
     @property
     def adapter_id(self) -> str:
@@ -365,6 +375,7 @@ class PydanticAIAdapter:
         )
         self._packs[handle.handle_id] = execution_pack
         self._stream_seq[handle.handle_id] = 0
+        self._cancel_events[handle.handle_id] = asyncio.Event()
         return handle
 
     async def run(self, handle: AttemptHandle) -> AsyncIterator[StreamEventBase]:
@@ -468,6 +479,8 @@ class PydanticAIAdapter:
     async def cancel(self, handle: AttemptHandle, reason: CancelReason = CancelReason.USER) -> None:
         self._ensure_known_handle(handle)
         handle.cancellation_requested = True
+        self._cancel_reasons[handle.handle_id] = reason
+        self._cancel_event_for(handle).set()
         handle.state = AttemptState.CANCELLED
         handle.finished_at = utc_now_ms()
         self._errors[handle.handle_id] = [
@@ -480,7 +493,12 @@ class PydanticAIAdapter:
         ]
         session = self._sessions.get(handle.handle_id)
         if session is not None:
-            await session.cancel(handle.handle_id, reason)
+            await self._notify_session_cancel(
+                session,
+                handle.handle_id,
+                reason,
+                operation="cancel",
+            )
 
     async def finalize(self, handle: AttemptHandle) -> AttemptOutcome:
         self._ensure_known_handle(handle)
@@ -536,6 +554,8 @@ class PydanticAIAdapter:
         for session in list(self._sessions.values()):
             await session.aclose()
         self._sessions.clear()
+        self._cancel_events.clear()
+        self._cancel_reasons.clear()
 
     @classmethod
     def descriptor(cls) -> AdapterDescriptor:
@@ -613,12 +633,25 @@ class PydanticAIAdapter:
         operation: Literal["run", "resume"],
     ) -> AsyncIterator[RawPydanticAIEvent]:
         try:
-            async for event in self._events_with_timeout(events, timeout_seconds=timeout_seconds):
+            async for event in self._events_until_control(
+                handle,
+                events,
+                timeout_seconds=timeout_seconds,
+            ):
                 if handle.cancellation_requested:
-                    handle.state = AttemptState.CANCELLED
-                    handle.finished_at = utc_now_ms()
-                    return
+                    reason = self._cancel_reasons.get(handle.handle_id, CancelReason.USER)
+                    raise _AttemptCancelled(reason)
                 yield event
+        except _AttemptCancelled as exc:
+            raise AdapterRuntimeError(
+                "AA_RUN_CANCELLED",
+                f"Pydantic AI attempt cancelled: {exc.reason.value}",
+                payload={
+                    "handle_id": handle.handle_id,
+                    "operation": operation,
+                    "reason": exc.reason.value,
+                },
+            ) from exc
         except _AttemptTimeoutExpired as exc:
             await self._cancel_timed_out_session(
                 handle,
@@ -658,32 +691,36 @@ class PydanticAIAdapter:
             handle.finished_at = utc_now_ms()
             raise AdapterRuntimeError(error_code, error.message, payload=error.payload) from exc
 
-    async def _events_with_timeout(
+    async def _events_until_control(
         self,
+        handle: AttemptHandle,
         events: AsyncIterator[RawPydanticAIEvent],
         *,
         timeout_seconds: int | None,
     ) -> AsyncIterator[RawPydanticAIEvent]:
-        if timeout_seconds is None:
-            async for event in events:
-                yield event
-            return
-
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout_seconds
+        deadline = None if timeout_seconds is None else loop.time() + timeout_seconds
+        cancel_event = self._cancel_event_for(handle)
         iterator = events.__aiter__()
         while True:
-            remaining = deadline - loop.time()
-            if remaining <= 0:
+            if handle.cancellation_requested or cancel_event.is_set():
+                raise _AttemptCancelled(self._cancel_reasons.get(handle.handle_id, CancelReason.USER))
+            remaining = None if deadline is None else deadline - loop.time()
+            if remaining is not None and remaining <= 0:
                 raise _AttemptTimeoutExpired
+            event_task: asyncio.Future[RawPydanticAIEvent] = asyncio.ensure_future(iterator.__anext__())
+            cancel_task: asyncio.Future[bool] = asyncio.ensure_future(cancel_event.wait())
             try:
-                event_task: asyncio.Future[RawPydanticAIEvent] = asyncio.ensure_future(iterator.__anext__())
-                done, _pending = await asyncio.wait({event_task}, timeout=remaining)
+                tasks: set[asyncio.Future[Any]] = {event_task, cancel_task}
+                done, _pending = await asyncio.wait(tasks, timeout=remaining, return_when=asyncio.FIRST_COMPLETED)
                 if not done:
-                    event_task.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await event_task
+                    await _cancel_future(event_task)
+                    await _cancel_future(cancel_task)
                     raise _AttemptTimeoutExpired
+                if cancel_task in done:
+                    await _cancel_future(event_task)
+                    raise _AttemptCancelled(self._cancel_reasons.get(handle.handle_id, CancelReason.USER))
+                await _cancel_future(cancel_task)
                 event = event_task.result()
             except StopAsyncIteration:
                 return
@@ -700,15 +737,47 @@ class PydanticAIAdapter:
         handle.cancellation_requested = True
         handle.state = AttemptState.CANCELLED
         handle.finished_at = utc_now_ms()
-        try:
-            await session.cancel(handle.handle_id, CancelReason.IDLE_TIMEOUT)
-        except Exception as exc:  # pragma: no cover - defensive payload only.
+        self._cancel_reasons[handle.handle_id] = CancelReason.IDLE_TIMEOUT
+        self._cancel_event_for(handle).set()
+        error = await self._notify_session_cancel(
+            session,
+            handle.handle_id,
+            CancelReason.IDLE_TIMEOUT,
+            operation=operation,
+        )
+        if error is not None:
             handle.metadata["pydantic_ai_timeout_cancel_error"] = {
                 "operation": operation,
                 "timeout_seconds": timeout_seconds,
+                **error,
+            }
+
+    def _cancel_event_for(self, handle: AttemptHandle) -> asyncio.Event:
+        event = self._cancel_events.get(handle.handle_id)
+        if event is None:
+            event = asyncio.Event()
+            if handle.cancellation_requested:
+                event.set()
+            self._cancel_events[handle.handle_id] = event
+        return event
+
+    async def _notify_session_cancel(
+        self,
+        session: PydanticAISession,
+        handle_id: str,
+        reason: CancelReason,
+        *,
+        operation: Literal["run", "resume", "cancel"],
+    ) -> dict[str, str] | None:
+        try:
+            await session.cancel(handle_id, reason)
+        except Exception as exc:  # pragma: no cover - defensive payload only.
+            return {
+                "operation": operation,
                 "exception_type": type(exc).__name__,
                 "message": str(exc),
             }
+        return None
 
     def _translate_raw_event(self, handle: AttemptHandle, raw_event: RawPydanticAIEvent) -> list[StreamEventBase]:
         event_type = _required_str(raw_event, "type")
@@ -2241,6 +2310,12 @@ def _human_resolved_payload(handle: AttemptHandle, resumption: AttemptResumption
 def _traceparent_for(handle: AttemptHandle) -> str | None:
     value = handle.metadata.get("pydantic_ai_traceparent")
     return value if isinstance(value, str) and value else None
+
+
+async def _cancel_future(future: asyncio.Future[Any]) -> None:
+    future.cancel()
+    with suppress(asyncio.CancelledError):
+        await future
 
 
 def _matches_json_schema_type(value: object, expected_type: str) -> bool:

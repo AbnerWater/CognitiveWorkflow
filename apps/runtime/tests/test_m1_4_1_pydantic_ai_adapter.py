@@ -111,6 +111,42 @@ class ErrorPydanticAISession(FakePydanticAISession):
         raise self._exception
 
 
+class BlockingPydanticAISession(FakePydanticAISession):
+    def __init__(
+        self,
+        *,
+        run_events: list[RawPydanticAIEvent] | None = None,
+        resume_events: list[RawPydanticAIEvent] | None = None,
+        block_run: bool = False,
+        block_resume: bool = False,
+    ) -> None:
+        super().__init__(run_events=[] if run_events is None else run_events, resume_events=resume_events)
+        self._block_run = block_run
+        self._block_resume = block_resume
+        self.run_entered = asyncio.Event()
+        self.resume_entered = asyncio.Event()
+        self.release_run = asyncio.Event()
+        self.release_resume = asyncio.Event()
+
+    async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
+        self.run_request = request
+        self.run_entered.set()
+        if self._block_run:
+            await self.release_run.wait()
+            return
+        for event in self._run_events:
+            yield event
+
+    async def resume(self, request: PydanticAIResumeRequest) -> AsyncIterator[RawPydanticAIEvent]:
+        self.resume_request = request
+        self.resume_entered.set()
+        if self._block_resume:
+            await self.release_resume.wait()
+            return
+        for event in self._resume_events:
+            yield event
+
+
 class FakeSDKUsage:
     input_tokens = 5
     output_tokens = 7
@@ -1698,6 +1734,66 @@ async def test_pydantic_ai_cancel_finalizes_cancelled_attempt() -> None:
     assert outcome.state == AttemptState.CANCELLED
     assert outcome.errors[0].payload is not None
     assert outcome.errors[0].payload["error_code"] == "AA_RUN_CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_cancel_unblocks_running_iterator() -> None:
+    session = BlockingPydanticAISession(block_run=True)
+    adapter = PydanticAIAdapter(session_factory=_factory_for(session))
+    handle = await adapter.prepare(_execution_pack())
+
+    run_task = asyncio.create_task(_collect(adapter.run(handle)))
+    await asyncio.wait_for(session.run_entered.wait(), timeout=1.0)
+    await adapter.cancel(handle, CancelReason.USER)
+
+    events = await asyncio.wait_for(run_task, timeout=1.0)
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert session.cancelled == (handle.handle_id, CancelReason.USER)
+    assert events[-1].payload is not None
+    assert events[-1].payload["error_kind"] == "cancelled"
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.CANCELLED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["reason"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_cancel_unblocks_resume_iterator() -> None:
+    session = BlockingPydanticAISession(
+        run_events=[{"type": "approval_required", "prompt": "Allow wait?", "tool_id": "slow_tool"}],
+        block_resume=True,
+    )
+    adapter = PydanticAIAdapter(session_factory=_factory_for(session))
+    handle = await adapter.prepare(_execution_pack())
+    await _collect(adapter.run(handle))
+
+    resume_task = asyncio.create_task(
+        _collect(
+            adapter.resume(
+                handle,
+                AttemptResumption(
+                    kind=ResumptionKind.HUMAN_DECISION,
+                    human_decision=HumanDecisionResolution(
+                        key="continue",
+                        by="user_01",
+                        decided_at="2026-06-18T00:00:01.000Z",
+                    ),
+                ),
+            )
+        )
+    )
+    await asyncio.wait_for(session.resume_entered.wait(), timeout=1.0)
+    await adapter.cancel(handle, CancelReason.USER)
+
+    events = await asyncio.wait_for(resume_task, timeout=1.0)
+
+    assert [event.type for event in events] == ["human.gate_resolved", "attempt.failed"]
+    assert session.cancelled == (handle.handle_id, CancelReason.USER)
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.CANCELLED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["operation"] == "resume"
 
 
 @pytest.mark.asyncio
