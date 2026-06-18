@@ -14,6 +14,7 @@ from cw_runtime.harness import (
     HarnessError,
     ProjectCreateRequest,
     initialize_project,
+    load_project_mcp_server_configs,
     load_project_tool_availability,
     load_project_tool_lock_snapshot,
     update_manifest_json,
@@ -248,6 +249,53 @@ def test_project_tool_availability_treats_invalid_manifest_entries_as_disabled(t
 
     assert availability.skill_ids == set()
     assert availability.skill_refs == set()
+
+
+def test_project_mcp_server_configs_read_enabled_spec_fields_only(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_config_project"
+    initialize_project(_request("MCP Config", project_root))
+    agent_root = project_root / ".agent-workflow"
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_http",
+                "transport": "http",
+                "command_or_url": "https://mcp.example.test/http",
+                "requires_approval": False,
+                "version": "ignored",
+                "tools_snapshot": [{"name": "ignored"}],
+            },
+            {
+                "server_id": "mcp_stdio",
+                "transport": "stdio",
+                "command_or_url": "local-mcp",
+                "secret_ref": "secure://mcp/local",
+            },
+            {"server_id": "missing_transport", "command_or_url": "local-mcp"},
+            {"server_id": "disabled_mcp", "transport": "http", "command_or_url": "https://disabled", "enabled": False},
+        ],
+    )
+
+    configs = load_project_mcp_server_configs(project_root)
+
+    assert [config.model_dump(mode="json") for config in configs.values()] == [
+        {
+            "server_id": "mcp_http",
+            "transport": "http",
+            "command_or_url": "https://mcp.example.test/http",
+            "requires_approval": False,
+            "secret_ref": None,
+        },
+        {
+            "server_id": "mcp_stdio",
+            "transport": "stdio",
+            "command_or_url": "local-mcp",
+            "requires_approval": False,
+            "secret_ref": "secure://mcp/local",
+        },
+    ]
 
 
 def test_update_manifest_json_blocks_direct_memory_write(tmp_path: Path) -> None:

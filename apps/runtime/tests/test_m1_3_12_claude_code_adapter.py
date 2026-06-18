@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 from types import ModuleType
 from typing import Any, ClassVar
 
@@ -187,6 +189,7 @@ def _execution_pack(
     allowed_tools: list[str] | None = None,
     mcp_tools: list[MCPToolRef] | None = None,
     effective_toolsets: ToolsetSpec | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> ExecutionPack:
     return ExecutionPack(
         pack_id="exp_01",
@@ -246,7 +249,18 @@ def _execution_pack(
         effective_toolsets=ToolsetSpec() if effective_toolsets is None else effective_toolsets,
         cancel_token="tok_abc_01",
         correlation_id="trace_xyz",
+        metadata={} if metadata is None else metadata,
     )
+
+
+def _initialized_project_root(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / ".agent-workflow").mkdir()
+    return path
+
+
+def _write_json_value(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 @pytest.mark.asyncio
@@ -367,6 +381,55 @@ async def test_claude_code_allowed_tools_project_contract_and_effective_toolsets
 
 
 @pytest.mark.asyncio
+async def test_claude_code_uses_project_mcp_config_when_project_root_present(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "github",
+                "transport": "http",
+                "command_or_url": "https://project-mcp.example.test/github",
+            },
+            {
+                "server_id": "db",
+                "transport": "stdio",
+                "command_or_url": "project-db-mcp",
+                "version": "ignored",
+                "tools_snapshot": [{"name": "ignored"}],
+            },
+            {
+                "server_id": "slack",
+                "transport": "sse",
+                "command_or_url": "https://project-mcp.example.test/slack/sse",
+                "enabled": False,
+            },
+        ],
+    )
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(
+        config=_adapter_config_with_mcp_servers("github", "db", "slack"),
+        session_factory=_factory_for(session),
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["github"]),
+            mcp_tools=[MCPToolRef(server_id="db", tool_name="query")],
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    await _collect(adapter.run(handle))
+
+    assert session.run_request is not None
+    assert session.run_request.mcp_servers == {
+        "github": {"type": "http", "url": "https://project-mcp.example.test/github"},
+        "db": {"command": "project-db-mcp"},
+    }
+
+
+@pytest.mark.asyncio
 async def test_claude_code_missing_mcp_server_config_fails_closed() -> None:
     session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
     adapter = ClaudeCodeAdapter(session_factory=_factory_for(session))
@@ -389,6 +452,75 @@ async def test_claude_code_missing_mcp_server_config_fails_closed() -> None:
     assert error_payload is not None
     assert error_payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
     assert error_payload["missing_mcp_server_ids"] == ["github", "db"]
+
+
+@pytest.mark.asyncio
+async def test_claude_code_project_mcp_config_rejects_future_lifecycle_fields(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "secure_server",
+                "transport": "http",
+                "command_or_url": "https://mcp.example.test/secure",
+                "secret_ref": "secure://mcp/secure",
+            },
+            {
+                "server_id": "approval_server",
+                "transport": "stdio",
+                "command_or_url": "approval-mcp",
+                "requires_approval": True,
+            },
+        ],
+    )
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(session_factory=_factory_for(session))
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["secure_server", "approval_server"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert session.run_request is None
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["unresolved_secret_mcp_server_ids"] == ["secure_server"]
+    assert outcome.errors[0].payload["approval_required_mcp_server_ids"] == ["approval_server"]
+
+
+@pytest.mark.asyncio
+async def test_claude_code_project_mcp_config_rejects_unsupported_transport(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [{"server_id": "bad_transport", "transport": "websocket", "command_or_url": "wss://mcp.example.test"}],
+    )
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(session_factory=_factory_for(session))
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["bad_transport"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert session.run_request is None
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["server_id"] == "bad_transport"
+    assert outcome.errors[0].payload["transport"] == "websocket"
 
 
 @pytest.mark.asyncio

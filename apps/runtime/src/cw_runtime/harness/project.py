@@ -168,6 +168,18 @@ class ProjectMCPLockEntry(BaseModel):
     tools_snapshot: list[object] = Field(default_factory=list)
 
 
+class ProjectMCPServerConfig(BaseModel):
+    """Enabled project MCP server config from ``mcp.config.json``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    server_id: str
+    transport: str
+    command_or_url: str
+    requires_approval: bool = False
+    secret_ref: str | None = None
+
+
 class ProjectToolLockSnapshot(BaseModel):
     """Run startup lock snapshot for enabled project tools."""
 
@@ -293,6 +305,22 @@ def load_project_tool_lock_snapshot(project_root: Path) -> ProjectToolLockSnapsh
             )
         ],
     )
+
+
+def load_project_mcp_server_configs(project_root: Path) -> dict[str, ProjectMCPServerConfig]:
+    """Load enabled project MCP server configs without resolving secrets."""
+
+    agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
+    configs: dict[str, ProjectMCPServerConfig] = {}
+    for server_id, entry in _iter_enabled_manifest_entries(
+        agent_root / "mcp.config.json",
+        id_field="server_id",
+    ):
+        config = _mcp_server_config_entry(server_id, entry)
+        if config is None:
+            continue
+        configs[server_id] = config
+    return configs
 
 
 def load_enabled_skill_ids(project_root: Path) -> set[str]:
@@ -773,11 +801,36 @@ def _mcp_lock_entry(entry: Mapping[str, object]) -> ProjectMCPLockEntry:
     )
 
 
+def _mcp_server_config_entry(
+    server_id: str,
+    entry: Mapping[str, object],
+) -> ProjectMCPServerConfig | None:
+    transport = _optional_string_manifest_field(entry, "transport")
+    command_or_url = _optional_string_manifest_field(entry, "command_or_url")
+    if transport is None or command_or_url is None:
+        return None
+    requires_approval = entry.get("requires_approval", False)
+    return ProjectMCPServerConfig(
+        server_id=server_id,
+        transport=transport,
+        command_or_url=command_or_url,
+        requires_approval=requires_approval if isinstance(requires_approval, bool) else False,
+        secret_ref=_optional_string_manifest_field(entry, "secret_ref"),
+    )
+
+
 def _string_manifest_field(entry: Mapping[str, object], field: str, *, default: str) -> str:
     value = entry.get(field)
     if isinstance(value, str) and value.strip() != "":
         return value.strip()
     return default
+
+
+def _optional_string_manifest_field(entry: Mapping[str, object], field: str) -> str | None:
+    value = entry.get(field)
+    if isinstance(value, str) and value.strip() != "":
+        return value.strip()
+    return None
 
 
 def _write_json_atomic(path: Path, payload: object) -> None:
@@ -817,6 +870,7 @@ __all__ = [
     "ProjectCreateResponse",
     "ProjectDocument",
     "ProjectMCPLockEntry",
+    "ProjectMCPServerConfig",
     "ProjectSkillLockEntry",
     "ProjectToolAvailability",
     "ProjectToolLockSnapshot",
@@ -826,6 +880,7 @@ __all__ = [
     "load_enabled_mcp_server_ids",
     "load_enabled_skill_ids",
     "load_enabled_skill_refs",
+    "load_project_mcp_server_configs",
     "load_project_tool_availability",
     "load_project_tool_lock_snapshot",
     "read_project",

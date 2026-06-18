@@ -15,6 +15,7 @@ import inspect
 import json
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import suppress
+from pathlib import Path
 from types import ModuleType
 from typing import Any, Literal, Protocol, TypeAlias, cast
 
@@ -29,6 +30,7 @@ from cw_runtime.adapters.base import (
     AttemptResumption,
     build_adapter_error,
 )
+from cw_runtime.harness import ProjectMCPServerConfig, load_project_mcp_server_configs
 from cw_runtime.model_router.router import AdapterCapabilities
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_schemas import ExecutionPack
@@ -872,7 +874,9 @@ def _claude_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str,
     requested_server_ids = _claude_requested_mcp_server_ids(pack)
     if not requested_server_ids:
         return {}
-    configured_servers = _configured_mcp_servers(config)
+    configured_servers = _project_mcp_servers(pack)
+    if configured_servers is None:
+        configured_servers = _configured_mcp_servers(config)
     missing_server_ids = [server_id for server_id in requested_server_ids if server_id not in configured_servers]
     if missing_server_ids:
         raise AdapterRuntimeError(
@@ -884,6 +888,72 @@ def _claude_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str,
             },
         )
     return {server_id: configured_servers[server_id] for server_id in requested_server_ids}
+
+
+def _project_mcp_servers(pack: ExecutionPack) -> dict[str, Any] | None:
+    project_root = _project_root_from_pack(pack)
+    if project_root is None:
+        return None
+    project_configs = load_project_mcp_server_configs(Path(project_root))
+    requested_server_ids = _claude_requested_mcp_server_ids(pack)
+    requested_configs = {
+        server_id: project_configs[server_id] for server_id in requested_server_ids if server_id in project_configs
+    }
+    _reject_project_mcp_configs_requiring_future_lifecycle(requested_configs)
+    return {
+        server_id: _claude_project_mcp_server_config(project_config)
+        for server_id, project_config in requested_configs.items()
+    }
+
+
+def _reject_project_mcp_configs_requiring_future_lifecycle(
+    project_configs: Mapping[str, ProjectMCPServerConfig],
+) -> None:
+    secret_server_ids = [
+        server_id for server_id, project_config in project_configs.items() if project_config.secret_ref
+    ]
+    approval_server_ids = [
+        server_id for server_id, project_config in project_configs.items() if project_config.requires_approval
+    ]
+    if not secret_server_ids and not approval_server_ids:
+        return
+    payload: dict[str, Any] = {}
+    if secret_server_ids:
+        payload["unresolved_secret_mcp_server_ids"] = secret_server_ids
+    if approval_server_ids:
+        payload["approval_required_mcp_server_ids"] = approval_server_ids
+    raise AdapterRuntimeError(
+        "AA_RUN_TOOL_NOT_FOUND",
+        "Project MCP server configuration requires lifecycle support not implemented by ClaudeCodeAdapter.",
+        payload=payload,
+    )
+
+
+def _claude_project_mcp_server_config(project_config: ProjectMCPServerConfig) -> dict[str, Any]:
+    transport = project_config.transport
+    if transport in {"http", "sse"}:
+        return {"type": transport, "url": project_config.command_or_url}
+    if transport == "stdio":
+        return {"command": project_config.command_or_url}
+    raise AdapterRuntimeError(
+        "AA_RUN_TOOL_NOT_FOUND",
+        "Project MCP server transport is not supported by ClaudeCodeAdapter.",
+        payload={
+            "server_id": project_config.server_id,
+            "transport": transport,
+            "supported_transports": ["http", "sse", "stdio"],
+        },
+    )
+
+
+def _project_root_from_pack(pack: ExecutionPack) -> str | None:
+    cw_metadata = pack.metadata.get("cw")
+    if not isinstance(cw_metadata, Mapping):
+        return None
+    project_root = cw_metadata.get("project_root")
+    if not isinstance(project_root, str) or project_root == "":
+        return None
+    return project_root
 
 
 def _claude_requested_mcp_server_ids(pack: ExecutionPack) -> list[str]:
