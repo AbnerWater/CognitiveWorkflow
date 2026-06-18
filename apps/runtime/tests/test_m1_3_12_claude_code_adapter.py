@@ -18,7 +18,7 @@ from cw_runtime.adapters import (
     RawClaudeCodeEvent,
     SessionFactory,
 )
-from cw_schemas.contract import ExecutionContract, NodeModelPolicy, PromptSection
+from cw_schemas.contract import ExecutionContract, MCPToolRef, NodeModelPolicy, PromptSection
 from cw_schemas.events import StreamEventBase
 from cw_schemas.packs import (
     ContextBudget,
@@ -27,6 +27,7 @@ from cw_schemas.packs import (
     ContextProvenance,
     ExecutionPack,
     StaticTextSource,
+    ToolsetSpec,
 )
 from cw_schemas.types import AdapterKind, AttemptState, CancelReason, Priority, ProviderKind, ResumptionKind
 
@@ -166,7 +167,13 @@ def _block_claude_agent_sdk_import(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(importlib, "import_module", fake_import_module)
 
 
-def _execution_pack(output_schema: dict[str, Any] | None = None) -> ExecutionPack:
+def _execution_pack(
+    output_schema: dict[str, Any] | None = None,
+    *,
+    allowed_tools: list[str] | None = None,
+    mcp_tools: list[MCPToolRef] | None = None,
+    effective_toolsets: ToolsetSpec | None = None,
+) -> ExecutionPack:
     return ExecutionPack(
         pack_id="exp_01",
         run_id="run_01",
@@ -176,6 +183,8 @@ def _execution_pack(output_schema: dict[str, Any] | None = None) -> ExecutionPac
             contract_id="ctr_exec",
             goal="Return a short answer",
             output_schema=output_schema or {},
+            allowed_tools=[] if allowed_tools is None else allowed_tools,
+            mcp_tools=[] if mcp_tools is None else mcp_tools,
             model_policy=NodeModelPolicy(primary_model_profile_id="claude-sonnet-default"),
             prompt=PromptSection(
                 system_prompt="You are running inside CW.",
@@ -220,6 +229,7 @@ def _execution_pack(output_schema: dict[str, Any] | None = None) -> ExecutionPac
             ),
         ),
         effective_model_profile_id="claude-sonnet-default",
+        effective_toolsets=ToolsetSpec() if effective_toolsets is None else effective_toolsets,
         cancel_token="tok_abc_01",
         correlation_id="trace_xyz",
     )
@@ -303,6 +313,38 @@ async def test_claude_code_adapter_streams_and_finalizes_completed_attempt() -> 
 
 
 @pytest.mark.asyncio
+async def test_claude_code_allowed_tools_project_contract_and_effective_toolsets() -> None:
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(session_factory=_factory_for(session))
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["Read", "Bash"],
+            effective_toolsets=ToolsetSpec(
+                builtin_tools=["Grep", "Read"],
+                mcp_server_ids=["github"],
+            ),
+            mcp_tools=[
+                MCPToolRef(server_id="db", tool_name="query"),
+                MCPToolRef(server_id="slack", tool_name="*"),
+            ],
+        )
+    )
+
+    await _collect(adapter.run(handle))
+
+    assert session.run_request is not None
+    assert session.run_request.allowed_tools == [
+        "Read",
+        "Bash",
+        "Grep",
+        "mcp__github__*",
+        "mcp__db__query",
+        "mcp__slack__*",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_claude_code_default_sdk_session_streams_and_finalizes(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fake_claude_agent_sdk(monkeypatch)
     FakeClaudeSDKClient.response_messages = [
@@ -350,6 +392,35 @@ async def test_claude_code_default_sdk_session_streams_and_finalizes(monkeypatch
     outcome = await adapter.finalize(handle)
     assert outcome.state == AttemptState.COMPLETED
     assert outcome.output == {"answer": "sdk"}
+
+
+@pytest.mark.asyncio
+async def test_claude_code_default_sdk_receives_allowed_tools_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_claude_agent_sdk(monkeypatch)
+    FakeClaudeSDKClient.response_messages = [
+        FakeResultMessage(result='{"answer":"sdk"}'),
+    ]
+    adapter = ClaudeCodeAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["Read"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["Grep"], mcp_server_ids=["github"]),
+            mcp_tools=[MCPToolRef(server_id="db", tool_name="query")],
+        )
+    )
+
+    await _collect(adapter.run(handle))
+
+    assert FakeClaudeSDKClient.instances
+    assert FakeClaudeSDKClient.instances[0].options.kwargs["allowed_tools"] == [
+        "Read",
+        "Grep",
+        "mcp__github__*",
+        "mcp__db__query",
+    ]
 
 
 @pytest.mark.asyncio

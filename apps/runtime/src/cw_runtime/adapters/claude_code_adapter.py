@@ -420,7 +420,7 @@ class ClaudeCodeAdapter:
             execution_pack_id=pack.pack_id,
             model_profile_id=pack.effective_model_profile_id,
             prompt=_render_prompt(pack),
-            allowed_tools=list(pack.effective_toolsets.builtin_tools),
+            allowed_tools=_claude_allowed_tools(pack),
             correlation_id=pack.correlation_id,
         )
 
@@ -854,6 +854,24 @@ def _prompt_parts(label: str, value: str | list[str] | None) -> list[str]:
     if isinstance(value, str):
         return [f"{label}:\n{value}"]
     return [f"{label}:\n" + "\n".join(value)]
+
+
+def _claude_allowed_tools(pack: ExecutionPack) -> list[str]:
+    contract = pack.node_contract_snapshot
+    allowed_tools: list[str] = []
+    allowed_tools.extend(contract.allowed_tools)
+    allowed_tools.extend(pack.effective_toolsets.builtin_tools)
+    allowed_tools.extend([_claude_mcp_server_tool(server_id) for server_id in pack.effective_toolsets.mcp_server_ids])
+    allowed_tools.extend(_claude_mcp_tool_ref(tool.server_id, tool.tool_name) for tool in contract.mcp_tools)
+    return _unique_strings(allowed_tools)
+
+
+def _claude_mcp_tool_ref(server_id: str, tool_name: str) -> str:
+    return _claude_mcp_server_tool(server_id) if tool_name == "*" else f"mcp__{server_id}__{tool_name}"
+
+
+def _claude_mcp_server_tool(server_id: str) -> str:
+    return f"mcp__{server_id}__*"
 
 
 def _build_sdk_client(sdk: ModuleType, request: ClaudeCodeRunRequest) -> object:
@@ -1330,6 +1348,16 @@ def _matches_json_schema_type(value: object, expected_type: str) -> bool:
 def _stable_hash(payload: object) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value and value not in seen:
+            result.append(value)
+            seen.add(value)
+    return result
 
 
 __all__ = [
