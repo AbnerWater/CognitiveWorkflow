@@ -6,6 +6,7 @@ import json
 import os
 import queue
 import shlex
+import sqlite3
 import subprocess
 import sys
 import textwrap
@@ -28,7 +29,9 @@ from cw_runtime.harness import (
     ProjectMCPHttpDiscoveryClient,
     ProjectMCPServerConfig,
     ProjectMCPStdioDiscoveryClient,
+    ProjectSecretStoreError,
     initialize_project,
+    load_project_mcp_secret_material,
     load_project_mcp_server_configs,
     load_project_tool_availability,
     load_project_tool_lock_snapshot,
@@ -68,6 +71,24 @@ def _write_json_value(path: Path, payload: object) -> None:
 
 def _write_text_value(path: Path, payload: str) -> None:
     path.write_text(payload, encoding="utf-8", newline="\n")
+
+
+def _write_secure_secret(project_root: Path, secret_id: str, encrypted_value: bytes) -> None:
+    secure_dir = project_root / ".agent-workflow" / "secure"
+    secure_dir.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(secure_dir / "secrets.encrypted.sqlite") as connection:
+        connection.execute(
+            "CREATE TABLE secrets("
+            "secret_id TEXT PRIMARY KEY, "
+            "alias TEXT, "
+            "value_encrypted BLOB NOT NULL, "
+            "scope TEXT, "
+            "created_at TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO secrets(secret_id, alias, value_encrypted, scope, created_at) VALUES (?, ?, ?, ?, ?)",
+            (secret_id, "test secret", encrypted_value, "project", "2026-06-19T00:00:00Z"),
+        )
 
 
 def _python_script_command(script_path: Path, *extra_args: str) -> str:
@@ -1494,6 +1515,71 @@ def test_project_mcp_server_configs_read_enabled_spec_fields_only(tmp_path: Path
             "secret_ref": "secure://mcp/local",
         },
     ]
+
+
+def test_project_mcp_secret_material_loads_from_secure_store(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_store_project"
+    initialize_project(_request("MCP Secret Store", project_root))
+    _write_secure_secret(project_root, "secure://mcp/local", b"encrypted-local-token")
+    decrypted_inputs: list[bytes] = []
+
+    def decrypt_secret(encrypted_value: bytes) -> bytes:
+        decrypted_inputs.append(encrypted_value)
+        return json.dumps(
+            {
+                "headers": {"Authorization": "Bearer fake-access-token"},
+                "env": {"CW_MCP_TOKEN": "fake-access-token"},
+            }
+        ).encode()
+
+    material = load_project_mcp_secret_material(
+        project_root,
+        "secure://mcp/local",
+        decrypt_secret=decrypt_secret,
+    )
+
+    assert decrypted_inputs == [b"encrypted-local-token"]
+    assert material is not None
+    assert material.model_dump(mode="json") == {
+        "headers": {"Authorization": "Bearer fake-access-token"},
+        "env": {"CW_MCP_TOKEN": "fake-access-token"},
+    }
+
+
+def test_project_mcp_secret_material_missing_store_or_row_returns_none(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_missing_project"
+    initialize_project(_request("MCP Secret Missing", project_root))
+    decrypt_calls: list[bytes] = []
+
+    def decrypt_secret(encrypted_value: bytes) -> bytes:
+        decrypt_calls.append(encrypted_value)
+        return b'{"headers":{"Authorization":"Bearer fake"}}'
+
+    assert load_project_mcp_secret_material(project_root, "secure://mcp/missing", decrypt_secret=decrypt_secret) is None
+    _write_secure_secret(project_root, "secure://mcp/other", b"encrypted-other-token")
+
+    assert load_project_mcp_secret_material(project_root, "secure://mcp/missing", decrypt_secret=decrypt_secret) is None
+    assert decrypt_calls == []
+
+
+def test_project_mcp_secret_material_invalid_plaintext_is_sanitized(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_invalid_project"
+    initialize_project(_request("MCP Secret Invalid", project_root))
+    _write_secure_secret(project_root, "secure://mcp/local", b"encrypted-local-token")
+
+    def decrypt_secret(encrypted_value: bytes) -> str:
+        assert encrypted_value == b"encrypted-local-token"
+        return '{"headers":{"Authorization":"fake secret should not leak"},"extra":"invalid"}'
+
+    with pytest.raises(ProjectSecretStoreError) as exc_info:
+        load_project_mcp_secret_material(
+            project_root,
+            "secure://mcp/local",
+            decrypt_secret=decrypt_secret,
+        )
+
+    assert "fake secret" not in str(exc_info.value)
+    assert "secure://mcp/local" not in str(exc_info.value)
 
 
 def test_update_manifest_json_blocks_direct_memory_write(tmp_path: Path) -> None:

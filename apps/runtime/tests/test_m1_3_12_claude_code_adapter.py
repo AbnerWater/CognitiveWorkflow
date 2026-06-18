@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
 from types import ModuleType
@@ -263,6 +264,24 @@ def _initialized_project_root(path: Path) -> Path:
 
 def _write_json_value(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
+def _write_secure_secret(project_root: Path, secret_id: str, encrypted_value: bytes) -> None:
+    secure_dir = project_root / ".agent-workflow" / "secure"
+    secure_dir.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(secure_dir / "secrets.encrypted.sqlite") as connection:
+        connection.execute(
+            "CREATE TABLE secrets("
+            "secret_id TEXT PRIMARY KEY, "
+            "alias TEXT, "
+            "value_encrypted BLOB NOT NULL, "
+            "scope TEXT, "
+            "created_at TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO secrets(secret_id, alias, value_encrypted, scope, created_at) VALUES (?, ?, ?, ?, ?)",
+            (secret_id, "test secret", encrypted_value, "project", "2026-06-19T00:00:00Z"),
+        )
 
 
 @pytest.mark.asyncio
@@ -549,6 +568,112 @@ async def test_claude_code_project_mcp_config_uses_secret_resolver(tmp_path: Pat
             "env": {"CW_MCP_TOKEN": "fake-access-token"},
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_claude_code_project_mcp_config_uses_secure_store_decryptor(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp_secure_store")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "secure_server",
+                "transport": "http",
+                "command_or_url": "https://mcp.example.test/secure",
+                "secret_ref": "secure://mcp/secure",
+            }
+        ],
+    )
+    _write_secure_secret(project_root, "secure://mcp/secure", b"encrypted-access-token")
+    decrypted_inputs: list[bytes] = []
+
+    def decrypt_secret(encrypted_value: bytes) -> str:
+        decrypted_inputs.append(encrypted_value)
+        return json.dumps(
+            {
+                "headers": {"Authorization": "Bearer fake-access-token"},
+                "env": {"CW_MCP_TOKEN": "fake-access-token"},
+            }
+        )
+
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(
+            adapter_id="claude_code",
+            settings={"project_mcp_secret_decryptor": decrypt_secret},
+        ),
+        session_factory=_factory_for(session),
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["secure_server"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.completed"]
+    assert decrypted_inputs == [b"encrypted-access-token"]
+    assert session.run_request is not None
+    assert session.run_request.mcp_servers == {
+        "secure_server": {
+            "type": "http",
+            "url": "https://mcp.example.test/secure",
+            "headers": {"Authorization": "Bearer fake-access-token"},
+            "env": {"CW_MCP_TOKEN": "fake-access-token"},
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_claude_code_project_mcp_secure_store_decryptor_error_fails_closed(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp_secure_store_error")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "secure_server",
+                "transport": "http",
+                "command_or_url": "https://mcp.example.test/secure",
+                "secret_ref": "secure://mcp/secure",
+            }
+        ],
+    )
+    _write_secure_secret(project_root, "secure://mcp/secure", b"encrypted-access-token")
+
+    def decrypt_secret(encrypted_value: bytes) -> str:
+        assert encrypted_value == b"encrypted-access-token"
+        return '{"headers":{"Authorization":"fake secret should not leak"},"extra":"invalid"}'
+
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(
+            adapter_id="claude_code",
+            settings={"project_mcp_secret_decryptor": decrypt_secret},
+        ),
+        session_factory=_factory_for(session),
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["secure_server"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert session.run_request is None
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["unresolved_secret_mcp_server_ids"] == ["secure_server"]
+    assert outcome.errors[0].payload["resolver_error_type"] == "ProjectSecretStoreError"
+    assert "fake secret" not in str(outcome.errors[0].payload)
+    assert "secure://mcp/secure" not in str(outcome.errors[0].payload)
 
 
 @pytest.mark.asyncio

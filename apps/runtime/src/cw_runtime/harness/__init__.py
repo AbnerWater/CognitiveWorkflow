@@ -33,6 +33,12 @@ from .project import (
     read_project,
     update_manifest_json,
 )
+from .secrets import (
+    ProjectMCPSecretMaterial,
+    ProjectSecretDecryptor,
+    ProjectSecretStoreError,
+    load_project_mcp_secret_material,
+)
 
 __all__ = [
     "HarnessError",
@@ -47,9 +53,12 @@ __all__ = [
     "ProjectMCPHealthCheck",
     "ProjectMCPHttpDiscoveryClient",
     "ProjectMCPLockEntry",
+    "ProjectMCPSecretMaterial",
     "ProjectMCPServerConfig",
     "ProjectMCPStdioDiscoveryClient",
     "ProjectMCPToolDiscovery",
+    "ProjectSecretDecryptor",
+    "ProjectSecretStoreError",
     "ProjectSkillLockEntry",
     "ProjectToolAvailability",
     "ProjectToolLockSnapshot",
@@ -59,6 +68,7 @@ __all__ = [
     "load_enabled_mcp_server_ids",
     "load_enabled_skill_ids",
     "load_enabled_skill_refs",
+    "load_project_mcp_secret_material",
     "load_project_mcp_server_configs",
     "load_project_tool_availability",
     "load_project_tool_lock_snapshot",

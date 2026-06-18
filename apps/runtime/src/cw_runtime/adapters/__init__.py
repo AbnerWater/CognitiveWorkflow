@@ -34,6 +34,7 @@ from .claude_code_adapter import (
     RawClaudeCodeEvent,
     SessionFactory,
     build_claude_code_descriptor,
+    build_claude_project_mcp_secret_resolver,
 )
 from .pydantic_ai_adapter import (
     PydanticAIAdapter,
@@ -94,6 +95,7 @@ __all__ = [
     "SessionFactory",
     "build_adapter_error",
     "build_claude_code_descriptor",
+    "build_claude_project_mcp_secret_resolver",
     "build_pydantic_ai_descriptor",
     "default_builtin_tool_functions",
     "default_builtin_tool_names",

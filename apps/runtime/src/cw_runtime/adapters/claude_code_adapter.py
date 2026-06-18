@@ -30,7 +30,12 @@ from cw_runtime.adapters.base import (
     AttemptResumption,
     build_adapter_error,
 )
-from cw_runtime.harness import ProjectMCPServerConfig, load_project_mcp_server_configs
+from cw_runtime.harness import (
+    ProjectMCPServerConfig,
+    ProjectSecretDecryptor,
+    load_project_mcp_secret_material,
+    load_project_mcp_server_configs,
+)
 from cw_runtime.model_router.router import AdapterCapabilities
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_schemas import ExecutionPack
@@ -909,13 +914,14 @@ def _project_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str
     project_root = _project_root_from_pack(pack)
     if project_root is None:
         return None
-    project_configs = load_project_mcp_server_configs(Path(project_root))
+    project_root_path = Path(project_root)
+    project_configs = load_project_mcp_server_configs(project_root_path)
     requested_server_ids = _claude_requested_mcp_server_ids(pack)
     requested_configs = {
         server_id: project_configs[server_id] for server_id in requested_server_ids if server_id in project_configs
     }
     secret_resolver = (
-        _project_mcp_secret_resolver(config)
+        _project_mcp_secret_resolver(config, project_root=project_root_path)
         if _project_mcp_configs_require_secret_resolution(requested_configs)
         else None
     )
@@ -965,10 +971,26 @@ def _reject_project_mcp_configs_requiring_future_lifecycle(
     )
 
 
-def _project_mcp_secret_resolver(config: AdapterConfig) -> ClaudeCodeMCPSecretResolver | None:
+def _project_mcp_secret_resolver(
+    config: AdapterConfig,
+    *,
+    project_root: Path,
+) -> ClaudeCodeMCPSecretResolver | None:
     raw_resolver = config.settings.get("project_mcp_secret_resolver")
     if raw_resolver is None:
-        return None
+        raw_decryptor = config.settings.get("project_mcp_secret_decryptor")
+        if raw_decryptor is None:
+            return None
+        if not callable(raw_decryptor):
+            raise AdapterRuntimeError(
+                "AA_RUN_INTERNAL",
+                "ClaudeCodeAdapter settings.project_mcp_secret_decryptor must be callable.",
+                payload={"decryptor_type": type(raw_decryptor).__name__},
+            )
+        return build_claude_project_mcp_secret_resolver(
+            project_root,
+            decrypt_secret=cast(ProjectSecretDecryptor, raw_decryptor),
+        )
     if not callable(raw_resolver):
         raise AdapterRuntimeError(
             "AA_RUN_INTERNAL",
@@ -976,6 +998,30 @@ def _project_mcp_secret_resolver(config: AdapterConfig) -> ClaudeCodeMCPSecretRe
             payload={"resolver_type": type(raw_resolver).__name__},
         )
     return cast(ClaudeCodeMCPSecretResolver, raw_resolver)
+
+
+def build_claude_project_mcp_secret_resolver(
+    project_root: str | Path,
+    *,
+    decrypt_secret: ProjectSecretDecryptor,
+) -> ClaudeCodeMCPSecretResolver:
+    """Build a Claude MCP resolver backed by the project secure secret store."""
+
+    project_root_path = Path(project_root)
+
+    def resolve_secret(project_config: ProjectMCPServerConfig) -> ClaudeCodeMCPSecretResolution | None:
+        if project_config.secret_ref is None:
+            return None
+        material = load_project_mcp_secret_material(
+            project_root_path,
+            project_config.secret_ref,
+            decrypt_secret=decrypt_secret,
+        )
+        if material is None:
+            return None
+        return ClaudeCodeMCPSecretResolution(headers=dict(material.headers), env=dict(material.env))
+
+    return resolve_secret
 
 
 def _project_mcp_secret_resolution(
