@@ -157,6 +157,7 @@ class AdapterCapabilities(BaseModel):
     cancel: bool
     evidence_lookup_tool: bool
     model_settings_passthrough: set[str] = Field(default_factory=set)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AdapterDescriptor(BaseModel):
@@ -690,20 +691,31 @@ def _default_adapters() -> list[AdapterDescriptor]:
             adapter_id="pydantic_ai",
             adapter_version="0.1.0",
             capabilities=AdapterCapabilities(
-                kinds={AdapterKind.CHAT, AdapterKind.MODEL_ONLY},
+                kinds={AdapterKind.CHAT},
                 provider_kinds={ProviderKind.CLOUD, ProviderKind.PRIVATE, ProviderKind.LOCAL},
                 structured_output=True,
                 streaming=True,
                 tool_call=True,
-                mcp=True,
-                human_in_the_loop=True,
-                deferred_tool_results=True,
-                multi_modal={"image", "document"},
+                mcp=False,
+                human_in_the_loop=False,
+                deferred_tool_results=False,
+                multi_modal=set(),
                 long_context_tokens=200_000,
                 max_tool_iterations=16,
-                cancel=True,
+                cancel=False,
                 evidence_lookup_tool=True,
                 model_settings_passthrough=common_settings,
+                metadata={
+                    "cw": {
+                        "supported_builtin_tools": [
+                            "evidence_lookup",
+                            "file_io",
+                            "python_sandbox",
+                            "web_fetch",
+                        ],
+                        "supports_unlisted_builtin_tools": False,
+                    }
+                },
             ),
             priority=10,
         ),
@@ -850,7 +862,7 @@ def _apply_capability_filter(
     kept: list[_Candidate] = []
     removed: list[RemovedCandidate] = []
     for candidate in candidates:
-        reason = _capability_miss_reason(request.requirement, candidate)
+        reason = _capability_miss_reason(request, candidate)
         if reason is None:
             kept.append(candidate)
         else:
@@ -858,7 +870,8 @@ def _apply_capability_filter(
     return kept, removed
 
 
-def _capability_miss_reason(requirement: NodeCapabilityRequirement, candidate: _Candidate) -> str | None:
+def _capability_miss_reason(request: RoutingRequest, candidate: _Candidate) -> str | None:
+    requirement = request.requirement
     profile_caps = candidate.profile.capabilities
     adapter_caps = candidate.adapter.capabilities
     if profile_caps.max_context_tokens < requirement.context_required_tokens:
@@ -873,6 +886,11 @@ def _capability_miss_reason(requirement: NodeCapabilityRequirement, candidate: _
         not adapter_caps.tool_call or not profile_caps.tool_call
     ):
         return "MR_CAPABILITY_NOT_MET:tool_call"
+    if requirement.tool_complexity in {"simple", "complex"} and _unsupported_builtin_tools(
+        request.node_contract_snapshot.allowed_tools,
+        adapter_caps,
+    ):
+        return "MR_CAPABILITY_NOT_MET:unsupported_builtin_tools"
     if requirement.tool_complexity == "complex" and not (adapter_caps.mcp or adapter_caps.evidence_lookup_tool):
         return "MR_CAPABILITY_NOT_MET:complex_tools"
     if not requirement.multi_modal_required.issubset(adapter_caps.multi_modal & profile_caps.multi_modal):
@@ -882,6 +900,21 @@ def _capability_miss_reason(requirement: NodeCapabilityRequirement, candidate: _
     if requirement.human_required and not adapter_caps.human_in_the_loop:
         return "MR_CAPABILITY_NOT_MET:human_in_the_loop"
     return None
+
+
+def _unsupported_builtin_tools(allowed_tools: Sequence[str], adapter_caps: AdapterCapabilities) -> list[str]:
+    if not allowed_tools:
+        return []
+    cw_metadata = adapter_caps.metadata.get("cw")
+    if not isinstance(cw_metadata, Mapping):
+        return []
+    if cw_metadata.get("supports_unlisted_builtin_tools") is True:
+        return []
+    raw_supported = cw_metadata.get("supported_builtin_tools")
+    if isinstance(raw_supported, str) or not isinstance(raw_supported, Sequence):
+        return []
+    supported = {item for item in raw_supported if isinstance(item, str)}
+    return [tool_id for tool_id in allowed_tools if tool_id not in supported]
 
 
 def _apply_node_policy(

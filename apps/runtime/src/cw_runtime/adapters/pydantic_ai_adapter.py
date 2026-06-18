@@ -486,6 +486,12 @@ class PydanticAIAdapter:
             cancel=False,
             evidence_lookup_tool=True,
             model_settings_passthrough=common_settings,
+            metadata={
+                "cw": {
+                    "supported_builtin_tools": list(_adapter_owned_builtin_tool_names()),
+                    "supports_unlisted_builtin_tools": external_tooling_enabled,
+                }
+            },
         )
 
     async def prepare(self, execution_pack: ExecutionPack) -> AttemptHandle:
@@ -1572,6 +1578,10 @@ class PydanticAIAdapter:
 
 def build_pydantic_ai_descriptor() -> AdapterDescriptor:
     return PydanticAIAdapter.descriptor()
+
+
+def _adapter_owned_builtin_tool_names() -> tuple[str, ...]:
+    return tuple(sorted({"evidence_lookup", *default_builtin_tool_names()}))
 
 
 def _render_user_prompt(pack: ExecutionPack) -> str:

@@ -10,6 +10,8 @@ import pytest
 
 from cw_runtime.harness import ProjectCreateRequest, initialize_project
 from cw_runtime.model_router import (
+    AdapterCapabilities,
+    AdapterDescriptor,
     ModelRouterError,
     ProjectModelSettings,
     RoutingEscalationTrigger,
@@ -20,7 +22,7 @@ from cw_runtime.model_router import (
 from cw_runtime.runner import ExecutionAdvanceInput, NodeAdvanceRequest, advance_workflow_run
 from cw_runtime.runs import WorkflowRunStartRequest, create_workflow_run
 from cw_schemas.contract import ExecutionContract
-from cw_schemas.types import ExecutionMode, ProviderKind
+from cw_schemas.types import AdapterKind, ExecutionMode, ProviderKind
 from cw_schemas.workflow import WorkflowModelPolicy
 
 _PROMPT: dict[str, Any] = {
@@ -35,21 +37,23 @@ def _execution_contract(
     escalation_chain: list[str] | None = None,
     model_settings: dict[str, Any] | None = None,
     forbid_remote_models: bool = False,
+    allowed_tools: list[str] | None = None,
 ) -> ExecutionContract:
-    return ExecutionContract.model_validate(
-        {
-            "contract_id": "ctr_execute",
-            "contract_kind": "execution",
-            "goal": "Execute through ModelRouter",
-            "model_policy": {
-                "primary_model_profile_id": primary_model_profile_id,
-                "escalation_chain": [] if escalation_chain is None else escalation_chain,
-                "model_settings": {} if model_settings is None else model_settings,
-            },
-            "prompt": _PROMPT,
-            "forbid_remote_models": forbid_remote_models,
-        }
-    )
+    payload: dict[str, Any] = {
+        "contract_id": "ctr_execute",
+        "contract_kind": "execution",
+        "goal": "Execute through ModelRouter",
+        "model_policy": {
+            "primary_model_profile_id": primary_model_profile_id,
+            "escalation_chain": [] if escalation_chain is None else escalation_chain,
+            "model_settings": {} if model_settings is None else model_settings,
+        },
+        "prompt": _PROMPT,
+        "forbid_remote_models": forbid_remote_models,
+    }
+    if allowed_tools is not None:
+        payload["allowed_tools"] = allowed_tools
+    return ExecutionContract.model_validate(payload)
 
 
 def _workflow_policy(
@@ -184,6 +188,44 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _pydantic_ai_route_adapter(
+    *,
+    supported_builtin_tools: list[str] | None = None,
+    supports_unlisted_builtin_tools: bool = False,
+) -> AdapterDescriptor:
+    return AdapterDescriptor(
+        adapter_id="pydantic_ai",
+        adapter_version="0.1.0",
+        capabilities=AdapterCapabilities(
+            kinds={AdapterKind.CHAT},
+            provider_kinds={ProviderKind.CLOUD, ProviderKind.PRIVATE, ProviderKind.LOCAL},
+            structured_output=True,
+            streaming=True,
+            tool_call=True,
+            mcp=False,
+            human_in_the_loop=False,
+            deferred_tool_results=False,
+            multi_modal=set(),
+            long_context_tokens=200_000,
+            max_tool_iterations=16,
+            cancel=False,
+            evidence_lookup_tool=True,
+            model_settings_passthrough={"temperature", "top_p", "max_tokens", "reasoning_effort", "seed"},
+            metadata={
+                "cw": {
+                    "supported_builtin_tools": (
+                        ["evidence_lookup", "file_io", "python_sandbox", "web_fetch"]
+                        if supported_builtin_tools is None
+                        else supported_builtin_tools
+                    ),
+                    "supports_unlisted_builtin_tools": supports_unlisted_builtin_tools,
+                }
+            },
+        ),
+        priority=10,
+    )
+
+
 def test_model_router_selects_explicit_primary_without_forcing_escalation() -> None:
     project_settings = ProjectModelSettings()
     decision = route_model(
@@ -208,6 +250,107 @@ def test_model_router_prefers_workflow_default_for_auto_primary() -> None:
 
     assert decision.model_profile_id == "claude-sonnet-default"
     assert decision.adapter_id == "pydantic_ai"
+
+
+def test_model_router_allows_pydantic_ai_supported_builtin_tool_name() -> None:
+    project_settings = ProjectModelSettings(default_model_profile_id="claude-sonnet-default")
+    request = _routing_request(
+        contract=_execution_contract(
+            primary_model_profile_id="claude-sonnet-default",
+            allowed_tools=["web_fetch"],
+        ),
+        project_settings=project_settings,
+        workflow_policy=_workflow_policy(default_model_profile_id="claude-sonnet-default"),
+    )
+
+    decision = route_model(
+        request,
+        resolve_model_profile_registry(project_settings),
+        adapters=[_pydantic_ai_route_adapter()],
+    )
+
+    assert decision.adapter_id == "pydantic_ai"
+    assert decision.model_profile_id == "claude-sonnet-default"
+
+
+def test_model_router_rejects_pydantic_ai_unsupported_builtin_tool_name() -> None:
+    project_settings = ProjectModelSettings(default_model_profile_id="claude-sonnet-default")
+    request = _routing_request(
+        contract=_execution_contract(
+            primary_model_profile_id="claude-sonnet-default",
+            allowed_tools=["custom_builtin"],
+        ),
+        project_settings=project_settings,
+        workflow_policy=_workflow_policy(default_model_profile_id="claude-sonnet-default"),
+    )
+
+    with pytest.raises(ModelRouterError) as exc_info:
+        route_model(
+            request,
+            resolve_model_profile_registry(project_settings),
+            adapters=[_pydantic_ai_route_adapter()],
+        )
+
+    assert exc_info.value.error_code == "MR_CAPABILITY_NOT_MET"
+    removed = exc_info.value.details["removed"]
+    assert isinstance(removed, list)
+    assert removed
+    first_removed = removed[0]
+    assert isinstance(first_removed, dict)
+    assert first_removed["reason"] == "MR_CAPABILITY_NOT_MET:unsupported_builtin_tools"
+
+
+def test_model_router_treats_empty_supported_builtin_list_as_closed() -> None:
+    project_settings = ProjectModelSettings(default_model_profile_id="claude-sonnet-default")
+    request = _routing_request(
+        contract=_execution_contract(
+            primary_model_profile_id="claude-sonnet-default",
+            allowed_tools=["web_fetch"],
+        ),
+        project_settings=project_settings,
+        workflow_policy=_workflow_policy(default_model_profile_id="claude-sonnet-default"),
+    )
+
+    with pytest.raises(ModelRouterError) as exc_info:
+        route_model(
+            request,
+            resolve_model_profile_registry(project_settings),
+            adapters=[_pydantic_ai_route_adapter(supported_builtin_tools=[])],
+        )
+
+    assert exc_info.value.error_code == "MR_CAPABILITY_NOT_MET"
+    removed = exc_info.value.details["removed"]
+    assert isinstance(removed, list)
+    assert removed
+    first_removed = removed[0]
+    assert isinstance(first_removed, dict)
+    assert first_removed["reason"] == "MR_CAPABILITY_NOT_MET:unsupported_builtin_tools"
+
+
+def test_model_router_keeps_adapter_with_open_builtin_toolset_metadata() -> None:
+    project_settings = ProjectModelSettings(default_model_profile_id="claude-sonnet-default")
+    request = _routing_request(
+        contract=_execution_contract(
+            primary_model_profile_id="claude-sonnet-default",
+            allowed_tools=["custom_builtin"],
+        ),
+        project_settings=project_settings,
+        workflow_policy=_workflow_policy(default_model_profile_id="claude-sonnet-default"),
+    )
+
+    decision = route_model(
+        request,
+        resolve_model_profile_registry(project_settings),
+        adapters=[
+            _pydantic_ai_route_adapter(
+                supported_builtin_tools=["evidence_lookup", "web_fetch"],
+                supports_unlisted_builtin_tools=True,
+            )
+        ],
+    )
+
+    assert decision.adapter_id == "pydantic_ai"
+    assert decision.model_profile_id == "claude-sonnet-default"
 
 
 def test_model_router_reports_provider_kind_filter_exhaustion() -> None:

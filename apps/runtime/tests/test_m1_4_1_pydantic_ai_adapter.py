@@ -768,6 +768,12 @@ async def test_pydantic_ai_adapter_capabilities_descriptor_and_prepare() -> None
     assert capabilities.multi_modal == set()
     assert capabilities.max_tool_iterations == 0
     assert capabilities.cancel is False
+    assert capabilities.metadata == {
+        "cw": {
+            "supported_builtin_tools": ["evidence_lookup", "file_io", "python_sandbox", "web_fetch"],
+            "supports_unlisted_builtin_tools": False,
+        }
+    }
 
     descriptor = build_pydantic_ai_descriptor()
     assert descriptor.adapter_id == "pydantic_ai"
@@ -776,6 +782,12 @@ async def test_pydantic_ai_adapter_capabilities_descriptor_and_prepare() -> None
     assert descriptor.capabilities.human_in_the_loop is False
     assert descriptor.capabilities.deferred_tool_results is False
     assert descriptor.capabilities.max_tool_iterations == 16
+    assert descriptor.capabilities.metadata == {
+        "cw": {
+            "supported_builtin_tools": ["evidence_lookup", "file_io", "python_sandbox", "web_fetch"],
+            "supports_unlisted_builtin_tools": False,
+        }
+    }
 
     handle = await adapter.prepare(_execution_pack())
     assert handle.adapter_id == "pydantic_ai"
@@ -797,6 +809,7 @@ def test_pydantic_ai_adapter_capabilities_reflect_configured_toolset_factory() -
     assert capabilities.human_in_the_loop is True
     assert capabilities.deferred_tool_results is True
     assert capabilities.cancel is False
+    assert capabilities.metadata["cw"]["supports_unlisted_builtin_tools"] is True
 
 
 @pytest.mark.asyncio
