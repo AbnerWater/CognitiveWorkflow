@@ -23,6 +23,7 @@ from cw_runtime.adapters import (
     PydanticAIToolsets,
     RawPydanticAIEvent,
     build_pydantic_ai_descriptor,
+    web_fetch,
 )
 from cw_schemas.contract import (
     EvidenceRequirement,
@@ -760,7 +761,11 @@ async def test_pydantic_ai_adapter_capabilities_descriptor_and_prepare() -> None
 
     descriptor = build_pydantic_ai_descriptor()
     assert descriptor.adapter_id == "pydantic_ai"
-    assert descriptor.capabilities == capabilities
+    assert descriptor.capabilities.tool_call is True
+    assert descriptor.capabilities.mcp is False
+    assert descriptor.capabilities.human_in_the_loop is False
+    assert descriptor.capabilities.deferred_tool_results is False
+    assert descriptor.capabilities.max_tool_iterations == 16
 
     handle = await adapter.prepare(_execution_pack())
     assert handle.adapter_id == "pydantic_ai"
@@ -1963,6 +1968,56 @@ async def test_pydantic_ai_default_sdk_session_auto_injects_evidence_lookup_tool
 
 
 @pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_auto_injects_web_fetch_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["web_fetch"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["web_fetch"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert len(sdk_toolsets) == 1
+    web_fetch_toolset = sdk_toolsets[0]
+    assert isinstance(web_fetch_toolset, FakeSDKFunctionToolset)
+    assert web_fetch_toolset.id == "cw_builtin_tools"
+    assert web_fetch_toolset.functions == [("web_fetch", web_fetch)]
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_effective_builtin_not_allowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(builtin_tools=["web_fetch"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert len(FakeSDKAgent.instances) == 0
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_PREPARE_INVALID_PACK"
+    assert outcome.errors[0].payload["unauthorized_builtin_tools"] == ["web_fetch"]
+    assert outcome.errors[0].payload["allowed_tools"] == []
+
+
+@pytest.mark.asyncio
 async def test_pydantic_ai_default_sdk_session_maps_evidence_lookup_miss_to_failed_attempt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2025,6 +2080,41 @@ async def test_pydantic_ai_default_sdk_session_keeps_evidence_lookup_out_of_exte
     sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
     assert isinstance(sdk_toolsets[0], FakeSDKFunctionToolset)
     assert sdk_toolsets[0].functions[0][0] == "evidence_lookup"
+    assert sdk_toolsets[1] is function_toolset
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_keeps_web_fetch_out_of_external_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    function_toolset = FakeSDKToolset("function")
+    captured_toolsets: PydanticAIToolsetRequest | None = None
+
+    def toolset_factory(_sdk: ModuleType, toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        nonlocal captured_toolsets
+        captured_toolsets = toolsets
+        return PydanticAIToolsets(function_toolsets=(function_toolset,))
+
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["web_fetch", "python_sandbox"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["web_fetch", "python_sandbox"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    assert captured_toolsets is not None
+    assert captured_toolsets.builtin_tools == ["python_sandbox"]
+    assert captured_toolsets.skill_ids_resolved == []
+    assert captured_toolsets.mcp_tools == []
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert isinstance(sdk_toolsets[0], FakeSDKFunctionToolset)
+    assert sdk_toolsets[0].functions == [("web_fetch", web_fetch)]
     assert sdk_toolsets[1] is function_toolset
 
 

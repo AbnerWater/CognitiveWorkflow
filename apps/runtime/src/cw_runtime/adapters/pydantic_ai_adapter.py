@@ -29,6 +29,7 @@ from cw_runtime.adapters.base import (
     AttemptResumption,
     build_adapter_error,
 )
+from cw_runtime.adapters.builtin_tools import default_builtin_tool_functions, default_builtin_tool_names
 from cw_runtime.model_router.router import AdapterCapabilities
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_schemas import ExecutionPack
@@ -462,16 +463,18 @@ class PydanticAIAdapter:
 
     def capabilities(self) -> AdapterCapabilities:
         common_settings = {"temperature", "top_p", "max_tokens", "reasoning_effort", "seed"}
-        tooling_enabled = self._toolset_factory is not None
+        adapter_owned_tooling_enabled = self._session_factory is None and bool(default_builtin_tool_names())
+        tooling_enabled = adapter_owned_tooling_enabled or self._toolset_factory is not None
+        external_tooling_enabled = self._toolset_factory is not None
         return AdapterCapabilities(
             kinds={AdapterKind.CHAT},
             provider_kinds={ProviderKind.CLOUD, ProviderKind.PRIVATE, ProviderKind.LOCAL},
             structured_output=True,
             streaming=True,
             tool_call=tooling_enabled,
-            mcp=tooling_enabled,
-            human_in_the_loop=tooling_enabled,
-            deferred_tool_results=tooling_enabled,
+            mcp=external_tooling_enabled,
+            human_in_the_loop=external_tooling_enabled,
+            deferred_tool_results=external_tooling_enabled,
             multi_modal=set(),
             long_context_tokens=200_000,
             max_tool_iterations=16 if tooling_enabled else 0,
@@ -525,7 +528,11 @@ class PydanticAIAdapter:
             },
         )
 
-        request = self._run_request(handle)
+        try:
+            request = self._run_request(handle)
+        except AdapterRuntimeError as exc:
+            yield self._failed_event_from_exception(handle, exc)
+            return
         model_retry_attempts = 0
         while True:
             emitted_raw_events = 0
@@ -1592,7 +1599,7 @@ def _prompt_text(value: str | list[str] | None) -> str | None:
 
 def _toolset_request(pack: ExecutionPack) -> PydanticAIToolsetRequest:
     contract = pack.node_contract_snapshot
-    builtin_tools = _unique_strings([*pack.effective_toolsets.builtin_tools, *contract.allowed_tools])
+    builtin_tools = _authorized_builtin_tools(pack)
     if _should_enable_evidence_lookup(pack):
         builtin_tools = _unique_strings([*builtin_tools, "evidence_lookup"])
     skill_ids_resolved = list(pack.effective_toolsets.skill_ids_resolved)
@@ -1621,7 +1628,7 @@ def _should_enable_evidence_lookup(pack: ExecutionPack) -> bool:
     if pack.evidence_pack is None:
         return False
     contract = pack.node_contract_snapshot
-    requested_tools = {*pack.effective_toolsets.builtin_tools, *contract.allowed_tools}
+    requested_tools = set(contract.allowed_tools)
     return bool(contract.evidence_requirements) or "evidence_lookup" in requested_tools
 
 
@@ -1631,6 +1638,29 @@ def _evidence_pack_payload(pack: ExecutionPack) -> dict[str, Any] | None:
     if pack.evidence_pack is None:
         return None
     return pack.evidence_pack.model_dump(mode="json")
+
+
+def _authorized_builtin_tools(pack: ExecutionPack) -> list[str]:
+    contract = pack.node_contract_snapshot
+    contract_allowed_tools = _unique_strings(contract.allowed_tools)
+    effective_builtin_tools = _unique_strings(pack.effective_toolsets.builtin_tools)
+    if not effective_builtin_tools:
+        return contract_allowed_tools
+
+    authorized_tool_ids = set(contract_allowed_tools)
+    if contract.evidence_requirements:
+        authorized_tool_ids.add("evidence_lookup")
+    unauthorized_tool_ids = [tool_id for tool_id in effective_builtin_tools if tool_id not in authorized_tool_ids]
+    if unauthorized_tool_ids:
+        raise AdapterRuntimeError(
+            "AA_PREPARE_INVALID_PACK",
+            "ExecutionPack effective builtin tools exceed NodeContract.allowed_tools.",
+            payload={
+                "unauthorized_builtin_tools": unauthorized_tool_ids,
+                "allowed_tools": contract_allowed_tools,
+            },
+        )
+    return effective_builtin_tools
 
 
 def _build_sdk_agent(
@@ -1710,14 +1740,21 @@ def _sdk_toolsets(
     evidence_pack: Mapping[str, Any] | None,
 ) -> list[object]:
     adapter_toolsets: list[object] = []
-    factory_toolset_request = toolset_request
-    if evidence_pack is not None and "evidence_lookup" in toolset_request.builtin_tools:
-        adapter_toolsets.append(
-            _sdk_builtin_function_toolset(sdk, [("evidence_lookup", _evidence_lookup_tool(evidence_pack))])
-        )
+    adapter_builtin_functions, adapter_owned_builtin_tool_ids = _adapter_owned_builtin_tool_functions(
+        toolset_request,
+        evidence_pack,
+    )
+    if adapter_builtin_functions:
+        adapter_toolsets.append(_sdk_builtin_function_toolset(sdk, adapter_builtin_functions))
         factory_toolset_request = toolset_request.model_copy(
-            update={"builtin_tools": [tool for tool in toolset_request.builtin_tools if tool != "evidence_lookup"]}
+            update={
+                "builtin_tools": [
+                    tool for tool in toolset_request.builtin_tools if tool not in adapter_owned_builtin_tool_ids
+                ]
+            }
         )
+    else:
+        factory_toolset_request = toolset_request
 
     if not _has_toolset_request(factory_toolset_request):
         return adapter_toolsets
@@ -1788,6 +1825,23 @@ def _factory_sdk_toolsets(
 
     mcp_toolsets = _approval_wrapped_mcp_toolsets(sdk, toolset_request.mcp_tools, mcp_toolsets_by_server)
     return [*function_toolsets, *mcp_toolsets]
+
+
+def _adapter_owned_builtin_tool_functions(
+    toolset_request: PydanticAIToolsetRequest,
+    evidence_pack: Mapping[str, Any] | None,
+) -> tuple[list[tuple[str, PydanticAIBuiltinToolFunc]], set[str]]:
+    default_builtin_functions = default_builtin_tool_functions()
+    functions: list[tuple[str, PydanticAIBuiltinToolFunc]] = []
+    handled_tool_ids: set[str] = set()
+    for tool_id in toolset_request.builtin_tools:
+        if tool_id == "evidence_lookup" and evidence_pack is not None:
+            functions.append((tool_id, _evidence_lookup_tool(evidence_pack)))
+            handled_tool_ids.add(tool_id)
+        elif tool_id in default_builtin_functions:
+            functions.append((tool_id, default_builtin_functions[tool_id]))
+            handled_tool_ids.add(tool_id)
+    return functions, handled_tool_ids
 
 
 def _sdk_builtin_function_toolset(

@@ -15,6 +15,7 @@ from .base import (
     HumanDecisionResolution,
     build_adapter_error,
 )
+from .builtin_tools import BuiltinToolFunc, default_builtin_tool_functions, default_builtin_tool_names, web_fetch
 from .claude_code_adapter import (
     ClaudeCodeAdapter,
     ClaudeCodeResumeRequest,
@@ -55,6 +56,7 @@ __all__ = [
     "AgentAdapterErrorCode",
     "AttemptHandle",
     "AttemptResumption",
+    "BuiltinToolFunc",
     "ClaudeCodeAdapter",
     "ClaudeCodeResumeRequest",
     "ClaudeCodeRunRequest",
@@ -82,4 +84,7 @@ __all__ = [
     "build_adapter_error",
     "build_claude_code_descriptor",
     "build_pydantic_ai_descriptor",
+    "default_builtin_tool_functions",
+    "default_builtin_tool_names",
+    "web_fetch",
 ]
