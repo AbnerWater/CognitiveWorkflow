@@ -434,6 +434,7 @@ async def test_claude_code_default_sdk_session_streams_and_finalizes(monkeypatch
     assert "Return a short answer" in client.queries[0]
     assert client.options.kwargs["allowed_tools"] == []
     assert client.options.kwargs["mcp_servers"] == {}
+    assert client.options.kwargs["permission_mode"] == "dontAsk"
     assert client.options.kwargs["setting_sources"] == []
     assert client.options.kwargs["system_prompt"] == {"type": "preset", "preset": "claude_code"}
 
@@ -473,6 +474,7 @@ async def test_claude_code_default_sdk_receives_allowed_tools_projection(
         "github": {"type": "http", "url": "https://mcp.example.test/github"},
         "db": {"command": "db-mcp", "args": ["--stdio"]},
     }
+    assert FakeClaudeSDKClient.instances[0].options.kwargs["permission_mode"] == "dontAsk"
 
 
 @pytest.mark.asyncio

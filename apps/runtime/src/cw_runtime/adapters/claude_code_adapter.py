@@ -957,6 +957,7 @@ def _sdk_options_kwargs(request: ClaudeCodeRunRequest) -> dict[str, Any]:
         "tools": {"type": "preset", "preset": "claude_code"},
         "allowed_tools": list(request.allowed_tools),
         "mcp_servers": dict(request.mcp_servers),
+        "permission_mode": "dontAsk",
         "system_prompt": {"type": "preset", "preset": "claude_code"},
         "setting_sources": [],
     }
