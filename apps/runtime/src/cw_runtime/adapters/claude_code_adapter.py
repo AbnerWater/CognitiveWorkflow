@@ -1,15 +1,21 @@
 """Claude Code AgentAdapter foundation.
 
-This W1.3 slice defines the lifecycle and event translation seam without taking
-a production dependency on a Claude Code SDK. A real SDK-backed session can be
-injected later behind ``ClaudeCodeSession``.
+The adapter keeps the public entry point importable without requiring the
+optional Claude Agent SDK in the default runtime install. Tests can still inject
+``ClaudeCodeSession`` directly, while the default path lazy-loads the SDK only
+when a prepared attempt is actually run.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import importlib
+import inspect
 import json
 from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import suppress
+from types import ModuleType
 from typing import Any, Literal, Protocol, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -86,6 +92,67 @@ class ClaudeCodeSession(Protocol):
 SessionFactory: TypeAlias = Callable[[], ClaudeCodeSession]
 
 
+class ClaudeCodeSDKSession:
+    """Default Claude Agent SDK-backed session.
+
+    The SDK remains optional: importing this module does not import
+    ``claude_agent_sdk``. The dependency is resolved only when this session is
+    first used.
+    """
+
+    def __init__(self, sdk_module: ModuleType | None = None) -> None:
+        self._sdk_module = sdk_module
+        self._clients: dict[str, object] = {}
+
+    async def run(self, request: ClaudeCodeRunRequest) -> AsyncIterator[RawClaudeCodeEvent]:
+        sdk = self._sdk()
+        client = _build_sdk_client(sdk, request)
+        self._clients[request.handle_id] = client
+        await _connect_sdk_client(client)
+        await _query_sdk_client(client, request.prompt)
+        async for raw_event in _receive_sdk_client_raw_events(client):
+            yield raw_event
+
+    async def resume(self, request: ClaudeCodeResumeRequest) -> AsyncIterator[RawClaudeCodeEvent]:
+        client = self._clients.get(request.handle_id)
+        if client is None:
+            raise AdapterRuntimeError(
+                "AA_RESUME_INVALID_KIND",
+                "Claude Agent SDK resume requires an existing client session.",
+                payload={"handle_id": request.handle_id, "kind": request.resumption.kind.value},
+            )
+        await _query_sdk_client(client, _resume_prompt(request.resumption))
+        async for raw_event in _receive_sdk_client_raw_events(client):
+            yield raw_event
+
+    async def cancel(self, handle_id: str, reason: CancelReason) -> None:
+        client = self._clients.get(handle_id)
+        if client is None:
+            return
+        if await _call_optional_async_method(client, "interrupt"):
+            return
+        await _close_sdk_client(client)
+
+    async def aclose(self) -> None:
+        for client in list(self._clients.values()):
+            with suppress(Exception):
+                await _close_sdk_client(client)
+        self._clients.clear()
+
+    def _sdk(self) -> ModuleType:
+        if self._sdk_module is not None:
+            return self._sdk_module
+        try:
+            self._sdk_module = importlib.import_module("claude_agent_sdk")
+        except ImportError as exc:
+            raise AdapterRuntimeError(
+                "AA_RUN_INTERNAL",
+                "Claude Agent SDK optional dependency is not installed; install claude-agent-sdk before using the default ClaudeCodeAdapter session.",
+                payload={"module": "claude_agent_sdk", "package": "claude-agent-sdk"},
+            ) from exc
+        return self._sdk_module
+
+
 class ClaudeCodeAdapter:
     """Phase-1 Claude Code adapter foundation."""
 
@@ -105,6 +172,7 @@ class ClaudeCodeAdapter:
         self._outputs: dict[str, dict[str, Any]] = {}
         self._errors: dict[str, list[AdapterError]] = {}
         self._stream_seq: dict[str, int] = {}
+        self._cancel_events: dict[str, asyncio.Event] = {}
 
     @property
     def adapter_id(self) -> str:
@@ -151,6 +219,7 @@ class ClaudeCodeAdapter:
         )
         self._packs[handle.handle_id] = execution_pack
         self._stream_seq[handle.handle_id] = 0
+        self._cancel_events[handle.handle_id] = asyncio.Event()
         return handle
 
     async def run(self, handle: AttemptHandle) -> AsyncIterator[StreamEventBase]:
@@ -246,6 +315,9 @@ class ClaudeCodeAdapter:
                 payload={"reason": reason.value},
             )
         ]
+        cancel_event = self._cancel_events.get(handle.handle_id)
+        if cancel_event is not None:
+            cancel_event.set()
         session = self._sessions.get(handle.handle_id)
         if session is not None:
             await session.cancel(handle.handle_id, reason)
@@ -302,6 +374,7 @@ class ClaudeCodeAdapter:
         for session in list(self._sessions.values()):
             await session.aclose()
         self._sessions.clear()
+        self._cancel_events.clear()
 
     @classmethod
     def descriptor(cls) -> AdapterDescriptor:
@@ -331,12 +404,9 @@ class ClaudeCodeAdapter:
         if session is not None:
             return session
         if self._session_factory is None:
-            raise AdapterRuntimeError(
-                "AA_RUN_INTERNAL",
-                "Claude Code session factory is not configured.",
-                payload={"adapter_id": self.adapter_id},
-            )
-        session = self._session_factory()
+            session = ClaudeCodeSDKSession()
+        else:
+            session = self._session_factory()
         self._sessions[handle.handle_id] = session
         return session
 
@@ -360,7 +430,30 @@ class ClaudeCodeAdapter:
         events: AsyncIterator[RawClaudeCodeEvent],
     ) -> AsyncIterator[RawClaudeCodeEvent]:
         try:
-            async for event in events:
+            iterator = events.__aiter__()
+            while True:
+                next_event: asyncio.Future[RawClaudeCodeEvent] = asyncio.ensure_future(iterator.__anext__())
+                cancel_event = self._cancel_events.get(handle.handle_id)
+                cancel_wait: asyncio.Future[Any] | None = None
+                wait_for: set[asyncio.Future[Any]] = {next_event}
+                if cancel_event is not None:
+                    cancel_wait = asyncio.ensure_future(cancel_event.wait())
+                    wait_for.add(cancel_wait)
+                done, pending = await asyncio.wait(wait_for, return_when=asyncio.FIRST_COMPLETED)
+                if cancel_wait is not None and cancel_wait in done:
+                    await _cancel_task(next_event)
+                    for task in pending:
+                        await _cancel_task(task)
+                    handle.state = AttemptState.CANCELLED
+                    handle.finished_at = utc_now_ms()
+                    return
+                if cancel_wait is not None:
+                    await _cancel_task(cancel_wait)
+
+                try:
+                    event = next_event.result()
+                except StopAsyncIteration:
+                    return
                 if handle.cancellation_requested:
                     handle.state = AttemptState.CANCELLED
                     handle.finished_at = utc_now_ms()
@@ -763,6 +856,336 @@ def _prompt_parts(label: str, value: str | list[str] | None) -> list[str]:
     return [f"{label}:\n" + "\n".join(value)]
 
 
+def _build_sdk_client(sdk: ModuleType, request: ClaudeCodeRunRequest) -> object:
+    options_cls = getattr(sdk, "ClaudeAgentOptions", None)
+    client_cls = getattr(sdk, "ClaudeSDKClient", None)
+    if not callable(options_cls) or not callable(client_cls):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "Claude Agent SDK is missing ClaudeAgentOptions or ClaudeSDKClient.",
+            payload={
+                "has_options": callable(options_cls),
+                "has_client": callable(client_cls),
+            },
+        )
+    try:
+        options = options_cls(**_sdk_options_kwargs(request))
+        return client_cls(options=options)
+    except TypeError as exc:
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "Claude Agent SDK client could not be constructed from CW request options.",
+            payload={"exception_type": type(exc).__name__},
+        ) from exc
+
+
+def _sdk_options_kwargs(request: ClaudeCodeRunRequest) -> dict[str, Any]:
+    return {
+        "tools": {"type": "preset", "preset": "claude_code"},
+        "allowed_tools": list(request.allowed_tools),
+        "system_prompt": {"type": "preset", "preset": "claude_code"},
+        "setting_sources": [],
+    }
+
+
+async def _connect_sdk_client(client: object) -> None:
+    await _call_required_async_method(client, "connect")
+
+
+async def _query_sdk_client(client: object, prompt: str) -> None:
+    await _call_required_async_method(client, "query", prompt)
+
+
+async def _receive_sdk_client_raw_events(client: object) -> AsyncIterator[RawClaudeCodeEvent]:
+    receiver = getattr(client, "receive_response", None)
+    if not callable(receiver):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "Claude Agent SDK client is missing receive_response().",
+        )
+    messages = receiver()
+    if not hasattr(messages, "__aiter__"):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "Claude Agent SDK receive_response() did not return an async iterator.",
+            payload={"messages_type": type(messages).__name__},
+        )
+    async for message in cast(AsyncIterator[object], messages):
+        for raw_event in _sdk_message_to_raw_events(message):
+            yield raw_event
+
+
+def _sdk_message_to_raw_events(message: object) -> list[RawClaudeCodeEvent]:
+    if _sdk_has_result(message):
+        return _sdk_result_message_to_raw_events(message)
+    content = _sdk_content_blocks(message)
+    if content:
+        raw_events: list[RawClaudeCodeEvent] = []
+        for block in content:
+            event = _sdk_content_block_to_raw_event(block)
+            if event is not None:
+                raw_events.append(event)
+        if raw_events:
+            return raw_events
+        return [
+            {
+                "type": "failed",
+                "message": f"Claude Agent SDK emitted unsupported content block types from message type: {_sdk_kind(message)}.",
+            }
+        ]
+    if _sdk_kind(message) == "AssistantMessageError":
+        return [
+            {
+                "type": "failed",
+                "message": _sdk_str_attr(message, "message") or "Claude Agent SDK assistant message error.",
+            }
+        ]
+    return [
+        {
+            "type": "failed",
+            "message": f"Claude Agent SDK emitted unsupported message type: {_sdk_kind(message)}.",
+        }
+    ]
+
+
+def _sdk_result_message_to_raw_events(message: object) -> list[RawClaudeCodeEvent]:
+    usage = _sdk_usage_mapping(_sdk_attr(message, "usage"))
+    finish_reason = _sdk_str_attr(message, "subtype") or "stop"
+    latency_ms = _int_value(_sdk_attr(message, "duration_ms"))
+    request_completed: RawClaudeCodeEvent = {
+        "type": "request_completed",
+        "usage": usage,
+        "finish_reason": finish_reason,
+        "latency_ms": latency_ms,
+    }
+    if _sdk_result_is_error(message):
+        return [
+            request_completed,
+            {
+                "type": "failed",
+                "message": _sdk_result_error_message(message),
+            },
+        ]
+    return [
+        request_completed,
+        {
+            "type": "completed",
+            "output": _sdk_result_output(message),
+            "usage": usage,
+        },
+    ]
+
+
+def _sdk_content_block_to_raw_event(block: object) -> RawClaudeCodeEvent | None:
+    block_kind = _sdk_kind(block)
+    tool_name = _sdk_str_attr(block, "name") or _sdk_str_attr(block, "tool_name")
+    tool_input = _sdk_attr(block, "input")
+    if block_kind == "ToolUseBlock" or (tool_name is not None and tool_input is not None):
+        args = _sdk_tool_args(tool_input)
+        return {
+            "type": "tool_call_started",
+            "tool_id": tool_name or "unknown",
+            "args": args,
+            "args_hash": _stable_hash(args),
+            "requires_approval": False,
+            "invocation_id": _sdk_tool_invocation_id(block),
+        }
+
+    tool_use_id = _sdk_str_attr(block, "tool_use_id")
+    if block_kind == "ToolResultBlock" or tool_use_id is not None:
+        return {
+            "type": "tool_call_completed",
+            "tool_id": tool_name or "unknown",
+            "result_summary": _summary_text(_sdk_attr(block, "content")),
+            "duration_ms": 0,
+            "invocation_id": tool_use_id,
+        }
+
+    thinking = _sdk_str_attr(block, "thinking")
+    if block_kind == "ThinkingBlock" or thinking is not None:
+        return {"type": "thinking_delta", "text": thinking or _sdk_str_attr(block, "text") or ""}
+
+    text = _sdk_str_attr(block, "text")
+    if block_kind == "TextBlock" or text is not None:
+        return {"type": "text_delta", "text": text or ""}
+    if isinstance(block, str) and block:
+        return {"type": "text_delta", "text": block}
+    return None
+
+
+def _sdk_has_result(message: object) -> bool:
+    return _sdk_kind(message) == "ResultMessage" or _sdk_attr(message, "result") is not None
+
+
+def _sdk_result_is_error(message: object) -> bool:
+    is_error = _sdk_attr(message, "is_error")
+    if isinstance(is_error, bool):
+        return is_error
+    subtype = _sdk_str_attr(message, "subtype")
+    return subtype is not None and subtype not in {"success", "stop"}
+
+
+def _sdk_result_error_message(message: object) -> str:
+    error = _sdk_attr(message, "error")
+    if isinstance(error, BaseException):
+        return str(error)
+    if isinstance(error, str) and error:
+        return error
+    result = _sdk_attr(message, "result")
+    return str(result) if result is not None else "Claude Agent SDK result reported failure."
+
+
+def _sdk_result_output(message: object) -> dict[str, Any]:
+    for field_name in ("structured_output", "output", "result"):
+        value = _sdk_attr(message, field_name)
+        if isinstance(value, Mapping):
+            return _mapping_or_empty(value)
+        if isinstance(value, str) and value:
+            decoded = _json_object_or_none(value)
+            if decoded is not None:
+                return decoded
+            if field_name == "result":
+                return {"result": value}
+    return {}
+
+
+def _sdk_content_blocks(message: object) -> list[object]:
+    content = _sdk_attr(message, "content")
+    if isinstance(content, list):
+        return list(content)
+    if isinstance(content, str) and content:
+        return [content]
+    return []
+
+
+def _sdk_tool_args(value: object) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return _mapping_or_empty(value)
+    if isinstance(value, str) and value:
+        decoded = _json_object_or_none(value)
+        if decoded is not None:
+            return decoded
+        return {"raw": value}
+    return {}
+
+
+def _sdk_tool_invocation_id(block: object) -> str | None:
+    return _sdk_str_attr(block, "id") or _sdk_str_attr(block, "tool_use_id") or _sdk_str_attr(block, "tool_call_id")
+
+
+def _sdk_usage_mapping(value: object) -> dict[str, Any]:
+    usage = value() if callable(value) else value
+    if isinstance(usage, Mapping):
+        return _mapping_or_empty(usage)
+    jsonable = _jsonable_model(usage)
+    if isinstance(jsonable, Mapping):
+        return _mapping_or_empty(jsonable)
+    return {}
+
+
+def _sdk_kind(value: object) -> str:
+    return type(value).__name__
+
+
+def _sdk_attr(value: object, name: str) -> object:
+    if isinstance(value, Mapping):
+        return value.get(name)
+    return getattr(value, name, None)
+
+
+def _sdk_str_attr(value: object, name: str) -> str | None:
+    attr = _sdk_attr(value, name)
+    return attr if isinstance(attr, str) and attr else None
+
+
+def _json_object_or_none(value: str) -> dict[str, Any] | None:
+    try:
+        decoded = json.loads(value)
+    except ValueError:
+        return None
+    if isinstance(decoded, Mapping):
+        return _mapping_or_empty(decoded)
+    return None
+
+
+def _jsonable_model(value: object) -> object:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable_model(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_jsonable_model(item) for item in value]
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump(mode="json")
+        return _jsonable_model(dumped)
+    dataclass_dict = getattr(value, "__dict__", None)
+    if isinstance(dataclass_dict, Mapping):
+        return {str(key): _jsonable_model(item) for key, item in dataclass_dict.items() if not key.startswith("_")}
+    return str(value)
+
+
+def _summary_text(value: object, *, max_chars: int = 400) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value
+    else:
+        try:
+            text = json.dumps(_jsonable_model(value), ensure_ascii=False, sort_keys=True, default=str)
+        except TypeError:
+            text = str(value)
+    if len(text) <= max_chars:
+        return text
+    return f"{text[: max_chars - 3]}..."
+
+
+def _resume_prompt(resumption: AttemptResumption) -> str:
+    decision = resumption.human_decision
+    if decision is None:
+        raise AdapterRuntimeError(
+            "AA_RESUME_INVALID_KIND",
+            "Claude Agent SDK resume requires a human_decision payload.",
+            payload={"kind": resumption.kind.value},
+        )
+    parts = [f"Human decision: {decision.key}"]
+    if decision.custom_value is not None:
+        parts.append(f"Additional human input: {decision.custom_value}")
+    return "\n".join(parts)
+
+
+async def _close_sdk_client(client: object) -> bool:
+    for method_name in ("disconnect", "aclose", "close"):
+        if await _call_optional_async_method(client, method_name):
+            return True
+    return False
+
+
+async def _call_required_async_method(target: object, method_name: str, *args: object) -> None:
+    if not await _call_optional_async_method(target, method_name, *args):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            f"Claude Agent SDK client is missing {method_name}().",
+            payload={"method": method_name},
+        )
+
+
+async def _call_optional_async_method(target: object, method_name: str, *args: object) -> bool:
+    method = getattr(target, method_name, None)
+    if not callable(method):
+        return False
+    result = method(*args)
+    if inspect.isawaitable(result):
+        await result
+    return True
+
+
+async def _cancel_task(task: asyncio.Future[Any]) -> None:
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+
 def _required_str(raw_event: RawClaudeCodeEvent, key: str) -> str:
     value = raw_event.get(key)
     if isinstance(value, str) and value:
@@ -913,6 +1336,7 @@ __all__ = [
     "ClaudeCodeAdapter",
     "ClaudeCodeResumeRequest",
     "ClaudeCodeRunRequest",
+    "ClaudeCodeSDKSession",
     "ClaudeCodeSession",
     "RawClaudeCodeEvent",
     "SessionFactory",

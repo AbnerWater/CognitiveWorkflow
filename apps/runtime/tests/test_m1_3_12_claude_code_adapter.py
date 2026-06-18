@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import importlib
 from collections.abc import AsyncIterator
-from typing import Any
+from types import ModuleType
+from typing import Any, ClassVar
 
 import pytest
 
@@ -59,6 +62,71 @@ class FakeClaudeCodeSession:
         self.closed = True
 
 
+class FakeClaudeAgentOptions:
+    def __init__(self, **kwargs: object) -> None:
+        self.kwargs = kwargs
+
+
+class FakeTextBlock:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class FakeAssistantMessage:
+    def __init__(self, content: list[object]) -> None:
+        self.content = content
+
+
+class FakeResultMessage:
+    def __init__(
+        self,
+        *,
+        result: str | dict[str, Any],
+        usage: dict[str, Any] | None = None,
+        subtype: str = "success",
+        duration_ms: int = 0,
+    ) -> None:
+        self.result = result
+        self.usage = {} if usage is None else usage
+        self.subtype = subtype
+        self.duration_ms = duration_ms
+
+
+class FakeClaudeSDKClient:
+    instances: ClassVar[list[FakeClaudeSDKClient]] = []
+    response_messages: ClassVar[list[object]] = []
+    block_after_messages: ClassVar[bool] = False
+
+    def __init__(self, *, options: FakeClaudeAgentOptions) -> None:
+        self.options = options
+        self.connected = False
+        self.queries: list[str] = []
+        self.interrupted = False
+        self.disconnected = False
+        type(self).instances.append(self)
+
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def query(self, prompt: str, session_id: str = "default") -> None:
+        self.queries.append(prompt)
+
+    def receive_response(self) -> AsyncIterator[object]:
+        async def iterator() -> AsyncIterator[object]:
+            for message in list(type(self).response_messages):
+                yield message
+            if type(self).block_after_messages:
+                await asyncio.Event().wait()
+
+        return iterator()
+
+    async def interrupt(self) -> None:
+        self.interrupted = True
+
+    async def disconnect(self) -> None:
+        self.disconnected = True
+
+
 def _factory_for(session: FakeClaudeCodeSession) -> SessionFactory:
     def factory() -> ClaudeCodeSession:
         return session
@@ -68,6 +136,34 @@ def _factory_for(session: FakeClaudeCodeSession) -> SessionFactory:
 
 async def _collect(events: AsyncIterator[StreamEventBase]) -> list[StreamEventBase]:
     return [event async for event in events]
+
+
+def _install_fake_claude_agent_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeClaudeSDKClient.instances = []
+    FakeClaudeSDKClient.response_messages = []
+    FakeClaudeSDKClient.block_after_messages = False
+    fake_sdk = ModuleType("claude_agent_sdk")
+    fake_sdk.__dict__["ClaudeAgentOptions"] = FakeClaudeAgentOptions
+    fake_sdk.__dict__["ClaudeSDKClient"] = FakeClaudeSDKClient
+    real_import_module = importlib.import_module
+
+    def fake_import_module(name: str, package: str | None = None) -> ModuleType:
+        if name == "claude_agent_sdk":
+            return fake_sdk
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+
+
+def _block_claude_agent_sdk_import(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_import_module = importlib.import_module
+
+    def fake_import_module(name: str, package: str | None = None) -> ModuleType:
+        if name == "claude_agent_sdk":
+            raise ImportError(name)
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
 
 
 def _execution_pack(output_schema: dict[str, Any] | None = None) -> ExecutionPack:
@@ -207,6 +303,56 @@ async def test_claude_code_adapter_streams_and_finalizes_completed_attempt() -> 
 
 
 @pytest.mark.asyncio
+async def test_claude_code_default_sdk_session_streams_and_finalizes(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_claude_agent_sdk(monkeypatch)
+    FakeClaudeSDKClient.response_messages = [
+        FakeAssistantMessage([FakeTextBlock("sdk working")]),
+        FakeResultMessage(
+            result='{"answer":"sdk"}',
+            usage={"input_tokens": 5, "output_tokens": 2},
+            duration_ms=42,
+        ),
+    ]
+    adapter = ClaudeCodeAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {
+                "type": "object",
+                "required": ["answer"],
+                "properties": {"answer": {"type": "string"}},
+            }
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == [
+        "attempt.started",
+        "model.text_delta",
+        "model.request_completed",
+        "attempt.completed",
+    ]
+    assert events[1].payload == {"delta_text": "sdk working"}
+    assert events[2].payload == {
+        "usage": {"input_tokens": 5, "output_tokens": 2},
+        "finish_reason": "success",
+        "latency_ms": 42,
+    }
+    assert FakeClaudeSDKClient.instances
+    client = FakeClaudeSDKClient.instances[0]
+    assert client.connected is True
+    assert len(client.queries) == 1
+    assert "Return a short answer" in client.queries[0]
+    assert client.options.kwargs["allowed_tools"] == []
+    assert client.options.kwargs["setting_sources"] == []
+    assert client.options.kwargs["system_prompt"] == {"type": "preset", "preset": "claude_code"}
+
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.COMPLETED
+    assert outcome.output == {"answer": "sdk"}
+
+
+@pytest.mark.asyncio
 async def test_claude_code_permission_prompt_translates_to_human_gate_and_resumes() -> None:
     session = FakeClaudeCodeSession(
         run_events=[
@@ -306,7 +452,85 @@ async def test_claude_code_cancel_finalizes_cancelled_attempt() -> None:
 
 
 @pytest.mark.asyncio
-async def test_claude_code_missing_session_factory_raises_spec_coded_error() -> None:
+async def test_claude_code_default_sdk_cancel_interrupts_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_claude_agent_sdk(monkeypatch)
+    FakeClaudeSDKClient.response_messages = [FakeAssistantMessage([FakeTextBlock("working")])]
+    adapter = ClaudeCodeAdapter()
+    handle = await adapter.prepare(_execution_pack())
+
+    iterator = adapter.run(handle)
+    assert (await iterator.__anext__()).type == "attempt.started"
+    assert (await iterator.__anext__()).type == "model.text_delta"
+    await adapter.cancel(handle, CancelReason.USER)
+
+    assert FakeClaudeSDKClient.instances
+    assert FakeClaudeSDKClient.instances[0].interrupted is True
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.CANCELLED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_claude_code_default_sdk_cancel_wakes_blocked_iterator(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_claude_agent_sdk(monkeypatch)
+    FakeClaudeSDKClient.response_messages = [FakeAssistantMessage([FakeTextBlock("working")])]
+    FakeClaudeSDKClient.block_after_messages = True
+    adapter = ClaudeCodeAdapter()
+    handle = await adapter.prepare(_execution_pack())
+
+    iterator = adapter.run(handle)
+    assert (await iterator.__anext__()).type == "attempt.started"
+    assert (await iterator.__anext__()).type == "model.text_delta"
+    await adapter.cancel(handle, CancelReason.USER)
+
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(iterator.__anext__(), timeout=1.0)
+    assert FakeClaudeSDKClient.instances
+    assert FakeClaudeSDKClient.instances[0].interrupted is True
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_claude_code_default_sdk_unknown_message_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_claude_agent_sdk(monkeypatch)
+    FakeClaudeSDKClient.response_messages = [object()]
+    adapter = ClaudeCodeAdapter()
+    handle = await adapter.prepare(_execution_pack())
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert events[-1].payload is not None
+    assert events[-1].payload["error_kind"] == "adapter_internal"
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_INTERNAL"
+
+
+@pytest.mark.asyncio
+async def test_claude_code_default_sdk_unknown_content_block_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_claude_agent_sdk(monkeypatch)
+    FakeClaudeSDKClient.response_messages = [FakeAssistantMessage([object()])]
+    adapter = ClaudeCodeAdapter()
+    handle = await adapter.prepare(_execution_pack())
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert events[-1].payload is not None
+    assert events[-1].payload["error_kind"] == "adapter_internal"
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_INTERNAL"
+
+
+@pytest.mark.asyncio
+async def test_claude_code_missing_optional_sdk_raises_spec_coded_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    _block_claude_agent_sdk_import(monkeypatch)
     adapter = ClaudeCodeAdapter()
     handle = await adapter.prepare(_execution_pack())
 
@@ -318,3 +542,4 @@ async def test_claude_code_missing_session_factory_raises_spec_coded_error() -> 
     outcome = await adapter.finalize(handle)
     assert outcome.errors[0].payload is not None
     assert outcome.errors[0].payload["error_code"] == "AA_RUN_INTERNAL"
+    assert outcome.errors[0].payload["module"] == "claude_agent_sdk"
