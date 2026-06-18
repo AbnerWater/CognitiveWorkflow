@@ -25,7 +25,8 @@ from cw_runtime.runs import (
     list_stream_events,
     read_workflow_run,
 )
-from cw_schemas.types import ExecutionMode, FailureType, RunState
+from cw_schemas.runtime import AdapterError, RunUsage
+from cw_schemas.types import AdapterErrorKind, ExecutionMode, FailureType, RunState
 
 _MODEL_POLICY: dict[str, Any] = {"primary_model_profile_id": "deterministic-foundation"}
 _PROMPT: dict[str, Any] = {
@@ -274,9 +275,22 @@ def test_runner_advances_pass_path_to_completed_run(tmp_path: Path) -> None:
     execution = advance_workflow_run(
         project_root,
         run_id,
-        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "ok"})),
+        NodeAdvanceRequest(
+            execution=ExecutionAdvanceInput(
+                output={"draft": "ok"},
+                usage=RunUsage(input_tokens=11, output_tokens=7, total_tokens=18, requests=1, est_cost_usd=0.004),
+            )
+        ),
     )
-    evaluation = advance_workflow_run(project_root, run_id)
+    evaluation = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                usage=RunUsage(input_tokens=5, output_tokens=3, total_tokens=8, requests=1, est_cost_usd=0.002)
+            )
+        ),
+    )
     completed = advance_workflow_run(project_root, run_id)
 
     assert start.next_node_ids == ["n_execute"]
@@ -288,9 +302,24 @@ def test_runner_advances_pass_path_to_completed_run(tmp_path: Path) -> None:
 
     run_root = project_root / ".agent-workflow" / "runs" / run_id
     attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
     evaluations = _read_jsonl(run_root / "evaluations.jsonl")
     assert [attempt["node_id"] for attempt in attempts] == ["n_execute", "n_review"]
     assert attempts[0]["state"] == "completed"
+    assert attempts[0]["usage"]["input_tokens"] == 11
+    assert attempts[0]["usage"]["output_tokens"] == 7
+    assert attempts[0]["usage"]["est_cost_usd"] == 0.004
+    assert attempts[1]["usage"]["input_tokens"] == 5
+    assert len(usage) == 2
+    assert [record["attempt_id"] for record in usage] == [attempt["attempt_id"] for attempt in attempts]
+    assert [record["node_id"] for record in usage] == ["n_execute", "n_review"]
+    assert usage[0]["input_tokens"] == 11
+    assert usage[0]["output_tokens"] == 7
+    assert usage[0]["total_tokens"] == 18
+    assert usage[0]["est_cost_usd"] == 0.004
+    assert usage[1]["input_tokens"] == 5
+    assert usage[1]["output_tokens"] == 3
+    assert usage[1]["est_cost_usd"] == 0.002
     assert (run_root / "context_packs" / f"{attempts[0]['context_pack_id']}.json").exists()
     assert (run_root / "execution_packs" / f"{attempts[0]['execution_pack_id']}.json").exists()
     assert evaluations[0]["passed"] is True
@@ -306,6 +335,11 @@ def test_runner_advances_pass_path_to_completed_run(tmp_path: Path) -> None:
     assert attempt_started.payload is not None
     assert attempt_started.payload["attempt_index"] == 0
     assert attempt_started.payload["model_profile_id"] == "deterministic-foundation"
+    attempt_completed = [event for event in events if event.type == "attempt.completed"]
+    assert attempt_completed[0].payload is not None
+    assert attempt_completed[0].payload["usage"]["input_tokens"] == 11
+    assert attempt_completed[1].payload is not None
+    assert attempt_completed[1].payload["usage"]["input_tokens"] == 5
     run_completed = events[-1]
     assert run_completed.payload is not None
     assert "artifact_summary" in run_completed.payload
@@ -333,7 +367,12 @@ def test_runner_persists_failed_evaluation_repair_patch_and_retries_target(tmp_p
     repaired = advance_workflow_run(
         project_root,
         run_id,
-        NodeAdvanceRequest(repair=RepairAdvanceInput(instruction_text="Return a JSON object with draft.")),
+        NodeAdvanceRequest(
+            repair=RepairAdvanceInput(
+                instruction_text="Return a JSON object with draft.",
+                usage=RunUsage(input_tokens=9, output_tokens=4, total_tokens=13, requests=1, est_cost_usd=0.003),
+            )
+        ),
     )
 
     assert failed.node_state == "review_failed"
@@ -344,13 +383,20 @@ def test_runner_persists_failed_evaluation_repair_patch_and_retries_target(tmp_p
     evaluations = _read_jsonl(run_root / "evaluations.jsonl")
     repairs = _read_jsonl(run_root / "repairs.jsonl")
     attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
     assert evaluations[0]["passed"] is False
     assert evaluations[0]["failure_diagnosis"]["failure_type"] == "format_error"
     assert evaluations[0]["criterion_results"][0]["criterion_id"] == "c_quality"
     assert repairs[0]["patch_kind"] == "prompt_patch"
     assert repairs[0]["applies_to_attempts"] == [attempts[0]["attempt_id"]]
+    assert repairs[0]["provenance"]["usage"]["input_tokens"] == 9
     assert attempts[-1]["node_id"] == "n_repair"
     assert attempts[-1]["effective_prompt_overlay_ref"] is None
+    assert attempts[-1]["usage"]["input_tokens"] == 9
+    assert usage[-1]["node_id"] == "n_repair"
+    assert usage[-1]["attempt_id"] == attempts[-1]["attempt_id"]
+    assert usage[-1]["input_tokens"] == 9
+    assert usage[-1]["est_cost_usd"] == 0.003
 
     run_json = _read_run_json(project_root, run_id)
     assert run_json["metadata"]["cw"]["node_states"]["n_execute"] == "retrying"
@@ -384,6 +430,43 @@ def test_runner_persists_failed_evaluation_repair_patch_and_retries_target(tmp_p
     assert execution_pack["effective_prompt_overlay"]["source_patch_id"] == repairs[0]["patch_id"]
     run_json_after_retry = _read_run_json(project_root, run_id)
     assert "n_execute" not in run_json_after_retry["metadata"]["cw"]["pending_prompt_overlays"]
+
+
+def test_runner_writes_usage_ledger_for_failed_execution_attempt(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+
+    advance_workflow_run(project_root, run_id)
+    failed = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            execution=ExecutionAdvanceInput(
+                usage=RunUsage(input_tokens=13, output_tokens=0, total_tokens=13, requests=1, est_cost_usd=0.006),
+                error=AdapterError(
+                    error_kind=AdapterErrorKind.MODEL_REQUEST_FAILED,
+                    failure_type=FailureType.TOOL_ERROR,
+                    message="Model request failed.",
+                    retryable=False,
+                ),
+            )
+        ),
+    )
+
+    assert failed.node_state == "failed"
+    assert failed.run.state == RunState.FAILED
+
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    assert len(attempts) == 1
+    assert attempts[0]["state"] == "failed"
+    assert attempts[0]["usage"]["input_tokens"] == 13
+    assert len(usage) == 1
+    assert usage[0]["attempt_id"] == attempts[0]["attempt_id"]
+    assert usage[0]["node_id"] == "n_execute"
+    assert usage[0]["input_tokens"] == 13
+    assert usage[0]["est_cost_usd"] == 0.006
 
 
 def test_runner_human_checkpoint_sets_waiting_user_and_emits_gate(tmp_path: Path) -> None:

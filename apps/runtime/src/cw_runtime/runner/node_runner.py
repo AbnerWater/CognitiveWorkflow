@@ -163,6 +163,7 @@ class ExecutionAdvanceInput(BaseModel):
 
     output: dict[str, Any] = Field(default_factory=dict)
     output_artifact_refs: list[ArtifactRef] = Field(default_factory=list)
+    usage: RunUsage = Field(default_factory=RunUsage)
     error: AdapterError | None = None
     model_profile_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -182,6 +183,7 @@ class EvaluationAdvanceInput(BaseModel):
     target_human_node_id: str | None = None
     note_to_user: str | None = None
     model_profile_id: str | None = None
+    usage: RunUsage = Field(default_factory=RunUsage)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -197,6 +199,7 @@ class RepairAdvanceInput(BaseModel):
     rationale: str | None = None
     risk_level: RiskLevel = RiskLevel.LOW
     model_profile_id: str | None = None
+    usage: RunUsage = Field(default_factory=RunUsage)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -621,7 +624,7 @@ def _advance_execution(
     run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RUNNING)
 
     if execution.error is not None:
-        return _fail_attempt_and_run(project_root, run, node, artifacts, [execution.error])
+        return _fail_attempt_and_run(project_root, run, node, artifacts, [execution.error], usage=execution.usage)
 
     run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.VALIDATING)
     output_hash = _stable_hash(execution.output)
@@ -632,14 +635,16 @@ def _advance_execution(
         artifacts,
         output=execution.output,
         output_artifact_refs=execution.output_artifact_refs,
+        usage=execution.usage,
         metadata=execution.metadata,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
+    _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
     _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
     _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
     run = _persist_runtime_metadata(project_root, run)
 
-    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts)
+    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts, usage=attempt.usage)
     next_node_ids = _route_targets(compiled, node.node_id, "normal")
     if _routes_to_target_evaluation(graph, next_node_ids, node.node_id):
         final_state = NodeRuntimeState.VALIDATING
@@ -742,9 +747,16 @@ def _advance_evaluation(
     output_hash = _stable_hash(output)
     artifacts = artifacts.model_copy(update={"output_hash": output_hash})
     attempt = _completed_attempt(
-        run, node.node_id, artifacts, output=output, output_artifact_refs=[], metadata=evaluation.metadata
+        run,
+        node.node_id,
+        artifacts,
+        output=output,
+        output_artifact_refs=[],
+        usage=evaluation.usage,
+        metadata=evaluation.metadata,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
+    _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
     _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
     _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
     run = _persist_runtime_metadata(project_root, run)
@@ -776,7 +788,7 @@ def _advance_evaluation(
         target_node_id=node.target_node_id,
     )
     run = append_run_event_locked(project_root, run, completed_event)
-    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts)
+    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts, usage=attempt.usage)
 
     if eval_result.passed:
         run = _transition_node(project_root, run, node.target_node_id, NodeRuntimeState.PASSED)
@@ -908,9 +920,11 @@ def _advance_repair(
         artifacts,
         output=output,
         output_artifact_refs=[],
+        usage=repair.usage,
         metadata=repair.metadata,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
+    _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
     _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
     _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
     _store_runtime_value(run, "last_patch_ids", node.node_id, patch.patch_id)
@@ -943,7 +957,7 @@ def _advance_repair(
         eval_id=evaluation_id,
     )
     run = append_run_event_locked(project_root, run, applied_event)
-    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts)
+    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts, usage=attempt.usage)
     run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.PASSED)
 
     next_node_ids = _route_targets(compiled, node.node_id, "repair")
@@ -1453,6 +1467,7 @@ def _completed_attempt(
     *,
     output: dict[str, Any],
     output_artifact_refs: list[ArtifactRef],
+    usage: RunUsage | None = None,
     metadata: dict[str, Any],
     effective_prompt_overlay_ref: str | None = None,
 ) -> NodeAttempt:
@@ -1481,7 +1496,7 @@ def _completed_attempt(
         execution_pack_id=artifacts.execution_pack_id,
         output_hash=output_hash,
         output_artifact_refs=output_artifact_refs,
-        usage=RunUsage(),
+        usage=RunUsage() if usage is None else usage,
         errors=[],
         outcome_hash=_stable_hash({"output_hash": output_hash, "finished_at": finished_at}),
         metadata=_merge_metadata(base_metadata, metadata),
@@ -1493,6 +1508,8 @@ def _failed_attempt(
     node_id: str,
     artifacts: _AttemptArtifacts,
     errors: list[AdapterError],
+    *,
+    usage: RunUsage | None = None,
 ) -> NodeAttempt:
     finished_at = utc_now_ms()
     return NodeAttempt(
@@ -1510,7 +1527,7 @@ def _failed_attempt(
         evidence_pack_id=artifacts.evidence_pack_id,
         execution_pack_id=artifacts.execution_pack_id,
         output_hash=None,
-        usage=RunUsage(),
+        usage=RunUsage() if usage is None else usage,
         errors=errors,
         outcome_hash=_stable_hash(
             {"errors": [error.model_dump(mode="json") for error in errors], "finished_at": finished_at}
@@ -1525,9 +1542,12 @@ def _fail_attempt_and_run(
     node: ExecutionTaskNode,
     artifacts: _AttemptArtifacts,
     errors: list[AdapterError],
+    *,
+    usage: RunUsage | None = None,
 ) -> NodeAdvanceResult:
-    attempt = _failed_attempt(run, node.node_id, artifacts, errors)
+    attempt = _failed_attempt(run, node.node_id, artifacts, errors, usage=usage)
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
+    _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
     event = _lifecycle_event(
         project_root,
         run,
@@ -1940,7 +1960,7 @@ def _build_evaluation_result(
         failure_diagnosis=failure_diagnosis,
         recommended_strategy=_recommended_strategy_for_failure(input_data),
         recommended_action=action,
-        usage=RunUsage(),
+        usage=input_data.usage,
         provenance=EvalProvenance(
             eval_started_at=artifacts.started_at,
             eval_finished_at=now,
@@ -2056,7 +2076,7 @@ def _build_repair_patch(
             repair_model_profile_id=artifacts.model_profile_id,
             attempts_window_used=1,
             evaluation_id=evaluation_id,
-            usage=RunUsage(),
+            usage=input_data.usage,
             patch_hash=_stable_hash(payload_for_hash),
         ),
         metadata=_merge_metadata({"cw": {"foundation_runner": True}}, input_data.metadata),
@@ -2093,7 +2113,10 @@ def _emit_attempt_completed(
     run: WorkflowRunDocument,
     node_id: str,
     artifacts: _AttemptArtifacts,
+    *,
+    usage: RunUsage | None = None,
 ) -> WorkflowRunDocument:
+    payload_usage = RunUsage() if usage is None else usage
     event = _lifecycle_event(
         project_root,
         run,
@@ -2103,7 +2126,7 @@ def _emit_attempt_completed(
         payload={
             "output_hash": artifacts.output_hash,
             "duration_ms": 0,
-            "usage": RunUsage().model_dump(mode="json"),
+            "usage": payload_usage.model_dump(mode="json"),
             "node_id": node_id,
             "attempt_index": artifacts.attempt_index,
         },
@@ -2112,6 +2135,27 @@ def _emit_attempt_completed(
         attempt_id=artifacts.attempt_id,
     )
     return append_run_event_locked(project_root, run, event)
+
+
+def _append_usage_ledger(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node_id: str,
+    artifacts: _AttemptArtifacts,
+    usage: RunUsage | None,
+) -> None:
+    payload_usage = RunUsage() if usage is None else usage
+    record = {
+        "usage_id": new_runtime_id(),
+        "run_id": run.run_id,
+        "node_id": node_id,
+        "attempt_id": artifacts.attempt_id,
+        "attempt_index": artifacts.attempt_index,
+        "model_profile_id": artifacts.model_profile_id,
+        "at": utc_now_ms(),
+        **payload_usage.model_dump(mode="json", exclude_none=True),
+    }
+    append_run_jsonl_locked(project_root, run.run_id, "usage.jsonl", record)
 
 
 def _transition_node(
