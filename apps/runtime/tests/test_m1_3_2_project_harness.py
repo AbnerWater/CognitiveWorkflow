@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import shlex
 import subprocess
 import sys
@@ -428,6 +429,7 @@ class FakeMCPHttpServer(ThreadingHTTPServer):
 
     mode: str
     request_headers_log: list[dict[str, str]]
+    legacy_response_queue: queue.Queue[Mapping[str, object] | None]
 
     def __init__(
         self,
@@ -439,10 +441,18 @@ class FakeMCPHttpServer(ThreadingHTTPServer):
         super().__init__(server_address, handler_class)
         self.mode = mode
         self.request_headers_log = []
+        self.legacy_response_queue = queue.Queue()
 
 
 class FakeMCPHttpHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def do_GET(self) -> None:
+        server = cast(FakeMCPHttpServer, self.server)
+        if server.mode in {"legacy", "legacy_error"} and self.path == "/mcp":
+            self._send_legacy_sse_endpoint()
+            return
+        self._send_empty(405)
 
     def do_POST(self) -> None:
         server = cast(FakeMCPHttpServer, self.server)
@@ -457,6 +467,13 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
                 "session_id": self.headers.get("Mcp-Session-Id", ""),
             }
         )
+        if server.mode in {"legacy", "legacy_error"} and self.path == "/mcp":
+            self._send_empty(405)
+            return
+        if server.mode in {"legacy", "legacy_error"} and self.path == "/messages":
+            self._handle_legacy_message(server, message)
+            self._send_empty(202)
+            return
         if method == "initialize":
             self._send_json(
                 200,
@@ -514,6 +531,49 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
             },
         )
 
+    def _handle_legacy_message(self, server: FakeMCPHttpServer, message: Mapping[str, object]) -> None:
+        method = message.get("method")
+        if method == "initialize":
+            server.legacy_response_queue.put(
+                {
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "result": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "fake-legacy-mcp", "version": "0.4.0"},
+                    },
+                }
+            )
+            return
+        if method == "notifications/initialized":
+            return
+        if method == "tools/list" and server.mode == "legacy_error":
+            server.legacy_response_queue.put(
+                {
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "error": {"code": -32000, "message": "fake secret should not leak"},
+                }
+            )
+            return
+        if method == "tools/list":
+            server.legacy_response_queue.put(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/tools/list_changed",
+                }
+            )
+            server.legacy_response_queue.put(self._tools_response(message.get("id"), description="Run legacy Python."))
+            return
+        server.legacy_response_queue.put(
+            {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "error": {"code": -32601, "message": "method not found"},
+            }
+        )
+
     def log_message(self, format: str, *args: object) -> None:
         return
 
@@ -525,7 +585,7 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
             raise AssertionError("fake MCP HTTP request body was not an object")
         return message
 
-    def _tools_response(self, request_id: object) -> dict[str, object]:
+    def _tools_response(self, request_id: object, *, description: str = "Run remote Python.") -> dict[str, object]:
         return {
             "jsonrpc": "2.0",
             "id": request_id,
@@ -534,7 +594,7 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
                     {
                         "name": "run",
                         "title": "Run",
-                        "description": "Run remote Python.",
+                        "description": description,
                         "inputSchema": {
                             "type": "object",
                             "properties": {"code": {"type": "string"}},
@@ -591,6 +651,25 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
         if keep_open_seconds > 0:
             time.sleep(keep_open_seconds)
         self.close_connection = True
+
+    def _send_legacy_sse_endpoint(self) -> None:
+        server = cast(FakeMCPHttpServer, self.server)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        self.wfile.write(b"event: endpoint\ndata: /messages\n\n")
+        self.wfile.flush()
+        while True:
+            try:
+                message = server.legacy_response_queue.get(timeout=0.1)
+            except queue.Empty:
+                if getattr(server, "_BaseServer__shutdown_request", False):
+                    return
+                continue
+            if message is None:
+                return
+            self.wfile.write(f"event: message\ndata: {json.dumps(message)}\n\n".encode())
+            self.wfile.flush()
 
 
 def _start_fake_mcp_http_server(mode: str) -> tuple[FakeMCPHttpServer, threading.Thread, str]:
@@ -1041,6 +1120,125 @@ def test_project_mcp_http_discovery_client_sanitizes_http_error(tmp_path: Path) 
         assert "fake secret" not in str(exc_info.value.details)
         assert "command_or_url" not in str(exc_info.value.details)
     finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_discovery_client_falls_back_to_legacy_sse(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_http_legacy_project"
+    initialize_project(_request("MCP HTTP Legacy", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server, thread, endpoint_url = _start_fake_mcp_http_server("legacy")
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_legacy_python",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                }
+            ],
+        )
+
+        locks = load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                lambda config: ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+            ),
+        )
+
+        assert [entry.model_dump(mode="json") for entry in locks.mcps] == [
+            {
+                "server_id": "mcp_http_legacy_python",
+                "version": "0.4.0",
+                "tools_snapshot": [
+                    {
+                        "name": "run",
+                        "title": "Run",
+                        "description": "Run legacy Python.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"code": {"type": "string"}},
+                        },
+                    }
+                ],
+            }
+        ]
+        assert [entry["method"] for entry in server.request_headers_log] == [
+            "initialize",
+            "initialize",
+            "notifications/initialized",
+            "tools/list",
+        ]
+        assert server.request_headers_log[1:] == [
+            {
+                "method": "initialize",
+                "accept": "",
+                "content_type": "application/json",
+                "protocol_version": "",
+                "session_id": "",
+            },
+            {
+                "method": "notifications/initialized",
+                "accept": "",
+                "content_type": "application/json",
+                "protocol_version": "",
+                "session_id": "",
+            },
+            {
+                "method": "tools/list",
+                "accept": "",
+                "content_type": "application/json",
+                "protocol_version": "",
+                "session_id": "",
+            },
+        ]
+    finally:
+        server.legacy_response_queue.put(None)
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_discovery_client_sanitizes_legacy_sse_error(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_http_legacy_error_project"
+    initialize_project(_request("MCP HTTP Legacy Error", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server, thread, endpoint_url = _start_fake_mcp_http_server("legacy_error")
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_legacy_python",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                }
+            ],
+        )
+
+        with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+            load_project_tool_lock_snapshot(
+                project_root,
+                mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                    lambda config: ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+                ),
+            )
+
+        assert exc_info.value.server_id == "mcp_http_legacy_python"
+        assert exc_info.value.stage == "discover_tools"
+        assert exc_info.value.details == {
+            "server_id": "mcp_http_legacy_python",
+            "transport": "http",
+            "jsonrpc_error_type": "int",
+        }
+        assert "fake secret" not in str(exc_info.value)
+        assert "fake secret" not in str(exc_info.value.details)
+        assert "command_or_url" not in str(exc_info.value.details)
+    finally:
+        server.legacy_response_queue.put(None)
         server.shutdown()
         server.server_close()
         thread.join(timeout=2.0)

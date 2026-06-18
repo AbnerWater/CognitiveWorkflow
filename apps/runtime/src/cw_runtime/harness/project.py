@@ -20,7 +20,7 @@ from http.client import HTTPResponse
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol, TextIO, cast
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -553,6 +553,10 @@ class ProjectMCPHttpDiscoveryClient:
         self._version = "latest"
         self._protocol_version: str | None = None
         self._session_id: str | None = None
+        self._legacy_message_endpoint_url: str | None = None
+        self._legacy_sse_response: HTTPResponse | None = None
+        self._legacy_sse_line_queue: queue.Queue[bytes | Exception | None] | None = None
+        self._legacy_sse_reader_thread: threading.Thread | None = None
 
     def start(self, config: ProjectMCPServerConfig) -> None:
         self._endpoint_url = None
@@ -560,6 +564,10 @@ class ProjectMCPHttpDiscoveryClient:
         self._version = "latest"
         self._protocol_version = None
         self._session_id = None
+        self._legacy_message_endpoint_url = None
+        self._legacy_sse_response = None
+        self._legacy_sse_line_queue = None
+        self._legacy_sse_reader_thread = None
         self._config = config
         if config.transport != "http":
             raise self._error(
@@ -616,11 +624,19 @@ class ProjectMCPHttpDiscoveryClient:
         )
 
     def close(self) -> None:
+        if self._legacy_sse_response is not None:
+            self._legacy_sse_response.close()
+        if self._legacy_sse_reader_thread is not None:
+            self._legacy_sse_reader_thread.join(timeout=self._timeout_seconds)
         self._endpoint_url = None
         self._next_id = 1
         self._version = "latest"
         self._protocol_version = None
         self._session_id = None
+        self._legacy_message_endpoint_url = None
+        self._legacy_sse_response = None
+        self._legacy_sse_line_queue = None
+        self._legacy_sse_reader_thread = None
 
     def _request(
         self,
@@ -650,6 +666,8 @@ class ProjectMCPHttpDiscoveryClient:
         stage: str,
         expected_response_id: int | None,
     ) -> Mapping[str, object] | None:
+        if self._legacy_message_endpoint_url is not None:
+            return self._legacy_post_json_rpc(message, stage=stage, expected_response_id=expected_response_id)
         request = Request(
             self._require_endpoint_url(),
             data=json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
@@ -670,11 +688,15 @@ class ProjectMCPHttpDiscoveryClient:
                 self._capture_http_session_id(response, stage=stage)
                 return self._read_http_response(response, expected_response_id=expected_response_id, stage=stage)
         except HTTPError as exc:
+            status = exc.code
             exc.close()
+            if stage == "initialize" and expected_response_id is not None and 400 <= status < 500:
+                self._start_legacy_http_sse(stage=stage)
+                return self._legacy_post_json_rpc(message, stage=stage, expected_response_id=expected_response_id)
             raise self._error(
                 stage,
                 "Project MCP HTTP request failed.",
-                details={"http_status": exc.code},
+                details={"http_status": status},
             ) from exc
         except URLError as exc:
             raise self._error(
@@ -822,6 +844,209 @@ class ProjectMCPHttpDiscoveryClient:
             response.close()
             reader_thread.join(timeout=self._timeout_seconds)
 
+    def _start_legacy_http_sse(self, *, stage: str) -> None:
+        request = Request(
+            self._require_endpoint_url(),
+            method="GET",
+            headers={"Accept": "text/event-stream"},
+        )
+        try:
+            response = urlopen(request, timeout=self._timeout_seconds)
+        except HTTPError as exc:
+            status = exc.code
+            exc.close()
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE endpoint request failed.",
+                details={"http_status": status},
+            ) from exc
+        except URLError as exc:
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE endpoint request failed.",
+                details={"exception_type": type(exc.reason).__name__},
+            ) from exc
+        except TimeoutError as exc:
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE endpoint request timed out.",
+                details={"timeout_seconds": self._timeout_seconds},
+            ) from exc
+        if _http_content_type(response) != "text/event-stream":
+            response.close()
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE endpoint content type is unsupported.",
+                details={"content_type": _http_content_type(response) or "missing"},
+            )
+        self._legacy_sse_response = response
+        line_queue: queue.Queue[bytes | Exception | None] = queue.Queue()
+        self._legacy_sse_line_queue = line_queue
+        reader_thread = threading.Thread(
+            target=_read_http_sse_lines,
+            args=(response, line_queue),
+            daemon=True,
+        )
+        self._legacy_sse_reader_thread = reader_thread
+        reader_thread.start()
+        event_name, endpoint = self._read_legacy_sse_event(
+            stage=stage,
+            deadline=time.monotonic() + self._timeout_seconds,
+        )
+        if event_name != "endpoint" or endpoint.strip() == "":
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE endpoint event was missing.",
+                details={"legacy_endpoint_event": "missing"},
+            )
+        message_endpoint_url = urljoin(self._require_endpoint_url(), endpoint.strip())
+        parsed = urlparse(message_endpoint_url)
+        if parsed.scheme not in {"http", "https"} or parsed.netloc == "":
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE message endpoint URL is invalid.",
+                details={"url_scheme": parsed.scheme or "missing"},
+            )
+        self._legacy_message_endpoint_url = message_endpoint_url
+
+    def _legacy_post_json_rpc(
+        self,
+        message: Mapping[str, object],
+        *,
+        stage: str,
+        expected_response_id: int | None,
+    ) -> Mapping[str, object] | None:
+        request = Request(
+            self._require_legacy_message_endpoint_url(),
+            data=json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urlopen(request, timeout=self._timeout_seconds) as response:
+                if response.status not in {200, 202}:
+                    raise self._error(
+                        stage,
+                        "Project MCP legacy HTTP+SSE POST was not accepted.",
+                        details={"http_status": response.status},
+                    )
+        except HTTPError as exc:
+            status = exc.code
+            exc.close()
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE POST failed.",
+                details={"http_status": status},
+            ) from exc
+        except URLError as exc:
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE POST failed.",
+                details={"exception_type": type(exc.reason).__name__},
+            ) from exc
+        except TimeoutError as exc:
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE POST timed out.",
+                details={"timeout_seconds": self._timeout_seconds},
+            ) from exc
+        if expected_response_id is None:
+            return None
+        deadline = time.monotonic() + self._timeout_seconds
+        while True:
+            event_name, event_data = self._read_legacy_sse_event(stage=stage, deadline=deadline)
+            if event_name != "message":
+                continue
+            message_payload = self._legacy_sse_message(event_data, stage=stage)
+            if message_payload.get("id") != expected_response_id:
+                continue
+            return message_payload
+
+    def _read_legacy_sse_event(self, *, stage: str, deadline: float) -> tuple[str, str]:
+        event_name = "message"
+        data_lines: list[str] = []
+        while True:
+            line = self._read_legacy_sse_line(stage=stage, deadline=deadline)
+            try:
+                decoded_line = line.decode("utf-8").rstrip("\r\n")
+            except UnicodeDecodeError as exc:
+                raise self._error(
+                    stage,
+                    "Project MCP legacy HTTP+SSE event was not valid UTF-8.",
+                    details={"exception_type": type(exc).__name__},
+                ) from exc
+            if decoded_line == "":
+                if not data_lines:
+                    event_name = "message"
+                    continue
+                return event_name, "\n".join(data_lines)
+            if decoded_line.startswith(":"):
+                continue
+            field_name, separator, field_value = decoded_line.partition(":")
+            if separator == "":
+                continue
+            value = field_value[1:] if field_value.startswith(" ") else field_value
+            if field_name == "event":
+                event_name = value
+            elif field_name == "data":
+                data_lines.append(value)
+
+    def _read_legacy_sse_line(self, *, stage: str, deadline: float) -> bytes:
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE response timed out.",
+                details={"timeout_seconds": self._timeout_seconds},
+            )
+        line_queue = self._require_legacy_sse_line_queue()
+        try:
+            line = line_queue.get(timeout=remaining_seconds)
+        except queue.Empty as exc:
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE response timed out.",
+                details={"timeout_seconds": self._timeout_seconds},
+            ) from exc
+        if isinstance(line, Exception):
+            if isinstance(line, TimeoutError):
+                raise self._error(
+                    stage,
+                    "Project MCP legacy HTTP+SSE response timed out.",
+                    details={"timeout_seconds": self._timeout_seconds},
+                ) from line
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE read failed.",
+                details={"exception_type": type(line).__name__},
+            ) from line
+        if line is None:
+            raise self._error(stage, "Project MCP legacy HTTP+SSE stream ended before response.")
+        if len(line) > _MCP_HTTP_MAX_RESPONSE_BYTES:
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE response exceeded size limit.",
+                details={"response_size_limit": _MCP_HTTP_MAX_RESPONSE_BYTES},
+            )
+        return line
+
+    def _legacy_sse_message(self, event_data: str, *, stage: str) -> Mapping[str, object]:
+        try:
+            message = json.loads(event_data)
+        except json.JSONDecodeError as exc:
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE message was not valid JSON.",
+                details={"exception_type": type(exc).__name__},
+            ) from exc
+        if not isinstance(message, Mapping):
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE message was not a JSON object.",
+                details={"result_type": type(message).__name__},
+            )
+        return message
+
     def _sse_message(self, data_lines: list[str], *, stage: str) -> Mapping[str, object] | None:
         if not data_lines:
             return None
@@ -888,6 +1113,16 @@ class ProjectMCPHttpDiscoveryClient:
         if self._endpoint_url is None:
             raise self._error("client_lifecycle", "Project MCP HTTP endpoint is not configured.")
         return self._endpoint_url
+
+    def _require_legacy_message_endpoint_url(self) -> str:
+        if self._legacy_message_endpoint_url is None:
+            raise self._error("client_lifecycle", "Project MCP legacy HTTP+SSE endpoint is not configured.")
+        return self._legacy_message_endpoint_url
+
+    def _require_legacy_sse_line_queue(self) -> queue.Queue[bytes | Exception | None]:
+        if self._legacy_sse_line_queue is None:
+            raise self._error("client_lifecycle", "Project MCP legacy HTTP+SSE stream is not started.")
+        return self._legacy_sse_line_queue
 
     def _require_config(self) -> ProjectMCPServerConfig:
         if self._config is None:
