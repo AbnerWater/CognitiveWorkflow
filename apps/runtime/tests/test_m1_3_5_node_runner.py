@@ -228,7 +228,7 @@ def _create_project_with_graph(tmp_path: Path, payload: dict[str, Any]) -> tuple
     return project_root, str(payload["workflow_id"])
 
 
-def _start_run(project_root: Path, workflow_id: str) -> str:
+def _start_run(project_root: Path, workflow_id: str, metadata: dict[str, Any] | None = None) -> str:
     response = create_workflow_run(
         project_root,
         workflow_id,
@@ -236,7 +236,7 @@ def _start_run(project_root: Path, workflow_id: str) -> str:
             schema_version="0.1.0",
             mode=ExecutionMode.SEMI_AUTO,
             initial_input={},
-            metadata={},
+            metadata={} if metadata is None else metadata,
         ),
     )
     return response.run_id
@@ -467,6 +467,169 @@ def test_runner_writes_usage_ledger_for_failed_execution_attempt(tmp_path: Path)
     assert usage[0]["node_id"] == "n_execute"
     assert usage[0]["input_tokens"] == 13
     assert usage[0]["est_cost_usd"] == 0.006
+
+
+def test_runner_enforces_run_cost_budget_after_usage_ledger_append(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id, metadata={"cw": {"usage_limits": {"max_cost_usd": 0.005}}})
+
+    advance_workflow_run(project_root, run_id)
+    execution = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            execution=ExecutionAdvanceInput(
+                output={"draft": "ok"},
+                usage=RunUsage(input_tokens=8, output_tokens=2, total_tokens=10, requests=1, est_cost_usd=0.004),
+            )
+        ),
+    )
+    failed = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                usage=RunUsage(input_tokens=4, output_tokens=1, total_tokens=5, requests=1, est_cost_usd=0.002)
+            )
+        ),
+    )
+
+    assert execution.next_node_ids == ["n_review"]
+    assert failed.run.state == RunState.FAILED
+    assert failed.node_id == "n_review"
+    assert failed.node_state == "failed"
+    assert failed.next_node_ids == []
+
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    evaluations = _read_jsonl(run_root / "evaluations.jsonl")
+    assert [attempt["state"] for attempt in attempts] == ["completed", "failed"]
+    assert attempts[1]["node_id"] == "n_review"
+    assert attempts[1]["errors"][0]["payload"]["error_code"] == "AA_RUN_USAGE_LIMIT"
+    assert attempts[1]["errors"][0]["payload"]["kind"] == "max_cost_usd"
+    assert attempts[1]["errors"][0]["payload"]["actual"] == 0.006
+    assert len(usage) == 2
+    assert usage[1]["attempt_id"] == attempts[1]["attempt_id"]
+    assert usage[1]["est_cost_usd"] == 0.002
+    assert evaluations == []
+
+    execution_pack = json.loads((run_root / "execution_packs" / f"{attempts[0]['execution_pack_id']}.json").read_text())
+    assert execution_pack["usage_limits"]["max_cost_usd"] == 0.005
+    assert execution_pack["usage_limits"]["max_total_tokens"] is None
+
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["failure_summary"]["error_code"] == "AA_RUN_USAGE_LIMIT"
+    assert run_json["failure_summary"]["failed_node_id"] == "n_review"
+    assert run_json["summary_metrics"]["usage"]["est_cost_usd"] == 0.006
+    assert run_json["summary_metrics"]["usage"]["records"] == 2
+    assert run_json["summary_metrics"]["usage"]["missing_est_cost_records"] == 0
+
+    event_types = [event.type for event in list_stream_events(project_root, run_id)]
+    assert event_types[-3:] == ["node.state_changed", "error.budget_exhausted", "run.failed"]
+    budget_event = next(
+        event for event in list_stream_events(project_root, run_id) if event.type == "error.budget_exhausted"
+    )
+    assert budget_event.payload == {"kind": "max_cost_usd", "limit": 0.005}
+
+
+def test_runner_cost_budget_fails_closed_when_estimated_cost_is_missing(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id, metadata={"cw": {"usage_limits": {"max_cost_usd": 0.01}}})
+
+    advance_workflow_run(project_root, run_id)
+    failed = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            execution=ExecutionAdvanceInput(usage=RunUsage(input_tokens=3, output_tokens=1, total_tokens=4, requests=1))
+        ),
+    )
+
+    assert failed.run.state == RunState.FAILED
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    assert attempts[0]["state"] == "failed"
+    assert attempts[0]["errors"][0]["payload"]["error_code"] == "AA_RUN_USAGE_LIMIT"
+    assert attempts[0]["errors"][0]["payload"]["reason"] == "missing_est_cost_usd"
+    assert "est_cost_usd" not in usage[0]
+
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["summary_metrics"]["usage"]["missing_est_cost_records"] == 1
+    assert "est_cost_usd" not in run_json["summary_metrics"]["usage"]
+    budget_event = next(
+        event for event in list_stream_events(project_root, run_id) if event.type == "error.budget_exhausted"
+    )
+    assert budget_event.payload == {"kind": "max_cost_usd", "limit": 0.01}
+
+
+def test_runner_enforces_run_total_token_budget(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id, metadata={"cw": {"usage_limits": {"max_total_tokens": 5}}})
+
+    advance_workflow_run(project_root, run_id)
+    failed = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            execution=ExecutionAdvanceInput(
+                usage=RunUsage(input_tokens=4, output_tokens=3, total_tokens=7, requests=1, est_cost_usd=0.001)
+            )
+        ),
+    )
+
+    assert failed.run.state == RunState.FAILED
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    assert attempts[0]["errors"][0]["payload"]["error_code"] == "AA_RUN_USAGE_LIMIT"
+    assert attempts[0]["errors"][0]["payload"]["kind"] == "max_total_tokens"
+    assert attempts[0]["errors"][0]["payload"]["actual"] == 7
+    budget_event = next(
+        event for event in list_stream_events(project_root, run_id) if event.type == "error.budget_exhausted"
+    )
+    assert budget_event.payload == {"kind": "max_total_tokens", "limit": 5}
+
+
+@pytest.mark.parametrize(
+    ("limit_key", "usage", "actual"),
+    [
+        (
+            "max_input_tokens",
+            RunUsage(input_tokens=6, output_tokens=1, total_tokens=7, requests=1, est_cost_usd=0.001),
+            6,
+        ),
+        (
+            "max_output_tokens",
+            RunUsage(input_tokens=1, output_tokens=6, total_tokens=7, requests=1, est_cost_usd=0.001),
+            6,
+        ),
+    ],
+)
+def test_runner_enforces_run_input_and_output_token_budgets(
+    tmp_path: Path,
+    limit_key: str,
+    usage: RunUsage,
+    actual: int,
+) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id, metadata={"cw": {"usage_limits": {limit_key: 5}}})
+
+    advance_workflow_run(project_root, run_id)
+    failed = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(usage=usage)),
+    )
+
+    assert failed.run.state == RunState.FAILED
+    attempts = _read_jsonl(project_root / ".agent-workflow" / "runs" / run_id / "attempts.jsonl")
+    assert attempts[0]["errors"][0]["payload"]["kind"] == limit_key
+    assert attempts[0]["errors"][0]["payload"]["actual"] == actual
+    budget_event = next(
+        event for event in list_stream_events(project_root, run_id) if event.type == "error.budget_exhausted"
+    )
+    assert budget_event.payload == {"kind": limit_key, "limit": 5}
 
 
 def test_runner_human_checkpoint_sets_waiting_user_and_emits_gate(tmp_path: Path) -> None:

@@ -34,6 +34,7 @@ from cw_schemas.packs import (
     PromptOverlay,
     RequirementResolution,
     StaticTextSource,
+    UsageLimits,
     UserInputEvidenceSource,
     UserInputSource,
 )
@@ -70,6 +71,7 @@ class StaticAttemptPackRequest(BaseModel):
     built_at: str
     initial_input: dict[str, Any] = Field(default_factory=dict)
     effective_prompt_overlay: PromptOverlay | None = None
+    usage_limits: UsageLimits | None = None
     reflection_lookup_result: ReflectionLookupResult | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -129,7 +131,7 @@ def build_static_execution_pack(
         effective_model_profile_id=request.model_profile_id,
         retry_policy=request.contract.retry_policy,
         validator_policy=request.contract.validator_policy,
-        usage_limits=None,
+        usage_limits=request.usage_limits,
         cancel_token=_derived_id("cancel", request.attempt_id),
         correlation_id=request.attempt_id,
         metadata={

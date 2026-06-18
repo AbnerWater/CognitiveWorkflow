@@ -18,6 +18,7 @@ from typing import Any, Literal, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from cw_runtime.adapters.base import build_adapter_error
 from cw_runtime.builders import (
     AttemptPackBundle,
     PackBuildError,
@@ -64,8 +65,8 @@ from cw_runtime.runs.lifecycle import (
 )
 from cw_schemas import WorkflowGraph
 from cw_schemas.contract import EvaluationContract, NodeContractBase
-from cw_schemas.events import ContextEvent, EvaluationEvent, HumanEvent, LifecycleEvent, RepairEvent
-from cw_schemas.packs import PromptOverlay
+from cw_schemas.events import ContextEvent, ErrorEvent, EvaluationEvent, HumanEvent, LifecycleEvent, RepairEvent
+from cw_schemas.packs import PromptOverlay, UsageLimits
 from cw_schemas.runtime import (
     AdapterError,
     ArtifactRef,
@@ -83,6 +84,7 @@ from cw_schemas.runtime import (
 )
 from cw_schemas.runtime.repair import AppendToInstructionsOp
 from cw_schemas.types import (
+    AdapterErrorKind,
     AttemptState,
     DisplayLevel,
     EdgeType,
@@ -131,7 +133,12 @@ _ALLOWED_NODE_TRANSITIONS: Mapping[NodeRuntimeState, frozenset[NodeRuntimeState]
         {NodeRuntimeState.REVIEWING, NodeRuntimeState.PASSED, NodeRuntimeState.REVIEW_FAILED, NodeRuntimeState.FAILED}
     ),
     NodeRuntimeState.REVIEWING: frozenset(
-        {NodeRuntimeState.PASSED, NodeRuntimeState.REVIEW_FAILED, NodeRuntimeState.WAITING_USER}
+        {
+            NodeRuntimeState.PASSED,
+            NodeRuntimeState.REVIEW_FAILED,
+            NodeRuntimeState.WAITING_USER,
+            NodeRuntimeState.FAILED,
+        }
     ),
     NodeRuntimeState.REVIEW_FAILED: frozenset({NodeRuntimeState.READY, NodeRuntimeState.REPAIRING}),
     NodeRuntimeState.REPAIRING: frozenset({NodeRuntimeState.RETRYING, NodeRuntimeState.FAILED}),
@@ -631,6 +638,10 @@ def _advance_execution(
     if execution.error is not None:
         return _fail_attempt_and_run(project_root, run, node, artifacts, [execution.error], usage=execution.usage)
 
+    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, execution.usage)
+    if budget_error is not None:
+        return _fail_attempt_and_run(project_root, run, node, artifacts, [budget_error], usage=execution.usage)
+
     run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.VALIDATING)
     output_hash = _stable_hash(execution.output)
     artifacts = artifacts.model_copy(update={"output_hash": output_hash})
@@ -644,7 +655,7 @@ def _advance_execution(
         metadata=execution.metadata,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
-    _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
+    run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
     _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
     _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
     run = _persist_runtime_metadata(project_root, run)
@@ -719,6 +730,10 @@ def _advance_evaluation(
     )
     run = append_run_event_locked(project_root, run, started_event)
 
+    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, evaluation.usage)
+    if budget_error is not None:
+        return _fail_attempt_and_run(project_root, run, node, artifacts, [budget_error], usage=evaluation.usage)
+
     eval_result = _build_evaluation_result(
         run=run,
         node=node,
@@ -761,7 +776,7 @@ def _advance_evaluation(
         metadata=evaluation.metadata,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
-    _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
+    run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
     _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
     _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
     run = _persist_runtime_metadata(project_root, run)
@@ -868,6 +883,10 @@ def _advance_repair(
     )
     run = append_run_event_locked(project_root, run, started_event)
 
+    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, repair.usage)
+    if budget_error is not None:
+        return _fail_attempt_and_run(project_root, run, node, artifacts, [budget_error], usage=repair.usage)
+
     patch = _build_repair_patch(
         run=run,
         node=node,
@@ -929,7 +948,7 @@ def _advance_repair(
         metadata=repair.metadata,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
-    _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
+    run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
     _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
     _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
     _store_runtime_value(run, "last_patch_ids", node.node_id, patch.patch_id)
@@ -1247,6 +1266,7 @@ def _prepare_attempt(
         built_at=now,
         initial_input=_initial_input_from_run(run),
         effective_prompt_overlay=effective_prompt_overlay,
+        usage_limits=_usage_limits_from_run(run),
         reflection_lookup_result=lookup_reflection_memory(
             project_root,
             ReflectionLookupRequest(
@@ -1544,7 +1564,7 @@ def _failed_attempt(
 def _fail_attempt_and_run(
     project_root: Path,
     run: WorkflowRunDocument,
-    node: ExecutionTaskNode,
+    node: AttemptNode,
     artifacts: _AttemptArtifacts,
     errors: list[AdapterError],
     *,
@@ -1552,7 +1572,7 @@ def _fail_attempt_and_run(
 ) -> NodeAdvanceResult:
     attempt = _failed_attempt(run, node.node_id, artifacts, errors, usage=usage)
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
-    _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
+    run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
     event = _lifecycle_event(
         project_root,
         run,
@@ -1573,12 +1593,15 @@ def _fail_attempt_and_run(
     )
     run = append_run_event_locked(project_root, run, event)
     run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.FAILED)
+    if errors and errors[0].error_kind == AdapterErrorKind.USAGE_LIMIT_EXCEEDED:
+        run = _emit_budget_exhausted(project_root, run, node.node_id, artifacts.attempt_id, errors[0])
     now = utc_now_ms()
+    error_code = _adapter_error_code(errors[0]) if errors else None
     summary = RunFailureSummary(
         failure_type=errors[0].failure_type.value if errors else FailureType.UNKNOWN.value,
         failed_node_id=node.node_id,
         message=errors[0].message if errors else "Attempt failed.",
-        error_code=errors[0].error_kind.value if errors else None,
+        error_code=error_code,
         traceback_id=None,
     )
     run = run.model_copy(
@@ -1597,7 +1620,12 @@ def _fail_attempt_and_run(
         event_type="run.failed",
         phase=EventPhase.RUN_FAILED,
         title="Run failed",
-        payload={"error_kind": summary.error_code, "message": summary.message, "failed_node_id": node.node_id},
+        payload={
+            "error_kind": errors[0].error_kind.value if errors else None,
+            "error_code": summary.error_code,
+            "message": summary.message,
+            "failed_node_id": node.node_id,
+        },
         expandable=True,
     )
     run = append_run_event_locked(project_root, run, failed_event)
@@ -2148,7 +2176,7 @@ def _append_usage_ledger(
     node_id: str,
     artifacts: _AttemptArtifacts,
     usage: RunUsage | None,
-) -> None:
+) -> WorkflowRunDocument:
     payload_usage = RunUsage() if usage is None else usage
     record = {
         "usage_id": new_runtime_id(),
@@ -2161,6 +2189,257 @@ def _append_usage_ledger(
         **payload_usage.model_dump(mode="json", exclude_none=True),
     }
     append_run_jsonl_locked(project_root, run.run_id, "usage.jsonl", record)
+    usage_summary = _usage_summary_from_ledger(project_root, run.run_id)
+    summary_metrics = dict(run.summary_metrics)
+    summary_metrics["usage"] = usage_summary
+    return write_workflow_run_locked(project_root, run.model_copy(update={"summary_metrics": summary_metrics}))
+
+
+def _usage_budget_error_after_attempt(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node_id: str,
+    usage: RunUsage | None,
+) -> AdapterError | None:
+    limits = _usage_limits_from_run(run)
+    if limits is None:
+        return None
+
+    current_usage = RunUsage() if usage is None else usage
+    previous_usage, previous_missing_cost_count, previous_record_count = _usage_totals_from_ledger(
+        project_root, run.run_id
+    )
+    next_usage = _sum_usage(previous_usage, current_usage)
+    missing_cost_count = previous_missing_cost_count + (1 if current_usage.est_cost_usd is None else 0)
+    record_count = previous_record_count + 1
+
+    token_checks = (
+        ("max_input_tokens", limits.max_input_tokens, next_usage.input_tokens),
+        ("max_output_tokens", limits.max_output_tokens, next_usage.output_tokens),
+        ("max_total_tokens", limits.max_total_tokens, next_usage.total_tokens),
+    )
+    for kind, limit, actual in token_checks:
+        if limit is not None and actual > limit:
+            return _usage_limit_error(
+                message="Run usage budget was exhausted.",
+                payload={
+                    "kind": kind,
+                    "usage_limit": kind,
+                    "limit": limit,
+                    "actual": actual,
+                    "node_id": node_id,
+                    "record_count": record_count,
+                },
+            )
+
+    if limits.max_cost_usd is None:
+        return None
+    if missing_cost_count > 0 or next_usage.est_cost_usd is None:
+        return _usage_limit_error(
+            message="Run cost budget cannot be audited because usage is missing estimated cost.",
+            payload={
+                "kind": "max_cost_usd",
+                "usage_limit": "max_cost_usd",
+                "limit": limits.max_cost_usd,
+                "actual": next_usage.est_cost_usd,
+                "node_id": node_id,
+                "reason": "missing_est_cost_usd",
+                "missing_est_cost_records": missing_cost_count,
+                "record_count": record_count,
+            },
+        )
+    if next_usage.est_cost_usd > limits.max_cost_usd:
+        return _usage_limit_error(
+            message="Run cost budget was exhausted.",
+            payload={
+                "kind": "max_cost_usd",
+                "usage_limit": "max_cost_usd",
+                "limit": limits.max_cost_usd,
+                "actual": next_usage.est_cost_usd,
+                "node_id": node_id,
+                "record_count": record_count,
+            },
+        )
+    return None
+
+
+def _usage_limit_error(*, message: str, payload: dict[str, Any]) -> AdapterError:
+    return build_adapter_error(
+        "AA_RUN_USAGE_LIMIT",
+        message,
+        retryable=False,
+        payload=payload,
+    )
+
+
+def _adapter_error_code(error: AdapterError) -> str:
+    if error.payload is not None:
+        raw_error_code = error.payload.get("error_code")
+        if isinstance(raw_error_code, str) and raw_error_code:
+            return raw_error_code
+    return error.error_kind.value
+
+
+def _usage_limits_from_run(run: WorkflowRunDocument) -> UsageLimits | None:
+    cw_metadata = run.metadata.get("cw")
+    if not isinstance(cw_metadata, dict):
+        return None
+    raw_limits = cw_metadata.get("usage_limits")
+    if raw_limits is None:
+        return None
+    if not isinstance(raw_limits, Mapping):
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run metadata cw.usage_limits must be an object.",
+            status_code=500,
+            details={"run_id": run.run_id, "usage_limits_type": type(raw_limits).__name__},
+        )
+    try:
+        return UsageLimits.model_validate(raw_limits)
+    except ValidationError as exc:
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run metadata cw.usage_limits is not a valid UsageLimits object.",
+            status_code=500,
+            details={"run_id": run.run_id, "validation_errors": exc.errors(include_url=False)},
+        ) from exc
+
+
+def _usage_summary_from_ledger(project_root: Path, run_id: str) -> dict[str, Any]:
+    usage, missing_cost_count, record_count = _usage_totals_from_ledger(project_root, run_id)
+    summary = usage.model_dump(mode="json", exclude_none=True)
+    summary["records"] = record_count
+    summary["missing_est_cost_records"] = missing_cost_count
+    return summary
+
+
+def _usage_totals_from_ledger(project_root: Path, run_id: str) -> tuple[RunUsage, int, int]:
+    usage_path = run_directory(project_root, run_id) / "usage.jsonl"
+    totals = RunUsage()
+    est_cost_total = 0.0
+    est_cost_seen = False
+    missing_est_cost_count = 0
+    record_count = 0
+    if not usage_path.exists():
+        return totals, missing_est_cost_count, record_count
+    for line_number, raw_line in enumerate(usage_path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not raw_line:
+            continue
+        try:
+            raw_record = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            raise _usage_ledger_corrupted(run_id, line_number, "invalid_json", raw_line) from exc
+        if not isinstance(raw_record, dict):
+            raise _usage_ledger_corrupted(run_id, line_number, "record_not_object", raw_record)
+        record_count += 1
+        totals = _sum_usage(totals, _usage_from_ledger_record(run_id, line_number, raw_record))
+        if raw_record.get("est_cost_usd") is None:
+            missing_est_cost_count += 1
+        else:
+            est_cost_seen = True
+            est_cost_total += _nonnegative_float_record_value(run_id, line_number, raw_record, "est_cost_usd")
+    if (est_cost_seen or record_count == 0) and missing_est_cost_count == 0:
+        totals = totals.model_copy(update={"est_cost_usd": est_cost_total})
+    else:
+        totals = totals.model_copy(update={"est_cost_usd": None})
+    return totals, missing_est_cost_count, record_count
+
+
+def _usage_from_ledger_record(run_id: str, line_number: int, record: Mapping[str, object]) -> RunUsage:
+    return RunUsage(
+        input_tokens=_nonnegative_int_record_value(run_id, line_number, record, "input_tokens"),
+        output_tokens=_nonnegative_int_record_value(run_id, line_number, record, "output_tokens"),
+        cache_creation_input_tokens=_nonnegative_int_record_value(
+            run_id, line_number, record, "cache_creation_input_tokens"
+        ),
+        cache_read_input_tokens=_nonnegative_int_record_value(run_id, line_number, record, "cache_read_input_tokens"),
+        total_tokens=_nonnegative_int_record_value(run_id, line_number, record, "total_tokens"),
+        requests=_nonnegative_int_record_value(run_id, line_number, record, "requests"),
+        est_cost_usd=None,
+    )
+
+
+def _sum_usage(left: RunUsage, right: RunUsage) -> RunUsage:
+    est_cost_usd = None
+    if left.est_cost_usd is not None and right.est_cost_usd is not None:
+        est_cost_usd = left.est_cost_usd + right.est_cost_usd
+    return RunUsage(
+        input_tokens=left.input_tokens + right.input_tokens,
+        output_tokens=left.output_tokens + right.output_tokens,
+        cache_creation_input_tokens=left.cache_creation_input_tokens + right.cache_creation_input_tokens,
+        cache_read_input_tokens=left.cache_read_input_tokens + right.cache_read_input_tokens,
+        total_tokens=left.total_tokens + right.total_tokens,
+        requests=left.requests + right.requests,
+        est_cost_usd=est_cost_usd,
+    )
+
+
+def _nonnegative_int_record_value(
+    run_id: str,
+    line_number: int,
+    record: Mapping[str, object],
+    field_name: str,
+) -> int:
+    raw_value = record.get(field_name, 0)
+    if isinstance(raw_value, bool) or not isinstance(raw_value, int) or raw_value < 0:
+        raise _usage_ledger_corrupted(run_id, line_number, f"invalid_{field_name}", raw_value)
+    return raw_value
+
+
+def _nonnegative_float_record_value(
+    run_id: str,
+    line_number: int,
+    record: Mapping[str, object],
+    field_name: str,
+) -> float:
+    raw_value = record.get(field_name)
+    if isinstance(raw_value, bool) or not isinstance(raw_value, int | float) or raw_value < 0:
+        raise _usage_ledger_corrupted(run_id, line_number, f"invalid_{field_name}", raw_value)
+    return float(raw_value)
+
+
+def _usage_ledger_corrupted(run_id: str, line_number: int, reason: str, value: object) -> RunError:
+    return RunError(
+        "RH_RUN_DIR_CORRUPTED",
+        "Run usage ledger contains an invalid record.",
+        status_code=500,
+        details={"run_id": run_id, "line_number": line_number, "reason": reason, "value": value},
+    )
+
+
+def _emit_budget_exhausted(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node_id: str,
+    attempt_id: str,
+    error: AdapterError,
+) -> WorkflowRunDocument:
+    payload = {} if error.payload is None else dict(error.payload)
+    event = ErrorEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node_id,
+        attempt_id=attempt_id,
+        type="error.budget_exhausted",
+        phase=EventPhase.RUN_FAILED,
+        title="Budget exhausted",
+        summary=None,
+        content=None,
+        payload={"kind": payload.get("kind"), "limit": payload.get("limit")},
+        display_level=DisplayLevel.DEFAULT,
+        severity=StreamSeverity.ERROR,
+        sensitivity=Sensitivity.PROJECT,
+        expandable=True,
+        created_at=utc_now_ms(),
+        error_kind=error.error_kind,
+        failure_type=error.failure_type,
+        message=error.message,
+        retryable=error.retryable,
+        http_status=error.http_status,
+        error_payload=payload,
+    )
+    return append_run_event_locked(project_root, run, event)
 
 
 def _transition_node(
