@@ -18,7 +18,12 @@ from typing import Any, Final, Literal, cast
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from cw_runtime.engine import compile_workflow_graph, load_project_workflow_validation_context, load_workflow_graph
-from cw_runtime.harness.project import AGENT_WORKFLOW_DIR, acquire_runtime_lock, load_project_tool_lock_snapshot
+from cw_runtime.harness.project import (
+    AGENT_WORKFLOW_DIR,
+    ProjectMCPToolDiscovery,
+    acquire_runtime_lock,
+    load_project_tool_lock_snapshot,
+)
 from cw_runtime.persistence import (
     create_git_snapshot_locked,
     ensure_runtime_databases,
@@ -163,6 +168,8 @@ def create_workflow_run(
     project_root: Path,
     workflow_id: str,
     request: WorkflowRunStartRequest,
+    *,
+    mcp_tool_discovery: ProjectMCPToolDiscovery | None = None,
 ) -> WorkflowRunStartResponse:
     """Create a run directory and emit the initial ``run.started`` event."""
 
@@ -176,7 +183,7 @@ def create_workflow_run(
                 details={"workflow_id": workflow_id},
             )
         compiled = compile_workflow_graph(graph, context=load_project_workflow_validation_context(project_root))
-        tool_locks = load_project_tool_lock_snapshot(project_root)
+        tool_locks = load_project_tool_lock_snapshot(project_root, mcp_tool_discovery=mcp_tool_discovery)
         ensure_runtime_databases(project_root)
         _ensure_no_active_run(project_root, workflow_id)
 

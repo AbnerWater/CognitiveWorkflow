@@ -13,6 +13,8 @@ import pytest
 from cw_runtime.harness import (
     HarnessError,
     ProjectCreateRequest,
+    ProjectMCPDiscoveredTools,
+    ProjectMCPServerConfig,
     initialize_project,
     load_project_mcp_server_configs,
     load_project_tool_availability,
@@ -229,6 +231,60 @@ def test_project_tool_availability_reads_enabled_manifest_entries(tmp_path: Path
             "version": "latest",
             "tools_snapshot": [],
         }
+    ]
+
+
+def test_project_tool_lock_snapshot_can_use_injected_mcp_discovery(tmp_path: Path) -> None:
+    project_root = tmp_path / "tool_lock_discovery_project"
+    initialize_project(_request("Tool Lock Discovery", project_root))
+    agent_root = project_root / ".agent-workflow"
+    discovered_server_ids: list[str] = []
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_local_python",
+                "transport": "stdio",
+                "command_or_url": "python -m local_mcp",
+            },
+            {"server_id": "mcp_missing_transport", "command_or_url": "missing transport"},
+        ],
+    )
+
+    def discover(config: ProjectMCPServerConfig) -> ProjectMCPDiscoveredTools:
+        discovered_server_ids.append(config.server_id)
+        return ProjectMCPDiscoveredTools(
+            version="0.5.1",
+            tools_snapshot=[
+                {
+                    "name": "run",
+                    "description": "Run local Python.",
+                    "input_schema": {"type": "object"},
+                }
+            ],
+        )
+
+    locks = load_project_tool_lock_snapshot(project_root, mcp_tool_discovery=discover)
+
+    assert discovered_server_ids == ["mcp_local_python"]
+    assert [entry.model_dump(mode="json") for entry in locks.mcps] == [
+        {
+            "server_id": "mcp_local_python",
+            "version": "0.5.1",
+            "tools_snapshot": [
+                {
+                    "name": "run",
+                    "description": "Run local Python.",
+                    "input_schema": {"type": "object"},
+                }
+            ],
+        },
+        {
+            "server_id": "mcp_missing_transport",
+            "version": "latest",
+            "tools_snapshot": [],
+        },
     ]
 
 

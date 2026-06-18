@@ -11,7 +11,13 @@ from typing import Any
 import pytest
 
 from cw_runtime.engine import WorkflowValidationError, load_workflow_graph
-from cw_runtime.harness import ProjectCreateRequest, initialize_project, update_manifest_json
+from cw_runtime.harness import (
+    ProjectCreateRequest,
+    ProjectMCPDiscoveredTools,
+    ProjectMCPServerConfig,
+    initialize_project,
+    update_manifest_json,
+)
 from cw_runtime.runs import (
     RunActionRequest,
     RunError,
@@ -167,6 +173,42 @@ def test_create_workflow_run_uses_project_skill_manifest_context(tmp_path: Path)
     }
     assert _read_json(run_root / "mcp_lock.json") == {
         "mcps": [{"server_id": "mcp_local_python", "version": "latest", "tools_snapshot": []}]
+    }
+
+
+def test_create_workflow_run_writes_injected_mcp_tool_snapshot(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project(tmp_path)
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_local_python",
+                "transport": "stdio",
+                "command_or_url": "python -m local_mcp",
+            }
+        ],
+    )
+    discovered_server_ids: list[str] = []
+
+    def discover(config: ProjectMCPServerConfig) -> ProjectMCPDiscoveredTools:
+        discovered_server_ids.append(config.server_id)
+        return ProjectMCPDiscoveredTools(
+            version="0.5.1",
+            tools_snapshot=[{"name": "run", "description": "Run local Python."}],
+        )
+
+    response = create_workflow_run(project_root, workflow_id, _start_request(), mcp_tool_discovery=discover)
+    run_root = project_root / ".agent-workflow" / "runs" / response.run_id
+
+    assert discovered_server_ids == ["mcp_local_python"]
+    assert _read_json(run_root / "mcp_lock.json") == {
+        "mcps": [
+            {
+                "server_id": "mcp_local_python",
+                "version": "0.5.1",
+                "tools_snapshot": [{"name": "run", "description": "Run local Python."}],
+            }
+        ]
     }
 
 

@@ -12,7 +12,7 @@ import os
 import secrets
 import subprocess
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Final, Literal, cast
 
@@ -165,7 +165,16 @@ class ProjectMCPLockEntry(BaseModel):
 
     server_id: str
     version: str = "latest"
-    tools_snapshot: list[object] = Field(default_factory=list)
+    tools_snapshot: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ProjectMCPDiscoveredTools(BaseModel):
+    """Discovered MCP server replay metadata for ``mcp_lock.json``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: str = Field(default="latest", min_length=1)
+    tools_snapshot: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ProjectMCPServerConfig(BaseModel):
@@ -178,6 +187,9 @@ class ProjectMCPServerConfig(BaseModel):
     command_or_url: str
     requires_approval: bool = False
     secret_ref: str | None = None
+
+
+ProjectMCPToolDiscovery = Callable[[ProjectMCPServerConfig], ProjectMCPDiscoveredTools | None]
 
 
 class ProjectToolLockSnapshot(BaseModel):
@@ -285,10 +297,15 @@ def load_project_tool_availability(project_root: Path) -> ProjectToolAvailabilit
     )
 
 
-def load_project_tool_lock_snapshot(project_root: Path) -> ProjectToolLockSnapshot:
+def load_project_tool_lock_snapshot(
+    project_root: Path,
+    *,
+    mcp_tool_discovery: ProjectMCPToolDiscovery | None = None,
+) -> ProjectToolLockSnapshot:
     """Load replay lock entries for enabled Skill and MCP manifests."""
 
     agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
+    mcp_configs = load_project_mcp_server_configs(project_root) if mcp_tool_discovery is not None else {}
     return ProjectToolLockSnapshot(
         skills=[
             _skill_lock_entry(entry)
@@ -298,7 +315,11 @@ def load_project_tool_lock_snapshot(project_root: Path) -> ProjectToolLockSnapsh
             )
         ],
         mcps=[
-            _mcp_lock_entry(entry)
+            _mcp_lock_entry(
+                entry,
+                mcp_config=mcp_configs.get(_entry_id),
+                mcp_tool_discovery=mcp_tool_discovery,
+            )
             for _entry_id, entry in _iter_enabled_manifest_entries(
                 agent_root / "mcp.config.json",
                 id_field="server_id",
@@ -793,11 +814,17 @@ def _skill_ref_from_entry(entry: Mapping[str, object]) -> str:
     return f"{skill_id}@{version}"
 
 
-def _mcp_lock_entry(entry: Mapping[str, object]) -> ProjectMCPLockEntry:
+def _mcp_lock_entry(
+    entry: Mapping[str, object],
+    *,
+    mcp_config: ProjectMCPServerConfig | None,
+    mcp_tool_discovery: ProjectMCPToolDiscovery | None,
+) -> ProjectMCPLockEntry:
+    discovered = mcp_tool_discovery(mcp_config) if mcp_tool_discovery is not None and mcp_config is not None else None
     return ProjectMCPLockEntry(
         server_id=cast(str, entry["server_id"]).strip(),
-        version="latest",
-        tools_snapshot=[],
+        version="latest" if discovered is None else discovered.version,
+        tools_snapshot=[] if discovered is None else discovered.tools_snapshot,
     )
 
 
@@ -869,8 +896,10 @@ __all__ = [
     "ProjectCreateRequest",
     "ProjectCreateResponse",
     "ProjectDocument",
+    "ProjectMCPDiscoveredTools",
     "ProjectMCPLockEntry",
     "ProjectMCPServerConfig",
+    "ProjectMCPToolDiscovery",
     "ProjectSkillLockEntry",
     "ProjectToolAvailability",
     "ProjectToolLockSnapshot",
