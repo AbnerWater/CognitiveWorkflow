@@ -18,7 +18,7 @@ from typing import Any, Final, Literal, cast
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from cw_runtime.engine import compile_workflow_graph, load_project_workflow_validation_context, load_workflow_graph
-from cw_runtime.harness.project import AGENT_WORKFLOW_DIR, acquire_runtime_lock
+from cw_runtime.harness.project import AGENT_WORKFLOW_DIR, acquire_runtime_lock, load_project_tool_lock_snapshot
 from cw_runtime.persistence import (
     create_git_snapshot_locked,
     ensure_runtime_databases,
@@ -166,16 +166,17 @@ def create_workflow_run(
 ) -> WorkflowRunStartResponse:
     """Create a run directory and emit the initial ``run.started`` event."""
 
-    graph = load_workflow_graph(project_root)
-    if graph.workflow_id != workflow_id:
-        raise RunError(
-            "RES_NOT_FOUND",
-            "Workflow is not active in this project runtime.",
-            status_code=404,
-            details={"workflow_id": workflow_id},
-        )
-    compiled = compile_workflow_graph(graph, context=load_project_workflow_validation_context(project_root))
     with acquire_runtime_lock(project_root):
+        graph = load_workflow_graph(project_root)
+        if graph.workflow_id != workflow_id:
+            raise RunError(
+                "RES_NOT_FOUND",
+                "Workflow is not active in this project runtime.",
+                status_code=404,
+                details={"workflow_id": workflow_id},
+            )
+        compiled = compile_workflow_graph(graph, context=load_project_workflow_validation_context(project_root))
+        tool_locks = load_project_tool_lock_snapshot(project_root)
         ensure_runtime_databases(project_root)
         _ensure_no_active_run(project_root, workflow_id)
 
@@ -211,8 +212,14 @@ def create_workflow_run(
         _write_text_atomic(run_root / "routing.jsonl", "")
         _write_text_atomic(run_root / "usage.jsonl", "")
         _write_text_atomic(run_root / "metrics.jsonl", "")
-        _write_json_atomic(run_root / "skill_lock.json", {"skills": []})
-        _write_json_atomic(run_root / "mcp_lock.json", {"mcps": []})
+        _write_json_atomic(
+            run_root / "skill_lock.json",
+            {"skills": [entry.model_dump(mode="json", exclude_none=True) for entry in tool_locks.skills]},
+        )
+        _write_json_atomic(
+            run_root / "mcp_lock.json",
+            {"mcps": [entry.model_dump(mode="json") for entry in tool_locks.mcps]},
+        )
 
         event = _build_lifecycle_event(
             run=run,

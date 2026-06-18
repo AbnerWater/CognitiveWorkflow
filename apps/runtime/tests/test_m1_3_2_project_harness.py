@@ -15,6 +15,7 @@ from cw_runtime.harness import (
     ProjectCreateRequest,
     initialize_project,
     load_project_tool_availability,
+    load_project_tool_lock_snapshot,
     update_manifest_json,
 )
 
@@ -195,21 +196,38 @@ def test_project_tool_availability_reads_enabled_manifest_entries(tmp_path: Path
         agent_root / "skills.config.json",
         [
             {"skill_id": "research_outline", "version": "1.2.0"},
+            {"skill_id": "research_outline", "version": "2.0.0"},
             {"skill_id": "disabled_skill", "version": "1.0.0", "enabled": False},
         ],
     )
     _write_json_value(
         agent_root / "mcp.config.json",
         [
-            {"server_id": "mcp_local_python", "version": "0.5.1", "secret_ref": "secure://mcp/local-python"},
+            {
+                "server_id": "mcp_local_python",
+                "version": "0.5.1",
+                "secret_ref": "secure://mcp/local-python",
+                "tools_snapshot": [{"name": "run", "description": "Run local Python."}],
+            },
             {"server_id": "disabled_mcp", "enabled": False},
         ],
     )
 
     availability = load_project_tool_availability(project_root)
+    locks = load_project_tool_lock_snapshot(project_root)
 
     assert availability.skill_ids == {"research_outline"}
     assert availability.mcp_server_ids == {"mcp_local_python"}
+    assert [entry.model_dump(mode="json", exclude_none=True) for entry in locks.skills] == [
+        {"skill_id": "research_outline", "version": "1.2.0"}
+    ]
+    assert [entry.model_dump(mode="json") for entry in locks.mcps] == [
+        {
+            "server_id": "mcp_local_python",
+            "version": "latest",
+            "tools_snapshot": [],
+        }
+    ]
 
 
 def test_project_tool_availability_treats_invalid_manifest_entries_as_disabled(tmp_path: Path) -> None:

@@ -135,7 +135,10 @@ def test_create_workflow_run_uses_project_skill_manifest_context(tmp_path: Path)
 
     _write_json_value(
         project_root / ".agent-workflow" / "skills.config.json",
-        [{"skill_id": "research_outline", "version": "1.2.0"}],
+        [
+            {"skill_id": "research_outline", "version": "1.2.0", "checksum": "sha256:abc"},
+            {"skill_id": "disabled_skill", "version": "9.9.9", "enabled": False},
+        ],
     )
     with pytest.raises(WorkflowValidationError) as mcp_exc_info:
         create_workflow_run(project_root, workflow_id, _start_request())
@@ -145,11 +148,26 @@ def test_create_workflow_run_uses_project_skill_manifest_context(tmp_path: Path)
 
     _write_json_value(
         project_root / ".agent-workflow" / "mcp.config.json",
-        [{"server_id": "mcp_local_python", "version": "0.5.1"}],
+        [
+            {
+                "server_id": "mcp_local_python",
+                "version": "0.5.1",
+                "secret_ref": "secure://mcp/local-python",
+                "tools_snapshot": [{"name": "run"}],
+            },
+            {"server_id": "disabled_mcp", "version": "9.9.9", "enabled": False},
+        ],
     )
     response = create_workflow_run(project_root, workflow_id, _start_request())
+    run_root = project_root / ".agent-workflow" / "runs" / response.run_id
 
     assert response.run_id
+    assert _read_json(run_root / "skill_lock.json") == {
+        "skills": [{"skill_id": "research_outline", "version": "1.2.0"}]
+    }
+    assert _read_json(run_root / "mcp_lock.json") == {
+        "mcps": [{"server_id": "mcp_local_python", "version": "latest", "tools_snapshot": []}]
+    }
 
 
 def test_run_pause_resume_cancel_emit_monotonic_events(tmp_path: Path) -> None:

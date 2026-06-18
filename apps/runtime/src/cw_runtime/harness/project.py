@@ -148,6 +148,34 @@ class ProjectToolAvailability(BaseModel):
     mcp_server_ids: set[str] = Field(default_factory=set)
 
 
+class ProjectSkillLockEntry(BaseModel):
+    """Run-scoped Skill lock entry projected from project config."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill_id: str
+    version: str = "latest"
+
+
+class ProjectMCPLockEntry(BaseModel):
+    """Run-scoped MCP lock entry projected from project config."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    server_id: str
+    version: str = "latest"
+    tools_snapshot: list[object] = Field(default_factory=list)
+
+
+class ProjectToolLockSnapshot(BaseModel):
+    """Run startup lock snapshot for enabled project tools."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skills: list[ProjectSkillLockEntry] = Field(default_factory=list)
+    mcps: list[ProjectMCPLockEntry] = Field(default_factory=list)
+
+
 class RuntimeLock:
     def __init__(self, lock_path: Path, *, timeout_seconds: float = 60.0) -> None:
         self._lock_path = lock_path
@@ -240,6 +268,28 @@ def load_project_tool_availability(project_root: Path) -> ProjectToolAvailabilit
     return ProjectToolAvailability(
         skill_ids=load_enabled_skill_ids(project_root),
         mcp_server_ids=load_enabled_mcp_server_ids(project_root),
+    )
+
+
+def load_project_tool_lock_snapshot(project_root: Path) -> ProjectToolLockSnapshot:
+    """Load replay lock entries for enabled Skill and MCP manifests."""
+
+    agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
+    return ProjectToolLockSnapshot(
+        skills=[
+            _skill_lock_entry(entry)
+            for _entry_id, entry in _iter_enabled_manifest_entries(
+                agent_root / "skills.config.json",
+                id_field="skill_id",
+            )
+        ],
+        mcps=[
+            _mcp_lock_entry(entry)
+            for _entry_id, entry in _iter_enabled_manifest_entries(
+                agent_root / "mcp.config.json",
+                id_field="server_id",
+            )
+        ],
     )
 
 
@@ -661,9 +711,10 @@ def _read_json_list(path: Path) -> list[object]:
     return cast(list[object], loaded)
 
 
-def _load_enabled_manifest_ids(path: Path, *, id_field: str) -> set[str]:
+def _iter_enabled_manifest_entries(path: Path, *, id_field: str) -> list[tuple[str, Mapping[str, object]]]:
     entries = _read_json_list(path)
-    enabled_ids: set[str] = set()
+    enabled_entries: list[tuple[str, Mapping[str, object]]] = []
+    seen_ids: set[str] = set()
     for raw_entry in entries:
         if not isinstance(raw_entry, Mapping):
             continue
@@ -672,9 +723,40 @@ def _load_enabled_manifest_ids(path: Path, *, id_field: str) -> set[str]:
         if not isinstance(enabled, bool) or not enabled:
             continue
         raw_id = entry.get(id_field)
-        if isinstance(raw_id, str) and raw_id.strip() != "":
-            enabled_ids.add(raw_id)
-    return enabled_ids
+        if not isinstance(raw_id, str):
+            continue
+        entry_id = raw_id.strip()
+        if entry_id == "" or entry_id in seen_ids:
+            continue
+        seen_ids.add(entry_id)
+        enabled_entries.append((entry_id, entry))
+    return enabled_entries
+
+
+def _load_enabled_manifest_ids(path: Path, *, id_field: str) -> set[str]:
+    return {entry_id for entry_id, _entry in _iter_enabled_manifest_entries(path, id_field=id_field)}
+
+
+def _skill_lock_entry(entry: Mapping[str, object]) -> ProjectSkillLockEntry:
+    return ProjectSkillLockEntry(
+        skill_id=cast(str, entry["skill_id"]).strip(),
+        version=_string_manifest_field(entry, "version", default="latest"),
+    )
+
+
+def _mcp_lock_entry(entry: Mapping[str, object]) -> ProjectMCPLockEntry:
+    return ProjectMCPLockEntry(
+        server_id=cast(str, entry["server_id"]).strip(),
+        version="latest",
+        tools_snapshot=[],
+    )
+
+
+def _string_manifest_field(entry: Mapping[str, object], field: str, *, default: str) -> str:
+    value = entry.get(field)
+    if isinstance(value, str) and value.strip() != "":
+        return value.strip()
+    return default
 
 
 def _write_json_atomic(path: Path, payload: object) -> None:
@@ -713,9 +795,17 @@ __all__ = [
     "ProjectCreateRequest",
     "ProjectCreateResponse",
     "ProjectDocument",
+    "ProjectMCPLockEntry",
+    "ProjectSkillLockEntry",
+    "ProjectToolAvailability",
+    "ProjectToolLockSnapshot",
     "RuntimeLock",
     "acquire_runtime_lock",
     "initialize_project",
+    "load_enabled_mcp_server_ids",
+    "load_enabled_skill_ids",
+    "load_project_tool_availability",
+    "load_project_tool_lock_snapshot",
     "read_project",
     "update_manifest_json",
 ]
