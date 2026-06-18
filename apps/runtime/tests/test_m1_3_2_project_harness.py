@@ -8,7 +8,10 @@ import shlex
 import subprocess
 import sys
 import textwrap
+import threading
+import time
 from collections.abc import Mapping
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
 
@@ -21,6 +24,7 @@ from cw_runtime.harness import (
     ProjectMCPDiscoveryError,
     ProjectMCPDiscoveryRunner,
     ProjectMCPHealthCheck,
+    ProjectMCPHttpDiscoveryClient,
     ProjectMCPServerConfig,
     ProjectMCPStdioDiscoveryClient,
     initialize_project,
@@ -419,6 +423,183 @@ def _write_fake_mcp_stdio_server(script_path: Path) -> None:
     )
 
 
+class FakeMCPHttpServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    mode: str
+    request_headers_log: list[dict[str, str]]
+
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        handler_class: type[BaseHTTPRequestHandler],
+        *,
+        mode: str,
+    ) -> None:
+        super().__init__(server_address, handler_class)
+        self.mode = mode
+        self.request_headers_log = []
+
+
+class FakeMCPHttpHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def do_POST(self) -> None:
+        server = cast(FakeMCPHttpServer, self.server)
+        message = self._read_json_body()
+        method = message.get("method")
+        server.request_headers_log.append(
+            {
+                "method": method if isinstance(method, str) else "",
+                "accept": self.headers.get("Accept", ""),
+                "content_type": self.headers.get("Content-Type", ""),
+                "protocol_version": self.headers.get("MCP-Protocol-Version", ""),
+                "session_id": self.headers.get("Mcp-Session-Id", ""),
+            }
+        )
+        if method == "initialize":
+            self._send_json(
+                200,
+                {
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "result": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "fake-http-mcp", "version": "0.6.0"},
+                    },
+                },
+                extra_headers={"Mcp-Session-Id": "test-session-1"},
+            )
+            return
+        if method == "notifications/initialized":
+            self._send_empty(202)
+            return
+        if method == "tools/list" and server.mode == "http_error":
+            self._send_text(500, "fake secret should not leak")
+            return
+        if method == "tools/list" and server.mode == "error":
+            self._send_json(
+                200,
+                {
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "error": {"code": -32000, "message": "fake secret should not leak"},
+                },
+            )
+            return
+        if method == "tools/list" and server.mode == "sse":
+            self._send_sse(
+                [
+                    {"jsonrpc": "2.0", "method": "notifications/tools/list_changed"},
+                    self._tools_response(message.get("id")),
+                ]
+            )
+            return
+        if method == "tools/list" and server.mode == "sse_hang":
+            self._send_sse(
+                [{"jsonrpc": "2.0", "method": "notifications/tools/list_changed"}],
+                keep_open_seconds=1.0,
+            )
+            return
+        if method == "tools/list":
+            self._send_json(200, self._tools_response(message.get("id")))
+            return
+        self._send_json(
+            200,
+            {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "error": {"code": -32601, "message": "method not found"},
+            },
+        )
+
+    def log_message(self, format: str, *args: object) -> None:
+        return
+
+    def _read_json_body(self) -> Mapping[str, object]:
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        message = json.loads(body)
+        if not isinstance(message, Mapping):
+            raise AssertionError("fake MCP HTTP request body was not an object")
+        return message
+
+    def _tools_response(self, request_id: object) -> dict[str, object]:
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "tools": [
+                    {
+                        "name": "run",
+                        "title": "Run",
+                        "description": "Run remote Python.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"code": {"type": "string"}},
+                        },
+                    }
+                ]
+            },
+        }
+
+    def _send_empty(self, status: int) -> None:
+        self.send_response(status)
+        self.send_header("Content-Length", "0")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+    def _send_text(self, status: int, body: str) -> None:
+        body_bytes = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body_bytes)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body_bytes)
+        self.close_connection = True
+
+    def _send_json(
+        self,
+        status: int,
+        payload: object,
+        *,
+        extra_headers: Mapping[str, str] | None = None,
+    ) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        if extra_headers is not None:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(body)
+        self.close_connection = True
+
+    def _send_sse(self, messages: list[Mapping[str, object]], *, keep_open_seconds: float = 0.0) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        for message in messages:
+            self.wfile.write(f"data: {json.dumps(message)}\n\n".encode())
+        self.wfile.flush()
+        if keep_open_seconds > 0:
+            time.sleep(keep_open_seconds)
+        self.close_connection = True
+
+
+def _start_fake_mcp_http_server(mode: str) -> tuple[FakeMCPHttpServer, threading.Thread, str]:
+    server = FakeMCPHttpServer(("127.0.0.1", 0), FakeMCPHttpHandler, mode=mode)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread, f"http://127.0.0.1:{server.server_port}/mcp"
+
+
 def test_project_mcp_discovery_runner_executes_lifecycle_for_lock_snapshot(tmp_path: Path) -> None:
     project_root = tmp_path / "mcp_discovery_runner_project"
     initialize_project(_request("MCP Discovery Runner", project_root))
@@ -571,6 +752,298 @@ def test_project_mcp_stdio_discovery_client_times_out_on_unrelated_messages(tmp_
         "timeout_seconds": 0.2,
     }
     assert "command_or_url" not in str(exc_info.value.details)
+
+
+def test_project_mcp_http_discovery_client_smoke_lists_tools_json(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_http_discovery_project"
+    initialize_project(_request("MCP HTTP Discovery", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server, thread, endpoint_url = _start_fake_mcp_http_server("json")
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_python",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                }
+            ],
+        )
+
+        locks = load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                lambda config: ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+            ),
+        )
+
+        assert [entry.model_dump(mode="json") for entry in locks.mcps] == [
+            {
+                "server_id": "mcp_http_python",
+                "version": "0.6.0",
+                "tools_snapshot": [
+                    {
+                        "name": "run",
+                        "title": "Run",
+                        "description": "Run remote Python.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"code": {"type": "string"}},
+                        },
+                    }
+                ],
+            }
+        ]
+        assert server.request_headers_log == [
+            {
+                "method": "initialize",
+                "accept": "application/json, text/event-stream",
+                "content_type": "application/json",
+                "protocol_version": "",
+                "session_id": "",
+            },
+            {
+                "method": "notifications/initialized",
+                "accept": "application/json, text/event-stream",
+                "content_type": "application/json",
+                "protocol_version": "2025-06-18",
+                "session_id": "test-session-1",
+            },
+            {
+                "method": "tools/list",
+                "accept": "application/json, text/event-stream",
+                "content_type": "application/json",
+                "protocol_version": "2025-06-18",
+                "session_id": "test-session-1",
+            },
+        ]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_discovery_client_smoke_lists_tools_sse(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_http_sse_discovery_project"
+    initialize_project(_request("MCP HTTP SSE Discovery", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server, thread, endpoint_url = _start_fake_mcp_http_server("sse")
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_python",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                }
+            ],
+        )
+
+        locks = load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                lambda config: ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+            ),
+        )
+
+        assert [entry.model_dump(mode="json") for entry in locks.mcps] == [
+            {
+                "server_id": "mcp_http_python",
+                "version": "0.6.0",
+                "tools_snapshot": [
+                    {
+                        "name": "run",
+                        "title": "Run",
+                        "description": "Run remote Python.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"code": {"type": "string"}},
+                        },
+                    }
+                ],
+            }
+        ]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_discovery_client_times_out_sse_without_matching_response(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_http_sse_timeout_project"
+    initialize_project(_request("MCP HTTP SSE Timeout", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server, thread, endpoint_url = _start_fake_mcp_http_server("sse_hang")
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_python",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                }
+            ],
+        )
+
+        started_at = time.monotonic()
+        with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+            load_project_tool_lock_snapshot(
+                project_root,
+                mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                    lambda config: ProjectMCPHttpDiscoveryClient(timeout_seconds=0.2)
+                ),
+            )
+        elapsed = time.monotonic() - started_at
+
+        assert elapsed < 0.8
+        assert exc_info.value.server_id == "mcp_http_python"
+        assert exc_info.value.stage == "discover_tools"
+        assert exc_info.value.details == {
+            "server_id": "mcp_http_python",
+            "transport": "http",
+            "timeout_seconds": 0.2,
+        }
+        assert "command_or_url" not in str(exc_info.value.details)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_discovery_client_reuse_resets_session_headers(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_http_reuse_project"
+    initialize_project(_request("MCP HTTP Reuse", project_root))
+    agent_root = project_root / ".agent-workflow"
+    first_server, first_thread, first_endpoint_url = _start_fake_mcp_http_server("json")
+    second_server, second_thread, second_endpoint_url = _start_fake_mcp_http_server("json")
+    client = ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_python",
+                    "transport": "http",
+                    "command_or_url": first_endpoint_url,
+                }
+            ],
+        )
+        load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(lambda config: client),
+        )
+
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_python",
+                    "transport": "http",
+                    "command_or_url": second_endpoint_url,
+                }
+            ],
+        )
+        load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(lambda config: client),
+        )
+
+        assert first_server.request_headers_log[0]["method"] == "initialize"
+        assert first_server.request_headers_log[0]["protocol_version"] == ""
+        assert first_server.request_headers_log[0]["session_id"] == ""
+        assert second_server.request_headers_log[0]["method"] == "initialize"
+        assert second_server.request_headers_log[0]["protocol_version"] == ""
+        assert second_server.request_headers_log[0]["session_id"] == ""
+    finally:
+        for server, thread in ((first_server, first_thread), (second_server, second_thread)):
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_discovery_client_sanitizes_json_rpc_error(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_http_error_project"
+    initialize_project(_request("MCP HTTP Error", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server, thread, endpoint_url = _start_fake_mcp_http_server("error")
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_python",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                }
+            ],
+        )
+
+        with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+            load_project_tool_lock_snapshot(
+                project_root,
+                mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                    lambda config: ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+                ),
+            )
+
+        assert exc_info.value.server_id == "mcp_http_python"
+        assert exc_info.value.stage == "discover_tools"
+        assert exc_info.value.details == {
+            "server_id": "mcp_http_python",
+            "transport": "http",
+            "jsonrpc_error_type": "int",
+        }
+        assert "fake secret" not in str(exc_info.value)
+        assert "fake secret" not in str(exc_info.value.details)
+        assert "command_or_url" not in str(exc_info.value.details)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_discovery_client_sanitizes_http_error(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_http_status_error_project"
+    initialize_project(_request("MCP HTTP Status Error", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server, thread, endpoint_url = _start_fake_mcp_http_server("http_error")
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_python",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                }
+            ],
+        )
+
+        with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+            load_project_tool_lock_snapshot(
+                project_root,
+                mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                    lambda config: ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+                ),
+            )
+
+        assert exc_info.value.server_id == "mcp_http_python"
+        assert exc_info.value.stage == "discover_tools"
+        assert exc_info.value.details == {
+            "server_id": "mcp_http_python",
+            "transport": "http",
+            "http_status": 500,
+        }
+        assert "fake secret" not in str(exc_info.value)
+        assert "fake secret" not in str(exc_info.value.details)
+        assert "command_or_url" not in str(exc_info.value.details)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
 
 
 def test_project_mcp_discovery_runner_unhealthy_fails_closed_and_closes(tmp_path: Path) -> None:

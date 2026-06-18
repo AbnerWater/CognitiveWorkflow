@@ -16,8 +16,12 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable, Mapping
+from http.client import HTTPResponse
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol, TextIO, cast
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -72,6 +76,7 @@ _MCP_DISCOVERY_ERROR_STAGES: Final = {
     "discover_tools",
     "close",
 }
+_MCP_HTTP_MAX_RESPONSE_BYTES: Final = 4 * 1024 * 1024
 _MCP_PROTOCOL_VERSION: Final = "2025-06-18"
 _TRACKED_INIT_PATHS: Final = [
     ".gitignore",
@@ -525,6 +530,368 @@ class ProjectMCPStdioDiscoveryClient:
     def _require_config(self) -> ProjectMCPServerConfig:
         if self._config is None:
             raise RuntimeError("ProjectMCPStdioDiscoveryClient used before start().")
+        return self._config
+
+    def _error(
+        self,
+        stage: str,
+        message: str,
+        *,
+        details: Mapping[str, object] | None = None,
+    ) -> ProjectMCPDiscoveryError:
+        return _mcp_discovery_error(self._require_config(), stage=stage, message=message, details=details)
+
+
+class ProjectMCPHttpDiscoveryClient:
+    """Minimal Streamable HTTP MCP client for initialize + tools/list discovery."""
+
+    def __init__(self, *, timeout_seconds: float = 5.0) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._config: ProjectMCPServerConfig | None = None
+        self._endpoint_url: str | None = None
+        self._next_id = 1
+        self._version = "latest"
+        self._protocol_version: str | None = None
+        self._session_id: str | None = None
+
+    def start(self, config: ProjectMCPServerConfig) -> None:
+        self._endpoint_url = None
+        self._next_id = 1
+        self._version = "latest"
+        self._protocol_version = None
+        self._session_id = None
+        self._config = config
+        if config.transport != "http":
+            raise self._error(
+                "client_lifecycle",
+                "Project MCP HTTP discovery client only supports http transport.",
+                details={"transport": config.transport},
+            )
+        endpoint_url = config.command_or_url.strip()
+        parsed = urlparse(endpoint_url)
+        if parsed.scheme not in {"http", "https"} or parsed.netloc == "":
+            raise self._error(
+                "client_lifecycle",
+                "Project MCP HTTP discovery endpoint URL is invalid.",
+                details={"url_scheme": parsed.scheme or "missing"},
+            )
+        self._endpoint_url = endpoint_url
+
+    def health_check(self) -> ProjectMCPHealthCheck:
+        result = self._request(
+            "initialize",
+            stage="initialize",
+            params={
+                "protocolVersion": _MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "cognitiveworkflow",
+                    "version": __version__,
+                },
+            },
+        )
+        protocol_version = _string_mapping_value(result, "protocolVersion")
+        if protocol_version is None:
+            raise self._error(
+                "initialize",
+                "Project MCP initialize response is missing protocolVersion.",
+            )
+        self._protocol_version = protocol_version
+        self._version = _mcp_server_version(result, default=protocol_version)
+        self._notify("notifications/initialized", stage="initialize")
+        return ProjectMCPHealthCheck(healthy=True, metadata={"protocol_version": protocol_version})
+
+    def discover_tools(self) -> ProjectMCPDiscoveredTools | None:
+        result = self._request("tools/list", stage="discover_tools")
+        tools_value = result.get("tools")
+        if not isinstance(tools_value, list):
+            raise self._error(
+                "discover_tools",
+                "Project MCP tools/list response is missing tools list.",
+                details={"result_type": type(tools_value).__name__},
+            )
+        return ProjectMCPDiscoveredTools(
+            version=self._version,
+            tools_snapshot=[_mcp_tool_snapshot(tool, self._require_config()) for tool in tools_value],
+        )
+
+    def close(self) -> None:
+        self._endpoint_url = None
+        self._next_id = 1
+        self._version = "latest"
+        self._protocol_version = None
+        self._session_id = None
+
+    def _request(
+        self,
+        method: str,
+        *,
+        stage: str,
+        params: Mapping[str, object] | None = None,
+    ) -> Mapping[str, object]:
+        request_id = self._next_request_id()
+        message: dict[str, object] = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+        }
+        if params is not None:
+            message["params"] = dict(params)
+        response = self._post_json_rpc(message, stage=stage, expected_response_id=request_id)
+        return self._response_result(response, stage=stage)
+
+    def _notify(self, method: str, *, stage: str) -> None:
+        self._post_json_rpc({"jsonrpc": "2.0", "method": method}, stage=stage, expected_response_id=None)
+
+    def _post_json_rpc(
+        self,
+        message: Mapping[str, object],
+        *,
+        stage: str,
+        expected_response_id: int | None,
+    ) -> Mapping[str, object] | None:
+        request = Request(
+            self._require_endpoint_url(),
+            data=json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            method="POST",
+            headers=self._http_headers(),
+        )
+        try:
+            with urlopen(request, timeout=self._timeout_seconds) as response:
+                status = response.status
+                if expected_response_id is None:
+                    if status != 202:
+                        raise self._error(
+                            stage,
+                            "Project MCP HTTP notification was not accepted.",
+                            details={"http_status": status},
+                        )
+                    return None
+                self._capture_http_session_id(response, stage=stage)
+                return self._read_http_response(response, expected_response_id=expected_response_id, stage=stage)
+        except HTTPError as exc:
+            exc.close()
+            raise self._error(
+                stage,
+                "Project MCP HTTP request failed.",
+                details={"http_status": exc.code},
+            ) from exc
+        except URLError as exc:
+            raise self._error(
+                stage,
+                "Project MCP HTTP request failed.",
+                details={"exception_type": type(exc.reason).__name__},
+            ) from exc
+        except TimeoutError as exc:
+            raise self._error(
+                stage,
+                "Project MCP HTTP request timed out.",
+                details={"timeout_seconds": self._timeout_seconds},
+            ) from exc
+
+    def _read_http_response(
+        self,
+        response: HTTPResponse,
+        *,
+        expected_response_id: int,
+        stage: str,
+    ) -> Mapping[str, object]:
+        content_type = _http_content_type(response)
+        if content_type == "application/json":
+            message = self._read_json_http_response(response, stage=stage)
+            if message.get("id") != expected_response_id:
+                raise self._error(
+                    stage,
+                    "Project MCP HTTP JSON-RPC response id did not match request.",
+                    details={"response_id_type": type(message.get("id")).__name__},
+                )
+            return message
+        if content_type == "text/event-stream":
+            return self._read_sse_http_response(response, expected_response_id=expected_response_id, stage=stage)
+        raise self._error(
+            stage,
+            "Project MCP HTTP response content type is unsupported.",
+            details={"content_type": content_type or "missing"},
+        )
+
+    def _read_json_http_response(self, response: HTTPResponse, *, stage: str) -> Mapping[str, object]:
+        try:
+            body = response.read(_MCP_HTTP_MAX_RESPONSE_BYTES + 1)
+        except Exception as exc:
+            raise self._error(
+                stage,
+                "Project MCP HTTP response read failed.",
+                details={"exception_type": type(exc).__name__},
+            ) from exc
+        if len(body) > _MCP_HTTP_MAX_RESPONSE_BYTES:
+            raise self._error(
+                stage,
+                "Project MCP HTTP response exceeded size limit.",
+                details={"response_size_limit": _MCP_HTTP_MAX_RESPONSE_BYTES},
+            )
+        try:
+            message = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise self._error(
+                stage,
+                "Project MCP HTTP response was not valid JSON.",
+                details={"exception_type": type(exc).__name__},
+            ) from exc
+        if not isinstance(message, Mapping):
+            raise self._error(
+                stage,
+                "Project MCP HTTP response was not a JSON object.",
+                details={"result_type": type(message).__name__},
+            )
+        return message
+
+    def _read_sse_http_response(
+        self,
+        response: HTTPResponse,
+        *,
+        expected_response_id: int,
+        stage: str,
+    ) -> Mapping[str, object]:
+        deadline = time.monotonic() + self._timeout_seconds
+        data_lines: list[str] = []
+        line_queue: queue.Queue[bytes | Exception | None] = queue.Queue()
+        reader_thread = threading.Thread(
+            target=_read_http_sse_lines,
+            args=(response, line_queue),
+            daemon=True,
+        )
+        reader_thread.start()
+        try:
+            while True:
+                remaining_seconds = deadline - time.monotonic()
+                if remaining_seconds <= 0:
+                    raise self._error(
+                        stage,
+                        "Project MCP HTTP SSE response timed out.",
+                        details={"timeout_seconds": self._timeout_seconds},
+                    )
+                try:
+                    line = line_queue.get(timeout=remaining_seconds)
+                except queue.Empty as exc:
+                    raise self._error(
+                        stage,
+                        "Project MCP HTTP SSE response timed out.",
+                        details={"timeout_seconds": self._timeout_seconds},
+                    ) from exc
+                if isinstance(line, Exception):
+                    if isinstance(line, TimeoutError):
+                        raise self._error(
+                            stage,
+                            "Project MCP HTTP SSE response timed out.",
+                            details={"timeout_seconds": self._timeout_seconds},
+                        ) from line
+                    raise self._error(
+                        stage,
+                        "Project MCP HTTP SSE read failed.",
+                        details={"exception_type": type(line).__name__},
+                    ) from line
+                if line is None:
+                    raise self._error(stage, "Project MCP HTTP SSE stream ended before response.")
+                if len(line) > _MCP_HTTP_MAX_RESPONSE_BYTES:
+                    raise self._error(
+                        stage,
+                        "Project MCP HTTP SSE response exceeded size limit.",
+                        details={"response_size_limit": _MCP_HTTP_MAX_RESPONSE_BYTES},
+                    )
+                try:
+                    decoded_line = line.decode("utf-8").rstrip("\r\n")
+                except UnicodeDecodeError as exc:
+                    raise self._error(
+                        stage,
+                        "Project MCP HTTP SSE event was not valid UTF-8.",
+                        details={"exception_type": type(exc).__name__},
+                    ) from exc
+                if decoded_line == "":
+                    message = self._sse_message(data_lines, stage=stage)
+                    data_lines = []
+                    if message is None or message.get("id") != expected_response_id:
+                        continue
+                    return message
+                if decoded_line.startswith(":"):
+                    continue
+                field_name, separator, field_value = decoded_line.partition(":")
+                if separator == "" or field_name != "data":
+                    continue
+                data_lines.append(field_value[1:] if field_value.startswith(" ") else field_value)
+        finally:
+            response.close()
+            reader_thread.join(timeout=self._timeout_seconds)
+
+    def _sse_message(self, data_lines: list[str], *, stage: str) -> Mapping[str, object] | None:
+        if not data_lines:
+            return None
+        try:
+            message = json.loads("\n".join(data_lines))
+        except json.JSONDecodeError as exc:
+            raise self._error(
+                stage,
+                "Project MCP HTTP SSE event was not valid JSON.",
+                details={"exception_type": type(exc).__name__},
+            ) from exc
+        if not isinstance(message, Mapping):
+            raise self._error(
+                stage,
+                "Project MCP HTTP SSE event was not a JSON object.",
+                details={"result_type": type(message).__name__},
+            )
+        return message
+
+    def _response_result(self, response: Mapping[str, object] | None, *, stage: str) -> Mapping[str, object]:
+        if response is None:
+            raise self._error(stage, "Project MCP HTTP JSON-RPC response is missing.")
+        error = response.get("error")
+        if isinstance(error, Mapping):
+            raise self._error(
+                stage,
+                "Project MCP JSON-RPC request failed.",
+                details={"jsonrpc_error_type": type(error.get("code")).__name__},
+            )
+        result = response.get("result")
+        if not isinstance(result, Mapping):
+            raise self._error(
+                stage,
+                "Project MCP JSON-RPC response is missing object result.",
+                details={"result_type": type(result).__name__},
+            )
+        return result
+
+    def _http_headers(self) -> dict[str, str]:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        if self._protocol_version is not None:
+            headers["MCP-Protocol-Version"] = self._protocol_version
+        if self._session_id is not None:
+            headers["Mcp-Session-Id"] = self._session_id
+        return headers
+
+    def _capture_http_session_id(self, response: HTTPResponse, *, stage: str) -> None:
+        session_id = response.headers.get("Mcp-Session-Id")
+        if session_id is None:
+            return
+        if not _valid_mcp_session_id(session_id):
+            raise self._error(stage, "Project MCP HTTP session id was invalid.")
+        self._session_id = session_id
+
+    def _next_request_id(self) -> int:
+        request_id = self._next_id
+        self._next_id += 1
+        return request_id
+
+    def _require_endpoint_url(self) -> str:
+        if self._endpoint_url is None:
+            raise self._error("client_lifecycle", "Project MCP HTTP endpoint is not configured.")
+        return self._endpoint_url
+
+    def _require_config(self) -> ProjectMCPServerConfig:
+        if self._config is None:
+            raise RuntimeError("ProjectMCPHttpDiscoveryClient used before start().")
         return self._config
 
     def _error(
@@ -1253,6 +1620,15 @@ def _safe_mcp_discovery_stage(stage: str, *, default: str) -> str:
     return stage if stage in _MCP_DISCOVERY_ERROR_STAGES else default
 
 
+def _http_content_type(response: HTTPResponse) -> str:
+    content_type = response.headers.get("Content-Type", "")
+    return content_type.split(";", maxsplit=1)[0].strip().lower()
+
+
+def _valid_mcp_session_id(session_id: str) -> bool:
+    return session_id != "" and all(0x21 <= ord(char) <= 0x7E for char in session_id)
+
+
 def _stdio_command(command_or_url: str) -> str | list[str] | None:
     command = command_or_url.strip()
     if command == "":
@@ -1268,6 +1644,19 @@ def _read_stdio_stdout(stdout: TextIO, output_queue: queue.Queue[str | None]) ->
             output_queue.put(line)
     finally:
         stdout.close()
+        output_queue.put(None)
+
+
+def _read_http_sse_lines(response: HTTPResponse, output_queue: queue.Queue[bytes | Exception | None]) -> None:
+    try:
+        while True:
+            line = response.readline(_MCP_HTTP_MAX_RESPONSE_BYTES + 1)
+            if line == b"":
+                break
+            output_queue.put(line)
+    except Exception as exc:
+        output_queue.put(exc)
+    finally:
         output_queue.put(None)
 
 
@@ -1389,6 +1778,7 @@ __all__ = [
     "ProjectMCPDiscoveryError",
     "ProjectMCPDiscoveryRunner",
     "ProjectMCPHealthCheck",
+    "ProjectMCPHttpDiscoveryClient",
     "ProjectMCPLockEntry",
     "ProjectMCPServerConfig",
     "ProjectMCPStdioDiscoveryClient",
