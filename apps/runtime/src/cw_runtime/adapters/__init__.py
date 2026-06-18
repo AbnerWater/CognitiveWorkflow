@@ -20,6 +20,7 @@ from .builtin_tools import (
     default_builtin_tool_functions,
     default_builtin_tool_names,
     file_io_for_project_root,
+    python_sandbox,
     web_fetch,
 )
 from .claude_code_adapter import (
@@ -93,5 +94,6 @@ __all__ = [
     "default_builtin_tool_functions",
     "default_builtin_tool_names",
     "file_io_for_project_root",
+    "python_sandbox",
     "web_fetch",
 ]

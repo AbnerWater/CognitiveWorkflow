@@ -24,6 +24,7 @@ from cw_runtime.adapters import (
     PydanticAIToolsets,
     RawPydanticAIEvent,
     build_pydantic_ai_descriptor,
+    python_sandbox,
     web_fetch,
 )
 from cw_schemas.contract import (
@@ -1778,11 +1779,11 @@ async def test_pydantic_ai_default_sdk_session_passes_toolsets_and_wraps_mcp_app
     handle = await adapter.prepare(
         _execution_pack(
             {"type": "object", "required": ["answer"]},
-            allowed_tools=["python_sandbox"],
+            allowed_tools=["custom_builtin"],
             skills=[SkillRef(skill_id="citation_checker", version="1.0.0")],
             mcp_tools=[MCPToolRef(server_id="mcp_research", tool_name="search", requires_approval=True)],
             effective_toolsets=ToolsetSpec(
-                builtin_tools=["python_sandbox"],
+                builtin_tools=["custom_builtin"],
                 skill_ids_resolved=["citation_checker@1.0.0"],
                 mcp_server_ids=["mcp_research"],
             ),
@@ -1793,7 +1794,7 @@ async def test_pydantic_ai_default_sdk_session_passes_toolsets_and_wraps_mcp_app
 
     assert events[-1].type == "attempt.completed"
     assert captured_toolsets is not None
-    assert captured_toolsets.builtin_tools == ["python_sandbox"]
+    assert captured_toolsets.builtin_tools == ["custom_builtin"]
     assert captured_toolsets.skill_ids_resolved == ["citation_checker@1.0.0"]
     assert len(captured_toolsets.mcp_tools) == 1
     assert captured_toolsets.mcp_tools[0].server_id == "mcp_research"
@@ -1819,7 +1820,7 @@ async def test_pydantic_ai_toolset_registry_resolves_registered_toolsets(
     builtin_toolset = FakeSDKToolset("builtin")
     skill_toolset = FakeSDKToolset("skill")
     mcp_toolset = FakeSDKToolset("mcp")
-    registry.register_builtin_toolset("python_sandbox", builtin_toolset)
+    registry.register_builtin_toolset("custom_builtin", builtin_toolset)
     registry.register_skill_toolset("citation_checker", skill_toolset, version="1.0.0")
     registry.register_mcp_toolset("mcp_research", mcp_toolset)
 
@@ -1827,11 +1828,11 @@ async def test_pydantic_ai_toolset_registry_resolves_registered_toolsets(
     handle = await adapter.prepare(
         _execution_pack(
             {"type": "object", "required": ["answer"]},
-            allowed_tools=["python_sandbox"],
+            allowed_tools=["custom_builtin"],
             skills=[SkillRef(skill_id="citation_checker", version="1.0.0")],
             mcp_tools=[MCPToolRef(server_id="mcp_research", tool_name="search", requires_approval=True)],
             effective_toolsets=ToolsetSpec(
-                builtin_tools=["python_sandbox"],
+                builtin_tools=["custom_builtin"],
                 skill_ids_resolved=["citation_checker@1.0.0"],
                 mcp_server_ids=["mcp_research"],
             ),
@@ -2002,6 +2003,37 @@ async def test_pydantic_ai_default_sdk_session_auto_injects_web_fetch_tool(
 
 
 @pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_auto_injects_python_sandbox_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["python_sandbox"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["python_sandbox"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert len(sdk_toolsets) == 1
+    sandbox_toolset = sdk_toolsets[0]
+    assert isinstance(sandbox_toolset, FakeSDKFunctionToolset)
+    assert sandbox_toolset.id == "cw_builtin_tools"
+    assert sandbox_toolset.functions == [("python_sandbox", python_sandbox)]
+    result = sandbox_toolset.functions[0][1](
+        "eval_expr",
+        "sum(values) + 1",
+        variables={"values": [1, 2, 3]},
+    )
+    assert result["result"] == 7
+
+
+@pytest.mark.asyncio
 async def test_pydantic_ai_default_sdk_session_auto_injects_file_io_tool(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -2131,10 +2163,10 @@ async def test_pydantic_ai_default_sdk_session_keeps_evidence_lookup_out_of_exte
     handle = await adapter.prepare(
         _execution_pack(
             {"type": "object", "required": ["answer"]},
-            allowed_tools=["python_sandbox"],
+            allowed_tools=["custom_builtin"],
             evidence_requirements=[EvidenceRequirement(requirement_id="req_answer", required_for="answer")],
             evidence_pack=_evidence_pack(),
-            effective_toolsets=ToolsetSpec(builtin_tools=["python_sandbox"]),
+            effective_toolsets=ToolsetSpec(builtin_tools=["custom_builtin"]),
         )
     )
 
@@ -2142,12 +2174,47 @@ async def test_pydantic_ai_default_sdk_session_keeps_evidence_lookup_out_of_exte
 
     assert events[-1].type == "attempt.completed"
     assert captured_toolsets is not None
-    assert captured_toolsets.builtin_tools == ["python_sandbox"]
+    assert captured_toolsets.builtin_tools == ["custom_builtin"]
     assert captured_toolsets.skill_ids_resolved == []
     assert captured_toolsets.mcp_tools == []
     sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
     assert isinstance(sdk_toolsets[0], FakeSDKFunctionToolset)
     assert sdk_toolsets[0].functions[0][0] == "evidence_lookup"
+    assert sdk_toolsets[1] is function_toolset
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_keeps_python_sandbox_out_of_external_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    function_toolset = FakeSDKToolset("function")
+    captured_toolsets: PydanticAIToolsetRequest | None = None
+
+    def toolset_factory(_sdk: ModuleType, toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        nonlocal captured_toolsets
+        captured_toolsets = toolsets
+        return PydanticAIToolsets(function_toolsets=(function_toolset,))
+
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["python_sandbox", "custom_builtin"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["python_sandbox", "custom_builtin"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    assert captured_toolsets is not None
+    assert captured_toolsets.builtin_tools == ["custom_builtin"]
+    assert captured_toolsets.skill_ids_resolved == []
+    assert captured_toolsets.mcp_tools == []
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert isinstance(sdk_toolsets[0], FakeSDKFunctionToolset)
+    assert sdk_toolsets[0].functions == [("python_sandbox", python_sandbox)]
     assert sdk_toolsets[1] is function_toolset
 
 
@@ -2168,8 +2235,8 @@ async def test_pydantic_ai_default_sdk_session_keeps_web_fetch_out_of_external_f
     handle = await adapter.prepare(
         _execution_pack(
             {"type": "object", "required": ["answer"]},
-            allowed_tools=["web_fetch", "python_sandbox"],
-            effective_toolsets=ToolsetSpec(builtin_tools=["web_fetch", "python_sandbox"]),
+            allowed_tools=["web_fetch", "custom_builtin"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["web_fetch", "custom_builtin"]),
         )
     )
 
@@ -2177,7 +2244,7 @@ async def test_pydantic_ai_default_sdk_session_keeps_web_fetch_out_of_external_f
 
     assert events[-1].type == "attempt.completed"
     assert captured_toolsets is not None
-    assert captured_toolsets.builtin_tools == ["python_sandbox"]
+    assert captured_toolsets.builtin_tools == ["custom_builtin"]
     assert captured_toolsets.skill_ids_resolved == []
     assert captured_toolsets.mcp_tools == []
     sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
@@ -2205,8 +2272,8 @@ async def test_pydantic_ai_default_sdk_session_keeps_file_io_out_of_external_fac
     handle = await adapter.prepare(
         _execution_pack(
             {"type": "object", "required": ["answer"]},
-            allowed_tools=["file_io", "python_sandbox"],
-            effective_toolsets=ToolsetSpec(builtin_tools=["file_io", "python_sandbox"]),
+            allowed_tools=["file_io", "custom_builtin"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["file_io", "custom_builtin"]),
             metadata={"cw": {"project_root": str(project_root)}},
         )
     )
@@ -2215,7 +2282,7 @@ async def test_pydantic_ai_default_sdk_session_keeps_file_io_out_of_external_fac
 
     assert events[-1].type == "attempt.completed"
     assert captured_toolsets is not None
-    assert captured_toolsets.builtin_tools == ["python_sandbox"]
+    assert captured_toolsets.builtin_tools == ["custom_builtin"]
     assert captured_toolsets.skill_ids_resolved == []
     assert captured_toolsets.mcp_tools == []
     sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
@@ -2234,11 +2301,11 @@ async def test_pydantic_ai_toolset_registry_fails_closed_on_missing_toolsets(
     handle = await adapter.prepare(
         _execution_pack(
             {"type": "object", "required": ["answer"]},
-            allowed_tools=["python_sandbox"],
+            allowed_tools=["custom_builtin"],
             skills=[SkillRef(skill_id="citation_checker", version="1.0.0")],
             mcp_tools=[MCPToolRef(server_id="mcp_research", tool_name="search", requires_approval=False)],
             effective_toolsets=ToolsetSpec(
-                builtin_tools=["python_sandbox"],
+                builtin_tools=["custom_builtin"],
                 skill_ids_resolved=["citation_checker@1.0.0"],
                 mcp_server_ids=["mcp_research"],
             ),
@@ -2253,7 +2320,7 @@ async def test_pydantic_ai_toolset_registry_fails_closed_on_missing_toolsets(
     assert outcome.state == AttemptState.FAILED
     assert outcome.errors[0].payload is not None
     assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
-    assert outcome.errors[0].payload["missing_builtin_tools"] == ["python_sandbox"]
+    assert outcome.errors[0].payload["missing_builtin_tools"] == ["custom_builtin"]
     assert outcome.errors[0].payload["missing_skill_ids_resolved"] == ["citation_checker@1.0.0"]
     assert outcome.errors[0].payload["missing_mcp_server_ids"] == ["mcp_research"]
 
@@ -2339,8 +2406,8 @@ async def test_pydantic_ai_default_sdk_session_rejects_tools_without_toolset_fac
     handle = await adapter.prepare(
         _execution_pack(
             {"type": "object", "required": ["answer"]},
-            allowed_tools=["python_sandbox"],
-            effective_toolsets=ToolsetSpec(builtin_tools=["python_sandbox"]),
+            allowed_tools=["custom_builtin"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["custom_builtin"]),
         )
     )
 
@@ -2353,7 +2420,7 @@ async def test_pydantic_ai_default_sdk_session_rejects_tools_without_toolset_fac
     assert outcome.state == AttemptState.FAILED
     assert outcome.errors[0].payload is not None
     assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
-    assert outcome.errors[0].payload["toolsets"]["builtin_tools"] == ["python_sandbox"]
+    assert outcome.errors[0].payload["toolsets"]["builtin_tools"] == ["custom_builtin"]
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ from cw_runtime.adapters import (
     default_builtin_tool_functions,
     default_builtin_tool_names,
     file_io_for_project_root,
+    python_sandbox,
     web_fetch,
 )
 
@@ -42,8 +43,8 @@ def _initialized_project_root(path: Path) -> Path:
 def test_default_builtin_registry_exposes_web_fetch() -> None:
     functions = default_builtin_tool_functions()
 
-    assert default_builtin_tool_names() == ("file_io", "web_fetch")
-    assert functions == {"web_fetch": web_fetch}
+    assert default_builtin_tool_names() == ("file_io", "python_sandbox", "web_fetch")
+    assert functions == {"python_sandbox": python_sandbox, "web_fetch": web_fetch}
 
 
 def test_default_builtin_registry_exposes_project_scoped_file_io(tmp_path: Path) -> None:
@@ -51,8 +52,52 @@ def test_default_builtin_registry_exposes_project_scoped_file_io(tmp_path: Path)
 
     functions = default_builtin_tool_functions(project_root=project_root)
 
-    assert set(functions) == {"file_io", "web_fetch"}
+    assert set(functions) == {"file_io", "python_sandbox", "web_fetch"}
+    assert functions["python_sandbox"] is python_sandbox
     assert functions["web_fetch"] is web_fetch
+
+
+def test_python_sandbox_evaluates_bounded_expression() -> None:
+    result = python_sandbox(
+        "eval_expr",
+        "sum(values) + offset if all(flags) else 0",
+        variables={"values": [1, 2, 3], "offset": 4, "flags": [True, True]},
+    )
+
+    assert result["action"] == "eval_expr"
+    assert result["result"] == 10
+    assert result["result_type"] == "int"
+    assert result["result_chars"] == 2
+    assert result["steps"] > 0
+
+
+@pytest.mark.parametrize(
+    "expression, message",
+    [
+        ("__import__('os')", "does not allow function"),
+        ("(1).__class__", "does not allow Attribute"),
+        ("[item for item in values]", "does not allow ListComp"),
+        ("lambda x: x", "does not allow Lambda"),
+    ],
+)
+def test_python_sandbox_rejects_unsafe_expression(expression: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        python_sandbox("eval_expr", expression, variables={"values": [1, 2, 3]})
+
+
+def test_python_sandbox_rejects_large_range() -> None:
+    with pytest.raises(ValueError, match="range is too large"):
+        python_sandbox("eval_expr", "sum(range(1001))")
+
+
+def test_python_sandbox_rejects_result_larger_than_limit() -> None:
+    with pytest.raises(ValueError, match="result is too large"):
+        python_sandbox("eval_expr", "'abcdef'", max_result_chars=4)
+
+
+def test_python_sandbox_rejects_bad_variable_name() -> None:
+    with pytest.raises(ValueError, match="safe identifiers"):
+        python_sandbox("eval_expr", "value", variables={"__builtins__": {}})
 
 
 def test_file_io_reads_project_text_file(tmp_path: Path) -> None:

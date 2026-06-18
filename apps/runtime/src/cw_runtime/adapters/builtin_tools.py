@@ -6,12 +6,14 @@ to SDK toolsets only when a NodeContract requests the matching builtin tool id.
 
 from __future__ import annotations
 
+import ast
 import http.client
 import ipaddress
+import json
 import socket
 import ssl
 import urllib.parse
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import closing
 from dataclasses import dataclass
 from http.client import HTTPMessage
@@ -31,6 +33,35 @@ _FILE_IO_DEFAULT_MAX_ENTRIES: Final = 200
 _FILE_IO_ABSOLUTE_MAX_ENTRIES: Final = 1000
 _FILE_IO_INTERNAL_ROOTS: Final = frozenset({".agent-workflow", ".git"})
 _FILE_IO_ACTIONS: Final = frozenset({"read_text", "list_dir", "stat"})
+_PYTHON_SANDBOX_ACTIONS: Final = frozenset({"eval_expr"})
+_PYTHON_SANDBOX_MAX_EXPRESSION_CHARS: Final = 4096
+_PYTHON_SANDBOX_DEFAULT_MAX_STEPS: Final = 1000
+_PYTHON_SANDBOX_ABSOLUTE_MAX_STEPS: Final = 10000
+_PYTHON_SANDBOX_DEFAULT_MAX_RESULT_CHARS: Final = 4096
+_PYTHON_SANDBOX_ABSOLUTE_MAX_RESULT_CHARS: Final = 16 * 1024
+_PYTHON_SANDBOX_MAX_CONTAINER_ITEMS: Final = 1000
+_PYTHON_SANDBOX_MAX_DEPTH: Final = 6
+_PYTHON_SANDBOX_MAX_INT_BITS: Final = 4096
+_PYTHON_SANDBOX_FUNCTION_NAMES: Final = frozenset(
+    {
+        "abs",
+        "all",
+        "any",
+        "bool",
+        "float",
+        "int",
+        "len",
+        "list",
+        "max",
+        "min",
+        "range",
+        "round",
+        "sorted",
+        "str",
+        "sum",
+        "tuple",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -56,7 +87,7 @@ class _WebResponse(Protocol):
 def default_builtin_tool_functions(*, project_root: str | Path | None = None) -> dict[str, BuiltinToolFunc]:
     """Return builtin functions implemented by the runtime adapter layer."""
 
-    functions: dict[str, BuiltinToolFunc] = {"web_fetch": web_fetch}
+    functions: dict[str, BuiltinToolFunc] = {"python_sandbox": python_sandbox, "web_fetch": web_fetch}
     if project_root is not None:
         functions["file_io"] = file_io_for_project_root(project_root)
     return functions
@@ -66,6 +97,418 @@ def default_builtin_tool_names() -> tuple[str, ...]:
     """Return stable builtin tool ids implemented by this module."""
 
     return tuple(sorted({"file_io", *default_builtin_tool_functions()}))
+
+
+def python_sandbox(
+    action: str,
+    expression: str,
+    variables: Mapping[str, Any] | None = None,
+    max_steps: int = _PYTHON_SANDBOX_DEFAULT_MAX_STEPS,
+    max_result_chars: int = _PYTHON_SANDBOX_DEFAULT_MAX_RESULT_CHARS,
+) -> dict[str, Any]:
+    """Evaluate a bounded, expression-only Python subset without eval/exec."""
+
+    if action not in _PYTHON_SANDBOX_ACTIONS:
+        raise ValueError("python_sandbox action must be eval_expr.")
+    if len(expression) > _PYTHON_SANDBOX_MAX_EXPRESSION_CHARS:
+        raise ValueError("python_sandbox expression is too large.")
+    try:
+        parsed = ast.parse(expression, mode="eval")
+    except SyntaxError as exc:
+        raise ValueError("python_sandbox expression must be a valid Python expression.") from exc
+    budget = _PythonSandboxStepBudget(_normalized_python_sandbox_max_steps(max_steps))
+    evaluator = _PythonSandboxEvaluator(_sanitize_python_sandbox_variables(variables), budget)
+    result = evaluator.evaluate(parsed)
+    jsonable_result = _sanitize_python_sandbox_value(result, depth=0)
+    encoded_result = json.dumps(jsonable_result, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    result_limit = _normalized_python_sandbox_max_result_chars(max_result_chars)
+    if len(encoded_result) > result_limit:
+        raise ValueError("python_sandbox result is too large.")
+    return {
+        "action": "eval_expr",
+        "result": jsonable_result,
+        "result_type": _python_sandbox_type_name(jsonable_result),
+        "steps": budget.used,
+        "result_chars": len(encoded_result),
+    }
+
+
+class _PythonSandboxStepBudget:
+    def __init__(self, limit: int) -> None:
+        self._limit = limit
+        self.used = 0
+
+    def tick(self) -> None:
+        self.used += 1
+        if self.used > self._limit:
+            raise TimeoutError("python_sandbox step limit exceeded.")
+
+
+class _PythonSandboxEvaluator:
+    def __init__(self, variables: Mapping[str, Any], budget: _PythonSandboxStepBudget) -> None:
+        self._variables = variables
+        self._budget = budget
+
+    def evaluate(self, node: ast.AST) -> Any:
+        self._budget.tick()
+        if isinstance(node, ast.Expression):
+            return self.evaluate(node.body)
+        if isinstance(node, ast.Constant):
+            return _sanitize_python_sandbox_value(node.value, depth=0)
+        if isinstance(node, ast.List):
+            return _sanitize_python_sandbox_sequence([self.evaluate(item) for item in node.elts])
+        if isinstance(node, ast.Tuple):
+            return _sanitize_python_sandbox_sequence([self.evaluate(item) for item in node.elts])
+        if isinstance(node, ast.Dict):
+            if any(key is None for key in node.keys):
+                raise ValueError("python_sandbox does not allow dict unpacking.")
+            items: dict[Any, Any] = {}
+            for key, value in zip(node.keys, node.values, strict=True):
+                if key is None:
+                    raise ValueError("python_sandbox does not allow dict unpacking.")
+                items[self.evaluate(key)] = self.evaluate(value)
+            return _sanitize_python_sandbox_dict(items)
+        if isinstance(node, ast.Name):
+            return self._evaluate_name(node)
+        if isinstance(node, ast.UnaryOp):
+            return self._evaluate_unary(node)
+        if isinstance(node, ast.BinOp):
+            return self._evaluate_binary(node)
+        if isinstance(node, ast.BoolOp):
+            return self._evaluate_bool(node)
+        if isinstance(node, ast.Compare):
+            return self._evaluate_compare(node)
+        if isinstance(node, ast.IfExp):
+            return self.evaluate(node.body if self.evaluate(node.test) else node.orelse)
+        if isinstance(node, ast.Subscript):
+            return self._evaluate_subscript(node)
+        if isinstance(node, ast.Slice):
+            return self._evaluate_slice(node)
+        if isinstance(node, ast.Call):
+            return self._evaluate_call(node)
+        raise ValueError(f"python_sandbox does not allow {type(node).__name__} expressions.")
+
+    def _evaluate_name(self, node: ast.Name) -> Any:
+        try:
+            return self._variables[node.id]
+        except KeyError as exc:
+            raise ValueError(f"python_sandbox unknown name: {node.id}") from exc
+
+    def _evaluate_unary(self, node: ast.UnaryOp) -> Any:
+        value = self.evaluate(node.operand)
+        if isinstance(node.op, ast.UAdd):
+            result = +_python_sandbox_number(value)
+        elif isinstance(node.op, ast.USub):
+            result = -_python_sandbox_number(value)
+        elif isinstance(node.op, ast.Not):
+            result = not bool(value)
+        else:
+            raise ValueError(f"python_sandbox does not allow {type(node.op).__name__}.")
+        return _sanitize_python_sandbox_value(result, depth=0)
+
+    def _evaluate_binary(self, node: ast.BinOp) -> Any:
+        left = self.evaluate(node.left)
+        right = self.evaluate(node.right)
+        op = node.op
+        if isinstance(op, ast.Add):
+            result = left + right
+        elif isinstance(op, ast.Sub):
+            result = _python_sandbox_number(left) - _python_sandbox_number(right)
+        elif isinstance(op, ast.Mult):
+            _validate_python_sandbox_repeat(left, right)
+            result = left * right
+        elif isinstance(op, ast.Div):
+            result = _python_sandbox_number(left) / _python_sandbox_number(right)
+        elif isinstance(op, ast.FloorDiv):
+            result = _python_sandbox_number(left) // _python_sandbox_number(right)
+        elif isinstance(op, ast.Mod):
+            result = _python_sandbox_number(left) % _python_sandbox_number(right)
+        elif isinstance(op, ast.Pow):
+            result = _python_sandbox_pow(left, right)
+        else:
+            raise ValueError(f"python_sandbox does not allow {type(op).__name__}.")
+        return _sanitize_python_sandbox_value(result, depth=0)
+
+    def _evaluate_bool(self, node: ast.BoolOp) -> bool:
+        if isinstance(node.op, ast.And):
+            return all(bool(self.evaluate(value)) for value in node.values)
+        if isinstance(node.op, ast.Or):
+            return any(bool(self.evaluate(value)) for value in node.values)
+        raise ValueError(f"python_sandbox does not allow {type(node.op).__name__}.")
+
+    def _evaluate_compare(self, node: ast.Compare) -> bool:
+        left = self.evaluate(node.left)
+        for op, comparator in zip(node.ops, node.comparators, strict=True):
+            right = self.evaluate(comparator)
+            if not _python_sandbox_compare(left, op, right):
+                return False
+            left = right
+        return True
+
+    def _evaluate_subscript(self, node: ast.Subscript) -> Any:
+        target = self.evaluate(node.value)
+        key = self.evaluate(node.slice)
+        if not isinstance(target, str | list | dict):
+            raise ValueError("python_sandbox subscript target must be str, list, or dict.")
+        result = target[key]
+        return _sanitize_python_sandbox_value(result, depth=0)
+
+    def _evaluate_slice(self, node: ast.Slice) -> slice:
+        lower = None if node.lower is None else _python_sandbox_optional_int(self.evaluate(node.lower))
+        upper = None if node.upper is None else _python_sandbox_optional_int(self.evaluate(node.upper))
+        step = None if node.step is None else _python_sandbox_optional_int(self.evaluate(node.step))
+        return slice(lower, upper, step)
+
+    def _evaluate_call(self, node: ast.Call) -> Any:
+        if not isinstance(node.func, ast.Name):
+            raise ValueError("python_sandbox only allows direct calls to approved functions.")
+        if node.keywords:
+            raise ValueError("python_sandbox function calls do not allow keyword arguments.")
+        function_name = node.func.id
+        if function_name not in _PYTHON_SANDBOX_FUNCTION_NAMES:
+            raise ValueError(f"python_sandbox does not allow function: {function_name}")
+        args = [self.evaluate(arg) for arg in node.args]
+        return _sanitize_python_sandbox_value(_call_python_sandbox_function(function_name, args), depth=0)
+
+
+def _sanitize_python_sandbox_variables(variables: Mapping[str, Any] | None) -> dict[str, Any]:
+    if variables is None:
+        return {}
+    sanitized: dict[str, Any] = {}
+    for name, value in variables.items():
+        if not name.isidentifier() or name.startswith("_") or name in _PYTHON_SANDBOX_FUNCTION_NAMES:
+            raise ValueError("python_sandbox variable names must be safe identifiers.")
+        sanitized[name] = _sanitize_python_sandbox_value(value, depth=0)
+    return sanitized
+
+
+def _sanitize_python_sandbox_value(value: Any, *, depth: int) -> Any:
+    if depth > _PYTHON_SANDBOX_MAX_DEPTH:
+        raise ValueError("python_sandbox value nesting is too deep.")
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if value.bit_length() > _PYTHON_SANDBOX_MAX_INT_BITS:
+            raise ValueError("python_sandbox integer is too large.")
+        return value
+    if isinstance(value, float):
+        if value != value or value in {float("inf"), float("-inf")}:
+            raise ValueError("python_sandbox float must be finite.")
+        return value
+    if isinstance(value, str):
+        if len(value) > _PYTHON_SANDBOX_ABSOLUTE_MAX_RESULT_CHARS:
+            raise ValueError("python_sandbox string is too large.")
+        return value
+    if isinstance(value, list | tuple):
+        if len(value) > _PYTHON_SANDBOX_MAX_CONTAINER_ITEMS:
+            raise ValueError("python_sandbox sequence is too large.")
+        return [_sanitize_python_sandbox_value(item, depth=depth + 1) for item in value]
+    if isinstance(value, dict):
+        return _sanitize_python_sandbox_dict(value, depth=depth)
+    raise ValueError(f"python_sandbox value type is not allowed: {type(value).__name__}")
+
+
+def _sanitize_python_sandbox_sequence(value: Sequence[Any]) -> list[Any]:
+    if len(value) > _PYTHON_SANDBOX_MAX_CONTAINER_ITEMS:
+        raise ValueError("python_sandbox sequence is too large.")
+    return [_sanitize_python_sandbox_value(item, depth=1) for item in value]
+
+
+def _sanitize_python_sandbox_dict(value: Mapping[Any, Any], *, depth: int = 0) -> dict[str, Any]:
+    if len(value) > _PYTHON_SANDBOX_MAX_CONTAINER_ITEMS:
+        raise ValueError("python_sandbox dict is too large.")
+    sanitized: dict[str, Any] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError("python_sandbox dict keys must be strings.")
+        sanitized[key] = _sanitize_python_sandbox_value(item, depth=depth + 1)
+    return sanitized
+
+
+def _call_python_sandbox_function(name: str, args: Sequence[Any]) -> Any:
+    if name == "abs":
+        return abs(_python_sandbox_single_number(name, args))
+    if name == "all":
+        return all(_python_sandbox_single_sequence(name, args))
+    if name == "any":
+        return any(_python_sandbox_single_sequence(name, args))
+    if name == "bool":
+        return bool(_python_sandbox_single_arg(name, args))
+    if name == "float":
+        return float(_python_sandbox_single_number(name, args))
+    if name == "int":
+        return int(_python_sandbox_single_number(name, args))
+    if name == "len":
+        return len(_python_sandbox_single_collection(name, args))
+    if name == "list":
+        return list(_python_sandbox_single_sequence(name, args))
+    if name == "max":
+        return max(_python_sandbox_variadic_or_sequence(name, args))
+    if name == "min":
+        return min(_python_sandbox_variadic_or_sequence(name, args))
+    if name == "range":
+        return _python_sandbox_range(args)
+    if name == "round":
+        return _python_sandbox_round(args)
+    if name == "sorted":
+        return sorted(_python_sandbox_single_sequence(name, args))
+    if name == "str":
+        return str(_python_sandbox_single_arg(name, args))
+    if name == "sum":
+        return sum(_python_sandbox_numbers(_python_sandbox_single_sequence(name, args)))
+    if name == "tuple":
+        return list(_python_sandbox_single_sequence(name, args))
+    raise ValueError(f"python_sandbox does not allow function: {name}")
+
+
+def _python_sandbox_single_arg(name: str, args: Sequence[Any]) -> Any:
+    if len(args) != 1:
+        raise ValueError(f"python_sandbox {name} expects one argument.")
+    return args[0]
+
+
+def _python_sandbox_single_number(name: str, args: Sequence[Any]) -> int | float:
+    return _python_sandbox_number(_python_sandbox_single_arg(name, args))
+
+
+def _python_sandbox_single_collection(name: str, args: Sequence[Any]) -> str | list[Any] | dict[str, Any]:
+    value = _python_sandbox_single_arg(name, args)
+    if not isinstance(value, str | list | dict):
+        raise ValueError(f"python_sandbox {name} expects a collection.")
+    return value
+
+
+def _python_sandbox_single_sequence(name: str, args: Sequence[Any]) -> list[Any] | str:
+    value = _python_sandbox_single_arg(name, args)
+    if not isinstance(value, str | list):
+        raise ValueError(f"python_sandbox {name} expects a sequence.")
+    return value
+
+
+def _python_sandbox_variadic_or_sequence(name: str, args: Sequence[Any]) -> Sequence[Any]:
+    if not args:
+        raise ValueError(f"python_sandbox {name} expects at least one argument.")
+    if len(args) == 1 and isinstance(args[0], str | list):
+        return args[0]
+    return args
+
+
+def _python_sandbox_numbers(values: Sequence[Any]) -> list[int | float]:
+    return [_python_sandbox_number(value) for value in values]
+
+
+def _python_sandbox_number(value: Any) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("python_sandbox value must be a number.")
+    return value
+
+
+def _python_sandbox_optional_int(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("python_sandbox slice values must be integers.")
+    return value
+
+
+def _python_sandbox_range(args: Sequence[Any]) -> list[int]:
+    if not 1 <= len(args) <= 3:
+        raise ValueError("python_sandbox range expects one to three integer arguments.")
+    int_args = [_python_sandbox_optional_int(arg) for arg in args]
+    value = range(*int_args)
+    if len(value) > _PYTHON_SANDBOX_MAX_CONTAINER_ITEMS:
+        raise ValueError("python_sandbox range is too large.")
+    return list(value)
+
+
+def _python_sandbox_round(args: Sequence[Any]) -> int | float:
+    if len(args) not in {1, 2}:
+        raise ValueError("python_sandbox round expects one or two arguments.")
+    number = _python_sandbox_number(args[0])
+    if len(args) == 1:
+        return round(number)
+    digits = _python_sandbox_optional_int(args[1])
+    return round(number, digits)
+
+
+def _python_sandbox_pow(left: Any, right: Any) -> int | float:
+    base = _python_sandbox_number(left)
+    exponent = _python_sandbox_number(right)
+    if abs(exponent) > 12:
+        raise ValueError("python_sandbox exponent is too large.")
+    return base**exponent
+
+
+def _validate_python_sandbox_repeat(left: Any, right: Any) -> None:
+    if isinstance(left, bool) or isinstance(right, bool):
+        return
+    if isinstance(left, str | list) and isinstance(right, int):
+        _validate_python_sandbox_repeat_size(len(left), right)
+    if isinstance(right, str | list) and isinstance(left, int):
+        _validate_python_sandbox_repeat_size(len(right), left)
+
+
+def _validate_python_sandbox_repeat_size(item_count: int, multiplier: int) -> None:
+    if item_count * abs(multiplier) > _PYTHON_SANDBOX_MAX_CONTAINER_ITEMS:
+        raise ValueError("python_sandbox repeated value would be too large.")
+
+
+def _python_sandbox_compare(left: Any, op: ast.cmpop, right: Any) -> bool:
+    if isinstance(op, ast.Eq):
+        return bool(left == right)
+    if isinstance(op, ast.NotEq):
+        return bool(left != right)
+    if isinstance(op, ast.Lt):
+        return bool(left < right)
+    if isinstance(op, ast.LtE):
+        return bool(left <= right)
+    if isinstance(op, ast.Gt):
+        return bool(left > right)
+    if isinstance(op, ast.GtE):
+        return bool(left >= right)
+    if isinstance(op, ast.In):
+        return left in _python_sandbox_membership_target(right)
+    if isinstance(op, ast.NotIn):
+        return left not in _python_sandbox_membership_target(right)
+    if isinstance(op, ast.Is):
+        return left is right
+    if isinstance(op, ast.IsNot):
+        return left is not right
+    raise ValueError(f"python_sandbox does not allow {type(op).__name__}.")
+
+
+def _python_sandbox_membership_target(value: Any) -> str | list[Any] | dict[str, Any]:
+    if not isinstance(value, str | list | dict):
+        raise ValueError("python_sandbox membership target must be str, list, or dict.")
+    return value
+
+
+def _python_sandbox_type_name(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    if isinstance(value, str):
+        return "str"
+    if isinstance(value, list):
+        return "list"
+    if isinstance(value, dict):
+        return "dict"
+    return type(value).__name__
+
+
+def _normalized_python_sandbox_max_steps(max_steps: int) -> int:
+    if max_steps < 1:
+        raise ValueError("python_sandbox max_steps must be >= 1.")
+    return min(max_steps, _PYTHON_SANDBOX_ABSOLUTE_MAX_STEPS)
+
+
+def _normalized_python_sandbox_max_result_chars(max_result_chars: int) -> int:
+    if max_result_chars < 1:
+        raise ValueError("python_sandbox max_result_chars must be >= 1.")
+    return min(max_result_chars, _PYTHON_SANDBOX_ABSOLUTE_MAX_RESULT_CHARS)
 
 
 def file_io_for_project_root(project_root: str | Path) -> BuiltinToolFunc:
@@ -364,5 +807,6 @@ __all__ = [
     "default_builtin_tool_functions",
     "default_builtin_tool_names",
     "file_io_for_project_root",
+    "python_sandbox",
     "web_fetch",
 ]
