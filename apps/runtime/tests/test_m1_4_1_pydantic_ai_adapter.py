@@ -414,6 +414,76 @@ class FakeSDKEventStream:
         return event
 
 
+class CancellableFakeSDKEventStream:
+    def __init__(self) -> None:
+        self.waiting_for_next = asyncio.Event()
+        self.release = asyncio.Event()
+        self.cancelled = False
+        self.closed = False
+
+    async def __aenter__(self) -> CancellableFakeSDKEventStream:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
+        self.closed = True
+        self.release.set()
+        return False
+
+    def __aiter__(self) -> CancellableFakeSDKEventStream:
+        return self
+
+    async def __anext__(self) -> object:
+        self.waiting_for_next.set()
+        await self.release.wait()
+        raise StopAsyncIteration
+
+    async def cancel(self) -> None:
+        self.cancelled = True
+        self.release.set()
+
+
+class CancellableFakeSDKAgent:
+    instances: ClassVar[list[CancellableFakeSDKAgent]] = []
+    last_stream: ClassVar[CancellableFakeSDKEventStream | None] = None
+    stream_created: ClassVar[asyncio.Event | None] = None
+
+    def __init__(self, model: str, **kwargs: Any) -> None:
+        self.model = model
+        self.kwargs = kwargs
+        self.stream_user_prompt: str | None = None
+        self.stream_message_history: list[object] | None = None
+        self.stream_deferred_tool_results: object | None = None
+        self.stream_model_settings: dict[str, Any] | None = None
+        self.stream_usage_limits: object | None = None
+        CancellableFakeSDKAgent.instances.append(self)
+
+    def run_stream_events(
+        self,
+        user_prompt: str | None = None,
+        *,
+        message_history: list[object] | None = None,
+        deferred_tool_results: object | None = None,
+        model_settings: dict[str, Any] | None = None,
+        usage_limits: object | None = None,
+    ) -> CancellableFakeSDKEventStream:
+        self.stream_user_prompt = user_prompt
+        self.stream_message_history = message_history
+        self.stream_deferred_tool_results = deferred_tool_results
+        self.stream_model_settings = model_settings
+        self.stream_usage_limits = usage_limits
+        stream = CancellableFakeSDKEventStream()
+        CancellableFakeSDKAgent.last_stream = stream
+        created_event = CancellableFakeSDKAgent.stream_created
+        if created_event is not None:
+            created_event.set()
+        return stream
+
+
 def _install_fake_pydantic_ai_sdk(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -424,6 +494,9 @@ def _install_fake_pydantic_ai_sdk(
     fake_sdk = ModuleType("pydantic_ai")
     FakeSDKAgent.instances.clear()
     FakeSDKRunOnlyAgent.instances.clear()
+    CancellableFakeSDKAgent.instances.clear()
+    CancellableFakeSDKAgent.last_stream = None
+    CancellableFakeSDKAgent.stream_created = None
     FakeSDKAgent.stream_events = None
     FakeSDKResult.usage = FakeSDKUsage()
 
@@ -2392,6 +2465,42 @@ async def test_pydantic_ai_cancel_unblocks_resume_iterator() -> None:
     assert outcome.state == AttemptState.CANCELLED
     assert outcome.errors[0].payload is not None
     assert outcome.errors[0].payload["operation"] == "resume"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_cancel_stops_active_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch, agent_cls=CancellableFakeSDKAgent)
+    CancellableFakeSDKAgent.last_stream = None
+    CancellableFakeSDKAgent.stream_created = asyncio.Event()
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(_execution_pack())
+    run_task = asyncio.create_task(_collect(adapter.run(handle)))
+
+    try:
+        created_event = CancellableFakeSDKAgent.stream_created
+        assert created_event is not None
+        await asyncio.wait_for(created_event.wait(), timeout=1.0)
+        stream = CancellableFakeSDKAgent.last_stream
+        assert stream is not None
+        await asyncio.wait_for(stream.waiting_for_next.wait(), timeout=1.0)
+
+        await adapter.cancel(handle, CancelReason.USER)
+        events = await asyncio.wait_for(run_task, timeout=1.0)
+
+        assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+        assert stream.cancelled is True
+        assert stream.closed is True
+        assert events[-1].payload is not None
+        assert events[-1].payload["error_kind"] == "cancelled"
+        outcome = await adapter.finalize(handle)
+        assert outcome.state == AttemptState.CANCELLED
+        assert outcome.errors[0].payload is not None
+        assert outcome.errors[0].payload["reason"] == "user"
+    finally:
+        CancellableFakeSDKAgent.stream_created = None
+        CancellableFakeSDKAgent.last_stream = None
 
 
 @pytest.mark.asyncio

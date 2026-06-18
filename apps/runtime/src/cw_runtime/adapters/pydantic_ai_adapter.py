@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import importlib
+import inspect
 import json
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import suppress
@@ -292,6 +293,8 @@ class PydanticAISDKSession:
         self._message_history: dict[str, list[object]] = {}
         self._run_requests: dict[str, PydanticAIRunRequest] = {}
         self._usage_limits: dict[str, object | None] = {}
+        self._active_stream_contexts: dict[str, object] = {}
+        self._active_streams: dict[str, object] = {}
 
     async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
         sdk = self._sdk()
@@ -339,14 +342,25 @@ class PydanticAISDKSession:
             yield raw_event
 
     async def cancel(self, handle_id: str, reason: CancelReason) -> None:
-        return None
+        stream = self._active_streams.get(handle_id)
+        if stream is not None:
+            await _cancel_sdk_stream(stream)
+            return
+        stream_context = self._active_stream_contexts.get(handle_id)
+        if stream_context is not None:
+            await _close_sdk_stream(stream_context)
 
     async def aclose(self) -> None:
+        active_handle_ids = {*self._active_stream_contexts, *self._active_streams}
+        for handle_id in active_handle_ids:
+            with suppress(Exception):
+                await self.cancel(handle_id, CancelReason.USER)
+        self._active_stream_contexts.clear()
+        self._active_streams.clear()
         self._agents.clear()
         self._message_history.clear()
         self._run_requests.clear()
         self._usage_limits.clear()
-        return None
 
     async def _run_agent(
         self,
@@ -360,17 +374,26 @@ class PydanticAISDKSession:
     ) -> AsyncIterator[RawPydanticAIEvent]:
         stream_events = getattr(agent, "run_stream_events", None)
         if callable(stream_events):
-            async with stream_events(
+            stream_context = stream_events(
                 user_prompt,
                 message_history=message_history,
                 deferred_tool_results=deferred_tool_results,
                 model_settings=request.model_settings or None,
                 usage_limits=usage_limits,
-            ) as stream:
-                async for sdk_event in stream:
-                    self._capture_message_history(request.handle_id, getattr(sdk_event, "result", None))
-                    for raw_event in _sdk_stream_event_to_raw(sdk_event):
-                        yield raw_event
+            )
+            self._active_stream_contexts[request.handle_id] = stream_context
+            try:
+                async with stream_context as stream:
+                    self._active_streams[request.handle_id] = stream
+                    try:
+                        async for sdk_event in stream:
+                            self._capture_message_history(request.handle_id, getattr(sdk_event, "result", None))
+                            for raw_event in _sdk_stream_event_to_raw(sdk_event):
+                                yield raw_event
+                    finally:
+                        self._active_streams.pop(request.handle_id, None)
+            finally:
+                self._active_stream_contexts.pop(request.handle_id, None)
             return
 
         async for raw_event in _run_sdk_agent_once(
@@ -520,7 +543,9 @@ class PydanticAIAdapter:
                         yield event
                     if handle.state in {AttemptState.AWAITING_HUMAN, AttemptState.COMPLETED, AttemptState.FAILED}:
                         return
-                if handle.state == AttemptState.RUNNING:
+                if handle.state == AttemptState.CANCELLED:
+                    yield self._cancelled_session_event(handle)
+                elif handle.state == AttemptState.RUNNING:
                     yield self._unterminated_session_event(handle, operation="run")
                 return
             except AdapterRuntimeError as exc:
@@ -630,7 +655,9 @@ class PydanticAIAdapter:
                     yield event
                 if handle.state in {AttemptState.AWAITING_HUMAN, AttemptState.COMPLETED, AttemptState.FAILED}:
                     return
-            if handle.state == AttemptState.RUNNING:
+            if handle.state == AttemptState.CANCELLED:
+                yield self._cancelled_session_event(handle)
+            elif handle.state == AttemptState.RUNNING:
                 yield self._unterminated_session_event(handle, operation="resume")
         except AdapterRuntimeError as exc:
             yield self._failed_event_from_exception(handle, exc)
@@ -1357,6 +1384,19 @@ class PydanticAIAdapter:
             phase=EventPhase.ATTEMPT_FAILED,
             title="Pydantic AI attempt failed",
             payload=_attempt_failed_payload(exc.adapter_error, self._packs[handle.handle_id]),
+        )
+
+    def _cancelled_session_event(self, handle: AttemptHandle) -> LifecycleEvent:
+        error = _first_error_or_cancelled(handle, self._errors.get(handle.handle_id))
+        self._errors[handle.handle_id] = [error]
+        handle.state = AttemptState.CANCELLED
+        handle.finished_at = handle.finished_at or utc_now_ms()
+        return self._lifecycle_event(
+            handle,
+            event_type="attempt.failed",
+            phase=EventPhase.ATTEMPT_FAILED,
+            title="Pydantic AI attempt cancelled",
+            payload=_attempt_failed_payload(error, self._packs[handle.handle_id]),
         )
 
     def _unterminated_session_event(
@@ -2678,6 +2718,17 @@ def _attempt_index(pack: ExecutionPack) -> int:
     return 0
 
 
+def _first_error_or_cancelled(handle: AttemptHandle, errors: list[AdapterError] | None) -> AdapterError:
+    if errors:
+        return errors[0]
+    return build_adapter_error(
+        "AA_RUN_CANCELLED",
+        "Pydantic AI attempt cancelled.",
+        retryable=False,
+        payload={"handle_id": handle.handle_id, "reason": CancelReason.USER.value},
+    )
+
+
 def _attempt_failed_payload(error: AdapterError, pack: ExecutionPack) -> dict[str, Any]:
     return {
         "error_kind": error.error_kind.value,
@@ -2715,6 +2766,32 @@ async def _cancel_future(future: asyncio.Future[Any]) -> None:
     future.cancel()
     with suppress(asyncio.CancelledError):
         await future
+
+
+async def _cancel_sdk_stream(stream: object) -> None:
+    try:
+        if await _call_optional_async_method(stream, "cancel"):
+            return
+    except NotImplementedError:
+        pass
+    await _close_sdk_stream(stream)
+
+
+async def _close_sdk_stream(stream: object) -> bool:
+    for method_name in ("aclose", "close_stream", "close"):
+        if await _call_optional_async_method(stream, method_name):
+            return True
+    return False
+
+
+async def _call_optional_async_method(target: object, method_name: str, *args: object) -> bool:
+    method = getattr(target, method_name, None)
+    if not callable(method):
+        return False
+    result = method(*args)
+    if inspect.isawaitable(result):
+        await result
+    return True
 
 
 def _matches_json_schema_type(value: object, expected_type: str) -> bool:
