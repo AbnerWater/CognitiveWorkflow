@@ -17,7 +17,7 @@ from typing import Final, Literal, TypeAlias, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from cw_runtime.harness.project import AGENT_WORKFLOW_DIR
+from cw_runtime.harness.project import AGENT_WORKFLOW_DIR, load_project_tool_availability
 from cw_schemas import WorkflowGraph
 from cw_schemas.contract import NodeContractBase
 from cw_schemas.types import EdgeType, NodeType
@@ -243,7 +243,18 @@ def load_and_compile_workflow(
 ) -> EngineWorkflowIR:
     """Load ``workflow.flow.json`` and compile it into Engine IR."""
 
-    return compile_workflow_graph(load_workflow_graph(project_root), context=context)
+    validation_context = load_project_workflow_validation_context(project_root) if context is None else context
+    return compile_workflow_graph(load_workflow_graph(project_root), context=validation_context)
+
+
+def load_project_workflow_validation_context(project_root: Path) -> WorkflowValidationContext:
+    """Build L4 workflow validation context from project harness manifests."""
+
+    availability = load_project_tool_availability(project_root)
+    return WorkflowValidationContext(
+        available_skill_ids=availability.skill_ids,
+        available_mcp_server_ids=availability.mcp_server_ids,
+    )
 
 
 def _validate_l1_shape(payload: Mapping[str, object], *, source: str) -> None:

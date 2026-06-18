@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
-from cw_runtime.harness import HarnessError, ProjectCreateRequest, initialize_project, update_manifest_json
+from cw_runtime.harness import (
+    HarnessError,
+    ProjectCreateRequest,
+    initialize_project,
+    load_project_tool_availability,
+    update_manifest_json,
+)
 
 
 def _request(
@@ -35,6 +43,10 @@ def _read_json(path: Path) -> dict[str, object]:
 def _read_json_value(path: Path) -> object:
     with path.open("r", encoding="utf-8") as file:
         return json.load(file)
+
+
+def _write_json_value(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def _git_ls_files(project_root: Path) -> set[str]:
@@ -158,6 +170,64 @@ def test_update_manifest_json_increments_revision_and_uses_runtime_lock(tmp_path
     assert isinstance(settings_revision, dict)
     assert settings_revision["revision"] == 2
     assert (agent_root / "locks" / "runtime.lock").exists() is False
+
+
+def test_update_manifest_json_rejects_non_object_payload_without_revision_bump(tmp_path: Path) -> None:
+    project_root = tmp_path / "non_object_manifest_project"
+    initialize_project(_request("Non Object Manifest", project_root))
+    agent_root = project_root / ".agent-workflow"
+    revisions_before = _read_json(agent_root / "manifest_revision.json")
+    workflow_before = _read_json(agent_root / "workflow.flow.json")
+
+    with pytest.raises(TypeError):
+        update_manifest_json(project_root, "workflow.flow.json", cast(Mapping[str, Any], []))
+
+    assert _read_json(agent_root / "workflow.flow.json") == workflow_before
+    assert _read_json(agent_root / "manifest_revision.json") == revisions_before
+
+
+def test_project_tool_availability_reads_enabled_manifest_entries(tmp_path: Path) -> None:
+    project_root = tmp_path / "tool_availability_project"
+    initialize_project(_request("Tool Availability", project_root))
+    agent_root = project_root / ".agent-workflow"
+
+    _write_json_value(
+        agent_root / "skills.config.json",
+        [
+            {"skill_id": "research_outline", "version": "1.2.0"},
+            {"skill_id": "disabled_skill", "version": "1.0.0", "enabled": False},
+        ],
+    )
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {"server_id": "mcp_local_python", "version": "0.5.1", "secret_ref": "secure://mcp/local-python"},
+            {"server_id": "disabled_mcp", "enabled": False},
+        ],
+    )
+
+    availability = load_project_tool_availability(project_root)
+
+    assert availability.skill_ids == {"research_outline"}
+    assert availability.mcp_server_ids == {"mcp_local_python"}
+
+
+def test_project_tool_availability_treats_invalid_manifest_entries_as_disabled(tmp_path: Path) -> None:
+    project_root = tmp_path / "invalid_tool_availability_project"
+    initialize_project(_request("Invalid Tool Availability", project_root))
+    skills_path = project_root / ".agent-workflow" / "skills.config.json"
+    _write_json_value(
+        skills_path,
+        [
+            {"skill_id": "", "enabled": True},
+            {"skill_id": "bad_enabled", "enabled": "yes"},
+            "bad_entry",
+        ],
+    )
+
+    availability = load_project_tool_availability(project_root)
+
+    assert availability.skill_ids == set()
 
 
 def test_update_manifest_json_blocks_direct_memory_write(tmp_path: Path) -> None:

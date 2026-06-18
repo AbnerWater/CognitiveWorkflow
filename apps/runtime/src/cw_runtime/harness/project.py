@@ -14,7 +14,7 @@ import subprocess
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -139,6 +139,15 @@ class ProjectDocument(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ProjectToolAvailability(BaseModel):
+    """Enabled project tool registries used by workflow L4 validation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill_ids: set[str] = Field(default_factory=set)
+    mcp_server_ids: set[str] = Field(default_factory=set)
+
+
 class RuntimeLock:
     def __init__(self, lock_path: Path, *, timeout_seconds: float = 60.0) -> None:
         self._lock_path = lock_path
@@ -225,6 +234,35 @@ def read_project(project_root: Path) -> ProjectDocument:
     return ProjectDocument.model_validate({**project_json, "host_path": _to_posix(resolved_root)})
 
 
+def load_project_tool_availability(project_root: Path) -> ProjectToolAvailability:
+    """Load enabled Skill and MCP ids from project manifests without starting tools."""
+
+    return ProjectToolAvailability(
+        skill_ids=load_enabled_skill_ids(project_root),
+        mcp_server_ids=load_enabled_mcp_server_ids(project_root),
+    )
+
+
+def load_enabled_skill_ids(project_root: Path) -> set[str]:
+    """Load enabled Skill ids from ``skills.config.json``."""
+
+    agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
+    return _load_enabled_manifest_ids(
+        agent_root / "skills.config.json",
+        id_field="skill_id",
+    )
+
+
+def load_enabled_mcp_server_ids(project_root: Path) -> set[str]:
+    """Load enabled MCP server ids from ``mcp.config.json``."""
+
+    agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
+    return _load_enabled_manifest_ids(
+        agent_root / "mcp.config.json",
+        id_field="server_id",
+    )
+
+
 def update_manifest_json(
     project_root: Path,
     manifest_name: str,
@@ -240,6 +278,8 @@ def update_manifest_json(
             status_code=409,
             details={"manifest_name": manifest_name},
         )
+    if not isinstance(payload, Mapping):
+        raise TypeError("manifest payload must be a JSON object mapping")
     if manifest_name == "memory.json" and not allow_memory_write:
         raise HarnessError(
             "RH_MEMORY_DIRECT_WRITE_FORBIDDEN",
@@ -608,6 +648,33 @@ def _read_json(path: Path) -> dict[str, Any]:
             details={"path": _to_posix(path)},
         )
     return loaded
+
+
+def _read_json_list(path: Path) -> list[object]:
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            loaded = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(loaded, list):
+        return []
+    return cast(list[object], loaded)
+
+
+def _load_enabled_manifest_ids(path: Path, *, id_field: str) -> set[str]:
+    entries = _read_json_list(path)
+    enabled_ids: set[str] = set()
+    for raw_entry in entries:
+        if not isinstance(raw_entry, Mapping):
+            continue
+        entry = cast(Mapping[str, object], raw_entry)
+        enabled = entry.get("enabled", True)
+        if not isinstance(enabled, bool) or not enabled:
+            continue
+        raw_id = entry.get(id_field)
+        if isinstance(raw_id, str) and raw_id.strip() != "":
+            enabled_ids.add(raw_id)
+    return enabled_ids
 
 
 def _write_json_atomic(path: Path, payload: object) -> None:

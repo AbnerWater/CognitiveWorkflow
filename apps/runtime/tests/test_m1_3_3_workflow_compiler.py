@@ -17,7 +17,7 @@ from cw_runtime.engine import (
     load_workflow_graph,
     validate_workflow_graph_payload,
 )
-from cw_runtime.harness import ProjectCreateRequest, initialize_project
+from cw_runtime.harness import ProjectCreateRequest, initialize_project, update_manifest_json
 from cw_schemas import WorkflowGraph
 from cw_schemas.types import EdgeType
 
@@ -153,6 +153,10 @@ def _graph_payload() -> dict[str, Any]:
 
 def _validated_graph(payload: dict[str, Any] | None = None) -> WorkflowGraph:
     return WorkflowGraph.model_validate(_graph_payload() if payload is None else payload)
+
+
+def _write_json_value(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def _human_gate_payload() -> dict[str, Any]:
@@ -408,6 +412,47 @@ def test_compile_checks_l4_external_registries() -> None:
         compile_workflow_graph(graph, context=WorkflowValidationContext(available_context_refs=set()))
 
     assert ref_exc_info.value.error_code == "WG_L4_REFERENCE_UNRESOLVED"
+
+
+def test_load_and_compile_uses_project_skill_and_mcp_manifests(tmp_path: Path) -> None:
+    response = initialize_project(
+        ProjectCreateRequest(
+            schema_version="0.1.0",
+            display_name="Tool Context Project",
+            host_path=str(tmp_path / "tool_context_project"),
+        )
+    )
+    project_root = Path(response.host_path)
+    payload = _graph_payload()
+    execute_contract = payload["nodes"][1]["contract"]
+    assert isinstance(execute_contract, dict)
+    execute_contract["skills"] = [{"skill_id": "research_outline", "version": "1.2.0"}]
+    execute_contract["mcp_tools"] = [{"server_id": "mcp_local_python", "tool_name": "run"}]
+    update_manifest_json(project_root, "workflow.flow.json", payload)
+
+    with pytest.raises(WorkflowValidationError) as skill_exc_info:
+        load_and_compile_workflow(project_root)
+
+    assert skill_exc_info.value.error_code == "WG_L4_UNKNOWN_SKILL"
+    assert skill_exc_info.value.details["skill_id"] == "research_outline"
+
+    _write_json_value(
+        project_root / ".agent-workflow" / "skills.config.json",
+        [{"skill_id": "research_outline", "version": "1.2.0"}],
+    )
+    with pytest.raises(WorkflowValidationError) as mcp_exc_info:
+        load_and_compile_workflow(project_root)
+
+    assert mcp_exc_info.value.error_code == "WG_L4_UNKNOWN_MCP"
+    assert mcp_exc_info.value.details["server_id"] == "mcp_local_python"
+
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [{"server_id": "mcp_local_python", "version": "0.5.1"}],
+    )
+    compiled = load_and_compile_workflow(project_root)
+
+    assert compiled.workflow_id == "wf_compiler"
 
 
 def test_compile_model_registry_ignores_non_llm_node_contract_policy() -> None:

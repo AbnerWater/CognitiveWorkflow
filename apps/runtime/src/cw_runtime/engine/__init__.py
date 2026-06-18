@@ -11,6 +11,7 @@ from .compiler import (
     WorkflowValidationError,
     compile_workflow_graph,
     load_and_compile_workflow,
+    load_project_workflow_validation_context,
     load_workflow_graph,
     validate_workflow_graph_payload,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "compile_langgraph_state_graph",
     "compile_workflow_graph",
     "load_and_compile_workflow",
+    "load_project_workflow_validation_context",
     "load_workflow_graph",
     "validate_workflow_graph_payload",
 ]

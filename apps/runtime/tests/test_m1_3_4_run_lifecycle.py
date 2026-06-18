@@ -10,8 +10,8 @@ from typing import Any
 
 import pytest
 
-from cw_runtime.engine import load_workflow_graph
-from cw_runtime.harness import ProjectCreateRequest, initialize_project
+from cw_runtime.engine import WorkflowValidationError, load_workflow_graph
+from cw_runtime.harness import ProjectCreateRequest, initialize_project, update_manifest_json
 from cw_runtime.runs import (
     RunActionRequest,
     RunError,
@@ -66,6 +66,10 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
+def _write_json_value(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
 def test_create_workflow_run_writes_run_directory_and_started_event(tmp_path: Path) -> None:
     project_root, workflow_id = _create_project(tmp_path)
 
@@ -91,6 +95,61 @@ def test_create_workflow_run_writes_run_directory_and_started_event(tmp_path: Pa
     assert len(persisted_event_lines) == 1
     persisted = json.loads(persisted_event_lines[0].read_text(encoding="utf-8").splitlines()[0])
     validate_stream_event(persisted)
+
+
+def test_create_workflow_run_uses_project_skill_manifest_context(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project(tmp_path)
+    workflow = _read_json(project_root / ".agent-workflow" / "workflow.flow.json")
+    workflow["nodes"] = [
+        {"node_id": "n_start", "type": "start", "title": "Start", "trigger": "manual"},
+        {
+            "node_id": "n_execute",
+            "type": "execution_task",
+            "title": "Execute",
+            "contract": {
+                "contract_id": "ctr_execute",
+                "contract_kind": "execution",
+                "goal": "Execute task",
+                "model_policy": {"primary_model_profile_id": "claude-sonnet-default"},
+                "prompt": {
+                    "user_prompt_template": "Process {{ deps.input }}",
+                    "template_engine": "handlebars",
+                },
+                "skills": [{"skill_id": "research_outline", "version": "1.2.0"}],
+                "mcp_tools": [{"server_id": "mcp_local_python", "tool_name": "run"}],
+            },
+        },
+        {"node_id": "n_end", "type": "end", "title": "End", "archive_actions": []},
+    ]
+    workflow["edges"] = [
+        {"edge_id": "e_start_execute", "source_node_id": "n_start", "target_node_id": "n_execute", "type": "normal"},
+        {"edge_id": "e_execute_end", "source_node_id": "n_execute", "target_node_id": "n_end", "type": "normal"},
+    ]
+    update_manifest_json(project_root, "workflow.flow.json", workflow)
+
+    with pytest.raises(WorkflowValidationError) as exc_info:
+        create_workflow_run(project_root, workflow_id, _start_request())
+
+    assert exc_info.value.error_code == "WG_L4_UNKNOWN_SKILL"
+    assert exc_info.value.details["skill_id"] == "research_outline"
+
+    _write_json_value(
+        project_root / ".agent-workflow" / "skills.config.json",
+        [{"skill_id": "research_outline", "version": "1.2.0"}],
+    )
+    with pytest.raises(WorkflowValidationError) as mcp_exc_info:
+        create_workflow_run(project_root, workflow_id, _start_request())
+
+    assert mcp_exc_info.value.error_code == "WG_L4_UNKNOWN_MCP"
+    assert mcp_exc_info.value.details["server_id"] == "mcp_local_python"
+
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [{"server_id": "mcp_local_python", "version": "0.5.1"}],
+    )
+    response = create_workflow_run(project_root, workflow_id, _start_request())
+
+    assert response.run_id
 
 
 def test_run_pause_resume_cancel_emit_monotonic_events(tmp_path: Path) -> None:

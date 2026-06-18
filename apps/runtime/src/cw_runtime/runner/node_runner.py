@@ -26,7 +26,12 @@ from cw_runtime.builders import (
     build_static_evidence_pack,
     build_static_execution_pack,
 )
-from cw_runtime.engine import EngineWorkflowIR, compile_workflow_graph, load_workflow_graph
+from cw_runtime.engine import (
+    EngineWorkflowIR,
+    compile_workflow_graph,
+    load_project_workflow_validation_context,
+    load_workflow_graph,
+)
 from cw_runtime.harness.project import acquire_runtime_lock
 from cw_runtime.model_router import (
     ModelRouterError,
@@ -306,7 +311,7 @@ def advance_workflow_run(
 
     with acquire_runtime_lock(root):
         graph = load_workflow_graph(root)
-        compiled = compile_workflow_graph(graph)
+        compiled = compile_workflow_graph(graph, context=load_project_workflow_validation_context(root))
         run = read_workflow_run(root, run_id)
         _ensure_run_can_advance(run)
 
@@ -348,7 +353,7 @@ def resolve_human_decision(
     root = Path(project_root)
     with acquire_runtime_lock(root):
         graph = load_workflow_graph(root)
-        compiled = compile_workflow_graph(graph)
+        compiled = compile_workflow_graph(graph, context=load_project_workflow_validation_context(root))
         run = read_workflow_run(root, run_id)
         if run.state != RunState.WAITING_USER:
             raise RunError(

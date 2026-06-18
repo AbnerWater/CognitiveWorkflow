@@ -17,7 +17,7 @@ from typing import Any, Final, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from cw_runtime.engine import compile_workflow_graph, load_workflow_graph
+from cw_runtime.engine import compile_workflow_graph, load_project_workflow_validation_context, load_workflow_graph
 from cw_runtime.harness.project import AGENT_WORKFLOW_DIR, acquire_runtime_lock
 from cw_runtime.persistence import (
     create_git_snapshot_locked,
@@ -174,7 +174,7 @@ def create_workflow_run(
             status_code=404,
             details={"workflow_id": workflow_id},
         )
-    compiled = compile_workflow_graph(graph)
+    compiled = compile_workflow_graph(graph, context=load_project_workflow_validation_context(project_root))
     with acquire_runtime_lock(project_root):
         ensure_runtime_databases(project_root)
         _ensure_no_active_run(project_root, workflow_id)
