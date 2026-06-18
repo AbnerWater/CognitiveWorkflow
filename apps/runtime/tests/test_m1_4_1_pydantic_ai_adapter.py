@@ -18,6 +18,7 @@ from cw_runtime.adapters import (
     PydanticAIRunRequest,
     PydanticAISession,
     PydanticAISessionFactory,
+    PydanticAIToolsetRegistry,
     PydanticAIToolsetRequest,
     PydanticAIToolsets,
     RawPydanticAIEvent,
@@ -1448,6 +1449,81 @@ async def test_pydantic_ai_default_sdk_session_passes_toolsets_and_wraps_mcp_app
     assert approval_wrapper.wrapped is mcp_toolset
     assert approval_wrapper.approval_required_func(None, SimpleNamespace(name="search"), {"query": "cw"}) is True
     assert approval_wrapper.approval_required_func(None, SimpleNamespace(name="read_resource"), {}) is False
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_toolset_registry_resolves_registered_toolsets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    registry = PydanticAIToolsetRegistry()
+    builtin_toolset = FakeSDKToolset("builtin")
+    skill_toolset = FakeSDKToolset("skill")
+    mcp_toolset = FakeSDKToolset("mcp")
+    registry.register_builtin_toolset("python_sandbox", builtin_toolset)
+    registry.register_skill_toolset("citation_checker", skill_toolset, version="1.0.0")
+    registry.register_mcp_toolset("mcp_research", mcp_toolset)
+
+    adapter = PydanticAIAdapter(toolset_factory=registry.as_factory())
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["python_sandbox"],
+            skills=[SkillRef(skill_id="citation_checker", version="1.0.0")],
+            mcp_tools=[MCPToolRef(server_id="mcp_research", tool_name="search", requires_approval=True)],
+            effective_toolsets=ToolsetSpec(
+                builtin_tools=["python_sandbox"],
+                skill_ids_resolved=["citation_checker@1.0.0"],
+                mcp_server_ids=["mcp_research"],
+            ),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert sdk_toolsets[0] is builtin_toolset
+    assert sdk_toolsets[1] is skill_toolset
+    mcp_wrapper = sdk_toolsets[2]
+    assert isinstance(mcp_wrapper, FakeSDKApprovalRequiredToolset)
+    assert mcp_wrapper.wrapped is mcp_toolset
+    assert mcp_wrapper.approval_required_func(None, SimpleNamespace(name="search"), {}) is True
+    assert mcp_wrapper.approval_required_func(None, SimpleNamespace(name="write_file"), {}) is False
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_toolset_registry_fails_closed_on_missing_toolsets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    registry = PydanticAIToolsetRegistry()
+    adapter = PydanticAIAdapter(toolset_factory=registry.as_factory())
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["python_sandbox"],
+            skills=[SkillRef(skill_id="citation_checker", version="1.0.0")],
+            mcp_tools=[MCPToolRef(server_id="mcp_research", tool_name="search", requires_approval=False)],
+            effective_toolsets=ToolsetSpec(
+                builtin_tools=["python_sandbox"],
+                skill_ids_resolved=["citation_checker@1.0.0"],
+                mcp_server_ids=["mcp_research"],
+            ),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert len(FakeSDKAgent.instances) == 0
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["missing_builtin_tools"] == ["python_sandbox"]
+    assert outcome.errors[0].payload["missing_skill_ids_resolved"] == ["citation_checker@1.0.0"]
+    assert outcome.errors[0].payload["missing_mcp_server_ids"] == ["mcp_research"]
 
 
 @pytest.mark.asyncio

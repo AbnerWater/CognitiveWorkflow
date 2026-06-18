@@ -171,6 +171,87 @@ class PydanticAIToolsets:
 PydanticAIToolsetFactory: TypeAlias = Callable[[ModuleType, PydanticAIToolsetRequest], PydanticAIToolsets]
 
 
+def _registry_key(value: str, field_name: str) -> str:
+    if not value:
+        raise ValueError(f"{field_name} must be non-empty.")
+    return value
+
+
+class PydanticAIToolsetRegistry:
+    """Registry-backed resolver for already constructed Pydantic AI SDK toolsets."""
+
+    def __init__(
+        self,
+        *,
+        builtin_toolsets: Mapping[str, object] | None = None,
+        skill_toolsets: Mapping[str, object] | None = None,
+        mcp_toolsets: Mapping[str, object] | None = None,
+    ) -> None:
+        self._builtin_toolsets: dict[str, object] = {}
+        self._skill_toolsets: dict[str, object] = {}
+        self._mcp_toolsets: dict[str, object] = {}
+        for tool_id, toolset in ({} if builtin_toolsets is None else builtin_toolsets).items():
+            self.register_builtin_toolset(tool_id, toolset)
+        for skill_ref, toolset in ({} if skill_toolsets is None else skill_toolsets).items():
+            self.register_resolved_skill_toolset(skill_ref, toolset)
+        for server_id, toolset in ({} if mcp_toolsets is None else mcp_toolsets).items():
+            self.register_mcp_toolset(server_id, toolset)
+
+    def register_builtin_toolset(self, tool_id: str, toolset: object) -> None:
+        self._builtin_toolsets[_registry_key(tool_id, "tool_id")] = toolset
+
+    def register_skill_toolset(self, skill_id: str, toolset: object, *, version: str = "latest") -> None:
+        skill_ref = f"{_registry_key(skill_id, 'skill_id')}@{_registry_key(version, 'version')}"
+        self._skill_toolsets[skill_ref] = toolset
+
+    def register_resolved_skill_toolset(self, skill_ref: str, toolset: object) -> None:
+        self._skill_toolsets[_registry_key(skill_ref, "skill_ref")] = toolset
+
+    def register_mcp_toolset(self, server_id: str, toolset: object) -> None:
+        self._mcp_toolsets[_registry_key(server_id, "server_id")] = toolset
+
+    def resolve(self, _sdk: ModuleType, request: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        builtin_tool_ids = _unique_strings(request.builtin_tools)
+        skill_refs = _unique_strings(request.skill_ids_resolved)
+        mcp_server_ids = _unique_strings([tool.server_id for tool in request.mcp_tools])
+
+        missing_builtin_tool_ids = [tool_id for tool_id in builtin_tool_ids if tool_id not in self._builtin_toolsets]
+        missing_skill_refs = [skill_ref for skill_ref in skill_refs if skill_ref not in self._skill_toolsets]
+        missing_mcp_server_ids = [server_id for server_id in mcp_server_ids if server_id not in self._mcp_toolsets]
+        missing_payload: dict[str, object] = {}
+        if missing_builtin_tool_ids:
+            missing_payload["missing_builtin_tools"] = missing_builtin_tool_ids
+        if missing_skill_refs:
+            missing_payload["missing_skill_ids_resolved"] = missing_skill_refs
+        if missing_mcp_server_ids:
+            missing_payload["missing_mcp_server_ids"] = missing_mcp_server_ids
+        if missing_payload:
+            raise AdapterRuntimeError(
+                "AA_RUN_TOOL_NOT_FOUND",
+                "Pydantic AI toolset registry did not resolve requested toolsets.",
+                payload={
+                    **missing_payload,
+                    "toolsets": request.model_dump(mode="json"),
+                },
+            )
+
+        function_toolsets = [
+            *[self._builtin_toolsets[tool_id] for tool_id in builtin_tool_ids],
+            *[self._skill_toolsets[skill_ref] for skill_ref in skill_refs],
+        ]
+        mcp_toolsets = [
+            PydanticAIMCPToolset(server_id=server_id, toolset=self._mcp_toolsets[server_id])
+            for server_id in mcp_server_ids
+        ]
+        return PydanticAIToolsets(
+            function_toolsets=tuple(function_toolsets),
+            mcp_toolsets=tuple(mcp_toolsets),
+        )
+
+    def as_factory(self) -> PydanticAIToolsetFactory:
+        return self.resolve
+
+
 class PydanticAISDKSession:
     """Lazy SDK-backed Pydantic AI session.
 
@@ -2363,6 +2444,7 @@ __all__ = [
     "PydanticAISession",
     "PydanticAISessionFactory",
     "PydanticAIToolsetFactory",
+    "PydanticAIToolsetRegistry",
     "PydanticAIToolsetRequest",
     "PydanticAIToolsets",
     "RawPydanticAIEvent",
