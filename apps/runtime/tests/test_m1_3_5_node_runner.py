@@ -228,6 +228,62 @@ def _create_project_with_graph(tmp_path: Path, payload: dict[str, Any]) -> tuple
     return project_root, str(payload["workflow_id"])
 
 
+def _add_project_model_profile(project_root: Path, profile: dict[str, Any]) -> None:
+    settings_path = project_root / ".agent-workflow" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    settings["models"].setdefault("add_profiles", []).append(profile)
+    settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
+def _test_model_profile(
+    profile_id: str,
+    *,
+    input_per_million_usd: float | None,
+    output_per_million_usd: float | None,
+) -> dict[str, Any]:
+    return {
+        "model_profile_id": profile_id,
+        "display_name": profile_id,
+        "provider_kind": "local",
+        "provider_id": "cw_runtime_test",
+        "model_id": profile_id,
+        "capabilities": {
+            "max_context_tokens": 200000,
+            "max_output_tokens": 4096,
+            "structured_output_native": True,
+            "tool_call": True,
+            "streaming": True,
+            "multi_modal": [],
+            "reasoning_supported": True,
+            "vision_supported": False,
+            "failure_types_supported": [
+                "format_error",
+                "missing_output",
+                "logic_gap",
+                "missing_evidence",
+                "tool_error",
+                "model_capability_limit",
+                "ambiguous_requirement",
+                "review_rule_too_strict",
+                "unknown",
+            ],
+            "reliability_score": 1.0,
+            "recommended_node_kinds": ["execution", "evaluation", "repair"],
+        },
+        "default_model_settings": {"temperature": 0.0, "top_p": 1.0, "max_tokens": 4096},
+        "cost_profile": {
+            "input_per_million_usd": input_per_million_usd,
+            "output_per_million_usd": output_per_million_usd,
+            "latency_p50_ms": 0,
+            "latency_p95_ms": 0,
+            "tier": "local_free",
+        },
+        "performance_profile": {},
+        "tags": ["test"],
+        "metadata": {"cw": {"test": True}},
+    }
+
+
 def _start_run(project_root: Path, workflow_id: str, metadata: dict[str, Any] | None = None) -> str:
     response = create_workflow_run(
         project_root,
@@ -533,7 +589,111 @@ def test_runner_enforces_run_cost_budget_after_usage_ledger_append(tmp_path: Pat
     assert budget_event.payload == {"kind": "max_cost_usd", "limit": 0.005}
 
 
-def test_runner_cost_budget_fails_closed_when_estimated_cost_is_missing(tmp_path: Path) -> None:
+def test_runner_estimates_missing_cost_from_selected_model_profile(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id, metadata={"cw": {"usage_limits": {"max_cost_usd": 0.04}}})
+
+    advance_workflow_run(project_root, run_id)
+    execution = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            execution=ExecutionAdvanceInput(
+                output={"draft": "ok"},
+                model_profile_id="claude-sonnet-default",
+                usage=RunUsage(input_tokens=1000, output_tokens=2000, total_tokens=3000, requests=1),
+            )
+        ),
+    )
+
+    assert execution.next_node_ids == ["n_review"]
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    assert attempts[0]["model_profile_id"] == "claude-sonnet-default"
+    assert attempts[0]["usage"]["est_cost_usd"] == pytest.approx(0.033)
+    assert usage[0]["model_profile_id"] == "claude-sonnet-default"
+    assert usage[0]["est_cost_usd"] == pytest.approx(0.033)
+    assert usage[0]["input_tokens"] == 1000
+    assert usage[0]["output_tokens"] == 2000
+
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["summary_metrics"]["usage"]["est_cost_usd"] == pytest.approx(0.033)
+    assert run_json["summary_metrics"]["usage"]["missing_est_cost_records"] == 0
+    attempt_completed = next(
+        event for event in list_stream_events(project_root, run_id) if event.type == "attempt.completed"
+    )
+    assert attempt_completed.payload is not None
+    assert attempt_completed.payload["usage"]["est_cost_usd"] == pytest.approx(0.033)
+
+
+def test_runner_preserves_reported_cost_when_profile_estimate_would_be_higher(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id, metadata={"cw": {"usage_limits": {"max_cost_usd": 0.002}}})
+
+    advance_workflow_run(project_root, run_id)
+    execution = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            execution=ExecutionAdvanceInput(
+                output={"draft": "ok"},
+                model_profile_id="claude-sonnet-default",
+                usage=RunUsage(
+                    input_tokens=1000,
+                    output_tokens=2000,
+                    total_tokens=3000,
+                    requests=1,
+                    est_cost_usd=0.001,
+                ),
+            )
+        ),
+    )
+
+    assert execution.next_node_ids == ["n_review"]
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    assert attempts[0]["usage"]["est_cost_usd"] == 0.001
+    assert usage[0]["est_cost_usd"] == 0.001
+
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["summary_metrics"]["usage"]["est_cost_usd"] == 0.001
+
+
+def test_runner_enforces_run_cost_budget_from_estimated_profile_cost(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id, metadata={"cw": {"usage_limits": {"max_cost_usd": 0.03}}})
+
+    advance_workflow_run(project_root, run_id)
+    failed = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            execution=ExecutionAdvanceInput(
+                model_profile_id="claude-sonnet-default",
+                usage=RunUsage(input_tokens=1000, output_tokens=2000, total_tokens=3000, requests=1),
+            )
+        ),
+    )
+
+    assert failed.run.state == RunState.FAILED
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    assert attempts[0]["state"] == "failed"
+    assert attempts[0]["errors"][0]["payload"]["error_code"] == "AA_RUN_USAGE_LIMIT"
+    assert attempts[0]["errors"][0]["payload"]["kind"] == "max_cost_usd"
+    assert attempts[0]["errors"][0]["payload"]["actual"] == pytest.approx(0.033)
+    assert attempts[0]["errors"][0]["payload"].get("reason") != "missing_est_cost_usd"
+    assert usage[0]["est_cost_usd"] == pytest.approx(0.033)
+
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["summary_metrics"]["usage"]["est_cost_usd"] == pytest.approx(0.033)
+    assert run_json["summary_metrics"]["usage"]["missing_est_cost_records"] == 0
+
+
+def test_runner_cost_budget_does_not_treat_omitted_usage_as_zero_cost(tmp_path: Path) -> None:
     project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
     run_id = _start_run(project_root, workflow_id, metadata={"cw": {"usage_limits": {"max_cost_usd": 0.01}}})
 
@@ -541,8 +701,44 @@ def test_runner_cost_budget_fails_closed_when_estimated_cost_is_missing(tmp_path
     failed = advance_workflow_run(
         project_root,
         run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(model_profile_id="claude-sonnet-default")),
+    )
+
+    assert failed.run.state == RunState.FAILED
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    assert attempts[0]["state"] == "failed"
+    assert attempts[0]["errors"][0]["payload"]["error_code"] == "AA_RUN_USAGE_LIMIT"
+    assert attempts[0]["errors"][0]["payload"]["reason"] == "missing_est_cost_usd"
+    assert "est_cost_usd" not in usage[0]
+
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["summary_metrics"]["usage"]["missing_est_cost_records"] == 1
+    assert "est_cost_usd" not in run_json["summary_metrics"]["usage"]
+
+
+def test_runner_cost_budget_fails_closed_when_estimated_cost_is_missing(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    _add_project_model_profile(
+        project_root,
+        _test_model_profile(
+            "no-price-local-model",
+            input_per_million_usd=None,
+            output_per_million_usd=None,
+        ),
+    )
+    run_id = _start_run(project_root, workflow_id, metadata={"cw": {"usage_limits": {"max_cost_usd": 0.01}}})
+
+    advance_workflow_run(project_root, run_id)
+    failed = advance_workflow_run(
+        project_root,
+        run_id,
         NodeAdvanceRequest(
-            execution=ExecutionAdvanceInput(usage=RunUsage(input_tokens=3, output_tokens=1, total_tokens=4, requests=1))
+            execution=ExecutionAdvanceInput(
+                model_profile_id="no-price-local-model",
+                usage=RunUsage(input_tokens=3, output_tokens=1, total_tokens=4, requests=1),
+            )
         ),
     )
 
@@ -562,6 +758,89 @@ def test_runner_cost_budget_fails_closed_when_estimated_cost_is_missing(tmp_path
         event for event in list_stream_events(project_root, run_id) if event.type == "error.budget_exhausted"
     )
     assert budget_event.payload == {"kind": "max_cost_usd", "limit": 0.01}
+
+
+def test_runner_estimates_cost_for_evaluation_usage(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "ok"})),
+    )
+    evaluated = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                model_profile_id="claude-sonnet-default",
+                usage=RunUsage(input_tokens=1000, output_tokens=2000, total_tokens=3000, requests=1),
+            )
+        ),
+    )
+
+    assert evaluated.next_node_ids == ["n_end"]
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    evaluations = _read_jsonl(run_root / "evaluations.jsonl")
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    assert evaluations[0]["usage"]["est_cost_usd"] == pytest.approx(0.033)
+    assert attempts[-1]["node_id"] == "n_review"
+    assert attempts[-1]["usage"]["est_cost_usd"] == pytest.approx(0.033)
+    assert usage[-1]["node_id"] == "n_review"
+    assert usage[-1]["est_cost_usd"] == pytest.approx(0.033)
+
+    attempt_completed = [
+        event for event in list_stream_events(project_root, run_id) if event.type == "attempt.completed"
+    ]
+    assert attempt_completed[-1].payload is not None
+    assert attempt_completed[-1].payload["usage"]["est_cost_usd"] == pytest.approx(0.033)
+
+
+def test_runner_estimates_cost_for_repair_usage(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload(include_repair=True))
+    run_id = _start_run(project_root, workflow_id)
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "bad"})),
+    )
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(evaluation=EvaluationAdvanceInput(passed=False, score=0.2)),
+    )
+    repaired = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            repair=RepairAdvanceInput(
+                model_profile_id="claude-sonnet-default",
+                usage=RunUsage(input_tokens=1000, output_tokens=2000, total_tokens=3000, requests=1),
+            )
+        ),
+    )
+
+    assert repaired.next_node_ids == ["n_execute"]
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    usage = _read_jsonl(run_root / "usage.jsonl")
+    assert repairs[0]["provenance"]["usage"]["est_cost_usd"] == pytest.approx(0.033)
+    assert attempts[-1]["node_id"] == "n_repair"
+    assert attempts[-1]["usage"]["est_cost_usd"] == pytest.approx(0.033)
+    assert usage[-1]["node_id"] == "n_repair"
+    assert usage[-1]["est_cost_usd"] == pytest.approx(0.033)
+
+    attempt_completed = [
+        event for event in list_stream_events(project_root, run_id) if event.type == "attempt.completed"
+    ]
+    assert attempt_completed[-1].payload is not None
+    assert attempt_completed[-1].payload["usage"]["est_cost_usd"] == pytest.approx(0.033)
 
 
 def test_runner_enforces_run_total_token_budget(tmp_path: Path) -> None:

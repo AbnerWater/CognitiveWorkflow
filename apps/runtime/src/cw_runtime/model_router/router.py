@@ -20,12 +20,14 @@ from cw_runtime import __version__
 from cw_runtime.harness.project import AGENT_WORKFLOW_DIR
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_schemas.contract import NodeContractBase
+from cw_schemas.runtime import RunUsage
 from cw_schemas.types import AdapterKind, ArbitrationMode, FailureType, ProviderKind, ValidatorMode
 from cw_schemas.workflow import WorkflowModelPolicy
 
 _ROUTER_VERSION = "static-phase1.0.0"
 _DEFAULT_GLOBAL_REGISTRY_PATH = Path.home() / ".cw" / "model_profiles.json"
 _DETERMINISTIC_ADAPTER_ID = "cw_runtime.deterministic_node_runner"
+_TOKENS_PER_MILLION = 1_000_000.0
 
 ReasoningRequired = Literal["low", "medium", "high"]
 StructureStrictness = Literal["low", "medium", "high"]
@@ -138,6 +140,19 @@ class ResolvedProfileRegistry(BaseModel):
 
     def profile_by_id(self) -> dict[str, ModelProfile]:
         return {profile.model_profile_id: profile for profile in self.profiles}
+
+
+def estimate_usage_cost_usd(usage: RunUsage, cost_profile: ModelCostProfile) -> float | None:
+    """Estimate attempt cost from static ModelRouter token prices."""
+
+    input_rate = cost_profile.input_per_million_usd
+    output_rate = cost_profile.output_per_million_usd
+    if input_rate is None or output_rate is None:
+        return None
+    billable_input_tokens = usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens
+    return (billable_input_tokens / _TOKENS_PER_MILLION * input_rate) + (
+        usage.output_tokens / _TOKENS_PER_MILLION * output_rate
+    )
 
 
 class AdapterCapabilities(BaseModel):

@@ -35,9 +35,11 @@ from cw_runtime.engine import (
 )
 from cw_runtime.harness.project import acquire_runtime_lock
 from cw_runtime.model_router import (
+    ModelCostProfile,
     ModelRouterError,
     build_routing_request,
     build_routing_trace,
+    estimate_usage_cost_usd,
     load_project_model_settings,
     resolve_model_profile_registry,
     route_model,
@@ -290,6 +292,7 @@ class _AttemptArtifacts(BaseModel):
     execution_pack_id: str
     started_at: str
     model_profile_id: str
+    model_cost_profile: ModelCostProfile
     output_hash: str | None = None
     effective_prompt_overlay_ref: str | None = None
     source_patch_id: str | None = None
@@ -634,13 +637,14 @@ def _advance_execution(
         run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.READY)
     run = _emit_attempt_started(project_root, run, node.node_id, artifacts)
     run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RUNNING)
+    execution_usage = _usage_with_profile_estimated_cost(artifacts, _explicit_usage(execution))
 
     if execution.error is not None:
-        return _fail_attempt_and_run(project_root, run, node, artifacts, [execution.error], usage=execution.usage)
+        return _fail_attempt_and_run(project_root, run, node, artifacts, [execution.error], usage=execution_usage)
 
-    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, execution.usage)
+    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, execution_usage)
     if budget_error is not None:
-        return _fail_attempt_and_run(project_root, run, node, artifacts, [budget_error], usage=execution.usage)
+        return _fail_attempt_and_run(project_root, run, node, artifacts, [budget_error], usage=execution_usage)
 
     run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.VALIDATING)
     output_hash = _stable_hash(execution.output)
@@ -651,7 +655,7 @@ def _advance_execution(
         artifacts,
         output=execution.output,
         output_artifact_refs=execution.output_artifact_refs,
-        usage=execution.usage,
+        usage=execution_usage,
         metadata=execution.metadata,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
@@ -729,10 +733,13 @@ def _advance_evaluation(
         target_node_id=node.target_node_id,
     )
     run = append_run_event_locked(project_root, run, started_event)
+    evaluation_usage = _usage_with_profile_estimated_cost(artifacts, _explicit_usage(evaluation))
+    if evaluation_usage is not None:
+        evaluation = evaluation.model_copy(update={"usage": evaluation_usage})
 
-    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, evaluation.usage)
+    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, evaluation_usage)
     if budget_error is not None:
-        return _fail_attempt_and_run(project_root, run, node, artifacts, [budget_error], usage=evaluation.usage)
+        return _fail_attempt_and_run(project_root, run, node, artifacts, [budget_error], usage=evaluation_usage)
 
     eval_result = _build_evaluation_result(
         run=run,
@@ -772,7 +779,7 @@ def _advance_evaluation(
         artifacts,
         output=output,
         output_artifact_refs=[],
-        usage=evaluation.usage,
+        usage=evaluation_usage,
         metadata=evaluation.metadata,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
@@ -882,10 +889,13 @@ def _advance_repair(
         eval_id=evaluation_id,
     )
     run = append_run_event_locked(project_root, run, started_event)
+    repair_usage = _usage_with_profile_estimated_cost(artifacts, _explicit_usage(repair))
+    if repair_usage is not None:
+        repair = repair.model_copy(update={"usage": repair_usage})
 
-    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, repair.usage)
+    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, repair_usage)
     if budget_error is not None:
-        return _fail_attempt_and_run(project_root, run, node, artifacts, [budget_error], usage=repair.usage)
+        return _fail_attempt_and_run(project_root, run, node, artifacts, [budget_error], usage=repair_usage)
 
     patch = _build_repair_patch(
         run=run,
@@ -944,7 +954,7 @@ def _advance_repair(
         artifacts,
         output=output,
         output_artifact_refs=[],
-        usage=repair.usage,
+        usage=repair_usage,
         metadata=repair.metadata,
     )
     append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
@@ -1337,11 +1347,13 @@ def _prepare_attempt(
             correlation_id=attempt_id,
             primary_model_profile_id=model_profile_id,
         )
+        profile_registry = resolve_model_profile_registry(routing_request.project_settings_models)
         routing_decision = route_model(
             routing_request,
-            resolve_model_profile_registry(routing_request.project_settings_models),
+            profile_registry,
             decided_at=now,
         )
+        selected_profile = profile_registry.profile_by_id()[routing_decision.model_profile_id]
         append_run_jsonl_locked(
             project_root,
             run.run_id,
@@ -1413,6 +1425,7 @@ def _prepare_attempt(
         execution_pack_id=execution_pack_id,
         started_at=now,
         model_profile_id=routing_decision.model_profile_id,
+        model_cost_profile=selected_profile.cost_profile,
         effective_prompt_overlay_ref=None if pending_overlay is None else f"overlays/{attempt_id}.json",
         source_patch_id=None if pending_overlay is None else pending_overlay.patch_id,
     )
@@ -1483,6 +1496,21 @@ def _write_attempt_pack_bundle(
         f"execution_packs/{bundle.execution_pack.pack_id}.json",
         bundle.execution_pack.model_dump(mode="json"),
     )
+
+
+def _explicit_usage(input_data: ExecutionAdvanceInput | EvaluationAdvanceInput | RepairAdvanceInput) -> RunUsage | None:
+    if "usage" not in input_data.model_fields_set:
+        return None
+    return input_data.usage
+
+
+def _usage_with_profile_estimated_cost(artifacts: _AttemptArtifacts, usage: RunUsage | None) -> RunUsage | None:
+    if usage is None or usage.est_cost_usd is not None:
+        return usage
+    estimated_cost = estimate_usage_cost_usd(usage, artifacts.model_cost_profile)
+    if estimated_cost is None:
+        return usage
+    return usage.model_copy(update={"est_cost_usd": estimated_cost})
 
 
 def _completed_attempt(
