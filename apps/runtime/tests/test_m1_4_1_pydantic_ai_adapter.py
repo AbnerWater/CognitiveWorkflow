@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from types import ModuleType, SimpleNamespace, TracebackType
 from typing import Any, ClassVar
@@ -66,6 +67,48 @@ class FakePydanticAISession:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class SlowPydanticAISession(FakePydanticAISession):
+    def __init__(
+        self,
+        *,
+        run_events: list[RawPydanticAIEvent],
+        resume_events: list[RawPydanticAIEvent] | None = None,
+        delay_run: bool = False,
+        delay_resume: bool = False,
+    ) -> None:
+        super().__init__(run_events=run_events, resume_events=resume_events)
+        self._delay_run = delay_run
+        self._delay_resume = delay_resume
+
+    async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
+        if self._delay_run:
+            self.run_request = request
+            await asyncio.sleep(10)
+            return
+        async for event in super().run(request):
+            yield event
+
+    async def resume(self, request: PydanticAIResumeRequest) -> AsyncIterator[RawPydanticAIEvent]:
+        if self._delay_resume:
+            self.resume_request = request
+            await asyncio.sleep(10)
+            return
+        async for event in super().resume(request):
+            yield event
+
+
+class ErrorPydanticAISession(FakePydanticAISession):
+    def __init__(self, *, exception: Exception) -> None:
+        super().__init__(run_events=[])
+        self._exception = exception
+
+    async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
+        self.run_request = request
+        for event in self._run_events:
+            yield event
+        raise self._exception
 
 
 class FakeSDKUsage:
@@ -812,6 +855,93 @@ async def test_pydantic_ai_default_sdk_session_passes_retry_policy_to_agent(
 
     assert events[-1].type == "attempt.completed"
     assert FakeSDKAgent.instances[0].kwargs["retries"] == {"tools": 3, "output": 1}
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_run_timeout_cancels_attempt() -> None:
+    session = SlowPydanticAISession(
+        run_events=[{"type": "completed", "output": {"answer": "late"}}],
+        delay_run=True,
+    )
+    adapter = PydanticAIAdapter(session_factory=_factory_for(session))
+    handle = await adapter.prepare(_execution_pack(retry_policy=RetryPolicy(timeout_seconds=1)))
+
+    events = await asyncio.wait_for(_collect(adapter.run(handle)), timeout=2.0)
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert session.run_request is not None
+    assert session.run_request.retry_policy.timeout_seconds == 1
+    assert session.cancelled == (handle.handle_id, CancelReason.IDLE_TIMEOUT)
+    assert events[-1].payload is not None
+    assert events[-1].payload["error_kind"] == "cancelled"
+    assert events[-1].payload["will_retry"] is False
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.CANCELLED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_CANCELLED"
+    assert outcome.errors[0].payload["reason"] == "idle_timeout"
+    assert outcome.errors[0].payload["timeout_seconds"] == 1
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_resume_timeout_cancels_attempt() -> None:
+    session = SlowPydanticAISession(
+        run_events=[
+            {
+                "type": "approval_required",
+                "prompt": "Allow slow tool?",
+                "tool_id": "slow_tool",
+            }
+        ],
+        resume_events=[{"type": "completed", "output": {"answer": "late"}}],
+        delay_resume=True,
+    )
+    adapter = PydanticAIAdapter(session_factory=_factory_for(session))
+    handle = await adapter.prepare(_execution_pack(retry_policy=RetryPolicy(timeout_seconds=1)))
+    await _collect(adapter.run(handle))
+
+    events = await asyncio.wait_for(
+        _collect(
+            adapter.resume(
+                handle,
+                AttemptResumption(
+                    kind=ResumptionKind.HUMAN_DECISION,
+                    human_decision=HumanDecisionResolution(
+                        key="continue",
+                        by="user_01",
+                        decided_at="2026-06-18T00:00:01.000Z",
+                    ),
+                ),
+            )
+        ),
+        timeout=2.0,
+    )
+
+    assert [event.type for event in events] == ["human.gate_resolved", "attempt.failed"]
+    assert session.resume_request is not None
+    assert session.cancelled == (handle.handle_id, CancelReason.IDLE_TIMEOUT)
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.CANCELLED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["operation"] == "resume"
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_sdk_timeout_without_retry_timeout_is_not_cancelled() -> None:
+    session = ErrorPydanticAISession(exception=TimeoutError("sdk request timed out"))
+    adapter = PydanticAIAdapter(session_factory=_factory_for(session))
+    handle = await adapter.prepare(_execution_pack())
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert session.cancelled is None
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_INTERNAL"
+    assert outcome.errors[0].payload["exception_type"] == "TimeoutError"
 
 
 @pytest.mark.asyncio

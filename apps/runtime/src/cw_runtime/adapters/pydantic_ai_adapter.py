@@ -7,10 +7,12 @@ Real SDK integration can provide a ``PydanticAISession`` behind this seam.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib
 import json
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Any, Literal, Protocol, TypeAlias, cast
@@ -46,6 +48,10 @@ from cw_schemas.types import (
 RawPydanticAIEvent: TypeAlias = Mapping[str, Any]
 
 
+class _AttemptTimeoutExpired(RuntimeError):
+    """Internal sentinel for adapter-owned ``retry_policy.timeout_seconds`` expiry."""
+
+
 class PydanticAIMCPToolRequest(BaseModel):
     """Serializable MCP tool request projected from a NodeContract."""
 
@@ -75,6 +81,7 @@ class PydanticAIRetryPolicy(BaseModel):
     model_retries_explicit: bool = False
     output_validation_retries: int = Field(default=0, ge=0)
     tool_retries: int | dict[str, int] = Field(default=0)
+    timeout_seconds: int | None = Field(default=None, ge=1)
 
 
 class PydanticAIDeferredToolResults(BaseModel):
@@ -386,7 +393,13 @@ class PydanticAIAdapter:
         try:
             session = self._session_for(handle)
             request = self._run_request(handle)
-            async for raw_event in self._iterate_session(handle, session.run(request)):
+            async for raw_event in self._iterate_session(
+                handle,
+                session,
+                session.run(request),
+                timeout_seconds=request.retry_policy.timeout_seconds,
+                operation="run",
+            ):
                 for event in self._translate_raw_event(handle, raw_event):
                     yield event
                 if handle.state in {AttemptState.AWAITING_HUMAN, AttemptState.COMPLETED, AttemptState.FAILED}:
@@ -436,7 +449,13 @@ class PydanticAIAdapter:
                 resumption=resumption,
                 deferred_tool_results=_deferred_tool_results_from_resumption(handle, resumption),
             )
-            async for raw_event in self._iterate_session(handle, session.resume(request)):
+            async for raw_event in self._iterate_session(
+                handle,
+                session,
+                session.resume(request),
+                timeout_seconds=self._packs[handle.handle_id].retry_policy.timeout_seconds,
+                operation="resume",
+            ):
                 for event in self._translate_raw_event(handle, raw_event):
                     yield event
                 if handle.state in {AttemptState.AWAITING_HUMAN, AttemptState.COMPLETED, AttemptState.FAILED}:
@@ -579,6 +598,7 @@ class PydanticAIAdapter:
                 model_retries_explicit="model_retries" in pack.retry_policy.model_fields_set,
                 output_validation_retries=pack.retry_policy.output_validation_retries,
                 tool_retries=pack.retry_policy.tool_retries,
+                timeout_seconds=pack.retry_policy.timeout_seconds,
             ),
             correlation_id=pack.correlation_id,
         )
@@ -586,15 +606,36 @@ class PydanticAIAdapter:
     async def _iterate_session(
         self,
         handle: AttemptHandle,
+        session: PydanticAISession,
         events: AsyncIterator[RawPydanticAIEvent],
+        *,
+        timeout_seconds: int | None,
+        operation: Literal["run", "resume"],
     ) -> AsyncIterator[RawPydanticAIEvent]:
         try:
-            async for event in events:
+            async for event in self._events_with_timeout(events, timeout_seconds=timeout_seconds):
                 if handle.cancellation_requested:
                     handle.state = AttemptState.CANCELLED
                     handle.finished_at = utc_now_ms()
                     return
                 yield event
+        except _AttemptTimeoutExpired as exc:
+            await self._cancel_timed_out_session(
+                handle,
+                session,
+                timeout_seconds=timeout_seconds,
+                operation=operation,
+            )
+            raise AdapterRuntimeError(
+                "AA_RUN_CANCELLED",
+                "Pydantic AI attempt exceeded retry_policy.timeout_seconds.",
+                payload={
+                    "handle_id": handle.handle_id,
+                    "operation": operation,
+                    "reason": CancelReason.IDLE_TIMEOUT.value,
+                    "timeout_seconds": timeout_seconds,
+                },
+            ) from exc
         except AdapterRuntimeError:
             raise
         except Exception as exc:
@@ -616,6 +657,58 @@ class PydanticAIAdapter:
             handle.state = AttemptState.FAILED
             handle.finished_at = utc_now_ms()
             raise AdapterRuntimeError(error_code, error.message, payload=error.payload) from exc
+
+    async def _events_with_timeout(
+        self,
+        events: AsyncIterator[RawPydanticAIEvent],
+        *,
+        timeout_seconds: int | None,
+    ) -> AsyncIterator[RawPydanticAIEvent]:
+        if timeout_seconds is None:
+            async for event in events:
+                yield event
+            return
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
+        iterator = events.__aiter__()
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise _AttemptTimeoutExpired
+            try:
+                event_task: asyncio.Future[RawPydanticAIEvent] = asyncio.ensure_future(iterator.__anext__())
+                done, _pending = await asyncio.wait({event_task}, timeout=remaining)
+                if not done:
+                    event_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await event_task
+                    raise _AttemptTimeoutExpired
+                event = event_task.result()
+            except StopAsyncIteration:
+                return
+            yield event
+
+    async def _cancel_timed_out_session(
+        self,
+        handle: AttemptHandle,
+        session: PydanticAISession,
+        *,
+        timeout_seconds: int | None,
+        operation: Literal["run", "resume"],
+    ) -> None:
+        handle.cancellation_requested = True
+        handle.state = AttemptState.CANCELLED
+        handle.finished_at = utc_now_ms()
+        try:
+            await session.cancel(handle.handle_id, CancelReason.IDLE_TIMEOUT)
+        except Exception as exc:  # pragma: no cover - defensive payload only.
+            handle.metadata["pydantic_ai_timeout_cancel_error"] = {
+                "operation": operation,
+                "timeout_seconds": timeout_seconds,
+                "exception_type": type(exc).__name__,
+                "message": str(exc),
+            }
 
     def _translate_raw_event(self, handle: AttemptHandle, raw_event: RawPydanticAIEvent) -> list[StreamEventBase]:
         event_type = _required_str(raw_event, "type")
@@ -971,7 +1064,7 @@ class PydanticAIAdapter:
 
     def _failed_event_from_exception(self, handle: AttemptHandle, exc: AdapterRuntimeError) -> LifecycleEvent:
         self._errors[handle.handle_id] = [exc.adapter_error]
-        handle.state = AttemptState.FAILED
+        handle.state = AttemptState.CANCELLED if exc.error_code == "AA_RUN_CANCELLED" else AttemptState.FAILED
         handle.finished_at = utc_now_ms()
         return self._lifecycle_event(
             handle,
