@@ -230,6 +230,21 @@ class FakeSDKToolset:
         self.toolset_id = toolset_id
 
 
+class FakeSDKFunctionToolset:
+    def __init__(self, *, id: str | None = None) -> None:
+        self.id = id
+        self.functions: list[tuple[str | None, Callable[..., Any]]] = []
+
+    def add_function(self, func: Callable[..., Any], *, name: str | None = None) -> object:
+        self.functions.append((name, func))
+        return SimpleNamespace(name=name, func=func)
+
+
+class FakeSDKFunctionToolsetWithoutAddFunction:
+    def __init__(self, *, id: str | None = None) -> None:
+        self.id = id
+
+
 class FakeSDKToolCallPart:
     def __init__(self, tool_name: str, args: dict[str, Any], tool_call_id: str) -> None:
         self.tool_name = tool_name
@@ -389,6 +404,7 @@ def _install_fake_pydantic_ai_sdk(
     monkeypatch: pytest.MonkeyPatch,
     *,
     agent_cls: type[object] = FakeSDKAgent,
+    function_toolset_cls: type[object] | None = FakeSDKFunctionToolset,
 ) -> list[dict[str, Any]]:
     structured_dict_calls: list[dict[str, Any]] = []
     fake_sdk = ModuleType("pydantic_ai")
@@ -410,6 +426,8 @@ def _install_fake_pydantic_ai_sdk(
     fake_sdk.__dict__["Agent"] = agent_cls
     fake_sdk.__dict__["StructuredDict"] = structured_dict
     fake_sdk.__dict__["UsageLimits"] = FakeSDKUsageLimits
+    if function_toolset_cls is not None:
+        fake_sdk.__dict__["FunctionToolset"] = function_toolset_cls
     fake_sdk.__dict__["ApprovalRequiredToolset"] = FakeSDKApprovalRequiredToolset
     fake_sdk.__dict__["DeferredToolRequests"] = FakeSDKDeferredToolRequests
     fake_sdk.__dict__["DeferredToolResults"] = FakeSDKDeferredToolResults
@@ -1672,6 +1690,99 @@ async def test_pydantic_ai_toolset_registry_resolves_registered_toolsets(
     assert mcp_wrapper.wrapped is mcp_toolset
     assert mcp_wrapper.approval_required_func(None, SimpleNamespace(name="search"), {}) is True
     assert mcp_wrapper.approval_required_func(None, SimpleNamespace(name="write_file"), {}) is False
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_toolset_registry_builds_builtin_function_toolset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+
+    def evidence_lookup(query: str) -> dict[str, str]:
+        return {"query": query}
+
+    registry = PydanticAIToolsetRegistry()
+    registry.register_builtin_tool_function("evidence_lookup", evidence_lookup)
+
+    adapter = PydanticAIAdapter(toolset_factory=registry.as_factory())
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["evidence_lookup"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["evidence_lookup"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert len(sdk_toolsets) == 1
+    builtin_toolset = sdk_toolsets[0]
+    assert isinstance(builtin_toolset, FakeSDKFunctionToolset)
+    assert builtin_toolset.id == "cw_builtin_tools"
+    assert builtin_toolset.functions == [("evidence_lookup", evidence_lookup)]
+    assert builtin_toolset.functions[0][1]("cw") == {"query": "cw"}
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_toolset_registry_fails_closed_without_sdk_function_toolset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch, function_toolset_cls=None)
+
+    def evidence_lookup(query: str) -> dict[str, str]:
+        return {"query": query}
+
+    registry = PydanticAIToolsetRegistry(builtin_tool_functions={"evidence_lookup": evidence_lookup})
+    adapter = PydanticAIAdapter(toolset_factory=registry.as_factory())
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["evidence_lookup"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["evidence_lookup"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert len(FakeSDKAgent.instances) == 0
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_INTERNAL"
+    assert outcome.errors[0].payload["module"] == "pydantic_ai"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_toolset_registry_fails_closed_without_sdk_add_function(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch, function_toolset_cls=FakeSDKFunctionToolsetWithoutAddFunction)
+
+    def evidence_lookup(query: str) -> dict[str, str]:
+        return {"query": query}
+
+    registry = PydanticAIToolsetRegistry(builtin_tool_functions={"evidence_lookup": evidence_lookup})
+    adapter = PydanticAIAdapter(toolset_factory=registry.as_factory())
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["evidence_lookup"],
+            effective_toolsets=ToolsetSpec(builtin_tools=["evidence_lookup"]),
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert len(FakeSDKAgent.instances) == 0
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_INTERNAL"
+    assert outcome.errors[0].payload["toolset_type"] == "FakeSDKFunctionToolsetWithoutAddFunction"
 
 
 @pytest.mark.asyncio

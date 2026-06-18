@@ -150,6 +150,7 @@ class PydanticAISession(Protocol):
 
 
 PydanticAISessionFactory: TypeAlias = Callable[[], PydanticAISession]
+PydanticAIBuiltinToolFunc: TypeAlias = Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -184,14 +185,18 @@ class PydanticAIToolsetRegistry:
         self,
         *,
         builtin_toolsets: Mapping[str, object] | None = None,
+        builtin_tool_functions: Mapping[str, PydanticAIBuiltinToolFunc] | None = None,
         skill_toolsets: Mapping[str, object] | None = None,
         mcp_toolsets: Mapping[str, object] | None = None,
     ) -> None:
         self._builtin_toolsets: dict[str, object] = {}
+        self._builtin_tool_functions: dict[str, PydanticAIBuiltinToolFunc] = {}
         self._skill_toolsets: dict[str, object] = {}
         self._mcp_toolsets: dict[str, object] = {}
         for tool_id, toolset in ({} if builtin_toolsets is None else builtin_toolsets).items():
             self.register_builtin_toolset(tool_id, toolset)
+        for tool_id, func in ({} if builtin_tool_functions is None else builtin_tool_functions).items():
+            self.register_builtin_tool_function(tool_id, func)
         for skill_ref, toolset in ({} if skill_toolsets is None else skill_toolsets).items():
             self.register_resolved_skill_toolset(skill_ref, toolset)
         for server_id, toolset in ({} if mcp_toolsets is None else mcp_toolsets).items():
@@ -199,6 +204,9 @@ class PydanticAIToolsetRegistry:
 
     def register_builtin_toolset(self, tool_id: str, toolset: object) -> None:
         self._builtin_toolsets[_registry_key(tool_id, "tool_id")] = toolset
+
+    def register_builtin_tool_function(self, tool_id: str, func: PydanticAIBuiltinToolFunc) -> None:
+        self._builtin_tool_functions[_registry_key(tool_id, "tool_id")] = func
 
     def register_skill_toolset(self, skill_id: str, toolset: object, *, version: str = "latest") -> None:
         skill_ref = f"{_registry_key(skill_id, 'skill_id')}@{_registry_key(version, 'version')}"
@@ -215,7 +223,11 @@ class PydanticAIToolsetRegistry:
         skill_refs = _unique_strings(request.skill_ids_resolved)
         mcp_server_ids = _unique_strings([tool.server_id for tool in request.mcp_tools])
 
-        missing_builtin_tool_ids = [tool_id for tool_id in builtin_tool_ids if tool_id not in self._builtin_toolsets]
+        missing_builtin_tool_ids = [
+            tool_id
+            for tool_id in builtin_tool_ids
+            if tool_id not in self._builtin_toolsets and tool_id not in self._builtin_tool_functions
+        ]
         missing_skill_refs = [skill_ref for skill_ref in skill_refs if skill_ref not in self._skill_toolsets]
         missing_mcp_server_ids = [server_id for server_id in mcp_server_ids if server_id not in self._mcp_toolsets]
         missing_payload: dict[str, object] = {}
@@ -235,10 +247,16 @@ class PydanticAIToolsetRegistry:
                 },
             )
 
-        function_toolsets = [
-            *[self._builtin_toolsets[tool_id] for tool_id in builtin_tool_ids],
-            *[self._skill_toolsets[skill_ref] for skill_ref in skill_refs],
-        ]
+        function_toolsets: list[object] = []
+        builtin_tool_functions: list[tuple[str, PydanticAIBuiltinToolFunc]] = []
+        for tool_id in builtin_tool_ids:
+            if tool_id in self._builtin_toolsets:
+                function_toolsets.append(self._builtin_toolsets[tool_id])
+            elif tool_id in self._builtin_tool_functions:
+                builtin_tool_functions.append((tool_id, self._builtin_tool_functions[tool_id]))
+        if builtin_tool_functions:
+            function_toolsets.append(_sdk_builtin_function_toolset(_sdk, builtin_tool_functions))
+        function_toolsets.extend(self._skill_toolsets[skill_ref] for skill_ref in skill_refs)
         mcp_toolsets = [
             PydanticAIMCPToolset(server_id=server_id, toolset=self._mcp_toolsets[server_id])
             for server_id in mcp_server_ids
@@ -1675,6 +1693,31 @@ def _sdk_toolsets(
     return [*function_toolsets, *mcp_toolsets]
 
 
+def _sdk_builtin_function_toolset(
+    sdk: ModuleType,
+    builtin_tool_functions: Sequence[tuple[str, PydanticAIBuiltinToolFunc]],
+) -> object:
+    function_toolset_cls = getattr(sdk, "FunctionToolset", None)
+    if not callable(function_toolset_cls):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "pydantic_ai module does not expose FunctionToolset.",
+            payload={"module": "pydantic_ai"},
+        )
+
+    toolset: object = function_toolset_cls(id="cw_builtin_tools")
+    add_function = getattr(toolset, "add_function", None)
+    if not callable(add_function):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "pydantic_ai FunctionToolset does not expose add_function.",
+            payload={"module": "pydantic_ai", "toolset_type": type(toolset).__name__},
+        )
+    for tool_id, func in builtin_tool_functions:
+        add_function(func, name=tool_id)
+    return toolset
+
+
 def _has_toolset_request(toolset_request: PydanticAIToolsetRequest) -> bool:
     return bool(toolset_request.builtin_tools or toolset_request.skill_ids_resolved or toolset_request.mcp_tools)
 
@@ -2625,6 +2668,7 @@ def _unique_strings(values: Sequence[str]) -> list[str]:
 
 __all__ = [
     "PydanticAIAdapter",
+    "PydanticAIBuiltinToolFunc",
     "PydanticAIDeferredToolResults",
     "PydanticAIMCPToolRequest",
     "PydanticAIMCPToolset",
