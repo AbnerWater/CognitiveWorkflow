@@ -81,16 +81,23 @@ class FakeSDKUsage:
 
 
 class FakeSDKMessage:
+    def __init__(self, content: str = "sdk ok") -> None:
+        self.content = content
+
     def model_dump(self, *, mode: str = "json") -> dict[str, Any]:
-        return {"role": "assistant", "content": "sdk ok", "mode": mode}
+        return {"role": "assistant", "content": self.content, "mode": mode}
 
 
 class FakeSDKResult:
-    output: ClassVar[dict[str, Any]] = {"answer": "sdk"}
+    default_output: ClassVar[object] = {"answer": "sdk"}
     usage: ClassVar[FakeSDKUsage] = FakeSDKUsage()
 
-    def all_messages(self) -> list[FakeSDKMessage]:
-        return [FakeSDKMessage()]
+    def __init__(self, output: object | None = None, messages: list[object] | None = None) -> None:
+        self.output = FakeSDKResult.default_output if output is None else output
+        self._messages: list[object] = [FakeSDKMessage()] if messages is None else messages
+
+    def all_messages(self) -> list[object]:
+        return self._messages
 
     def _traceparent(self, *, required: bool = True) -> str | None:
         return "00-sdk-trace"
@@ -120,6 +127,49 @@ class FakeSDKToolset:
         self.toolset_id = toolset_id
 
 
+class FakeSDKToolCallPart:
+    def __init__(self, tool_name: str, args: dict[str, Any], tool_call_id: str) -> None:
+        self.tool_name = tool_name
+        self.args = args
+        self.tool_call_id = tool_call_id
+
+
+class FakeSDKDeferredToolRequests:
+    def __init__(
+        self,
+        *,
+        calls: list[FakeSDKToolCallPart] | None = None,
+        approvals: list[FakeSDKToolCallPart] | None = None,
+        metadata: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
+        self.calls = [] if calls is None else calls
+        self.approvals = [] if approvals is None else approvals
+        self.metadata = {} if metadata is None else metadata
+
+
+class FakeSDKToolApproved:
+    def __init__(self, *, override_args: dict[str, Any] | None = None) -> None:
+        self.override_args = override_args
+
+
+class FakeSDKToolDenied:
+    def __init__(self, message: str = "The tool call was denied.") -> None:
+        self.message = message
+
+
+class FakeSDKDeferredToolResults:
+    def __init__(
+        self,
+        *,
+        calls: dict[str, Any] | None = None,
+        approvals: dict[str, Any] | None = None,
+        metadata: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
+        self.calls = {} if calls is None else calls
+        self.approvals = {} if approvals is None else approvals
+        self.metadata = {} if metadata is None else metadata
+
+
 class FakeSDKAgent:
     instances: ClassVar[list[FakeSDKAgent]] = []
     stream_events: ClassVar[list[object] | None] = None
@@ -131,30 +181,40 @@ class FakeSDKAgent:
         self.run_model_settings: dict[str, Any] | None = None
         self.run_usage_limits: object | None = None
         self.stream_user_prompt: str | None = None
+        self.stream_message_history: list[object] | None = None
+        self.stream_deferred_tool_results: object | None = None
         self.stream_model_settings: dict[str, Any] | None = None
         self.stream_usage_limits: object | None = None
         FakeSDKAgent.instances.append(self)
 
     async def run(
         self,
-        user_prompt: str,
+        user_prompt: str | None = None,
         *,
+        message_history: list[object] | None = None,
+        deferred_tool_results: object | None = None,
         model_settings: dict[str, Any] | None = None,
         usage_limits: object | None = None,
     ) -> FakeSDKResult:
         self.run_user_prompt = user_prompt
+        self.stream_message_history = message_history
+        self.stream_deferred_tool_results = deferred_tool_results
         self.run_model_settings = model_settings
         self.run_usage_limits = usage_limits
         return FakeSDKResult()
 
     def run_stream_events(
         self,
-        user_prompt: str,
+        user_prompt: str | None = None,
         *,
+        message_history: list[object] | None = None,
+        deferred_tool_results: object | None = None,
         model_settings: dict[str, Any] | None = None,
         usage_limits: object | None = None,
     ) -> FakeSDKEventStream:
         self.stream_user_prompt = user_prompt
+        self.stream_message_history = message_history
+        self.stream_deferred_tool_results = deferred_tool_results
         self.stream_model_settings = model_settings
         self.stream_usage_limits = usage_limits
         events = FakeSDKAgent.stream_events
@@ -168,18 +228,24 @@ class FakeSDKRunOnlyAgent:
         self.model = model
         self.kwargs = kwargs
         self.run_user_prompt: str | None = None
+        self.run_message_history: list[object] | None = None
+        self.run_deferred_tool_results: object | None = None
         self.run_model_settings: dict[str, Any] | None = None
         self.run_usage_limits: object | None = None
         FakeSDKRunOnlyAgent.instances.append(self)
 
     async def run(
         self,
-        user_prompt: str,
+        user_prompt: str | None = None,
         *,
+        message_history: list[object] | None = None,
+        deferred_tool_results: object | None = None,
         model_settings: dict[str, Any] | None = None,
         usage_limits: object | None = None,
     ) -> FakeSDKResult:
         self.run_user_prompt = user_prompt
+        self.run_message_history = message_history
+        self.run_deferred_tool_results = deferred_tool_results
         self.run_model_settings = model_settings
         self.run_usage_limits = usage_limits
         return FakeSDKResult()
@@ -241,6 +307,10 @@ def _install_fake_pydantic_ai_sdk(
     fake_sdk.__dict__["StructuredDict"] = structured_dict
     fake_sdk.__dict__["UsageLimits"] = FakeSDKUsageLimits
     fake_sdk.__dict__["ApprovalRequiredToolset"] = FakeSDKApprovalRequiredToolset
+    fake_sdk.__dict__["DeferredToolRequests"] = FakeSDKDeferredToolRequests
+    fake_sdk.__dict__["DeferredToolResults"] = FakeSDKDeferredToolResults
+    fake_sdk.__dict__["ToolApproved"] = FakeSDKToolApproved
+    fake_sdk.__dict__["ToolDenied"] = FakeSDKToolDenied
 
     def import_module(name: str) -> ModuleType:
         if name == "pydantic_ai":
@@ -431,8 +501,8 @@ def test_pydantic_ai_adapter_capabilities_reflect_configured_toolset_factory() -
     assert capabilities.tool_call is True
     assert capabilities.mcp is True
     assert capabilities.max_tool_iterations == 16
-    assert capabilities.human_in_the_loop is False
-    assert capabilities.deferred_tool_results is False
+    assert capabilities.human_in_the_loop is True
+    assert capabilities.deferred_tool_results is True
     assert capabilities.cancel is False
 
 
@@ -788,6 +858,377 @@ async def test_pydantic_ai_default_sdk_session_rejects_per_tool_retry_map(
     assert outcome.errors[0].payload is not None
     assert outcome.errors[0].payload["error_code"] == "AA_PREPARE_INCOMPATIBLE_ADAPTER"
     assert outcome.errors[0].payload["tool_retries"] == {"lookup": 1}
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_emits_deferred_calls_and_resumes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        return PydanticAIToolsets(function_toolsets=[FakeSDKToolset("tools")])
+
+    pending_message = FakeSDKMessage("pending tool")
+    FakeSDKAgent.stream_events = [
+        SimpleNamespace(
+            event_kind="agent_run_result",
+            result=FakeSDKResult(
+                output=FakeSDKDeferredToolRequests(
+                    calls=[
+                        FakeSDKToolCallPart(
+                            tool_name="lookup",
+                            args={"query": "cw"},
+                            tool_call_id="call_lookup",
+                        )
+                    ],
+                    metadata={"call_lookup": {"source": "unit"}},
+                ),
+                messages=[pending_message],
+            ),
+        )
+    ]
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["lookup"],
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == [
+        "attempt.started",
+        "model.request_completed",
+        "tool.call_started",
+        "human.gate_required",
+    ]
+    assert handle.state == AttemptState.AWAITING_HUMAN
+    assert FakeSDKAgent.instances[0].kwargs["output_type"][1] is FakeSDKDeferredToolRequests
+    gate = events[-1]
+    assert gate.payload is not None
+    assert gate.payload["deferred_tool_calls"][0]["invocation_id"] == "call_lookup"
+    assert gate.payload["metadata"] == {"call_lookup": {"source": "unit"}}
+
+    FakeSDKAgent.stream_events = [
+        SimpleNamespace(
+            event_kind="agent_run_result",
+            result=FakeSDKResult(output={"answer": "resumed"}, messages=[FakeSDKMessage("resumed")]),
+        )
+    ]
+    resumed = await _collect(
+        adapter.resume(
+            handle,
+            AttemptResumption(
+                kind=ResumptionKind.DEFERRED_TOOL,
+                deferred_tool_results=[
+                    {
+                        "tool_call_id": "call_lookup",
+                        "output": {"ok": True},
+                        "metadata": {"source": "unit"},
+                    }
+                ],
+            ),
+        )
+    )
+
+    assert [event.type for event in resumed] == ["model.request_completed", "attempt.completed"]
+    sdk_results = FakeSDKAgent.instances[0].stream_deferred_tool_results
+    assert isinstance(sdk_results, FakeSDKDeferredToolResults)
+    assert sdk_results.calls == {"call_lookup": {"ok": True}}
+    assert sdk_results.metadata == {"call_lookup": {"source": "unit"}}
+    assert FakeSDKAgent.instances[0].stream_message_history == [pending_message]
+
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.COMPLETED
+    assert outcome.output == {"answer": "resumed"}
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_emits_deferred_approvals_and_resumes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        return PydanticAIToolsets(function_toolsets=[FakeSDKToolset("tools")])
+
+    pending_message = FakeSDKMessage("pending approval")
+    FakeSDKAgent.stream_events = [
+        SimpleNamespace(
+            event_kind="agent_run_result",
+            result=FakeSDKResult(
+                output=FakeSDKDeferredToolRequests(
+                    approvals=[
+                        FakeSDKToolCallPart(
+                            tool_name="delete_file",
+                            args={"path": ".env"},
+                            tool_call_id="call_delete",
+                        )
+                    ],
+                ),
+                messages=[pending_message],
+            ),
+        )
+    ]
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            allowed_tools=["delete_file"],
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == [
+        "attempt.started",
+        "model.request_completed",
+        "tool.approval_required",
+        "human.gate_required",
+    ]
+    gate = events[-1]
+    assert gate.payload is not None
+    assert gate.payload["decisions"] == [
+        {"key": "approve:call_delete", "label": "Approve"},
+        {"key": "reject:call_delete", "label": "Reject"},
+    ]
+
+    FakeSDKAgent.stream_events = [
+        SimpleNamespace(
+            event_kind="agent_run_result",
+            result=FakeSDKResult(output={"answer": "approved"}, messages=[FakeSDKMessage("approved")]),
+        )
+    ]
+    resumed = await _collect(
+        adapter.resume(
+            handle,
+            AttemptResumption(
+                kind=ResumptionKind.HUMAN_DECISION,
+                human_decision=HumanDecisionResolution(
+                    key="approve:call_delete",
+                    by="user_01",
+                    decided_at="2026-06-18T00:00:01.000Z",
+                ),
+            ),
+        )
+    )
+
+    assert [event.type for event in resumed] == [
+        "human.gate_resolved",
+        "model.request_completed",
+        "attempt.completed",
+    ]
+    sdk_results = FakeSDKAgent.instances[0].stream_deferred_tool_results
+    assert isinstance(sdk_results, FakeSDKDeferredToolResults)
+    assert sdk_results.approvals == {"call_delete": True}
+    assert FakeSDKAgent.instances[0].stream_message_history == [pending_message]
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_invalid_deferred_tool_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        return PydanticAIToolsets(function_toolsets=[FakeSDKToolset("tools")])
+
+    FakeSDKAgent.stream_events = [
+        SimpleNamespace(
+            event_kind="agent_run_result",
+            result=FakeSDKResult(
+                output=FakeSDKDeferredToolRequests(
+                    calls=[FakeSDKToolCallPart(tool_name="lookup", args={}, tool_call_id="call_lookup")]
+                )
+            ),
+        )
+    ]
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(_execution_pack({"type": "object"}, allowed_tools=["lookup"]))
+    await _collect(adapter.run(handle))
+
+    resumed = await _collect(
+        adapter.resume(
+            handle,
+            AttemptResumption(kind=ResumptionKind.DEFERRED_TOOL, deferred_tool_results=[{"output": {"ok": True}}]),
+        )
+    )
+
+    assert [event.type for event in resumed] == ["attempt.failed"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RESUME_INVALID_KIND"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_unknown_deferred_tool_result_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        return PydanticAIToolsets(function_toolsets=[FakeSDKToolset("tools")])
+
+    FakeSDKAgent.stream_events = [
+        SimpleNamespace(
+            event_kind="agent_run_result",
+            result=FakeSDKResult(
+                output=FakeSDKDeferredToolRequests(
+                    calls=[FakeSDKToolCallPart(tool_name="lookup", args={}, tool_call_id="call_lookup")]
+                )
+            ),
+        )
+    ]
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(_execution_pack({"type": "object"}, allowed_tools=["lookup"]))
+    await _collect(adapter.run(handle))
+
+    resumed = await _collect(
+        adapter.resume(
+            handle,
+            AttemptResumption(
+                kind=ResumptionKind.DEFERRED_TOOL,
+                deferred_tool_results=[{"tool_call_id": "wrong", "output": {"ok": True}}],
+            ),
+        )
+    )
+
+    assert [event.type for event in resumed] == ["attempt.failed"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RESUME_INVALID_KIND"
+    assert outcome.errors[0].payload["tool_call_id"] == "wrong"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_partial_deferred_tool_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        return PydanticAIToolsets(function_toolsets=[FakeSDKToolset("tools")])
+
+    FakeSDKAgent.stream_events = [
+        SimpleNamespace(
+            event_kind="agent_run_result",
+            result=FakeSDKResult(
+                output=FakeSDKDeferredToolRequests(
+                    calls=[
+                        FakeSDKToolCallPart(tool_name="lookup", args={"q": "a"}, tool_call_id="call_a"),
+                        FakeSDKToolCallPart(tool_name="lookup", args={"q": "b"}, tool_call_id="call_b"),
+                    ]
+                )
+            ),
+        )
+    ]
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(_execution_pack({"type": "object"}, allowed_tools=["lookup"]))
+    await _collect(adapter.run(handle))
+
+    resumed = await _collect(
+        adapter.resume(
+            handle,
+            AttemptResumption(
+                kind=ResumptionKind.DEFERRED_TOOL,
+                deferred_tool_results=[{"tool_call_id": "call_a", "output": {"ok": True}}],
+            ),
+        )
+    )
+
+    assert [event.type for event in resumed] == ["attempt.failed"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RESUME_INVALID_KIND"
+    assert outcome.errors[0].payload["missing_tool_call_ids"] == ["call_b"]
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_deferred_result_kind_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        return PydanticAIToolsets(function_toolsets=[FakeSDKToolset("tools")])
+
+    FakeSDKAgent.stream_events = [
+        SimpleNamespace(
+            event_kind="agent_run_result",
+            result=FakeSDKResult(
+                output=FakeSDKDeferredToolRequests(
+                    calls=[FakeSDKToolCallPart(tool_name="lookup", args={}, tool_call_id="call_lookup")]
+                )
+            ),
+        )
+    ]
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(_execution_pack({"type": "object"}, allowed_tools=["lookup"]))
+    await _collect(adapter.run(handle))
+
+    resumed = await _collect(
+        adapter.resume(
+            handle,
+            AttemptResumption(
+                kind=ResumptionKind.DEFERRED_TOOL,
+                deferred_tool_results=[{"tool_call_id": "call_lookup", "approved": True}],
+            ),
+        )
+    )
+
+    assert [event.type for event in resumed] == ["attempt.failed"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RESUME_INVALID_KIND"
+    assert outcome.errors[0].payload["expected_kind"] == "approval"
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_rejects_human_decision_when_calls_remain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+
+    def toolset_factory(_sdk: ModuleType, _toolsets: PydanticAIToolsetRequest) -> PydanticAIToolsets:
+        return PydanticAIToolsets(function_toolsets=[FakeSDKToolset("tools")])
+
+    FakeSDKAgent.stream_events = [
+        SimpleNamespace(
+            event_kind="agent_run_result",
+            result=FakeSDKResult(
+                output=FakeSDKDeferredToolRequests(
+                    calls=[FakeSDKToolCallPart(tool_name="lookup", args={}, tool_call_id="call_lookup")],
+                    approvals=[FakeSDKToolCallPart(tool_name="delete_file", args={}, tool_call_id="call_delete")],
+                )
+            ),
+        )
+    ]
+    adapter = PydanticAIAdapter(toolset_factory=toolset_factory)
+    handle = await adapter.prepare(_execution_pack({"type": "object"}, allowed_tools=["lookup", "delete_file"]))
+    await _collect(adapter.run(handle))
+
+    resumed = await _collect(
+        adapter.resume(
+            handle,
+            AttemptResumption(
+                kind=ResumptionKind.HUMAN_DECISION,
+                human_decision=HumanDecisionResolution(
+                    key="approve:call_delete",
+                    by="user_01",
+                    decided_at="2026-06-18T00:00:01.000Z",
+                ),
+            ),
+        )
+    )
+
+    assert [event.type for event in resumed] == ["human.gate_resolved", "attempt.failed"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RESUME_INVALID_KIND"
+    assert outcome.errors[0].payload["pending_call_ids"] == ["call_lookup"]
 
 
 @pytest.mark.asyncio

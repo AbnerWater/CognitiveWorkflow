@@ -26,6 +26,7 @@ from .claude_code_adapter import (
 )
 from .pydantic_ai_adapter import (
     PydanticAIAdapter,
+    PydanticAIDeferredToolResults,
     PydanticAIMCPToolRequest,
     PydanticAIMCPToolset,
     PydanticAIResumeRequest,
@@ -57,6 +58,7 @@ __all__ = [
     "ClaudeCodeSession",
     "HumanDecisionResolution",
     "PydanticAIAdapter",
+    "PydanticAIDeferredToolResults",
     "PydanticAIMCPToolRequest",
     "PydanticAIMCPToolset",
     "PydanticAIResumeRequest",

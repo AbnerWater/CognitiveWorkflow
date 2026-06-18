@@ -77,6 +77,16 @@ class PydanticAIRetryPolicy(BaseModel):
     tool_retries: int | dict[str, int] = Field(default=0)
 
 
+class PydanticAIDeferredToolResults(BaseModel):
+    """Serializable deferred tool results passed back into the SDK."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    calls: dict[str, Any] = Field(default_factory=dict)
+    approvals: dict[str, bool | dict[str, Any]] = Field(default_factory=dict)
+    metadata: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
 class PydanticAIRunRequest(BaseModel):
     """Internal request passed to a Pydantic AI session implementation."""
 
@@ -109,6 +119,7 @@ class PydanticAIResumeRequest(BaseModel):
     node_id: str = Field(..., min_length=1)
     attempt_id: str = Field(..., min_length=1)
     resumption: AttemptResumption
+    deferred_tool_results: PydanticAIDeferredToolResults | None = None
 
 
 class PydanticAISession(Protocol):
@@ -161,39 +172,106 @@ class PydanticAISDKSession:
     ) -> None:
         self._sdk_module = sdk_module
         self._toolset_factory = toolset_factory
+        self._agents: dict[str, Any] = {}
+        self._message_history: dict[str, list[object]] = {}
+        self._run_requests: dict[str, PydanticAIRunRequest] = {}
+        self._usage_limits: dict[str, object | None] = {}
 
     async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
         sdk = self._sdk()
         agent = _build_sdk_agent(sdk, request, self._toolset_factory)
         usage_limits = _sdk_usage_limits(sdk, request)
-        stream_events = getattr(agent, "run_stream_events", None)
-        if callable(stream_events):
-            async with stream_events(
-                request.user_prompt,
-                model_settings=request.model_settings or None,
-                usage_limits=usage_limits,
-            ) as stream:
-                async for sdk_event in stream:
-                    for raw_event in _sdk_stream_event_to_raw(sdk_event):
-                        yield raw_event
-            return
-
-        async for raw_event in _run_sdk_agent_once(agent, request, usage_limits):
+        self._agents[request.handle_id] = agent
+        self._run_requests[request.handle_id] = request
+        self._usage_limits[request.handle_id] = usage_limits
+        async for raw_event in self._run_agent(
+            agent,
+            request,
+            usage_limits,
+            user_prompt=request.user_prompt,
+            message_history=None,
+            deferred_tool_results=None,
+        ):
             yield raw_event
 
     async def resume(self, request: PydanticAIResumeRequest) -> AsyncIterator[RawPydanticAIEvent]:
-        raise AdapterRuntimeError(
-            "AA_RESUME_INVALID_KIND",
-            "Pydantic AI SDK-backed resume is not implemented in W1.4.2.",
-            payload={"handle_id": request.handle_id, "kind": request.resumption.kind.value},
-        )
-        yield {}
+        sdk = self._sdk()
+        agent = self._agents.get(request.handle_id)
+        run_request = self._run_requests.get(request.handle_id)
+        message_history = self._message_history.get(request.handle_id)
+        if agent is None or run_request is None or not message_history:
+            raise AdapterRuntimeError(
+                "AA_RESUME_INVALID_KIND",
+                "Pydantic AI SDK-backed resume requires a previous deferred tool run.",
+                payload={"handle_id": request.handle_id, "kind": request.resumption.kind.value},
+            )
+        if request.deferred_tool_results is None:
+            raise AdapterRuntimeError(
+                "AA_RESUME_INVALID_KIND",
+                "Pydantic AI SDK-backed resume requires deferred tool results.",
+                payload={"handle_id": request.handle_id, "kind": request.resumption.kind.value},
+            )
+        deferred_tool_results = _sdk_deferred_tool_results(sdk, request.deferred_tool_results)
+        async for raw_event in self._run_agent(
+            agent,
+            run_request,
+            self._usage_limits.get(request.handle_id),
+            user_prompt=None,
+            message_history=message_history,
+            deferred_tool_results=deferred_tool_results,
+        ):
+            yield raw_event
 
     async def cancel(self, handle_id: str, reason: CancelReason) -> None:
         return None
 
     async def aclose(self) -> None:
+        self._agents.clear()
+        self._message_history.clear()
+        self._run_requests.clear()
+        self._usage_limits.clear()
         return None
+
+    async def _run_agent(
+        self,
+        agent: Any,
+        request: PydanticAIRunRequest,
+        usage_limits: object | None,
+        *,
+        user_prompt: str | None,
+        message_history: list[object] | None,
+        deferred_tool_results: object | None,
+    ) -> AsyncIterator[RawPydanticAIEvent]:
+        stream_events = getattr(agent, "run_stream_events", None)
+        if callable(stream_events):
+            async with stream_events(
+                user_prompt,
+                message_history=message_history,
+                deferred_tool_results=deferred_tool_results,
+                model_settings=request.model_settings or None,
+                usage_limits=usage_limits,
+            ) as stream:
+                async for sdk_event in stream:
+                    self._capture_message_history(request.handle_id, getattr(sdk_event, "result", None))
+                    for raw_event in _sdk_stream_event_to_raw(sdk_event):
+                        yield raw_event
+            return
+
+        async for raw_event in _run_sdk_agent_once(
+            agent,
+            request,
+            usage_limits,
+            user_prompt=user_prompt,
+            message_history=message_history,
+            deferred_tool_results=deferred_tool_results,
+            result_handler=lambda result: self._capture_message_history(request.handle_id, result),
+        ):
+            yield raw_event
+
+    def _capture_message_history(self, handle_id: str, result: object) -> None:
+        messages = _sdk_message_history_objects(result)
+        if messages:
+            self._message_history[handle_id] = messages
 
     def _sdk(self) -> ModuleType:
         if self._sdk_module is not None:
@@ -251,8 +329,8 @@ class PydanticAIAdapter:
             streaming=True,
             tool_call=tooling_enabled,
             mcp=tooling_enabled,
-            human_in_the_loop=False,
-            deferred_tool_results=False,
+            human_in_the_loop=tooling_enabled,
+            deferred_tool_results=tooling_enabled,
             multi_modal=set(),
             long_context_tokens=200_000,
             max_tool_iterations=16 if tooling_enabled else 0,
@@ -356,6 +434,7 @@ class PydanticAIAdapter:
                 node_id=handle.node_id,
                 attempt_id=handle.attempt_id,
                 resumption=resumption,
+                deferred_tool_results=_deferred_tool_results_from_resumption(handle, resumption),
             )
             async for raw_event in self._iterate_session(handle, session.resume(request)):
                 for event in self._translate_raw_event(handle, raw_event):
@@ -668,6 +747,8 @@ class PydanticAIAdapter:
                 parent_event_id=approval_event.event_id,
             )
             return [approval_event, human_event]
+        if event_type == "deferred_tool_requests":
+            return self._deferred_tool_request_events(handle, raw_event)
         if event_type == "request_completed":
             return [
                 self._model_event(
@@ -697,6 +778,93 @@ class PydanticAIAdapter:
             f"Unknown Pydantic AI event type: {event_type}",
             retryable=False,
         )
+
+    def _deferred_tool_request_events(
+        self,
+        handle: AttemptHandle,
+        raw_event: RawPydanticAIEvent,
+    ) -> list[StreamEventBase]:
+        calls = _list_of_mappings(raw_event.get("calls"))
+        approvals = _list_of_mappings(raw_event.get("approvals"))
+        metadata = _metadata_by_tool_call_id(raw_event.get("metadata"))
+        if not calls and not approvals:
+            return self._fail_attempt(
+                handle,
+                "AA_RUN_INTERNAL",
+                "Pydantic AI deferred tool request did not include calls or approvals.",
+                retryable=False,
+            )
+
+        handle.state = AttemptState.AWAITING_HUMAN
+        handle.metadata["pydantic_ai_deferred_tool_requests"] = {
+            "calls": calls,
+            "approvals": approvals,
+            "metadata": metadata,
+        }
+        events: list[StreamEventBase] = []
+        for call in calls:
+            tool_id = _request_tool_id(call)
+            args = _mapping_or_empty(call.get("args"))
+            events.append(
+                self._tool_event(
+                    handle,
+                    event_type="tool.call_started",
+                    title="Pydantic AI deferred tool call requested",
+                    payload={
+                        "tool_id": tool_id,
+                        "args": args,
+                        "args_hash": _optional_str(call, "args_hash") or _stable_hash(args),
+                        "requires_approval": False,
+                        "deferred": True,
+                    },
+                    tool_id=tool_id,
+                    invocation_id=_optional_str(call, "invocation_id"),
+                )
+            )
+        for approval in approvals:
+            tool_id = _request_tool_id(approval)
+            args = _mapping_or_empty(approval.get("args"))
+            events.append(
+                self._tool_event(
+                    handle,
+                    event_type="tool.approval_required",
+                    title="Pydantic AI deferred tool approval required",
+                    payload={
+                        "tool_id": tool_id,
+                        "args_hash": _optional_str(approval, "args_hash") or _stable_hash(args),
+                        "deferred": True,
+                    },
+                    tool_id=tool_id,
+                    invocation_id=_optional_str(approval, "invocation_id"),
+                    display_level=DisplayLevel.DETAILED,
+                )
+            )
+
+        decisions = _deferred_decisions(calls, approvals)
+        human_payload: dict[str, Any] = {
+            "human_node_id": handle.node_id,
+            "prompt_to_user": _optional_str(raw_event, "prompt")
+            or "Provide results for deferred Pydantic AI tool requests.",
+            "decisions": decisions,
+        }
+        if calls:
+            human_payload["deferred_tool_calls"] = calls
+        if approvals:
+            human_payload["deferred_tool_approvals"] = approvals
+        if metadata:
+            human_payload["metadata"] = metadata
+        events.append(
+            self._human_event(
+                handle,
+                event_type="human.gate_required",
+                title="Pydantic AI deferred tool results required",
+                payload=human_payload,
+                decision_key=_first_decision_key(decisions),
+                user_id=None,
+                parent_event_id=None if not events else events[0].event_id,
+            )
+        )
+        return events
 
     def _complete_attempt(self, handle: AttemptHandle, raw_event: RawPydanticAIEvent) -> list[StreamEventBase]:
         output = _dict_or_empty(raw_event.get("output"))
@@ -1044,11 +1212,21 @@ def _build_sdk_agent(
         )
 
     output_schema = request.output_schema or {"type": "object", "additionalProperties": True}
-    output_type = structured_dict(
+    output_type: object = structured_dict(
         _jsonable_mapping(output_schema),
         name=f"{request.node_id}_output",
         description=f"CW output for node {request.node_id}",
     )
+    has_toolset_request = _has_toolset_request(request.toolsets)
+    if has_toolset_request:
+        deferred_tool_requests_cls = getattr(sdk, "DeferredToolRequests", None)
+        if deferred_tool_requests_cls is None:
+            raise AdapterRuntimeError(
+                "AA_RUN_INTERNAL",
+                "pydantic_ai module does not expose DeferredToolRequests.",
+                payload={"module": "pydantic_ai"},
+            )
+        output_type = [output_type, deferred_tool_requests_cls]
     kwargs: dict[str, Any] = {
         "output_type": output_type,
         "defer_model_check": True,
@@ -1225,12 +1403,21 @@ async def _run_sdk_agent_once(
     agent: Any,
     request: PydanticAIRunRequest,
     usage_limits: object | None,
+    *,
+    user_prompt: str | None,
+    message_history: list[object] | None,
+    deferred_tool_results: object | None,
+    result_handler: Callable[[object], None] | None = None,
 ) -> AsyncIterator[RawPydanticAIEvent]:
     result = await agent.run(
-        request.user_prompt,
+        user_prompt,
+        message_history=message_history,
+        deferred_tool_results=deferred_tool_results,
         model_settings=request.model_settings or None,
         usage_limits=usage_limits,
     )
+    if result_handler is not None:
+        result_handler(result)
     for raw_event in _sdk_result_to_raw_events(result):
         yield raw_event
 
@@ -1327,6 +1514,17 @@ def _sdk_tool_result_to_raw(part: object, *, builtin: bool) -> RawPydanticAIEven
 
 def _sdk_result_to_raw_events(result: object) -> list[RawPydanticAIEvent]:
     usage = _sdk_usage(result)
+    deferred_tool_requests = _sdk_deferred_tool_requests_to_raw(_sdk_output(result))
+    if deferred_tool_requests is not None:
+        return [
+            {
+                "type": "request_completed",
+                "usage": usage,
+                "finish_reason": "tool_call",
+                "latency_ms": 0,
+            },
+            deferred_tool_requests,
+        ]
     completed_event: dict[str, Any] = {
         "type": "completed",
         "output": _sdk_output(result),
@@ -1349,6 +1547,33 @@ def _sdk_result_to_raw_events(result: object) -> list[RawPydanticAIEvent]:
 
 def _sdk_output(result: object) -> object:
     return getattr(result, "output", {})
+
+
+def _sdk_deferred_tool_requests_to_raw(output: object) -> RawPydanticAIEvent | None:
+    raw_calls = getattr(output, "calls", None)
+    raw_approvals = getattr(output, "approvals", None)
+    if not isinstance(raw_calls, list) and not isinstance(raw_approvals, list):
+        return None
+    calls = [_sdk_tool_call_request(part) for part in (raw_calls or [])]
+    approvals = [_sdk_tool_call_request(part) for part in (raw_approvals or [])]
+    if not calls and not approvals:
+        return None
+    return {
+        "type": "deferred_tool_requests",
+        "calls": calls,
+        "approvals": approvals,
+        "metadata": _metadata_by_tool_call_id(getattr(output, "metadata", None)),
+    }
+
+
+def _sdk_tool_call_request(part: object) -> dict[str, Any]:
+    args = _sdk_tool_args(getattr(part, "args", None))
+    return {
+        "tool_id": _str_attr(part, "tool_name") or "unknown",
+        "args": args,
+        "args_hash": _stable_hash(args),
+        "invocation_id": _str_attr(part, "tool_call_id") or "unknown",
+    }
 
 
 def _sdk_usage(result: object) -> dict[str, Any]:
@@ -1379,6 +1604,14 @@ def _sdk_messages(result: object) -> list[dict[str, Any]]:
         if isinstance(dumped, Mapping):
             messages.append(_mapping_or_empty(dumped))
     return messages
+
+
+def _sdk_message_history_objects(result: object) -> list[object]:
+    all_messages = getattr(result, "all_messages", None)
+    if not callable(all_messages):
+        return []
+    raw_messages = all_messages()
+    return raw_messages if isinstance(raw_messages, list) else []
 
 
 def _sdk_traceparent(result: object) -> str | None:
@@ -1502,6 +1735,16 @@ def _list_of_mappings(value: object) -> list[dict[str, Any]]:
     return [_mapping_or_empty(item) for item in value if isinstance(item, Mapping)]
 
 
+def _metadata_by_tool_call_id(value: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, Mapping):
+        return {}
+    metadata: dict[str, dict[str, Any]] = {}
+    for key, raw_item in value.items():
+        if isinstance(key, str) and isinstance(raw_item, Mapping):
+            metadata[key] = _mapping_or_empty(raw_item)
+    return metadata
+
+
 def _bool_value(value: object) -> bool:
     return value if isinstance(value, bool) else False
 
@@ -1599,6 +1842,272 @@ def _first_decision_key(decisions: list[dict[str, Any]]) -> str:
     return "continue"
 
 
+def _deferred_tool_results_from_resumption(
+    handle: AttemptHandle,
+    resumption: AttemptResumption,
+) -> PydanticAIDeferredToolResults | None:
+    if resumption.kind == ResumptionKind.DEFERRED_TOOL:
+        return _deferred_tool_results_from_payload(handle, resumption)
+    if resumption.kind == ResumptionKind.HUMAN_DECISION:
+        return _deferred_tool_results_from_human_decision(handle, resumption)
+    return None
+
+
+def _deferred_tool_results_from_payload(
+    handle: AttemptHandle,
+    resumption: AttemptResumption,
+) -> PydanticAIDeferredToolResults:
+    results = resumption.deferred_tool_results
+    if not results:
+        raise AdapterRuntimeError(
+            "AA_RESUME_INVALID_KIND",
+            "deferred_tool resumption requires at least one deferred tool result.",
+            payload={"kind": resumption.kind.value},
+        )
+
+    pending = _pending_deferred_tool_requests(handle)
+    pending_call_ids = _pending_request_ids(pending, "calls")
+    pending_approval_ids = _pending_request_ids(pending, "approvals")
+    pending_ids = pending_call_ids | pending_approval_ids
+    validate_pending_requests = bool(pending_ids)
+
+    calls: dict[str, Any] = {}
+    approvals: dict[str, bool | dict[str, Any]] = {}
+    metadata: dict[str, dict[str, Any]] = {}
+    for item in results:
+        tool_call_id = item.get("tool_call_id")
+        if not isinstance(tool_call_id, str) or not tool_call_id:
+            raise AdapterRuntimeError(
+                "AA_RESUME_INVALID_KIND",
+                "Deferred tool result is missing tool_call_id.",
+                payload={"kind": resumption.kind.value},
+            )
+        if validate_pending_requests and tool_call_id not in pending_ids:
+            raise AdapterRuntimeError(
+                "AA_RESUME_INVALID_KIND",
+                "Deferred tool result references an unknown pending tool_call_id.",
+                payload={
+                    "kind": resumption.kind.value,
+                    "tool_call_id": tool_call_id,
+                    "pending_tool_call_ids": sorted(pending_ids),
+                },
+            )
+        raw_metadata = item.get("metadata")
+        if isinstance(raw_metadata, Mapping):
+            metadata[tool_call_id] = _mapping_or_empty(raw_metadata)
+        if "output" in item:
+            if validate_pending_requests:
+                _ensure_pending_result_kind(tool_call_id, pending_call_ids, "call")
+            calls[tool_call_id] = item["output"]
+            continue
+        if "result" in item:
+            if validate_pending_requests:
+                _ensure_pending_result_kind(tool_call_id, pending_call_ids, "call")
+            calls[tool_call_id] = item["result"]
+            continue
+        approved = item.get("approved")
+        if isinstance(approved, bool):
+            if validate_pending_requests:
+                _ensure_pending_result_kind(tool_call_id, pending_approval_ids, "approval")
+            approvals[tool_call_id] = approved
+            continue
+        denied_message = item.get("denied_message")
+        if isinstance(denied_message, str):
+            if validate_pending_requests:
+                _ensure_pending_result_kind(tool_call_id, pending_approval_ids, "approval")
+            approvals[tool_call_id] = {"kind": "tool-denied", "message": denied_message}
+            continue
+        raise AdapterRuntimeError(
+            "AA_RESUME_INVALID_KIND",
+            "Deferred tool result must include output, result, approved, or denied_message.",
+            payload={"kind": resumption.kind.value, "tool_call_id": tool_call_id},
+        )
+
+    provided_ids = set(calls) | set(approvals)
+    missing_ids = sorted(pending_ids - provided_ids)
+    if validate_pending_requests and missing_ids:
+        raise AdapterRuntimeError(
+            "AA_RESUME_INVALID_KIND",
+            "Deferred tool results must cover all pending Pydantic AI deferred tool requests.",
+            payload={
+                "kind": resumption.kind.value,
+                "missing_tool_call_ids": missing_ids,
+                "pending_tool_call_ids": sorted(pending_ids),
+            },
+        )
+
+    return PydanticAIDeferredToolResults(calls=calls, approvals=approvals, metadata=metadata)
+
+
+def _deferred_tool_results_from_human_decision(
+    handle: AttemptHandle,
+    resumption: AttemptResumption,
+) -> PydanticAIDeferredToolResults | None:
+    decision = resumption.human_decision
+    if decision is None:
+        raise AdapterRuntimeError(
+            "AA_RESUME_INVALID_KIND",
+            "human_decision resumption requires a human_decision payload.",
+            payload={"kind": resumption.kind.value},
+        )
+
+    pending = _pending_deferred_tool_requests(handle)
+    call_ids = _pending_request_ids(pending, "calls")
+    if call_ids:
+        raise AdapterRuntimeError(
+            "AA_RESUME_INVALID_KIND",
+            "human_decision resumption cannot resolve pending Pydantic AI deferred tool calls.",
+            payload={
+                "kind": resumption.kind.value,
+                "pending_call_ids": sorted(call_ids),
+            },
+        )
+    approval_ids = [_request_invocation_id(item) for item in _list_of_mappings(pending.get("approvals"))]
+    approval_ids = [approval_id for approval_id in approval_ids if approval_id != "unknown"]
+    if not approval_ids:
+        return None
+
+    approvals: dict[str, bool | dict[str, Any]]
+    key = decision.key
+    if key in {"continue", "approve", "approve_all"}:
+        approvals = dict.fromkeys(approval_ids, True)
+    elif key in {"reject", "deny", "reject_all", "deny_all"}:
+        approvals = {approval_id: _tool_denied_payload(decision.custom_value) for approval_id in approval_ids}
+    elif key.startswith("approve:"):
+        approvals = {_decision_tool_call_id(key, approval_ids): True}
+    elif key.startswith("reject:") or key.startswith("deny:"):
+        approvals = {_decision_tool_call_id(key, approval_ids): _tool_denied_payload(decision.custom_value)}
+    else:
+        raise AdapterRuntimeError(
+            "AA_RESUME_INVALID_KIND",
+            "human_decision key does not resolve a pending Pydantic AI approval.",
+            payload={"kind": resumption.kind.value, "decision": key, "pending_approval_ids": approval_ids},
+        )
+
+    return PydanticAIDeferredToolResults(
+        approvals=approvals,
+        metadata=_metadata_by_tool_call_id(pending.get("metadata")),
+    )
+
+
+def _pending_deferred_tool_requests(handle: AttemptHandle) -> dict[str, Any]:
+    pending = handle.metadata.get("pydantic_ai_deferred_tool_requests")
+    return _mapping_or_empty(pending)
+
+
+def _pending_request_ids(pending: Mapping[str, Any], key: Literal["calls", "approvals"]) -> set[str]:
+    ids = {_request_invocation_id(item) for item in _list_of_mappings(pending.get(key))}
+    return {item_id for item_id in ids if item_id != "unknown"}
+
+
+def _ensure_pending_result_kind(
+    tool_call_id: str, expected_ids: set[str], expected_kind: Literal["call", "approval"]
+) -> None:
+    if tool_call_id in expected_ids:
+        return
+    raise AdapterRuntimeError(
+        "AA_RESUME_INVALID_KIND",
+        "Deferred tool result kind does not match the pending Pydantic AI request kind.",
+        payload={"tool_call_id": tool_call_id, "expected_kind": expected_kind},
+    )
+
+
+def _tool_denied_payload(message: str | None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"kind": "tool-denied"}
+    if message:
+        payload["message"] = message
+    return payload
+
+
+def _decision_tool_call_id(key: str, approval_ids: Sequence[str]) -> str:
+    _, _, tool_call_id = key.partition(":")
+    if tool_call_id not in approval_ids:
+        raise AdapterRuntimeError(
+            "AA_RESUME_INVALID_KIND",
+            "human_decision key references an unknown Pydantic AI approval.",
+            payload={"decision": key, "pending_approval_ids": list(approval_ids)},
+        )
+    return tool_call_id
+
+
+def _request_tool_id(item: Mapping[str, Any]) -> str:
+    value = item.get("tool_id")
+    return value if isinstance(value, str) and value else "unknown"
+
+
+def _request_invocation_id(item: Mapping[str, Any]) -> str:
+    value = item.get("invocation_id")
+    return value if isinstance(value, str) and value else "unknown"
+
+
+def _deferred_decisions(calls: list[dict[str, Any]], approvals: list[dict[str, Any]]) -> list[dict[str, str]]:
+    if approvals:
+        approval_ids = [_request_invocation_id(item) for item in approvals]
+        if len(approval_ids) == 1:
+            approval_id = approval_ids[0]
+            return [
+                {"key": f"approve:{approval_id}", "label": "Approve"},
+                {"key": f"reject:{approval_id}", "label": "Reject"},
+            ]
+        return [
+            {"key": "approve_all", "label": "Approve all"},
+            {"key": "reject_all", "label": "Reject all"},
+        ]
+    if calls:
+        return [{"key": "provide_deferred_tool_results", "label": "Provide results"}]
+    return [{"key": "continue", "label": "Continue"}]
+
+
+def _sdk_deferred_tool_results(sdk: ModuleType, results: PydanticAIDeferredToolResults) -> object:
+    deferred_tool_results_cls = getattr(sdk, "DeferredToolResults", None)
+    if not callable(deferred_tool_results_cls):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "pydantic_ai module does not expose DeferredToolResults.",
+            payload={"module": "pydantic_ai"},
+        )
+    approvals = {
+        tool_call_id: _sdk_deferred_approval_result(sdk, approval)
+        for tool_call_id, approval in results.approvals.items()
+    }
+    return deferred_tool_results_cls(
+        calls=dict(results.calls),
+        approvals=approvals,
+        metadata={key: dict(value) for key, value in results.metadata.items()},
+    )
+
+
+def _sdk_deferred_approval_result(sdk: ModuleType, approval: bool | dict[str, Any]) -> object:
+    if isinstance(approval, bool):
+        return approval
+    kind = approval.get("kind")
+    if kind == "tool-approved":
+        tool_approved_cls = getattr(sdk, "ToolApproved", None)
+        if not callable(tool_approved_cls):
+            raise AdapterRuntimeError(
+                "AA_RUN_INTERNAL",
+                "pydantic_ai module does not expose ToolApproved.",
+                payload={"module": "pydantic_ai"},
+            )
+        override_args = approval.get("override_args")
+        return tool_approved_cls(override_args=_mapping_or_empty(override_args))
+    if kind == "tool-denied":
+        tool_denied_cls = getattr(sdk, "ToolDenied", None)
+        if not callable(tool_denied_cls):
+            raise AdapterRuntimeError(
+                "AA_RUN_INTERNAL",
+                "pydantic_ai module does not expose ToolDenied.",
+                payload={"module": "pydantic_ai"},
+            )
+        message = approval.get("message")
+        return tool_denied_cls(message) if isinstance(message, str) and message else tool_denied_cls()
+    raise AdapterRuntimeError(
+        "AA_RESUME_INVALID_KIND",
+        "Unsupported deferred approval result kind.",
+        payload={"kind": kind},
+    )
+
+
 def _attempt_index(pack: ExecutionPack) -> int:
     cw_metadata = pack.metadata.get("cw")
     if isinstance(cw_metadata, Mapping):
@@ -1676,6 +2185,7 @@ def _unique_strings(values: Sequence[str]) -> list[str]:
 
 __all__ = [
     "PydanticAIAdapter",
+    "PydanticAIDeferredToolResults",
     "PydanticAIMCPToolRequest",
     "PydanticAIMCPToolset",
     "PydanticAIResumeRequest",
