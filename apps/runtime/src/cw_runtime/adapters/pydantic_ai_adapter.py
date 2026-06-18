@@ -15,6 +15,7 @@ import json
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import Path
 from types import ModuleType
 from typing import Any, Literal, Protocol, TypeAlias, cast
 
@@ -34,6 +35,7 @@ from cw_runtime.adapters.builtin_tools import (
     default_builtin_tool_names,
     file_io_for_project_root,
 )
+from cw_runtime.harness.project import load_enabled_skill_refs
 from cw_runtime.model_router.router import AdapterCapabilities
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_schemas import ExecutionPack
@@ -1784,6 +1786,7 @@ def _sdk_toolsets(
     else:
         factory_toolset_request = toolset_request
 
+    factory_toolset_request = _project_scoped_toolset_request(factory_toolset_request, project_root)
     if not _has_toolset_request(factory_toolset_request):
         return adapter_toolsets
     if toolset_factory is None:
@@ -1794,6 +1797,28 @@ def _sdk_toolsets(
         )
 
     return [*adapter_toolsets, *_factory_sdk_toolsets(sdk, factory_toolset_request, toolset_factory)]
+
+
+def _project_scoped_toolset_request(
+    toolset_request: PydanticAIToolsetRequest,
+    project_root: str | None,
+) -> PydanticAIToolsetRequest:
+    if project_root is None or not toolset_request.skill_ids_resolved:
+        return toolset_request
+
+    available_skill_refs = load_enabled_skill_refs(Path(project_root))
+    requested_skill_refs = _unique_strings(toolset_request.skill_ids_resolved)
+    unavailable_skill_refs = [skill_ref for skill_ref in requested_skill_refs if skill_ref not in available_skill_refs]
+    if unavailable_skill_refs:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Pydantic AI requested skills are not enabled in the project Skill registry.",
+            payload={
+                "missing_skill_ids_resolved": unavailable_skill_refs,
+                "available_skill_ids_resolved": sorted(available_skill_refs),
+            },
+        )
+    return toolset_request
 
 
 def _factory_sdk_toolsets(

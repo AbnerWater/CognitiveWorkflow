@@ -100,6 +100,7 @@ class WorkflowValidationContext(BaseModel):
     available_context_refs: set[str] | None = None
     available_model_profile_ids: set[str] | None = None
     available_skill_ids: set[str] | None = None
+    available_skill_refs: set[str] | None = None
     available_mcp_server_ids: set[str] | None = None
 
 
@@ -253,6 +254,7 @@ def load_project_workflow_validation_context(project_root: Path) -> WorkflowVali
     availability = load_project_tool_availability(project_root)
     return WorkflowValidationContext(
         available_skill_ids=availability.skill_ids,
+        available_skill_refs=availability.skill_refs,
         available_mcp_server_ids=availability.mcp_server_ids,
     )
 
@@ -338,12 +340,21 @@ def _validate_l4_references(graph: WorkflowGraph, context: WorkflowValidationCon
                 )
 
     if context.available_skill_ids is not None:
-        for skill_id in _iter_skill_ids(graph):
+        for skill_id, _version, _skill_ref in _iter_skill_refs(graph):
             if skill_id not in context.available_skill_ids:
                 raise WorkflowValidationError(
                     "WG_L4_UNKNOWN_SKILL",
                     "WorkflowGraph references an unknown skill.",
                     details={"skill_id": skill_id},
+                )
+
+    if context.available_skill_refs is not None:
+        for skill_id, version, skill_ref in _iter_skill_refs(graph):
+            if skill_ref not in context.available_skill_refs:
+                raise WorkflowValidationError(
+                    "WG_L4_UNKNOWN_SKILL",
+                    "WorkflowGraph references an unavailable skill version.",
+                    details={"skill_id": skill_id, "version": version, "skill_ref": skill_ref},
                 )
 
     if context.available_mcp_server_ids is not None:
@@ -367,11 +378,13 @@ def _iter_model_profile_ids(graph: WorkflowGraph) -> Sequence[str]:
     return model_ids
 
 
-def _iter_skill_ids(graph: WorkflowGraph) -> Sequence[str]:
-    skill_ids: list[str] = []
+def _iter_skill_refs(graph: WorkflowGraph) -> Sequence[tuple[str, str, str]]:
+    skill_refs: list[tuple[str, str, str]] = []
     for contract in _iter_contracts(graph):
-        skill_ids.extend(skill.skill_id for skill in contract.skills)
-    return skill_ids
+        skill_refs.extend(
+            (skill.skill_id, skill.version, f"{skill.skill_id}@{skill.version}") for skill in contract.skills
+        )
+    return skill_refs
 
 
 def _iter_mcp_server_ids(graph: WorkflowGraph) -> Sequence[str]:

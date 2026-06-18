@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from types import ModuleType, SimpleNamespace, TracebackType
@@ -614,6 +615,10 @@ def _initialized_project_root(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     (path / ".agent-workflow").mkdir()
     return path
+
+
+def _write_json_value(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def _execution_pack(
@@ -1863,6 +1868,73 @@ async def test_pydantic_ai_toolset_registry_resolves_registered_toolsets(
     assert mcp_wrapper.wrapped is mcp_toolset
     assert mcp_wrapper.approval_required_func(None, SimpleNamespace(name="search"), {}) is True
     assert mcp_wrapper.approval_required_func(None, SimpleNamespace(name="write_file"), {}) is False
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_project_skill_registry_allows_enabled_version(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    project_root = _initialized_project_root(tmp_path / "skill_registry_project")
+    _write_json_value(
+        project_root / ".agent-workflow" / "skills.config.json",
+        [{"skill_id": "citation_checker", "version": "1.0.0"}],
+    )
+    registry = PydanticAIToolsetRegistry()
+    skill_toolset = FakeSDKToolset("skill")
+    registry.register_skill_toolset("citation_checker", skill_toolset, version="1.0.0")
+
+    adapter = PydanticAIAdapter(toolset_factory=registry.as_factory())
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            skills=[SkillRef(skill_id="citation_checker", version="1.0.0")],
+            effective_toolsets=ToolsetSpec(skill_ids_resolved=["citation_checker@1.0.0"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    assert FakeSDKAgent.instances[0].kwargs["toolsets"] == [skill_toolset]
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_project_skill_registry_rejects_unavailable_version(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    project_root = _initialized_project_root(tmp_path / "skill_registry_project")
+    _write_json_value(
+        project_root / ".agent-workflow" / "skills.config.json",
+        [{"skill_id": "citation_checker", "version": "2.0.0"}],
+    )
+    registry = PydanticAIToolsetRegistry()
+    registry.register_skill_toolset("citation_checker", FakeSDKToolset("skill"), version="1.0.0")
+
+    adapter = PydanticAIAdapter(toolset_factory=registry.as_factory())
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            skills=[SkillRef(skill_id="citation_checker", version="1.0.0")],
+            effective_toolsets=ToolsetSpec(skill_ids_resolved=["citation_checker@1.0.0"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert len(FakeSDKAgent.instances) == 0
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["missing_skill_ids_resolved"] == ["citation_checker@1.0.0"]
+    assert outcome.errors[0].payload["available_skill_ids_resolved"] == ["citation_checker@2.0.0"]
 
 
 @pytest.mark.asyncio

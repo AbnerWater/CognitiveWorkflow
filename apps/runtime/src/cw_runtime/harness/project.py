@@ -145,6 +145,7 @@ class ProjectToolAvailability(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     skill_ids: set[str] = Field(default_factory=set)
+    skill_refs: set[str] = Field(default_factory=set)
     mcp_server_ids: set[str] = Field(default_factory=set)
 
 
@@ -267,6 +268,7 @@ def load_project_tool_availability(project_root: Path) -> ProjectToolAvailabilit
 
     return ProjectToolAvailability(
         skill_ids=load_enabled_skill_ids(project_root),
+        skill_refs=load_enabled_skill_refs(project_root),
         mcp_server_ids=load_enabled_mcp_server_ids(project_root),
     )
 
@@ -301,6 +303,19 @@ def load_enabled_skill_ids(project_root: Path) -> set[str]:
         agent_root / "skills.config.json",
         id_field="skill_id",
     )
+
+
+def load_enabled_skill_refs(project_root: Path) -> set[str]:
+    """Load enabled versioned Skill refs from ``skills.config.json``."""
+
+    agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
+    return {
+        _skill_ref_from_entry(entry)
+        for _entry_id, entry in _iter_enabled_manifest_entries(
+            agent_root / "skills.config.json",
+            id_field="skill_id",
+        )
+    }
 
 
 def load_enabled_mcp_server_ids(project_root: Path) -> set[str]:
@@ -744,6 +759,12 @@ def _skill_lock_entry(entry: Mapping[str, object]) -> ProjectSkillLockEntry:
     )
 
 
+def _skill_ref_from_entry(entry: Mapping[str, object]) -> str:
+    skill_id = cast(str, entry["skill_id"]).strip()
+    version = _string_manifest_field(entry, "version", default="latest")
+    return f"{skill_id}@{version}"
+
+
 def _mcp_lock_entry(entry: Mapping[str, object]) -> ProjectMCPLockEntry:
     return ProjectMCPLockEntry(
         server_id=cast(str, entry["server_id"]).strip(),
@@ -804,6 +825,7 @@ __all__ = [
     "initialize_project",
     "load_enabled_mcp_server_ids",
     "load_enabled_skill_ids",
+    "load_enabled_skill_refs",
     "load_project_tool_availability",
     "load_project_tool_lock_snapshot",
     "read_project",

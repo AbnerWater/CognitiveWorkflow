@@ -217,6 +217,7 @@ def test_project_tool_availability_reads_enabled_manifest_entries(tmp_path: Path
     locks = load_project_tool_lock_snapshot(project_root)
 
     assert availability.skill_ids == {"research_outline"}
+    assert availability.skill_refs == {"research_outline@1.2.0"}
     assert availability.mcp_server_ids == {"mcp_local_python"}
     assert [entry.model_dump(mode="json", exclude_none=True) for entry in locks.skills] == [
         {"skill_id": "research_outline", "version": "1.2.0"}
@@ -246,6 +247,7 @@ def test_project_tool_availability_treats_invalid_manifest_entries_as_disabled(t
     availability = load_project_tool_availability(project_root)
 
     assert availability.skill_ids == set()
+    assert availability.skill_refs == set()
 
 
 def test_update_manifest_json_blocks_direct_memory_write(tmp_path: Path) -> None:

@@ -438,6 +438,18 @@ def test_load_and_compile_uses_project_skill_and_mcp_manifests(tmp_path: Path) -
 
     _write_json_value(
         project_root / ".agent-workflow" / "skills.config.json",
+        [{"skill_id": "research_outline", "version": "2.0.0"}],
+    )
+    with pytest.raises(WorkflowValidationError) as skill_version_exc_info:
+        load_and_compile_workflow(project_root)
+
+    assert skill_version_exc_info.value.error_code == "WG_L4_UNKNOWN_SKILL"
+    assert skill_version_exc_info.value.details["skill_id"] == "research_outline"
+    assert skill_version_exc_info.value.details["version"] == "1.2.0"
+    assert skill_version_exc_info.value.details["skill_ref"] == "research_outline@1.2.0"
+
+    _write_json_value(
+        project_root / ".agent-workflow" / "skills.config.json",
         [{"skill_id": "research_outline", "version": "1.2.0"}],
     )
     with pytest.raises(WorkflowValidationError) as mcp_exc_info:
