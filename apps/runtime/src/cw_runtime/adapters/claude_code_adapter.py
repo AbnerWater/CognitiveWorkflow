@@ -33,7 +33,11 @@ from cw_runtime.adapters.base import (
 )
 from cw_runtime.harness import (
     ProjectMCPServerConfig,
+    ProjectSecretAeadDecryptor,
     ProjectSecretDecryptor,
+    ProjectSecretMasterKeyProvider,
+    ProjectSecretStoreError,
+    build_project_secret_decryptor,
     load_project_mcp_secret_material,
     load_project_mcp_server_configs,
 )
@@ -1150,7 +1154,9 @@ def _project_mcp_secret_resolver(
     if raw_resolver is None:
         raw_decryptor = config.settings.get("project_mcp_secret_decryptor")
         if raw_decryptor is None:
-            return None
+            raw_decryptor = _project_mcp_secret_decryptor_from_crypto_settings(config, project_root=project_root)
+            if raw_decryptor is None:
+                return None
         if not callable(raw_decryptor):
             raise AdapterRuntimeError(
                 "AA_RUN_INTERNAL",
@@ -1168,6 +1174,41 @@ def _project_mcp_secret_resolver(
             payload={"resolver_type": type(raw_resolver).__name__},
         )
     return cast(ClaudeCodeMCPSecretResolver, raw_resolver)
+
+
+def _project_mcp_secret_decryptor_from_crypto_settings(
+    config: AdapterConfig,
+    *,
+    project_root: Path,
+) -> ProjectSecretDecryptor | None:
+    raw_master_key_provider = config.settings.get("project_mcp_secret_master_key_provider")
+    raw_aead_decryptor = config.settings.get("project_mcp_secret_aead_decryptor")
+    if raw_master_key_provider is None and raw_aead_decryptor is None:
+        return None
+    if not callable(raw_master_key_provider):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "ClaudeCodeAdapter settings.project_mcp_secret_master_key_provider must be callable.",
+            payload={"master_key_provider_type": type(raw_master_key_provider).__name__},
+        )
+    if not callable(raw_aead_decryptor):
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "ClaudeCodeAdapter settings.project_mcp_secret_aead_decryptor must be callable.",
+            payload={"aead_decryptor_type": type(raw_aead_decryptor).__name__},
+        )
+    try:
+        return build_project_secret_decryptor(
+            project_root,
+            master_key_provider=cast(ProjectSecretMasterKeyProvider, raw_master_key_provider),
+            decrypt_aead=cast(ProjectSecretAeadDecryptor, raw_aead_decryptor),
+        )
+    except ProjectSecretStoreError as exc:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Project MCP server secure-store decryptor could not be constructed.",
+            payload={"secret_store_error_type": type(exc).__name__},
+        ) from exc
 
 
 def build_claude_project_mcp_secret_resolver(

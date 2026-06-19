@@ -23,7 +23,7 @@ from cw_runtime.adapters import (
     RawClaudeCodeEvent,
     SessionFactory,
 )
-from cw_runtime.harness import ProjectMCPServerConfig
+from cw_runtime.harness import ProjectMCPServerConfig, encrypt_project_secret_value
 from cw_schemas.contract import ExecutionContract, MCPToolRef, NodeModelPolicy, PromptSection
 from cw_schemas.events import StreamEventBase
 from cw_schemas.packs import (
@@ -341,6 +341,18 @@ def _write_secure_secret(project_root: Path, secret_id: str, encrypted_value: by
             "INSERT INTO secrets(secret_id, alias, value_encrypted, scope, created_at) VALUES (?, ?, ?, ?, ?)",
             (secret_id, "test secret", encrypted_value, "project", "2026-06-19T00:00:00Z"),
         )
+
+
+def _fake_encrypt_aead(key: bytes, nonce: bytes, plaintext: bytes, associated_data: bytes) -> bytes:
+    marker = b"cwfake:" + key[:8] + nonce + len(associated_data).to_bytes(4, "big")
+    return marker + plaintext
+
+
+def _fake_decrypt_aead(key: bytes, nonce: bytes, ciphertext: bytes, associated_data: bytes) -> bytes:
+    marker = b"cwfake:" + key[:8] + nonce + len(associated_data).to_bytes(4, "big")
+    if not ciphertext.startswith(marker):
+        raise ValueError("invalid fake AEAD marker")
+    return ciphertext[len(marker) :]
 
 
 @pytest.mark.asyncio
@@ -675,6 +687,75 @@ async def test_claude_code_project_mcp_config_uses_secure_store_decryptor(tmp_pa
 
     assert [event.type for event in events] == ["attempt.started", "attempt.completed"]
     assert decrypted_inputs == [b"encrypted-access-token"]
+    assert session.run_request is not None
+    assert session.run_request.mcp_servers == {
+        "secure_server": {
+            "type": "http",
+            "url": "https://mcp.example.test/secure",
+            "headers": {"Authorization": "Bearer fake-access-token"},
+            "env": {"CW_MCP_TOKEN": "fake-access-token"},
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_claude_code_project_mcp_config_uses_secure_store_crypto_decryptor(tmp_path: Path) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp_secure_crypto")
+    project_id = "proj_secure_crypto"
+    _write_json_value(project_root / ".agent-workflow" / "project.json", {"project_id": project_id})
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "secure_server",
+                "transport": "http",
+                "command_or_url": "https://mcp.example.test/secure",
+                "secret_ref": "secure://mcp/secure",
+            }
+        ],
+    )
+    encrypted = encrypt_project_secret_value(
+        project_id,
+        json.dumps(
+            {
+                "headers": {"Authorization": "Bearer fake-access-token"},
+                "env": {"CW_MCP_TOKEN": "fake-access-token"},
+            }
+        ),
+        master_key=b"test-master-key",
+        encrypt_aead=_fake_encrypt_aead,
+        nonce_factory=lambda size: b"\x04" * size,
+    )
+    _write_secure_secret(project_root, "secure://mcp/secure", encrypted)
+    requested_project_ids: list[str] = []
+
+    def master_key_provider(requested_project_id: str) -> bytes:
+        requested_project_ids.append(requested_project_id)
+        return b"test-master-key"
+
+    session = FakeClaudeCodeSession(run_events=[{"type": "completed", "output": {"answer": "done"}}])
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(
+            adapter_id="claude_code",
+            settings={
+                "project_mcp_secret_master_key_provider": master_key_provider,
+                "project_mcp_secret_aead_decryptor": _fake_decrypt_aead,
+            },
+        ),
+        session_factory=_factory_for(session),
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["secure_server"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.completed"]
+    assert requested_project_ids == [project_id]
     assert session.run_request is not None
     assert session.run_request.mcp_servers == {
         "secure_server": {

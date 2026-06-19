@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import queue
@@ -30,6 +31,9 @@ from cw_runtime.harness import (
     ProjectMCPServerConfig,
     ProjectMCPStdioDiscoveryClient,
     ProjectSecretStoreError,
+    build_project_secret_decryptor,
+    decrypt_project_secret_value,
+    encrypt_project_secret_value,
     initialize_project,
     load_project_mcp_secret_material,
     load_project_mcp_server_configs,
@@ -89,6 +93,18 @@ def _write_secure_secret(project_root: Path, secret_id: str, encrypted_value: by
             "INSERT INTO secrets(secret_id, alias, value_encrypted, scope, created_at) VALUES (?, ?, ?, ?, ?)",
             (secret_id, "test secret", encrypted_value, "project", "2026-06-19T00:00:00Z"),
         )
+
+
+def _fake_encrypt_aead(key: bytes, nonce: bytes, plaintext: bytes, associated_data: bytes) -> bytes:
+    marker = b"cwfake:" + key[:8] + nonce + len(associated_data).to_bytes(4, "big")
+    return marker + plaintext
+
+
+def _fake_decrypt_aead(key: bytes, nonce: bytes, ciphertext: bytes, associated_data: bytes) -> bytes:
+    marker = b"cwfake:" + key[:8] + nonce + len(associated_data).to_bytes(4, "big")
+    if not ciphertext.startswith(marker):
+        raise ValueError("invalid fake AEAD marker")
+    return ciphertext[len(marker) :]
 
 
 def _python_script_command(script_path: Path, *extra_args: str) -> str:
@@ -1539,6 +1555,138 @@ def test_project_mcp_secret_material_loads_from_secure_store(tmp_path: Path) -> 
     )
 
     assert decrypted_inputs == [b"encrypted-local-token"]
+    assert material is not None
+    assert material.model_dump(mode="json") == {
+        "headers": {"Authorization": "Bearer fake-access-token"},
+        "env": {"CW_MCP_TOKEN": "fake-access-token"},
+    }
+
+
+def test_project_secret_envelope_round_trips_with_project_salt(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_envelope_project"
+    response = initialize_project(_request("MCP Secret Envelope", project_root))
+    plaintext = b'{"headers":{"Authorization":"Bearer fake-access-token"}}'
+
+    encrypted = encrypt_project_secret_value(
+        response.project_id,
+        plaintext,
+        master_key=b"test-master-key",
+        encrypt_aead=_fake_encrypt_aead,
+        nonce_factory=lambda size: b"\x01" * size,
+    )
+    envelope = json.loads(encrypted.decode("utf-8"))
+
+    assert envelope["version"] == "0.1.0"
+    assert envelope["algorithm"] == "AES-GCM-256"
+    assert envelope["kdf"] == "PBKDF2-HMAC-SHA256"
+    assert envelope["iterations"] >= 100_000
+    assert envelope["salt"] != ""
+    assert envelope["nonce"] != ""
+    assert envelope["ciphertext"] != ""
+    assert (
+        decrypt_project_secret_value(
+            response.project_id,
+            encrypted,
+            master_key=b"test-master-key",
+            decrypt_aead=_fake_decrypt_aead,
+        )
+        == plaintext
+    )
+
+
+def test_project_secret_envelope_rejects_wrong_project_salt(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_wrong_project"
+    response = initialize_project(_request("MCP Secret Wrong Project", project_root))
+    encrypted = encrypt_project_secret_value(
+        response.project_id,
+        b'{"headers":{"Authorization":"Bearer fake-access-token"}}',
+        master_key=b"test-master-key",
+        encrypt_aead=_fake_encrypt_aead,
+        nonce_factory=lambda size: b"\x02" * size,
+    )
+
+    with pytest.raises(ProjectSecretStoreError) as exc_info:
+        decrypt_project_secret_value(
+            "different-project-id",
+            encrypted,
+            master_key=b"test-master-key",
+            decrypt_aead=_fake_decrypt_aead,
+        )
+
+    assert "fake-access-token" not in str(exc_info.value)
+    assert response.project_id not in str(exc_info.value)
+
+
+def test_project_secret_envelope_rejects_oversized_direct_input() -> None:
+    with pytest.raises(ProjectSecretStoreError) as exc_info:
+        decrypt_project_secret_value(
+            "proj_oversized",
+            b"{" + (b" " * (70 * 1024)) + b"}",
+            master_key=b"test-master-key",
+            decrypt_aead=_fake_decrypt_aead,
+        )
+
+    assert "size limit" in str(exc_info.value)
+
+
+def test_project_secret_envelope_rejects_oversized_ciphertext() -> None:
+    project_id = "proj_oversized_ciphertext"
+    envelope = {
+        "version": "0.1.0",
+        "algorithm": "AES-GCM-256",
+        "kdf": "PBKDF2-HMAC-SHA256",
+        "iterations": 600_000,
+        "salt": base64.b64encode(project_id.encode("utf-8")).decode("ascii"),
+        "nonce": base64.b64encode(b"\x05" * 12).decode("ascii"),
+        "ciphertext": base64.b64encode(b"x" * (70 * 1024)).decode("ascii"),
+    }
+
+    with pytest.raises(ProjectSecretStoreError) as exc_info:
+        decrypt_project_secret_value(
+            project_id,
+            json.dumps(envelope).encode("utf-8"),
+            master_key=b"test-master-key",
+            decrypt_aead=_fake_decrypt_aead,
+        )
+
+    assert "size limit" in str(exc_info.value)
+
+
+def test_project_mcp_secret_material_loads_with_project_crypto_decryptor(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_crypto_project"
+    response = initialize_project(_request("MCP Secret Crypto", project_root))
+    encrypted = encrypt_project_secret_value(
+        response.project_id,
+        json.dumps(
+            {
+                "headers": {"Authorization": "Bearer fake-access-token"},
+                "env": {"CW_MCP_TOKEN": "fake-access-token"},
+            }
+        ),
+        master_key=b"test-master-key",
+        encrypt_aead=_fake_encrypt_aead,
+        nonce_factory=lambda size: b"\x03" * size,
+    )
+    _write_secure_secret(project_root, "secure://mcp/local", encrypted)
+    requested_project_ids: list[str] = []
+
+    def master_key_provider(project_id: str) -> bytes:
+        requested_project_ids.append(project_id)
+        return b"test-master-key"
+
+    decrypt_secret = build_project_secret_decryptor(
+        project_root,
+        master_key_provider=master_key_provider,
+        decrypt_aead=_fake_decrypt_aead,
+    )
+
+    material = load_project_mcp_secret_material(
+        project_root,
+        "secure://mcp/local",
+        decrypt_secret=decrypt_secret,
+    )
+
+    assert requested_project_ids == [response.project_id]
     assert material is not None
     assert material.model_dump(mode="json") == {
         "headers": {"Authorization": "Bearer fake-access-token"},
