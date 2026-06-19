@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Any
 import pytest
 
 from cw_runtime.adapters import AdapterRegistry, AttemptHandle, build_pydantic_ai_descriptor
-from cw_runtime.harness import ProjectCreateRequest, initialize_project
+from cw_runtime.harness import ProjectCreateRequest, acquire_runtime_lock, initialize_project
 from cw_runtime.model_router import AdapterCapabilities
 from cw_runtime.runner import (
     EvaluationAdvanceInput,
@@ -19,7 +20,15 @@ from cw_runtime.runner import (
     advance_workflow_run,
     advance_workflow_run_with_adapters,
 )
-from cw_runtime.runs import WorkflowRunStartRequest, create_workflow_run, list_stream_events
+from cw_runtime.runs import (
+    RunActionRequest,
+    RunError,
+    WorkflowRunStartRequest,
+    create_workflow_run,
+    list_stream_events,
+    pause_workflow_run,
+    resume_workflow_run,
+)
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_schemas import ExecutionPack
 from cw_schemas.events import LifecycleEvent, ModelEvent, StreamEventBase
@@ -364,6 +373,25 @@ class _FakeAdapter:
         self.closed = True
 
 
+class _BlockingFakeAdapter(_FakeAdapter):
+    def __init__(
+        self,
+        *,
+        usage: RunUsage,
+        run_started: asyncio.Event,
+        release_run: asyncio.Event,
+    ) -> None:
+        super().__init__(usage=usage)
+        self._run_started = run_started
+        self._release_run = release_run
+
+    async def run(self, handle: AttemptHandle) -> AsyncIterator[StreamEventBase]:
+        self._run_started.set()
+        await self._release_run.wait()
+        async for event in super().run(handle):
+            yield event
+
+
 def _adapter_registry(adapter: _FakeAdapter) -> AdapterRegistry:
     registry = AdapterRegistry()
     registry.register(build_pydantic_ai_descriptor(), lambda config: adapter)
@@ -408,6 +436,87 @@ async def test_adapter_execution_bridge_persists_outcome_usage_and_stream_events
     assert model_events[0].attempt_id == attempts[0]["attempt_id"]
     assert len([event for event in events if event.type == "attempt.completed"]) == 1
     assert [event.seq for event in events] == sorted(event.seq for event in events)
+
+
+@pytest.mark.asyncio
+async def test_adapter_execution_bridge_releases_runtime_lock_while_adapter_runs(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path)
+    run_id = _start_run(project_root, workflow_id)
+    run_started = asyncio.Event()
+    release_run = asyncio.Event()
+    adapter = _BlockingFakeAdapter(
+        usage=RunUsage(input_tokens=1000, output_tokens=2000, total_tokens=3000, requests=1),
+        run_started=run_started,
+        release_run=release_run,
+    )
+
+    advance_workflow_run(project_root, run_id)
+    advance_task = asyncio.create_task(
+        advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
+    )
+    await asyncio.wait_for(run_started.wait(), timeout=2.0)
+    try:
+        with acquire_runtime_lock(project_root, timeout_seconds=1.0):
+            run_json = _read_run_json(project_root, run_id)
+            assert run_json["current_node_ids"] == ["n_execute"]
+            assert run_json["metadata"]["cw"]["node_states"]["n_execute"] == "running"
+        with pytest.raises(RunError, match="in-flight attempt"):
+            advance_workflow_run(project_root, run_id)
+    finally:
+        release_run.set()
+
+    advanced = await asyncio.wait_for(advance_task, timeout=2.0)
+    assert advanced.node_id == "n_execute"
+    assert advanced.node_state == "passed"
+    assert adapter.closed is True
+
+
+@pytest.mark.asyncio
+async def test_adapter_execution_bridge_finishes_current_attempt_when_paused(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path)
+    run_id = _start_run(project_root, workflow_id)
+    run_started = asyncio.Event()
+    release_run = asyncio.Event()
+    adapter = _BlockingFakeAdapter(
+        usage=RunUsage(input_tokens=1000, output_tokens=2000, total_tokens=3000, requests=1),
+        run_started=run_started,
+        release_run=release_run,
+    )
+
+    advance_workflow_run(project_root, run_id)
+    advance_task = asyncio.create_task(
+        advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
+    )
+    await asyncio.wait_for(run_started.wait(), timeout=2.0)
+    paused = pause_workflow_run(
+        project_root,
+        run_id,
+        RunActionRequest(schema_version="0.1.0", by="tester", reason="pause_during_adapter_run"),
+    )
+    assert paused.state == RunState.PAUSED
+
+    release_run.set()
+    advanced = await asyncio.wait_for(advance_task, timeout=2.0)
+
+    assert advanced.run.state == RunState.PAUSED
+    assert advanced.node_id == "n_execute"
+    assert advanced.node_state == "passed"
+    assert advanced.next_node_ids == ["n_end"]
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    assert attempts[0]["state"] == "completed"
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["state"] == "paused"
+    assert run_json["current_node_ids"] == ["n_end"]
+    assert run_json["metadata"]["cw"]["node_states"]["n_execute"] == "passed"
+
+    resume_workflow_run(
+        project_root,
+        run_id,
+        RunActionRequest(schema_version="0.1.0", by="tester", reason="resume_after_adapter_run"),
+    )
+    completed = advance_workflow_run(project_root, run_id)
+    assert completed.run.state == RunState.COMPLETED
 
 
 @pytest.mark.asyncio

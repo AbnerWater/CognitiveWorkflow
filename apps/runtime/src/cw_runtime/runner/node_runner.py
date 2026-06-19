@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
 from typing import Any, Literal, TypeAlias, cast
@@ -185,6 +186,8 @@ _NODE_PHASES: Mapping[NodeRuntimeState, EventPhase] = {
     NodeRuntimeState.FAILED: EventPhase.NODE_FAILED,
 }
 
+_IN_FLIGHT_NODE_STATES = frozenset({NodeRuntimeState.RUNNING, NodeRuntimeState.REVIEWING, NodeRuntimeState.REPAIRING})
+
 
 class ExecutionAdvanceInput(BaseModel):
     """Deterministic output for an execution node."""
@@ -326,6 +329,19 @@ class _PendingPromptOverlay(BaseModel):
     instruction_text: str
 
 
+@dataclass(frozen=True)
+class _AdapterAdvanceState:
+    graph: WorkflowGraph
+    compiled: EngineWorkflowIR
+    node: AttemptNode
+    artifacts: _AttemptArtifacts
+    before_event_count: int
+    target_attempt_id: str | None = None
+    target_hash: str | None = None
+    evaluation_id: str | None = None
+    repair_target_attempt_id: str | None = None
+
+
 def advance_workflow_run(
     project_root: str | PathLike[str],
     run_id: str,
@@ -343,6 +359,7 @@ def advance_workflow_run(
         _ensure_run_can_advance(run)
 
         node_id = _resolve_current_node_id(run, advance_request.node_id)
+        _ensure_current_node_not_in_flight(run, node_id)
         node = _node_by_id(graph)[node_id]
         before_event_count = len(list_stream_events(root, run_id))
 
@@ -382,6 +399,8 @@ async def advance_workflow_run_with_adapters(
 
     advance_request = NodeAdvanceRequest() if request is None else request
     root = Path(project_root)
+    resolved_adapter_configs = {} if adapter_configs is None else adapter_configs
+    adapter_advance: _AdapterAdvanceState | None = None
 
     with acquire_runtime_lock(root):
         graph = load_workflow_graph(root)
@@ -390,39 +409,37 @@ async def advance_workflow_run_with_adapters(
         _ensure_run_can_advance(run)
 
         node_id = _resolve_current_node_id(run, advance_request.node_id)
+        _ensure_current_node_not_in_flight(run, node_id)
         node = _node_by_id(graph)[node_id]
         before_event_count = len(list_stream_events(root, run_id))
 
         if isinstance(node, ExecutionTaskNode) and advance_request.execution is None:
-            result = await _advance_execution_with_adapter(
-                root,
-                graph,
-                compiled,
-                run,
-                node,
-                adapter_factory,
-                adapter_configs={} if adapter_configs is None else adapter_configs,
+            adapter_advance_or_result = _begin_execution_adapter_advance_locked(
+                root, graph, compiled, run, node, before_event_count=before_event_count
             )
+            if isinstance(adapter_advance_or_result, NodeAdvanceResult):
+                after_events = list_stream_events(root, run_id)
+                new_event_ids = [event.event_id for event in after_events[before_event_count:]]
+                return adapter_advance_or_result.model_copy(update={"event_ids": new_event_ids})
+            adapter_advance = adapter_advance_or_result
         elif isinstance(node, EvaluationTaskNode) and advance_request.evaluation is None:
-            result = await _advance_evaluation_with_adapter(
-                root,
-                graph,
-                compiled,
-                run,
-                node,
-                adapter_factory,
-                adapter_configs={} if adapter_configs is None else adapter_configs,
+            adapter_advance_or_result = _begin_evaluation_adapter_advance_locked(
+                root, graph, compiled, run, node, before_event_count=before_event_count
             )
+            if isinstance(adapter_advance_or_result, NodeAdvanceResult):
+                after_events = list_stream_events(root, run_id)
+                new_event_ids = [event.event_id for event in after_events[before_event_count:]]
+                return adapter_advance_or_result.model_copy(update={"event_ids": new_event_ids})
+            adapter_advance = adapter_advance_or_result
         elif isinstance(node, RepairTaskNode) and advance_request.repair is None:
-            result = await _advance_repair_with_adapter(
-                root,
-                graph,
-                compiled,
-                run,
-                node,
-                adapter_factory,
-                adapter_configs={} if adapter_configs is None else adapter_configs,
+            adapter_advance_or_result = _begin_repair_adapter_advance_locked(
+                root, graph, compiled, run, node, before_event_count=before_event_count
             )
+            if isinstance(adapter_advance_or_result, NodeAdvanceResult):
+                after_events = list_stream_events(root, run_id)
+                new_event_ids = [event.event_id for event in after_events[before_event_count:]]
+                return adapter_advance_or_result.model_copy(update={"event_ids": new_event_ids})
+            adapter_advance = adapter_advance_or_result
         elif isinstance(node, StartNode):
             result = _advance_start(root, compiled, run, node)
         elif isinstance(node, EndNode):
@@ -442,9 +459,23 @@ async def advance_workflow_run_with_adapters(
                 details={"run_id": run.run_id, "node_id": node_id, "node_type": node.type},
             )
 
-        after_events = list_stream_events(root, run_id)
-        new_event_ids = [event.event_id for event in after_events[before_event_count:]]
-        return result.model_copy(update={"event_ids": new_event_ids})
+        if adapter_advance is None:
+            after_events = list_stream_events(root, run_id)
+            new_event_ids = [event.event_id for event in after_events[before_event_count:]]
+            return result.model_copy(update={"event_ids": new_event_ids})
+
+    if adapter_advance is None:
+        raise RunError(
+            "NL_STATE_FORBIDDEN_TRANSITION",
+            "Adapter runner bridge did not produce an adapter advance state.",
+            details={"run_id": run_id},
+        )
+    return await _run_and_complete_adapter_advance(
+        root,
+        adapter_advance,
+        adapter_factory,
+        adapter_configs=resolved_adapter_configs,
+    )
 
 
 def resolve_human_decision(
@@ -775,16 +806,15 @@ def _advance_execution(
     )
 
 
-async def _advance_execution_with_adapter(
+def _begin_execution_adapter_advance_locked(
     project_root: Path,
     graph: WorkflowGraph,
     compiled: EngineWorkflowIR,
     run: WorkflowRunDocument,
     node: ExecutionTaskNode,
-    adapter_factory: AdapterFactory,
     *,
-    adapter_configs: Mapping[str, AdapterConfig],
-) -> NodeAdvanceResult:
+    before_event_count: int,
+) -> _AdapterAdvanceState | NodeAdvanceResult:
     try:
         artifacts = _prepare_attempt(
             project_root,
@@ -801,18 +831,316 @@ async def _advance_execution_with_adapter(
         run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.READY)
     run = _emit_attempt_started(project_root, run, node.node_id, artifacts)
     run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RUNNING)
+    return _AdapterAdvanceState(
+        graph=graph,
+        compiled=compiled,
+        node=node,
+        artifacts=artifacts,
+        before_event_count=before_event_count,
+    )
 
+
+async def _run_adapter_attempt_without_runtime_lock(
+    project_root: Path,
+    artifacts: _AttemptArtifacts,
+    adapter_factory: AdapterFactory,
+    *,
+    adapter_configs: Mapping[str, AdapterConfig],
+) -> AttemptOutcome:
+    adapter: AgentAdapter | None = None
     try:
-        run, outcome = await _run_adapter_attempt(
+        adapter = adapter_factory.create(
+            artifacts.adapter_id,
+            adapter_configs.get(artifacts.adapter_id, AdapterConfig(adapter_id=artifacts.adapter_id)),
+        )
+        handle = await adapter.prepare(artifacts.execution_pack)
+        async for event in adapter.run(handle):
+            _append_adapter_stream_event_with_runtime_lock(project_root, artifacts, event)
+        return await adapter.finalize(handle)
+    finally:
+        if adapter is not None:
+            await adapter.aclose()
+
+
+def _append_adapter_stream_event_with_runtime_lock(
+    project_root: Path,
+    artifacts: _AttemptArtifacts,
+    event: StreamEventBase,
+) -> None:
+    if event.type in _RUNNER_OWNED_ADAPTER_EVENT_TYPES:
+        return
+    with acquire_runtime_lock(project_root):
+        run = read_workflow_run(project_root, artifacts.execution_pack.run_id)
+        if run.state != RunState.RUNNING:
+            return
+        _append_adapter_stream_event(project_root, run, artifacts, event)
+
+
+async def _run_and_complete_adapter_advance(
+    project_root: Path,
+    adapter_advance: _AdapterAdvanceState,
+    adapter_factory: AdapterFactory,
+    *,
+    adapter_configs: Mapping[str, AdapterConfig],
+) -> NodeAdvanceResult:
+    try:
+        outcome = await _run_adapter_attempt_without_runtime_lock(
             project_root,
-            run,
-            artifacts,
+            adapter_advance.artifacts,
             adapter_factory,
             adapter_configs=adapter_configs,
         )
     except AdapterRuntimeError as exc:
-        return _fail_attempt_and_run(project_root, run, node, artifacts, [exc.adapter_error], usage=None)
+        with acquire_runtime_lock(project_root):
+            run = read_workflow_run(project_root, adapter_advance.artifacts.execution_pack.run_id)
+            if not _adapter_advance_can_finalize(run, adapter_advance):
+                result = _preempted_adapter_advance_result(project_root, run, adapter_advance, error=exc.adapter_error)
+            else:
+                result = _fail_attempt_and_run(
+                    project_root,
+                    run,
+                    adapter_advance.node,
+                    adapter_advance.artifacts,
+                    [exc.adapter_error],
+                    usage=None,
+                )
+            return _with_adapter_advance_event_ids(project_root, adapter_advance, result)
 
+    with acquire_runtime_lock(project_root):
+        run = read_workflow_run(project_root, adapter_advance.artifacts.execution_pack.run_id)
+        if _adapter_advance_can_finalize(run, adapter_advance):
+            result = _complete_adapter_outcome_locked(project_root, run, adapter_advance, outcome)
+        elif _adapter_advance_can_finalize_after_pause(run, adapter_advance):
+            result = _complete_paused_adapter_outcome_locked(project_root, run, adapter_advance, outcome)
+        else:
+            result = _preempted_adapter_advance_result(project_root, run, adapter_advance, outcome=outcome)
+        return _with_adapter_advance_event_ids(project_root, adapter_advance, result)
+
+
+def _with_adapter_advance_event_ids(
+    project_root: Path,
+    adapter_advance: _AdapterAdvanceState,
+    result: NodeAdvanceResult,
+) -> NodeAdvanceResult:
+    after_events = list_stream_events(project_root, result.run.run_id)
+    new_event_ids = [event.event_id for event in after_events[adapter_advance.before_event_count :]]
+    return result.model_copy(update={"event_ids": new_event_ids})
+
+
+def _adapter_advance_can_finalize(run: WorkflowRunDocument, adapter_advance: _AdapterAdvanceState) -> bool:
+    return run.state == RunState.RUNNING and adapter_advance.node.node_id in run.current_node_ids
+
+
+def _adapter_advance_can_finalize_after_pause(run: WorkflowRunDocument, adapter_advance: _AdapterAdvanceState) -> bool:
+    return run.state == RunState.PAUSED and adapter_advance.node.node_id in run.current_node_ids
+
+
+def _complete_paused_adapter_outcome_locked(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    adapter_advance: _AdapterAdvanceState,
+    outcome: AttemptOutcome,
+) -> NodeAdvanceResult:
+    running_snapshot = run.model_copy(update={"state": RunState.RUNNING})
+    result = _complete_adapter_outcome_locked(project_root, running_snapshot, adapter_advance, outcome)
+    if result.run.state != RunState.RUNNING:
+        return result
+    paused_run = write_workflow_run_locked(
+        project_root,
+        result.run.model_copy(
+            update={
+                "state": RunState.PAUSED,
+                "previous_state": RunState.RUNNING,
+                "last_heartbeat_at": utc_now_ms(),
+            }
+        ),
+    )
+    return result.model_copy(update={"run": paused_run, "next_node_ids": list(paused_run.current_node_ids)})
+
+
+def _preempted_adapter_advance_result(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    adapter_advance: _AdapterAdvanceState,
+    *,
+    outcome: AttemptOutcome | None = None,
+    error: AdapterError | None = None,
+) -> NodeAdvanceResult:
+    cancel_error = _preempted_adapter_error(run, adapter_advance, error)
+    usage = (
+        _usage_with_profile_estimated_cost(adapter_advance.artifacts, outcome.usage) if outcome is not None else None
+    )
+    attempt = _cancelled_adapter_attempt(
+        run,
+        adapter_advance.node.node_id,
+        adapter_advance.artifacts,
+        cancel_error,
+        outcome=outcome,
+        usage=usage,
+    )
+    append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
+    if attempt.usage is not None:
+        run = _append_usage_ledger(
+            project_root, run, adapter_advance.node.node_id, adapter_advance.artifacts, attempt.usage
+        )
+    run = _clear_preempted_adapter_node_states(project_root, run, adapter_advance)
+    return NodeAdvanceResult(
+        run=run,
+        node_id=adapter_advance.node.node_id,
+        node_state=_node_state(run, adapter_advance.node.node_id),
+        next_node_ids=list(run.current_node_ids),
+        attempt_id=adapter_advance.artifacts.attempt_id,
+    )
+
+
+def _preempted_adapter_error(
+    run: WorkflowRunDocument,
+    adapter_advance: _AdapterAdvanceState,
+    error: AdapterError | None,
+) -> AdapterError:
+    if error is not None:
+        return error
+    return build_adapter_error(
+        "AA_RUN_CANCELLED",
+        "Adapter attempt completion was preempted by a WorkflowRun state change.",
+        retryable=run.state == RunState.PAUSED,
+        payload={
+            "run_state": run.state.value,
+            "current_node_ids": list(run.current_node_ids),
+            "node_id": adapter_advance.node.node_id,
+        },
+    )
+
+
+def _cancelled_adapter_attempt(
+    run: WorkflowRunDocument,
+    node_id: str,
+    artifacts: _AttemptArtifacts,
+    error: AdapterError,
+    *,
+    outcome: AttemptOutcome | None,
+    usage: RunUsage | None,
+) -> NodeAttempt:
+    finished_at = utc_now_ms() if outcome is None else outcome.finished_at
+    return NodeAttempt(
+        attempt_id=artifacts.attempt_id,
+        run_id=run.run_id,
+        node_id=node_id,
+        attempt_index=artifacts.attempt_index,
+        state=AttemptState.CANCELLED,
+        started_at=artifacts.started_at if outcome is None else outcome.started_at,
+        finished_at=finished_at,
+        adapter_id=artifacts.adapter_id if outcome is None else outcome.provenance.adapter_id,
+        adapter_version=_RUNNER_VERSION if outcome is None else outcome.provenance.adapter_version,
+        model_profile_id=artifacts.model_profile_id if outcome is None else outcome.provenance.model_profile_id,
+        effective_prompt_overlay_ref=artifacts.effective_prompt_overlay_ref,
+        context_pack_id=artifacts.context_pack_id,
+        evidence_pack_id=artifacts.evidence_pack_id,
+        execution_pack_id=artifacts.execution_pack_id,
+        output_hash=None,
+        output_artifact_refs=[] if outcome is None else outcome.output_artifact_refs,
+        usage=usage,
+        errors=[error],
+        outcome_hash=(
+            _stable_hash({"error": error.model_dump(mode="json"), "finished_at": finished_at})
+            if outcome is None
+            else outcome.provenance.outcome_hash
+        ),
+        metadata={"cw": {"adapter_bridge": True, "preempted": True}},
+    )
+
+
+def _clear_preempted_adapter_node_states(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    adapter_advance: _AdapterAdvanceState,
+) -> WorkflowRunDocument:
+    node_state = NodeRuntimeState.IDLE if run.state == RunState.PAUSED else NodeRuntimeState.CANCELLED
+    for node_id in _adapter_advance_in_flight_node_ids(adapter_advance):
+        if _node_state(run, node_id) in _IN_FLIGHT_NODE_STATES:
+            _store_runtime_value(run, "node_states", node_id, node_state.value)
+    return _persist_runtime_metadata(project_root, run)
+
+
+def _adapter_advance_in_flight_node_ids(adapter_advance: _AdapterAdvanceState) -> list[str]:
+    node = adapter_advance.node
+    if isinstance(node, EvaluationTaskNode):
+        return [node.node_id, node.target_node_id]
+    if isinstance(node, RepairTaskNode):
+        return [node.node_id, node.repair_target_node_id]
+    return [node.node_id]
+
+
+def _complete_adapter_outcome_locked(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    adapter_advance: _AdapterAdvanceState,
+    outcome: AttemptOutcome,
+) -> NodeAdvanceResult:
+    node = adapter_advance.node
+    if isinstance(node, ExecutionTaskNode):
+        return _complete_execution_adapter_outcome_locked(
+            project_root,
+            adapter_advance.graph,
+            adapter_advance.compiled,
+            run,
+            node,
+            adapter_advance.artifacts,
+            outcome,
+        )
+    if isinstance(node, EvaluationTaskNode):
+        if adapter_advance.target_attempt_id is None or adapter_advance.target_hash is None:
+            raise RunError(
+                "RH_RUN_DIR_CORRUPTED",
+                "Evaluation adapter advance is missing its target attempt snapshot.",
+                status_code=500,
+                details={"run_id": run.run_id, "node_id": node.node_id},
+            )
+        return _complete_evaluation_adapter_outcome_locked(
+            project_root,
+            adapter_advance.graph,
+            adapter_advance.compiled,
+            run,
+            node,
+            adapter_advance.artifacts,
+            outcome,
+            target_attempt_id=adapter_advance.target_attempt_id,
+            target_hash=adapter_advance.target_hash,
+        )
+    if isinstance(node, RepairTaskNode):
+        if adapter_advance.evaluation_id is None or adapter_advance.repair_target_attempt_id is None:
+            raise RunError(
+                "RH_RUN_DIR_CORRUPTED",
+                "Repair adapter advance is missing its evaluation snapshot.",
+                status_code=500,
+                details={"run_id": run.run_id, "node_id": node.node_id},
+            )
+        return _complete_repair_adapter_outcome_locked(
+            project_root,
+            adapter_advance.compiled,
+            run,
+            node,
+            adapter_advance.artifacts,
+            outcome,
+            evaluation_id=adapter_advance.evaluation_id,
+            target_attempt_id=adapter_advance.repair_target_attempt_id,
+        )
+    raise RunError(
+        "WG_L4_NODE_TYPE_NOT_ENABLED",
+        "Node type is not enabled for adapter outcome completion.",
+        details={"run_id": run.run_id, "node_id": node.node_id, "node_type": node.type},
+    )
+
+
+def _complete_execution_adapter_outcome_locked(
+    project_root: Path,
+    graph: WorkflowGraph,
+    compiled: EngineWorkflowIR,
+    run: WorkflowRunDocument,
+    node: ExecutionTaskNode,
+    artifacts: _AttemptArtifacts,
+    outcome: AttemptOutcome,
+) -> NodeAdvanceResult:
     outcome_usage = _usage_with_profile_estimated_cost(artifacts, outcome.usage)
     if outcome.state != AttemptState.COMPLETED:
         errors = _adapter_incomplete_result_errors(outcome, "Adapter finalized without a completed execution output.")
@@ -859,30 +1187,6 @@ async def _advance_execution_with_adapter(
         next_node_ids=next_node_ids,
         attempt_id=artifacts.attempt_id,
     )
-
-
-async def _run_adapter_attempt(
-    project_root: Path,
-    run: WorkflowRunDocument,
-    artifacts: _AttemptArtifacts,
-    adapter_factory: AdapterFactory,
-    *,
-    adapter_configs: Mapping[str, AdapterConfig],
-) -> tuple[WorkflowRunDocument, AttemptOutcome]:
-    adapter: AgentAdapter | None = None
-    try:
-        adapter = adapter_factory.create(
-            artifacts.adapter_id,
-            adapter_configs.get(artifacts.adapter_id, AdapterConfig(adapter_id=artifacts.adapter_id)),
-        )
-        handle = await adapter.prepare(artifacts.execution_pack)
-        async for event in adapter.run(handle):
-            run = _append_adapter_stream_event(project_root, run, artifacts, event)
-        outcome = await adapter.finalize(handle)
-        return run, outcome
-    finally:
-        if adapter is not None:
-            await adapter.aclose()
 
 
 def _adapter_incomplete_result_errors(outcome: AttemptOutcome, message: str) -> list[AdapterError]:
@@ -934,6 +1238,316 @@ def _repair_input_from_adapter_outcome(outcome: AttemptOutcome) -> RepairAdvance
         return RepairAdvanceInput.model_validate(outcome.output)
     except ValidationError as exc:
         return _adapter_output_validation_error(node_kind="repair", outcome=outcome, exc=exc)
+
+
+def _complete_evaluation_adapter_outcome_locked(
+    project_root: Path,
+    graph: WorkflowGraph,
+    compiled: EngineWorkflowIR,
+    run: WorkflowRunDocument,
+    node: EvaluationTaskNode,
+    artifacts: _AttemptArtifacts,
+    outcome: AttemptOutcome,
+    *,
+    target_attempt_id: str,
+    target_hash: str,
+) -> NodeAdvanceResult:
+    outcome_usage = _usage_with_profile_estimated_cost(artifacts, outcome.usage)
+    if outcome.state != AttemptState.COMPLETED:
+        errors = _adapter_incomplete_result_errors(outcome, "Adapter finalized without a completed evaluation output.")
+        attempt = _attempt_from_adapter_outcome(
+            run, node.node_id, artifacts, outcome, usage=outcome_usage, errors=errors
+        )
+        return _fail_attempt_and_run(project_root, run, node, artifacts, errors, usage=outcome_usage, attempt=attempt)
+
+    evaluation_or_error = _evaluation_input_from_adapter_outcome(outcome)
+    if isinstance(evaluation_or_error, AdapterError):
+        attempt = _attempt_from_adapter_outcome(
+            run,
+            node.node_id,
+            artifacts,
+            outcome,
+            usage=outcome_usage,
+            state=AttemptState.FAILED,
+            errors=[evaluation_or_error],
+        )
+        return _fail_attempt_and_run(
+            project_root, run, node, artifacts, [evaluation_or_error], usage=outcome_usage, attempt=attempt
+        )
+    evaluation = _normalize_evaluation_input(graph, compiled, node, evaluation_or_error)
+    if outcome_usage is not None:
+        evaluation = evaluation.model_copy(update={"usage": outcome_usage})
+
+    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, outcome_usage)
+    if budget_error is not None:
+        attempt = _attempt_from_adapter_outcome(
+            run,
+            node.node_id,
+            artifacts,
+            outcome,
+            usage=outcome_usage,
+            state=AttemptState.FAILED,
+            errors=[budget_error],
+        )
+        return _fail_attempt_and_run(
+            project_root, run, node, artifacts, [budget_error], usage=outcome_usage, attempt=attempt
+        )
+
+    eval_result = _build_evaluation_result(
+        run=run,
+        node=node,
+        artifacts=artifacts,
+        input_data=evaluation,
+        target_attempt_id=target_attempt_id,
+        target_hash=target_hash,
+        metadata_base={"cw": {"adapter_bridge": True}},
+    )
+    append_run_jsonl_locked(project_root, run.run_id, "evaluations.jsonl", eval_result.model_dump(mode="json"))
+    _store_runtime_value(run, "last_evaluation_ids", node.node_id, eval_result.eval_id)
+    _store_runtime_value(run, "last_evaluation_by_target", node.target_node_id, eval_result.eval_id)
+    if eval_result.failure_diagnosis is None:
+        _remove_runtime_value(run, "last_failure_types", node.target_node_id)
+    else:
+        _store_runtime_value(
+            run,
+            "last_failure_types",
+            node.target_node_id,
+            eval_result.failure_diagnosis.failure_type.value,
+        )
+    target_node = _node_by_id(graph)[node.target_node_id]
+    record_evaluation_reflections_locked(
+        project_root,
+        eval_result,
+        target_node_type=target_node.type,
+        evaluator_node_type=node.type,
+        domain_signals=_reflection_domain_signals(run),
+    )
+
+    output = {"eval_id": eval_result.eval_id, "passed": eval_result.passed, "score": eval_result.score}
+    output_hash = _stable_hash(output)
+    artifacts = artifacts.model_copy(update={"output_hash": output_hash})
+    attempt = _attempt_from_adapter_outcome(
+        run,
+        node.node_id,
+        artifacts,
+        outcome,
+        usage=outcome_usage,
+        output_hash=output_hash,
+    )
+    append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
+    run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
+    _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
+    _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
+    run = _persist_runtime_metadata(project_root, run)
+
+    completed_event = EvaluationEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node.node_id,
+        attempt_id=artifacts.attempt_id,
+        type="evaluation.completed",
+        phase=EventPhase.NODE_PASSED if eval_result.passed else EventPhase.NODE_REVIEW_FAILED,
+        title="Evaluation completed",
+        summary=None,
+        content=None,
+        payload={
+            "eval_id": eval_result.eval_id,
+            "passed": eval_result.passed,
+            "score": eval_result.score,
+            "failure_type": None
+            if eval_result.failure_diagnosis is None
+            else eval_result.failure_diagnosis.failure_type.value,
+            "recommended_action": eval_result.recommended_action.action,
+        },
+        display_level=DisplayLevel.DEFAULT,
+        expandable=True,
+        created_at=utc_now_ms(),
+        eval_id=eval_result.eval_id,
+        target_node_id=node.target_node_id,
+    )
+    run = append_run_event_locked(project_root, run, completed_event)
+    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts, usage=attempt.usage)
+
+    if eval_result.passed:
+        run = _transition_node(project_root, run, node.target_node_id, NodeRuntimeState.PASSED)
+        run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.PASSED)
+        next_node_ids = _route_targets(compiled, node.node_id, "pass")
+    else:
+        run = _transition_node(project_root, run, node.target_node_id, NodeRuntimeState.REVIEW_FAILED)
+        run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.REVIEW_FAILED)
+        next_node_ids = _next_nodes_for_failed_evaluation(graph, compiled, node, eval_result)
+
+    run = _update_run_current_nodes(project_root, run, next_node_ids, RunState.RUNNING)
+    return NodeAdvanceResult(
+        run=run,
+        node_id=node.node_id,
+        node_state=NodeRuntimeState.PASSED if eval_result.passed else NodeRuntimeState.REVIEW_FAILED,
+        next_node_ids=next_node_ids,
+        attempt_id=artifacts.attempt_id,
+        eval_id=eval_result.eval_id,
+    )
+
+
+def _complete_repair_adapter_outcome_locked(
+    project_root: Path,
+    compiled: EngineWorkflowIR,
+    run: WorkflowRunDocument,
+    node: RepairTaskNode,
+    artifacts: _AttemptArtifacts,
+    outcome: AttemptOutcome,
+    *,
+    evaluation_id: str,
+    target_attempt_id: str,
+) -> NodeAdvanceResult:
+    outcome_usage = _usage_with_profile_estimated_cost(artifacts, outcome.usage)
+    if outcome.state != AttemptState.COMPLETED:
+        errors = _adapter_incomplete_result_errors(outcome, "Adapter finalized without a completed repair output.")
+        attempt = _attempt_from_adapter_outcome(
+            run, node.node_id, artifacts, outcome, usage=outcome_usage, errors=errors
+        )
+        return _fail_attempt_and_run(project_root, run, node, artifacts, errors, usage=outcome_usage, attempt=attempt)
+
+    repair_or_error = _repair_input_from_adapter_outcome(outcome)
+    if isinstance(repair_or_error, AdapterError):
+        attempt = _attempt_from_adapter_outcome(
+            run,
+            node.node_id,
+            artifacts,
+            outcome,
+            usage=outcome_usage,
+            state=AttemptState.FAILED,
+            errors=[repair_or_error],
+        )
+        return _fail_attempt_and_run(
+            project_root, run, node, artifacts, [repair_or_error], usage=outcome_usage, attempt=attempt
+        )
+    repair = repair_or_error
+    if outcome_usage is not None:
+        repair = repair.model_copy(update={"usage": outcome_usage})
+
+    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, outcome_usage)
+    if budget_error is not None:
+        attempt = _attempt_from_adapter_outcome(
+            run,
+            node.node_id,
+            artifacts,
+            outcome,
+            usage=outcome_usage,
+            state=AttemptState.FAILED,
+            errors=[budget_error],
+        )
+        return _fail_attempt_and_run(
+            project_root, run, node, artifacts, [budget_error], usage=outcome_usage, attempt=attempt
+        )
+
+    patch = _build_repair_patch(
+        run=run,
+        node=node,
+        artifacts=artifacts,
+        input_data=repair,
+        evaluation_id=evaluation_id,
+        target_attempt_id=target_attempt_id,
+        metadata_base={"cw": {"adapter_bridge": True}},
+    )
+    append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
+    pending_overlay = _PendingPromptOverlay(
+        patch_id=patch.patch_id,
+        patch_kind=patch.patch_kind.value,
+        repair_node_id=node.node_id,
+        repair_attempt_id=artifacts.attempt_id,
+        evaluation_id=evaluation_id,
+        instruction_text=repair.instruction_text,
+    )
+    _store_runtime_value(
+        run, "pending_prompt_overlays", node.repair_target_node_id, pending_overlay.model_dump(mode="json")
+    )
+
+    proposed_event = RepairEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node.node_id,
+        attempt_id=artifacts.attempt_id,
+        type="repair.patch_proposed",
+        phase=EventPhase.NODE_REPAIRING,
+        title="Repair patch proposed",
+        summary=None,
+        content=None,
+        payload={
+            "patch_id": patch.patch_id,
+            "patch_kind": patch.patch_kind.value,
+            "addresses_failure_types": [failure_type.value for failure_type in patch.addresses_failure_types],
+            "risk_level": patch.risk_level.value,
+            "scope": patch.scope.value,
+        },
+        display_level=DisplayLevel.DEFAULT,
+        expandable=True,
+        created_at=utc_now_ms(),
+        patch_id=patch.patch_id,
+        target_node_id=node.repair_target_node_id,
+        eval_id=evaluation_id,
+    )
+    run = append_run_event_locked(project_root, run, proposed_event)
+
+    output = {"patch_id": patch.patch_id, "applied": True}
+    output_hash = _stable_hash(output)
+    artifacts = artifacts.model_copy(update={"output_hash": output_hash})
+    attempt = _attempt_from_adapter_outcome(
+        run,
+        node.node_id,
+        artifacts,
+        outcome,
+        usage=outcome_usage,
+        output_hash=output_hash,
+    )
+    append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
+    run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
+    _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
+    _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
+    _store_runtime_value(run, "last_patch_ids", node.node_id, patch.patch_id)
+    _store_runtime_value(run, "last_patch_ids", node.repair_target_node_id, patch.patch_id)
+    run = _persist_runtime_metadata(project_root, run)
+
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RETRYING)
+    run = _transition_node(project_root, run, node.repair_target_node_id, NodeRuntimeState.RETRYING)
+    applied_event = RepairEvent(
+        event_id=new_runtime_id(),
+        seq=next_event_seq(project_root, run.run_id),
+        run_id=run.run_id,
+        node_id=node.node_id,
+        attempt_id=artifacts.attempt_id,
+        type="repair.patch_applied",
+        phase=EventPhase.NODE_RETRYING,
+        title="Repair patch applied",
+        summary=None,
+        content=None,
+        payload={
+            "patch_id": patch.patch_id,
+            "patch_kind": patch.patch_kind.value,
+            "side_effects": [f"pending_prompt_overlay_for_{node.repair_target_node_id}"],
+        },
+        display_level=DisplayLevel.DEFAULT,
+        expandable=False,
+        created_at=utc_now_ms(),
+        patch_id=patch.patch_id,
+        target_node_id=node.repair_target_node_id,
+        eval_id=evaluation_id,
+    )
+    run = append_run_event_locked(project_root, run, applied_event)
+    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts, usage=attempt.usage)
+    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.PASSED)
+
+    next_node_ids = _route_targets(compiled, node.node_id, "repair")
+    run = _update_run_current_nodes(project_root, run, next_node_ids, RunState.RUNNING)
+    return NodeAdvanceResult(
+        run=run,
+        node_id=node.node_id,
+        node_state=NodeRuntimeState.PASSED,
+        next_node_ids=next_node_ids,
+        attempt_id=artifacts.attempt_id,
+        patch_id=patch.patch_id,
+    )
 
 
 def _advance_evaluation(
@@ -1092,16 +1706,15 @@ def _advance_evaluation(
     )
 
 
-async def _advance_evaluation_with_adapter(
+def _begin_evaluation_adapter_advance_locked(
     project_root: Path,
     graph: WorkflowGraph,
     compiled: EngineWorkflowIR,
     run: WorkflowRunDocument,
     node: EvaluationTaskNode,
-    adapter_factory: AdapterFactory,
     *,
-    adapter_configs: Mapping[str, AdapterConfig],
-) -> NodeAdvanceResult:
+    before_event_count: int,
+) -> _AdapterAdvanceState | NodeAdvanceResult:
     try:
         artifacts = _prepare_attempt(project_root, graph, run, node, model_profile_id=None)
     except PackBuildError as exc:
@@ -1144,153 +1757,15 @@ async def _advance_evaluation_with_adapter(
         eval_id=None,
         target_node_id=node.target_node_id,
     )
-    run = append_run_event_locked(project_root, run, started_event)
-
-    try:
-        run, outcome = await _run_adapter_attempt(
-            project_root,
-            run,
-            artifacts,
-            adapter_factory,
-            adapter_configs=adapter_configs,
-        )
-    except AdapterRuntimeError as exc:
-        return _fail_attempt_and_run(project_root, run, node, artifacts, [exc.adapter_error], usage=None)
-
-    outcome_usage = _usage_with_profile_estimated_cost(artifacts, outcome.usage)
-    if outcome.state != AttemptState.COMPLETED:
-        errors = _adapter_incomplete_result_errors(outcome, "Adapter finalized without a completed evaluation output.")
-        attempt = _attempt_from_adapter_outcome(
-            run, node.node_id, artifacts, outcome, usage=outcome_usage, errors=errors
-        )
-        return _fail_attempt_and_run(project_root, run, node, artifacts, errors, usage=outcome_usage, attempt=attempt)
-
-    evaluation_or_error = _evaluation_input_from_adapter_outcome(outcome)
-    if isinstance(evaluation_or_error, AdapterError):
-        attempt = _attempt_from_adapter_outcome(
-            run,
-            node.node_id,
-            artifacts,
-            outcome,
-            usage=outcome_usage,
-            state=AttemptState.FAILED,
-            errors=[evaluation_or_error],
-        )
-        return _fail_attempt_and_run(
-            project_root, run, node, artifacts, [evaluation_or_error], usage=outcome_usage, attempt=attempt
-        )
-    evaluation = _normalize_evaluation_input(graph, compiled, node, evaluation_or_error)
-    if outcome_usage is not None:
-        evaluation = evaluation.model_copy(update={"usage": outcome_usage})
-
-    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, outcome_usage)
-    if budget_error is not None:
-        attempt = _attempt_from_adapter_outcome(
-            run,
-            node.node_id,
-            artifacts,
-            outcome,
-            usage=outcome_usage,
-            state=AttemptState.FAILED,
-            errors=[budget_error],
-        )
-        return _fail_attempt_and_run(
-            project_root, run, node, artifacts, [budget_error], usage=outcome_usage, attempt=attempt
-        )
-
-    eval_result = _build_evaluation_result(
-        run=run,
+    append_run_event_locked(project_root, run, started_event)
+    return _AdapterAdvanceState(
+        graph=graph,
+        compiled=compiled,
         node=node,
         artifacts=artifacts,
-        input_data=evaluation,
+        before_event_count=before_event_count,
         target_attempt_id=target_attempt_id,
         target_hash=target_hash,
-        metadata_base={"cw": {"adapter_bridge": True}},
-    )
-    append_run_jsonl_locked(project_root, run.run_id, "evaluations.jsonl", eval_result.model_dump(mode="json"))
-    _store_runtime_value(run, "last_evaluation_ids", node.node_id, eval_result.eval_id)
-    _store_runtime_value(run, "last_evaluation_by_target", node.target_node_id, eval_result.eval_id)
-    if eval_result.failure_diagnosis is None:
-        _remove_runtime_value(run, "last_failure_types", node.target_node_id)
-    else:
-        _store_runtime_value(
-            run,
-            "last_failure_types",
-            node.target_node_id,
-            eval_result.failure_diagnosis.failure_type.value,
-        )
-    target_node = _node_by_id(graph)[node.target_node_id]
-    record_evaluation_reflections_locked(
-        project_root,
-        eval_result,
-        target_node_type=target_node.type,
-        evaluator_node_type=node.type,
-        domain_signals=_reflection_domain_signals(run),
-    )
-
-    output = {"eval_id": eval_result.eval_id, "passed": eval_result.passed, "score": eval_result.score}
-    output_hash = _stable_hash(output)
-    artifacts = artifacts.model_copy(update={"output_hash": output_hash})
-    attempt = _attempt_from_adapter_outcome(
-        run,
-        node.node_id,
-        artifacts,
-        outcome,
-        usage=outcome_usage,
-        output_hash=output_hash,
-    )
-    append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
-    run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
-    _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
-    _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
-    run = _persist_runtime_metadata(project_root, run)
-
-    completed_event = EvaluationEvent(
-        event_id=new_runtime_id(),
-        seq=next_event_seq(project_root, run.run_id),
-        run_id=run.run_id,
-        node_id=node.node_id,
-        attempt_id=artifacts.attempt_id,
-        type="evaluation.completed",
-        phase=EventPhase.NODE_PASSED if eval_result.passed else EventPhase.NODE_REVIEW_FAILED,
-        title="Evaluation completed",
-        summary=None,
-        content=None,
-        payload={
-            "eval_id": eval_result.eval_id,
-            "passed": eval_result.passed,
-            "score": eval_result.score,
-            "failure_type": None
-            if eval_result.failure_diagnosis is None
-            else eval_result.failure_diagnosis.failure_type.value,
-            "recommended_action": eval_result.recommended_action.action,
-        },
-        display_level=DisplayLevel.DEFAULT,
-        expandable=True,
-        created_at=utc_now_ms(),
-        eval_id=eval_result.eval_id,
-        target_node_id=node.target_node_id,
-    )
-    run = append_run_event_locked(project_root, run, completed_event)
-    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts, usage=attempt.usage)
-
-    if eval_result.passed:
-        run = _transition_node(project_root, run, node.target_node_id, NodeRuntimeState.PASSED)
-        run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.PASSED)
-        next_node_ids = _route_targets(compiled, node.node_id, "pass")
-    else:
-        run = _transition_node(project_root, run, node.target_node_id, NodeRuntimeState.REVIEW_FAILED)
-        run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.REVIEW_FAILED)
-        next_node_ids = _next_nodes_for_failed_evaluation(graph, compiled, node, eval_result)
-
-    run = _update_run_current_nodes(project_root, run, next_node_ids, RunState.RUNNING)
-    return NodeAdvanceResult(
-        run=run,
-        node_id=node.node_id,
-        node_state=NodeRuntimeState.PASSED if eval_result.passed else NodeRuntimeState.REVIEW_FAILED,
-        next_node_ids=next_node_ids,
-        attempt_id=artifacts.attempt_id,
-        eval_id=eval_result.eval_id,
     )
 
 
@@ -1463,16 +1938,15 @@ def _advance_repair(
     )
 
 
-async def _advance_repair_with_adapter(
+def _begin_repair_adapter_advance_locked(
     project_root: Path,
     graph: WorkflowGraph,
     compiled: EngineWorkflowIR,
     run: WorkflowRunDocument,
     node: RepairTaskNode,
-    adapter_factory: AdapterFactory,
     *,
-    adapter_configs: Mapping[str, AdapterConfig],
-) -> NodeAdvanceResult:
+    before_event_count: int,
+) -> _AdapterAdvanceState | NodeAdvanceResult:
     try:
         artifacts = _prepare_attempt(project_root, graph, run, node, model_profile_id=None)
     except PackBuildError as exc:
@@ -1515,166 +1989,15 @@ async def _advance_repair_with_adapter(
         target_node_id=node.repair_target_node_id,
         eval_id=evaluation_id,
     )
-    run = append_run_event_locked(project_root, run, started_event)
-
-    try:
-        run, outcome = await _run_adapter_attempt(
-            project_root,
-            run,
-            artifacts,
-            adapter_factory,
-            adapter_configs=adapter_configs,
-        )
-    except AdapterRuntimeError as exc:
-        return _fail_attempt_and_run(project_root, run, node, artifacts, [exc.adapter_error], usage=None)
-
-    outcome_usage = _usage_with_profile_estimated_cost(artifacts, outcome.usage)
-    if outcome.state != AttemptState.COMPLETED:
-        errors = _adapter_incomplete_result_errors(outcome, "Adapter finalized without a completed repair output.")
-        attempt = _attempt_from_adapter_outcome(
-            run, node.node_id, artifacts, outcome, usage=outcome_usage, errors=errors
-        )
-        return _fail_attempt_and_run(project_root, run, node, artifacts, errors, usage=outcome_usage, attempt=attempt)
-
-    repair_or_error = _repair_input_from_adapter_outcome(outcome)
-    if isinstance(repair_or_error, AdapterError):
-        attempt = _attempt_from_adapter_outcome(
-            run,
-            node.node_id,
-            artifacts,
-            outcome,
-            usage=outcome_usage,
-            state=AttemptState.FAILED,
-            errors=[repair_or_error],
-        )
-        return _fail_attempt_and_run(
-            project_root, run, node, artifacts, [repair_or_error], usage=outcome_usage, attempt=attempt
-        )
-    repair = repair_or_error
-    if outcome_usage is not None:
-        repair = repair.model_copy(update={"usage": outcome_usage})
-
-    budget_error = _usage_budget_error_after_attempt(project_root, run, node.node_id, outcome_usage)
-    if budget_error is not None:
-        attempt = _attempt_from_adapter_outcome(
-            run,
-            node.node_id,
-            artifacts,
-            outcome,
-            usage=outcome_usage,
-            state=AttemptState.FAILED,
-            errors=[budget_error],
-        )
-        return _fail_attempt_and_run(
-            project_root, run, node, artifacts, [budget_error], usage=outcome_usage, attempt=attempt
-        )
-
-    patch = _build_repair_patch(
-        run=run,
+    append_run_event_locked(project_root, run, started_event)
+    return _AdapterAdvanceState(
+        graph=graph,
+        compiled=compiled,
         node=node,
         artifacts=artifacts,
-        input_data=repair,
+        before_event_count=before_event_count,
         evaluation_id=evaluation_id,
-        target_attempt_id=target_attempt_id,
-        metadata_base={"cw": {"adapter_bridge": True}},
-    )
-    append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
-    pending_overlay = _PendingPromptOverlay(
-        patch_id=patch.patch_id,
-        patch_kind=patch.patch_kind.value,
-        repair_node_id=node.node_id,
-        repair_attempt_id=artifacts.attempt_id,
-        evaluation_id=evaluation_id,
-        instruction_text=repair.instruction_text,
-    )
-    _store_runtime_value(
-        run, "pending_prompt_overlays", node.repair_target_node_id, pending_overlay.model_dump(mode="json")
-    )
-
-    proposed_event = RepairEvent(
-        event_id=new_runtime_id(),
-        seq=next_event_seq(project_root, run.run_id),
-        run_id=run.run_id,
-        node_id=node.node_id,
-        attempt_id=artifacts.attempt_id,
-        type="repair.patch_proposed",
-        phase=EventPhase.NODE_REPAIRING,
-        title="Repair patch proposed",
-        summary=None,
-        content=None,
-        payload={
-            "patch_id": patch.patch_id,
-            "patch_kind": patch.patch_kind.value,
-            "addresses_failure_types": [failure_type.value for failure_type in patch.addresses_failure_types],
-            "risk_level": patch.risk_level.value,
-            "scope": patch.scope.value,
-        },
-        display_level=DisplayLevel.DEFAULT,
-        expandable=True,
-        created_at=utc_now_ms(),
-        patch_id=patch.patch_id,
-        target_node_id=node.repair_target_node_id,
-        eval_id=evaluation_id,
-    )
-    run = append_run_event_locked(project_root, run, proposed_event)
-
-    output = {"patch_id": patch.patch_id, "applied": True}
-    output_hash = _stable_hash(output)
-    artifacts = artifacts.model_copy(update={"output_hash": output_hash})
-    attempt = _attempt_from_adapter_outcome(
-        run,
-        node.node_id,
-        artifacts,
-        outcome,
-        usage=outcome_usage,
-        output_hash=output_hash,
-    )
-    append_run_jsonl_locked(project_root, run.run_id, "attempts.jsonl", attempt.model_dump(mode="json"))
-    run = _append_usage_ledger(project_root, run, node.node_id, artifacts, attempt.usage)
-    _store_runtime_value(run, "last_attempt_ids", node.node_id, artifacts.attempt_id)
-    _store_runtime_value(run, "last_output_hashes", node.node_id, output_hash)
-    _store_runtime_value(run, "last_patch_ids", node.node_id, patch.patch_id)
-    _store_runtime_value(run, "last_patch_ids", node.repair_target_node_id, patch.patch_id)
-    run = _persist_runtime_metadata(project_root, run)
-
-    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.RETRYING)
-    run = _transition_node(project_root, run, node.repair_target_node_id, NodeRuntimeState.RETRYING)
-    applied_event = RepairEvent(
-        event_id=new_runtime_id(),
-        seq=next_event_seq(project_root, run.run_id),
-        run_id=run.run_id,
-        node_id=node.node_id,
-        attempt_id=artifacts.attempt_id,
-        type="repair.patch_applied",
-        phase=EventPhase.NODE_RETRYING,
-        title="Repair patch applied",
-        summary=None,
-        content=None,
-        payload={
-            "patch_id": patch.patch_id,
-            "patch_kind": patch.patch_kind.value,
-            "side_effects": [f"pending_prompt_overlay_for_{node.repair_target_node_id}"],
-        },
-        display_level=DisplayLevel.DEFAULT,
-        expandable=False,
-        created_at=utc_now_ms(),
-        patch_id=patch.patch_id,
-        target_node_id=node.repair_target_node_id,
-        eval_id=evaluation_id,
-    )
-    run = append_run_event_locked(project_root, run, applied_event)
-    run = _emit_attempt_completed(project_root, run, node.node_id, artifacts, usage=attempt.usage)
-    run = _transition_node(project_root, run, node.node_id, NodeRuntimeState.PASSED)
-
-    next_node_ids = _route_targets(compiled, node.node_id, "repair")
-    run = _update_run_current_nodes(project_root, run, next_node_ids, RunState.RUNNING)
-    return NodeAdvanceResult(
-        run=run,
-        node_id=node.node_id,
-        node_state=NodeRuntimeState.PASSED,
-        next_node_ids=next_node_ids,
-        attempt_id=artifacts.attempt_id,
-        patch_id=patch.patch_id,
+        repair_target_attempt_id=target_attempt_id,
     )
 
 
@@ -3473,6 +3796,17 @@ def _resolve_current_node_id(run: WorkflowRunDocument, requested_node_id: str | 
             details={"run_id": run.run_id, "requested_node_id": requested_node_id, "current_node_id": current_node_id},
         )
     return current_node_id
+
+
+def _ensure_current_node_not_in_flight(run: WorkflowRunDocument, node_id: str) -> None:
+    node_state = _node_state(run, node_id)
+    if node_state not in _IN_FLIGHT_NODE_STATES:
+        return
+    raise RunError(
+        "NL_STATE_FORBIDDEN_TRANSITION",
+        "Current node already has an in-flight attempt.",
+        details={"run_id": run.run_id, "node_id": node_id, "node_state": node_state.value},
+    )
 
 
 def _ensure_run_can_advance(run: WorkflowRunDocument) -> None:
