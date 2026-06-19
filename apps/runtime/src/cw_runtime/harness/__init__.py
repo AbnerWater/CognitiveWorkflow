@@ -43,10 +43,13 @@ from .secrets import (
     ProjectSecretStoreError,
     build_project_secret_decryptor,
     decrypt_project_secret_value,
+    delete_windows_credential_manager_master_key,
     encrypt_project_secret_value,
     load_project_mcp_secret_material,
     windows_cng_decrypt_aes_gcm,
     windows_cng_encrypt_aes_gcm,
+    windows_credential_manager_master_key_provider,
+    write_windows_credential_manager_master_key,
 )
 
 __all__ = [
@@ -79,6 +82,7 @@ __all__ = [
     "acquire_runtime_lock",
     "build_project_secret_decryptor",
     "decrypt_project_secret_value",
+    "delete_windows_credential_manager_master_key",
     "encrypt_project_secret_value",
     "initialize_project",
     "load_enabled_mcp_server_ids",
@@ -92,4 +96,6 @@ __all__ = [
     "update_manifest_json",
     "windows_cng_decrypt_aes_gcm",
     "windows_cng_encrypt_aes_gcm",
+    "windows_credential_manager_master_key_provider",
+    "write_windows_credential_manager_master_key",
 ]

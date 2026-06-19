@@ -13,6 +13,7 @@ import sys
 import textwrap
 import threading
 import time
+import uuid
 from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -33,6 +34,7 @@ from cw_runtime.harness import (
     ProjectSecretStoreError,
     build_project_secret_decryptor,
     decrypt_project_secret_value,
+    delete_windows_credential_manager_master_key,
     encrypt_project_secret_value,
     initialize_project,
     load_project_mcp_secret_material,
@@ -42,6 +44,8 @@ from cw_runtime.harness import (
     update_manifest_json,
     windows_cng_decrypt_aes_gcm,
     windows_cng_encrypt_aes_gcm,
+    windows_credential_manager_master_key_provider,
+    write_windows_credential_manager_master_key,
 )
 
 
@@ -1819,6 +1823,68 @@ def test_project_secret_envelope_round_trips_with_windows_cng_aes_gcm(tmp_path: 
 
     assert "fake-access-token" not in str(exc_info.value)
     assert response.project_id not in str(exc_info.value)
+
+
+def test_project_secret_decryptor_loads_master_key_from_windows_credential_manager(tmp_path: Path) -> None:
+    if sys.platform != "win32":
+        pytest.skip("Windows Credential Manager provider is only available on Windows.")
+    project_root = tmp_path / "mcp_secret_windows_credential_project"
+    response = initialize_project(_request("MCP Secret Windows Credential", project_root))
+    target_prefix = f"CognitiveWorkflow/test/{uuid.uuid4()}/"
+    secret_ref = "secure://mcp/windows-credential"
+    master_key = b"windows-credential-manager-master-key"
+    plaintext = json.dumps(
+        {
+            "headers": {"Authorization": "Bearer fake-access-token"},
+            "env": {"CW_MCP_TOKEN": "fake-access-token"},
+        }
+    )
+    credential_deleted = False
+
+    try:
+        assert delete_windows_credential_manager_master_key(response.project_id, target_prefix=target_prefix) is False
+        write_windows_credential_manager_master_key(
+            response.project_id,
+            master_key,
+            target_prefix=target_prefix,
+        )
+        assert (
+            windows_credential_manager_master_key_provider(response.project_id, target_prefix=target_prefix)
+            == master_key
+        )
+        encrypted = encrypt_project_secret_value(
+            response.project_id,
+            plaintext,
+            master_key=master_key,
+            encrypt_aead=windows_cng_encrypt_aes_gcm,
+            nonce_factory=lambda size: b"\x06" * size,
+        )
+        _write_secure_secret(project_root, secret_ref, encrypted)
+
+        def master_key_provider(project_id: str) -> bytes:
+            return windows_credential_manager_master_key_provider(project_id, target_prefix=target_prefix)
+
+        decrypt_secret = build_project_secret_decryptor(
+            project_root,
+            master_key_provider=master_key_provider,
+            decrypt_aead=windows_cng_decrypt_aes_gcm,
+        )
+        material = load_project_mcp_secret_material(project_root, secret_ref, decrypt_secret=decrypt_secret)
+
+        assert material is not None
+        assert material.model_dump(mode="json") == {
+            "headers": {"Authorization": "Bearer fake-access-token"},
+            "env": {"CW_MCP_TOKEN": "fake-access-token"},
+        }
+        assert delete_windows_credential_manager_master_key(response.project_id, target_prefix=target_prefix) is True
+        credential_deleted = True
+        with pytest.raises(ProjectSecretStoreError) as exc_info:
+            windows_credential_manager_master_key_provider(response.project_id, target_prefix=target_prefix)
+        assert response.project_id not in str(exc_info.value)
+        assert "fake-access-token" not in str(exc_info.value)
+    finally:
+        if not credential_deleted:
+            delete_windows_credential_manager_master_key(response.project_id, target_prefix=target_prefix)
 
 
 def test_project_secret_envelope_rejects_wrong_project_salt(tmp_path: Path) -> None:

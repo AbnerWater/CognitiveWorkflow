@@ -2,8 +2,9 @@
 
 This module stays below the runtime harness boundary: it reads the spec-defined
 ``secure/secrets.encrypted.sqlite`` table. The envelope and PBKDF2 derivation
-live here. OS keychain access remains injected by the caller; the optional
-Windows CNG AES-GCM primitive below keeps the runtime dependency-free.
+live here. The optional Windows Credential Manager and Windows CNG helpers below
+keep the runtime dependency-free while macOS/Linux keychain bindings remain
+future slices.
 """
 
 from __future__ import annotations
@@ -42,6 +43,40 @@ _WINDOWS_CNG_AES_ALGORITHM: Final = "AES"
 _WINDOWS_CNG_CHAINING_MODE_PROPERTY: Final = "ChainingMode"
 _WINDOWS_CNG_CHAIN_MODE_GCM: Final = "ChainingModeGCM"
 _WINDOWS_CNG_AUTH_INFO_VERSION: Final = 1
+_WINDOWS_CREDENTIAL_TYPE_GENERIC: Final = 1
+_WINDOWS_CREDENTIAL_PERSIST_LOCAL_MACHINE: Final = 2
+_WINDOWS_CREDENTIAL_TARGET_PREFIX: Final = "CognitiveWorkflow/project-secret/"
+_WINDOWS_CREDENTIAL_USERNAME: Final = "CognitiveWorkflow"
+_WINDOWS_CREDENTIAL_BLOB_LIMIT: Final = 5 * 512
+_WINDOWS_ERROR_NOT_FOUND: Final = 1168
+
+
+class _WindowsFileTime(ctypes.Structure):
+    """ctypes projection of FILETIME."""
+
+    _fields_: ClassVar[list[tuple[str, Any]]] = [
+        ("dwLowDateTime", ctypes.c_ulong),
+        ("dwHighDateTime", ctypes.c_ulong),
+    ]
+
+
+class _WindowsCredential(ctypes.Structure):
+    """ctypes projection of CREDENTIALW."""
+
+    _fields_: ClassVar[list[tuple[str, Any]]] = [
+        ("Flags", ctypes.c_ulong),
+        ("Type", ctypes.c_ulong),
+        ("TargetName", ctypes.c_wchar_p),
+        ("Comment", ctypes.c_wchar_p),
+        ("LastWritten", _WindowsFileTime),
+        ("CredentialBlobSize", ctypes.c_ulong),
+        ("CredentialBlob", ctypes.c_void_p),
+        ("Persist", ctypes.c_ulong),
+        ("AttributeCount", ctypes.c_ulong),
+        ("Attributes", ctypes.c_void_p),
+        ("TargetAlias", ctypes.c_wchar_p),
+        ("UserName", ctypes.c_wchar_p),
+    ]
 
 
 class _WindowsCngAuthenticatedCipherModeInfo(ctypes.Structure):
@@ -108,6 +143,89 @@ def windows_cng_decrypt_aes_gcm(key: bytes, nonce: bytes, ciphertext: bytes, ass
         decrypt=True,
         tag=tag,
     )
+
+
+def windows_credential_manager_master_key_provider(
+    project_id: str,
+    *,
+    target_prefix: str = _WINDOWS_CREDENTIAL_TARGET_PREFIX,
+) -> bytes:
+    """Load a project master key from Windows Credential Manager."""
+
+    target_name = _windows_credential_target_name(project_id, target_prefix=target_prefix)
+    advapi32 = _load_windows_advapi32()
+    credential_pointer = ctypes.POINTER(_WindowsCredential)()
+    ok = advapi32.CredReadW(
+        target_name,
+        _WINDOWS_CREDENTIAL_TYPE_GENERIC,
+        0,
+        ctypes.byref(credential_pointer),
+    )
+    if not ok:
+        raise ProjectSecretStoreError("Project secure master key could not be loaded from Windows Credential Manager.")
+    try:
+        credential = credential_pointer.contents
+        if credential.CredentialBlobSize == 0:
+            raise ProjectSecretStoreError("Project secure master key stored in Windows Credential Manager was empty.")
+        if credential.CredentialBlobSize > _WINDOWS_CREDENTIAL_BLOB_LIMIT:
+            raise ProjectSecretStoreError(
+                "Project secure master key stored in Windows Credential Manager exceeds the size limit."
+            )
+        if credential.CredentialBlob is None:
+            raise ProjectSecretStoreError("Project secure master key stored in Windows Credential Manager was invalid.")
+        return ctypes.string_at(credential.CredentialBlob, credential.CredentialBlobSize)
+    finally:
+        advapi32.CredFree(credential_pointer)
+
+
+def write_windows_credential_manager_master_key(
+    project_id: str,
+    master_key: bytes | str,
+    *,
+    target_prefix: str = _WINDOWS_CREDENTIAL_TARGET_PREFIX,
+) -> None:
+    """Store a project master key in Windows Credential Manager."""
+
+    target_name = _windows_credential_target_name(project_id, target_prefix=target_prefix)
+    master_key_bytes = _windows_credential_master_key_to_bytes(master_key)
+    advapi32 = _load_windows_advapi32()
+    key_buffer = _ctypes_buffer(master_key_bytes)
+    credential = _WindowsCredential()
+    credential.Flags = 0
+    credential.Type = _WINDOWS_CREDENTIAL_TYPE_GENERIC
+    credential.TargetName = target_name
+    credential.Comment = None
+    credential.LastWritten = _WindowsFileTime()
+    credential.CredentialBlobSize = len(master_key_bytes)
+    credential.CredentialBlob = _ctypes_void_pointer(key_buffer)
+    credential.Persist = _WINDOWS_CREDENTIAL_PERSIST_LOCAL_MACHINE
+    credential.AttributeCount = 0
+    credential.Attributes = None
+    credential.TargetAlias = None
+    credential.UserName = _WINDOWS_CREDENTIAL_USERNAME
+    ok = advapi32.CredWriteW(ctypes.byref(credential), 0)
+    if not ok:
+        raise ProjectSecretStoreError("Project secure master key could not be stored in Windows Credential Manager.")
+
+
+def delete_windows_credential_manager_master_key(
+    project_id: str,
+    *,
+    target_prefix: str = _WINDOWS_CREDENTIAL_TARGET_PREFIX,
+) -> bool:
+    """Delete a project master key from Windows Credential Manager.
+
+    Returns ``False`` when the credential was already absent.
+    """
+
+    target_name = _windows_credential_target_name(project_id, target_prefix=target_prefix)
+    advapi32 = _load_windows_advapi32()
+    ok = advapi32.CredDeleteW(target_name, _WINDOWS_CREDENTIAL_TYPE_GENERIC, 0)
+    if ok:
+        return True
+    if ctypes.get_last_error() == _WINDOWS_ERROR_NOT_FOUND:
+        return False
+    raise ProjectSecretStoreError("Project secure master key could not be deleted from Windows Credential Manager.")
 
 
 class ProjectSecretEncryptedValue(BaseModel):
@@ -587,6 +705,36 @@ def _load_windows_bcrypt() -> Any:
     return bcrypt
 
 
+def _load_windows_advapi32() -> Any:
+    if sys.platform != "win32":
+        raise ProjectSecretStoreError("Windows Credential Manager provider is unavailable on this platform.")
+    windll_factory = getattr(ctypes, "WinDLL", None)
+    if windll_factory is None:
+        raise ProjectSecretStoreError("Windows Credential Manager provider is unavailable on this platform.")
+    advapi32 = windll_factory("advapi32", use_last_error=True)
+    advapi32.CredReadW.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.POINTER(ctypes.POINTER(_WindowsCredential)),
+    ]
+    advapi32.CredReadW.restype = ctypes.c_int
+    advapi32.CredWriteW.argtypes = [
+        ctypes.POINTER(_WindowsCredential),
+        ctypes.c_ulong,
+    ]
+    advapi32.CredWriteW.restype = ctypes.c_int
+    advapi32.CredDeleteW.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+    ]
+    advapi32.CredDeleteW.restype = ctypes.c_int
+    advapi32.CredFree.argtypes = [ctypes.c_void_p]
+    advapi32.CredFree.restype = None
+    return advapi32
+
+
 def _windows_cng_crypt_argtypes() -> list[Any]:
     return [
         ctypes.c_void_p,
@@ -651,6 +799,23 @@ def _empty_ctypes_buffer(size: int) -> ctypes.Array[ctypes.c_ubyte]:
 
 def _ctypes_void_pointer(buffer: ctypes.Array[ctypes.c_ubyte]) -> ctypes.c_void_p:
     return ctypes.cast(buffer, ctypes.c_void_p)
+
+
+def _windows_credential_target_name(project_id: str, *, target_prefix: str) -> str:
+    if target_prefix == "":
+        raise ProjectSecretStoreError("Windows Credential Manager target prefix is required.")
+    project_id_bytes = _project_id_to_salt(project_id)
+    target_name = f"{target_prefix}{project_id_bytes.decode('utf-8')}"
+    if len(target_name) > 32767:
+        raise ProjectSecretStoreError("Windows Credential Manager target name exceeds the size limit.")
+    return target_name
+
+
+def _windows_credential_master_key_to_bytes(master_key: bytes | str) -> bytes:
+    key_bytes = _master_key_to_bytes(master_key)
+    if len(key_bytes) > _WINDOWS_CREDENTIAL_BLOB_LIMIT:
+        raise ProjectSecretStoreError("Project secure master key exceeds the Windows Credential Manager size limit.")
+    return key_bytes
 
 
 def _check_windows_cng_status(status: int, operation: str) -> None:
