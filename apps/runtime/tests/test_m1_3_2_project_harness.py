@@ -21,6 +21,7 @@ from typing import Any, cast
 
 import pytest
 
+import cw_runtime.harness.project as project_harness
 from cw_runtime.harness import (
     HarnessError,
     ProjectCreateRequest,
@@ -453,6 +454,19 @@ def _write_fake_mcp_stdio_server(script_path: Path) -> None:
                     while True:
                         print(json.dumps({"jsonrpc": "2.0", "id": "unrelated", "result": {}}), flush=True)
                         time.sleep(0.01)
+                elif method == "tools/list" and mode == "oversized":
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": message.get("id"),
+                        "result": {
+                            "tools": [
+                                {
+                                    "name": "run",
+                                    "description": "x" * 512,
+                                }
+                            ]
+                        },
+                    }
                 elif method == "tools/list":
                     response = {
                         "jsonrpc": "2.0",
@@ -694,7 +708,7 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         server = cast(FakeMCPHttpServer, self.server)
-        if server.mode in {"legacy", "legacy_error"} and self.path == "/mcp":
+        if server.mode in {"legacy", "legacy_error", "legacy_split_oversized"} and self.path == "/mcp":
             self._send_legacy_sse_endpoint()
             return
         self._send_empty(405)
@@ -719,10 +733,10 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
             }
         )
         server.all_headers_log.append({key.lower(): value for key, value in self.headers.items()})
-        if server.mode in {"legacy", "legacy_error"} and self.path == "/mcp":
+        if server.mode in {"legacy", "legacy_error", "legacy_split_oversized"} and self.path == "/mcp":
             self._send_empty(405)
             return
-        if server.mode in {"legacy", "legacy_error"} and self.path == "/messages":
+        if server.mode in {"legacy", "legacy_error", "legacy_split_oversized"} and self.path == "/messages":
             self._handle_legacy_message(server, message)
             self._send_empty(202)
             return
@@ -764,6 +778,9 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
                     self._tools_response(message.get("id")),
                 ]
             )
+            return
+        if method == "tools/list" and server.mode == "sse_split_oversized":
+            self._send_split_sse_message(self._many_tools_response(message.get("id")))
             return
         if method == "tools/list" and server.mode == "sse_hang":
             self._send_sse(
@@ -830,6 +847,9 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if method == "tools/list" and server.mode == "legacy_split_oversized":
+            server.legacy_response_queue.put(self._many_tools_response(message.get("id")))
+            return
         if method == "tools/list":
             server.legacy_response_queue.put(
                 {
@@ -882,6 +902,23 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
                             "properties": {"code": {"type": "string"}},
                         },
                     }
+                ]
+            },
+        }
+
+    def _many_tools_response(self, request_id: object) -> dict[str, object]:
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "tools": [
+                    {
+                        "name": f"run_{index}",
+                        "title": "Run",
+                        "description": "Run remote Python.",
+                        "inputSchema": {"type": "object"},
+                    }
+                    for index in range(16)
                 ]
             },
         }
@@ -948,6 +985,17 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
             time.sleep(keep_open_seconds)
         self.close_connection = True
 
+    def _send_split_sse_message(self, message: Mapping[str, object]) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        for line in json.dumps(message, indent=2).splitlines():
+            self.wfile.write(f"data: {line}\n".encode())
+        self.wfile.write(b"\n")
+        self.wfile.flush()
+        self.close_connection = True
+
     def _send_legacy_sse_endpoint(self) -> None:
         server = cast(FakeMCPHttpServer, self.server)
         self.send_response(200)
@@ -964,6 +1012,15 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
                 continue
             if message is None:
                 return
+            if server.mode == "legacy_split_oversized" and isinstance(message.get("result"), Mapping):
+                result = message.get("result")
+                if isinstance(result, Mapping) and isinstance(result.get("tools"), list):
+                    self.wfile.write(b"event: message\n")
+                    for line in json.dumps(message, indent=2).splitlines():
+                        self.wfile.write(f"data: {line}\n".encode())
+                    self.wfile.write(b"\n")
+                    self.wfile.flush()
+                    continue
             self.wfile.write(f"event: message\ndata: {json.dumps(message)}\n\n".encode())
             self.wfile.flush()
 
@@ -1294,6 +1351,47 @@ def test_project_mcp_stdio_discovery_client_times_out_on_unrelated_messages(tmp_
     assert "command_or_url" not in str(exc_info.value.details)
 
 
+def test_project_mcp_stdio_discovery_client_rejects_oversized_response(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(project_harness, "_MCP_MAX_RESPONSE_BYTES", 256)
+    project_root = tmp_path / "mcp_stdio_oversized_project"
+    initialize_project(_request("MCP Stdio Oversized", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server_script = tmp_path / "fake_mcp_server.py"
+    _write_fake_mcp_stdio_server(server_script)
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_stdio_python",
+                "transport": "stdio",
+                "command_or_url": _python_script_command(server_script, "oversized"),
+            }
+        ],
+    )
+
+    with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+        load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                lambda config: ProjectMCPStdioDiscoveryClient(timeout_seconds=2.0)
+            ),
+        )
+
+    assert exc_info.value.server_id == "mcp_stdio_python"
+    assert exc_info.value.stage == "discover_tools"
+    assert exc_info.value.details == {
+        "server_id": "mcp_stdio_python",
+        "transport": "stdio",
+        "response_size_limit": 256,
+    }
+    assert "xxxxxxxx" not in str(exc_info.value)
+    assert "command_or_url" not in str(exc_info.value.details)
+
+
 def test_project_mcp_http_discovery_client_smoke_lists_tools_json(tmp_path: Path) -> None:
     project_root = tmp_path / "mcp_http_discovery_project"
     initialize_project(_request("MCP HTTP Discovery", project_root))
@@ -1569,6 +1667,50 @@ def test_project_mcp_http_discovery_client_smoke_lists_tools_sse(tmp_path: Path)
                 ],
             }
         ]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_discovery_client_rejects_oversized_split_sse_event(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(project_harness, "_MCP_MAX_RESPONSE_BYTES", 512)
+    project_root = tmp_path / "mcp_http_sse_oversized_project"
+    initialize_project(_request("MCP HTTP SSE Oversized", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server, thread, endpoint_url = _start_fake_mcp_http_server("sse_split_oversized")
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_python",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                }
+            ],
+        )
+
+        with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+            load_project_tool_lock_snapshot(
+                project_root,
+                mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                    lambda config: ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+                ),
+            )
+
+        assert exc_info.value.server_id == "mcp_http_python"
+        assert exc_info.value.stage == "discover_tools"
+        assert exc_info.value.details == {
+            "server_id": "mcp_http_python",
+            "transport": "http",
+            "response_size_limit": 512,
+        }
+        assert "run_15" not in str(exc_info.value)
+        assert "command_or_url" not in str(exc_info.value.details)
     finally:
         server.shutdown()
         server.server_close()
@@ -1910,6 +2052,51 @@ def test_project_mcp_http_discovery_client_falls_back_to_legacy_sse(tmp_path: Pa
                 "session_id": "",
             },
         ]
+    finally:
+        server.legacy_response_queue.put(None)
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_project_mcp_legacy_http_client_rejects_oversized_split_sse_event(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(project_harness, "_MCP_MAX_RESPONSE_BYTES", 512)
+    project_root = tmp_path / "mcp_http_legacy_oversized_project"
+    initialize_project(_request("MCP HTTP Legacy Oversized", project_root))
+    agent_root = project_root / ".agent-workflow"
+    server, thread, endpoint_url = _start_fake_mcp_http_server("legacy_split_oversized")
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_legacy_python",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                }
+            ],
+        )
+
+        with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+            load_project_tool_lock_snapshot(
+                project_root,
+                mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                    lambda config: ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+                ),
+            )
+
+        assert exc_info.value.server_id == "mcp_http_legacy_python"
+        assert exc_info.value.stage == "discover_tools"
+        assert exc_info.value.details == {
+            "server_id": "mcp_http_legacy_python",
+            "transport": "http",
+            "response_size_limit": 512,
+        }
+        assert "run_15" not in str(exc_info.value)
+        assert "command_or_url" not in str(exc_info.value.details)
     finally:
         server.legacy_response_queue.put(None)
         server.shutdown()

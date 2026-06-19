@@ -77,7 +77,7 @@ _MCP_DISCOVERY_ERROR_STAGES: Final = {
     "invoke_tool",
     "close",
 }
-_MCP_HTTP_MAX_RESPONSE_BYTES: Final = 4 * 1024 * 1024
+_MCP_MAX_RESPONSE_BYTES: Final = 4 * 1024 * 1024
 _MCP_PROTOCOL_VERSION: Final = "2025-06-18"
 _MCP_HTTP_RESERVED_HEADER_NAMES: Final = {
     "accept",
@@ -343,7 +343,7 @@ class ProjectMCPStdioDiscoveryClient:
         self._secret_env: dict[str, str] = {}
         self._config: ProjectMCPServerConfig | None = None
         self._process: subprocess.Popen[str] | None = None
-        self._stdout_queue: queue.Queue[str | None] = queue.Queue()
+        self._stdout_queue: queue.Queue[str | Exception | None] = queue.Queue()
         self._stdout_thread: threading.Thread | None = None
         self._next_id = 1
         self._version = "latest"
@@ -529,8 +529,20 @@ class ProjectMCPStdioDiscoveryClient:
                 "Project MCP stdio read timed out.",
                 details={"timeout_seconds": self._timeout_seconds},
             ) from exc
+        if isinstance(line, Exception):
+            raise self._error(
+                stage,
+                "Project MCP stdio read failed.",
+                details={"exception_type": type(line).__name__},
+            ) from line
         if line is None:
             raise self._error(stage, "Project MCP stdio stream ended before response.")
+        if _utf8_size(line) > _MCP_MAX_RESPONSE_BYTES:
+            raise self._error(
+                stage,
+                "Project MCP stdio response exceeded size limit.",
+                details={"response_size_limit": _MCP_MAX_RESPONSE_BYTES},
+            )
         try:
             message = json.loads(line)
         except json.JSONDecodeError as exc:
@@ -796,18 +808,18 @@ class ProjectMCPHttpDiscoveryClient:
 
     def _read_json_http_response(self, response: HTTPResponse, *, stage: str) -> Mapping[str, object]:
         try:
-            body = response.read(_MCP_HTTP_MAX_RESPONSE_BYTES + 1)
+            body = response.read(_MCP_MAX_RESPONSE_BYTES + 1)
         except Exception as exc:
             raise self._error(
                 stage,
                 "Project MCP HTTP response read failed.",
                 details={"exception_type": type(exc).__name__},
             ) from exc
-        if len(body) > _MCP_HTTP_MAX_RESPONSE_BYTES:
+        if len(body) > _MCP_MAX_RESPONSE_BYTES:
             raise self._error(
                 stage,
                 "Project MCP HTTP response exceeded size limit.",
-                details={"response_size_limit": _MCP_HTTP_MAX_RESPONSE_BYTES},
+                details={"response_size_limit": _MCP_MAX_RESPONSE_BYTES},
             )
         try:
             message = json.loads(body.decode("utf-8"))
@@ -834,6 +846,7 @@ class ProjectMCPHttpDiscoveryClient:
     ) -> Mapping[str, object]:
         deadline = time.monotonic() + self._timeout_seconds
         data_lines: list[str] = []
+        data_size_bytes = 0
         line_queue: queue.Queue[bytes | Exception | None] = queue.Queue()
         reader_thread = threading.Thread(
             target=_read_http_sse_lines,
@@ -872,11 +885,11 @@ class ProjectMCPHttpDiscoveryClient:
                     ) from line
                 if line is None:
                     raise self._error(stage, "Project MCP HTTP SSE stream ended before response.")
-                if len(line) > _MCP_HTTP_MAX_RESPONSE_BYTES:
+                if len(line) > _MCP_MAX_RESPONSE_BYTES:
                     raise self._error(
                         stage,
                         "Project MCP HTTP SSE response exceeded size limit.",
-                        details={"response_size_limit": _MCP_HTTP_MAX_RESPONSE_BYTES},
+                        details={"response_size_limit": _MCP_MAX_RESPONSE_BYTES},
                     )
                 try:
                     decoded_line = line.decode("utf-8").rstrip("\r\n")
@@ -889,6 +902,7 @@ class ProjectMCPHttpDiscoveryClient:
                 if decoded_line == "":
                     message = self._sse_message(data_lines, stage=stage)
                     data_lines = []
+                    data_size_bytes = 0
                     if message is None or message.get("id") != expected_response_id:
                         continue
                     return message
@@ -897,7 +911,15 @@ class ProjectMCPHttpDiscoveryClient:
                 field_name, separator, field_value = decoded_line.partition(":")
                 if separator == "" or field_name != "data":
                     continue
-                data_lines.append(field_value[1:] if field_value.startswith(" ") else field_value)
+                data_value = field_value[1:] if field_value.startswith(" ") else field_value
+                data_size_bytes = _mcp_sse_data_size(data_size_bytes, data_value)
+                if data_size_bytes > _MCP_MAX_RESPONSE_BYTES:
+                    raise self._error(
+                        stage,
+                        "Project MCP HTTP SSE event exceeded size limit.",
+                        details={"response_size_limit": _MCP_MAX_RESPONSE_BYTES},
+                    )
+                data_lines.append(data_value)
         finally:
             response.close()
             reader_thread.join(timeout=self._timeout_seconds)
@@ -1031,6 +1053,7 @@ class ProjectMCPHttpDiscoveryClient:
     def _read_legacy_sse_event(self, *, stage: str, deadline: float) -> tuple[str, str]:
         event_name = "message"
         data_lines: list[str] = []
+        data_size_bytes = 0
         while True:
             line = self._read_legacy_sse_line(stage=stage, deadline=deadline)
             try:
@@ -1045,7 +1068,8 @@ class ProjectMCPHttpDiscoveryClient:
                 if not data_lines:
                     event_name = "message"
                     continue
-                return event_name, "\n".join(data_lines)
+                event_data = "\n".join(data_lines)
+                return event_name, event_data
             if decoded_line.startswith(":"):
                 continue
             field_name, separator, field_value = decoded_line.partition(":")
@@ -1055,6 +1079,13 @@ class ProjectMCPHttpDiscoveryClient:
             if field_name == "event":
                 event_name = value
             elif field_name == "data":
+                data_size_bytes = _mcp_sse_data_size(data_size_bytes, value)
+                if data_size_bytes > _MCP_MAX_RESPONSE_BYTES:
+                    raise self._error(
+                        stage,
+                        "Project MCP legacy HTTP+SSE event exceeded size limit.",
+                        details={"response_size_limit": _MCP_MAX_RESPONSE_BYTES},
+                    )
                 data_lines.append(value)
 
     def _read_legacy_sse_line(self, *, stage: str, deadline: float) -> bytes:
@@ -1088,11 +1119,11 @@ class ProjectMCPHttpDiscoveryClient:
             ) from line
         if line is None:
             raise self._error(stage, "Project MCP legacy HTTP+SSE stream ended before response.")
-        if len(line) > _MCP_HTTP_MAX_RESPONSE_BYTES:
+        if len(line) > _MCP_MAX_RESPONSE_BYTES:
             raise self._error(
                 stage,
                 "Project MCP legacy HTTP+SSE response exceeded size limit.",
-                details={"response_size_limit": _MCP_HTTP_MAX_RESPONSE_BYTES},
+                details={"response_size_limit": _MCP_MAX_RESPONSE_BYTES},
             )
         return line
 
@@ -1986,10 +2017,15 @@ def _mcp_stdio_secret_env(
     return sanitized
 
 
-def _read_stdio_stdout(stdout: TextIO, output_queue: queue.Queue[str | None]) -> None:
+def _read_stdio_stdout(stdout: TextIO, output_queue: queue.Queue[str | Exception | None]) -> None:
     try:
-        for line in stdout:
+        while True:
+            line = stdout.readline(_MCP_MAX_RESPONSE_BYTES + 1)
+            if line == "":
+                break
             output_queue.put(line)
+    except Exception as exc:
+        output_queue.put(exc)
     finally:
         stdout.close()
         output_queue.put(None)
@@ -1998,7 +2034,7 @@ def _read_stdio_stdout(stdout: TextIO, output_queue: queue.Queue[str | None]) ->
 def _read_http_sse_lines(response: HTTPResponse, output_queue: queue.Queue[bytes | Exception | None]) -> None:
     try:
         while True:
-            line = response.readline(_MCP_HTTP_MAX_RESPONSE_BYTES + 1)
+            line = response.readline(_MCP_MAX_RESPONSE_BYTES + 1)
             if line == b"":
                 break
             output_queue.put(line)
@@ -2006,6 +2042,15 @@ def _read_http_sse_lines(response: HTTPResponse, output_queue: queue.Queue[bytes
         output_queue.put(exc)
     finally:
         output_queue.put(None)
+
+
+def _utf8_size(value: str) -> int:
+    return len(value.encode("utf-8"))
+
+
+def _mcp_sse_data_size(current_size_bytes: int, data_value: str) -> int:
+    separator_size = 1 if current_size_bytes > 0 else 0
+    return current_size_bytes + separator_size + _utf8_size(data_value)
 
 
 def _mcp_http_secret_headers(
