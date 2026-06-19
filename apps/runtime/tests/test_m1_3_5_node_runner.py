@@ -444,7 +444,7 @@ def test_runner_persists_failed_evaluation_repair_patch_and_retries_target(tmp_p
     assert evaluations[0]["failure_diagnosis"]["failure_type"] == "format_error"
     assert evaluations[0]["criterion_results"][0]["criterion_id"] == "c_quality"
     assert repairs[0]["patch_kind"] == "prompt_patch"
-    assert repairs[0]["applies_to_attempts"] == [attempts[0]["attempt_id"]]
+    assert repairs[0]["applies_to_attempts"] == []
     assert repairs[0]["provenance"]["usage"]["input_tokens"] == 9
     assert attempts[-1]["node_id"] == "n_repair"
     assert attempts[-1]["effective_prompt_overlay_ref"] is None
@@ -456,7 +456,7 @@ def test_runner_persists_failed_evaluation_repair_patch_and_retries_target(tmp_p
 
     run_json = _read_run_json(project_root, run_id)
     assert run_json["metadata"]["cw"]["node_states"]["n_execute"] == "retrying"
-    assert "n_execute" in run_json["metadata"]["cw"]["pending_prompt_overlays"]
+    assert "n_execute" in run_json["metadata"]["cw"]["active_prompt_overlays"]
     events = list_stream_events(project_root, run_id)
     event_types = [event.type for event in events]
     assert "repair.patch_proposed" in event_types
@@ -464,7 +464,7 @@ def test_runner_persists_failed_evaluation_repair_patch_and_retries_target(tmp_p
     patch_applied = next(event for event in events if event.type == "repair.patch_applied")
     assert patch_applied.payload is not None
     assert patch_applied.payload["patch_kind"] == "prompt_patch"
-    assert patch_applied.payload["side_effects"] == ["pending_prompt_overlay_for_n_execute"]
+    assert patch_applied.payload["side_effects"] == ["active_prompt_overlay_until_pass_for_n_execute"]
 
     retried = advance_workflow_run(
         project_root,
@@ -479,13 +479,24 @@ def test_runner_persists_failed_evaluation_repair_patch_and_retries_target(tmp_p
     overlay_path = run_root / retry_attempt["effective_prompt_overlay_ref"]
     assert overlay_path.exists()
     overlay = json.loads(overlay_path.read_text(encoding="utf-8"))
-    assert overlay["patch_id"] == repairs[0]["patch_id"]
+    assert overlay["patch_ids"] == [repairs[0]["patch_id"]]
+    assert overlay["source_overlays"][0]["patch_id"] == repairs[0]["patch_id"]
+    assert overlay["source_overlays"][0]["scope"] == "until_pass"
     execution_pack = json.loads(
         (run_root / "execution_packs" / f"{retry_attempt['execution_pack_id']}.json").read_text(encoding="utf-8")
     )
     assert execution_pack["effective_prompt_overlay"]["source_patch_id"] == repairs[0]["patch_id"]
     run_json_after_retry = _read_run_json(project_root, run_id)
-    assert "n_execute" not in run_json_after_retry["metadata"]["cw"]["pending_prompt_overlays"]
+    assert "n_execute" in run_json_after_retry["metadata"]["cw"]["active_prompt_overlays"]
+
+    passed_review = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(evaluation=EvaluationAdvanceInput(passed=True, score=1.0)),
+    )
+    assert passed_review.next_node_ids == ["n_end"]
+    run_json_after_pass = _read_run_json(project_root, run_id)
+    assert "n_execute" not in run_json_after_pass["metadata"]["cw"]["active_prompt_overlays"]
 
 
 def test_runner_writes_usage_ledger_for_failed_execution_attempt(tmp_path: Path) -> None:

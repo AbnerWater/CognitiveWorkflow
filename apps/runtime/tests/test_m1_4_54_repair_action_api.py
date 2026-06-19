@@ -11,6 +11,7 @@ import pytest
 from pydantic import SecretStr
 
 from cw_runtime.api import create_app
+from cw_runtime.runs import list_stream_events
 from cw_runtime.settings import RuntimeSettings
 
 pytest.importorskip("fastapi")
@@ -325,7 +326,7 @@ def test_repair_node_action_rejects_stale_evaluation_id(tmp_path: Path) -> None:
     ("payload_update", "status_code", "error_code", "detail_key"),
     [
         ({"preferred_strategy": "model_escalation"}, 422, "RP_BUILD_KIND_NOT_ALLOWED", "preferred_strategy"),
-        ({"scope": "persistent_for_run"}, 409, "NL_STATE_FORBIDDEN_TRANSITION", "scope"),
+        ({"scope": "persistent_for_workflow"}, 409, "NL_STATE_FORBIDDEN_TRANSITION", "scope"),
     ],
 )
 def test_repair_node_action_rejects_unsupported_strategy_or_scope(
@@ -358,7 +359,7 @@ def test_repair_node_action_rejects_unsupported_strategy_or_scope(
     assert rejected_body["details"][detail_key] == payload_update[detail_key]
 
 
-def test_run_once_rejects_unimplemented_repair_persistent_scope(tmp_path: Path) -> None:
+def test_run_once_rejects_unimplemented_repair_workflow_scope(tmp_path: Path) -> None:
     client = _test_client()
     project_root, workflow_id = _create_project_with_graph(client, tmp_path)
     run_id, _eval_id = _start_failed_run_at_repair(client, workflow_id)
@@ -368,7 +369,7 @@ def test_run_once_rejects_unimplemented_repair_persistent_scope(tmp_path: Path) 
         headers=_AUTH_HEADERS,
         json={
             "schema_version": "0.1.0",
-            "repair": {"scope": "persistent_for_run"},
+            "repair": {"scope": "persistent_for_workflow"},
         },
     )
 
@@ -379,3 +380,66 @@ def test_run_once_rejects_unimplemented_repair_persistent_scope(tmp_path: Path) 
     assert ("repair", "scope") in [tuple(loc) for loc in error_locs]
     repairs_path = project_root / ".agent-workflow" / "runs" / run_id / "repairs.jsonl"
     assert _read_jsonl(repairs_path) == []
+
+
+def test_repair_node_action_persistent_for_run_writes_run_overlay(tmp_path: Path) -> None:
+    client = _test_client()
+    project_root, workflow_id = _create_project_with_graph(client, tmp_path)
+    run_id, eval_id = _start_failed_run_at_repair(client, workflow_id)
+
+    repair = client.post(
+        f"/cw/v1/runs/{run_id}/nodes/n_repair:repair",
+        headers=_AUTH_HEADERS,
+        json={
+            "schema_version": "0.1.0",
+            "based_on_evaluation_id": eval_id,
+            "preferred_strategy": "prompt_patch",
+            "scope": "persistent_for_run",
+        },
+    )
+
+    assert repair.status_code == 200
+    body = repair.json()
+    assert body["repair_patch"]["scope"] == "persistent_for_run"
+    patch_id = str(body["patch_id"])
+
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    assert repairs[-1]["scope"] == "persistent_for_run"
+    assert repairs[-1]["applies_to_attempts"] == []
+    run_overlay = json.loads((run_root / "run_overlay.json").read_text(encoding="utf-8"))
+    persistent_overlay = run_overlay["prompt_overlays"]["n_execute"][0]
+    assert persistent_overlay["patch_id"] == patch_id
+    assert persistent_overlay["scope"] == "persistent_for_run"
+    assert persistent_overlay["instruction_text"] == "Tighten the output format before retry."
+
+    run_json = json.loads((run_root / "run.json").read_text(encoding="utf-8"))
+    assert "active_prompt_overlays" not in run_json["metadata"].get("cw", {})
+    applied_events = [
+        event for event in list_stream_events(project_root, run_id) if event.type == "repair.patch_applied"
+    ]
+    assert applied_events[-1].payload is not None
+    assert applied_events[-1].payload["side_effects"] == ["run_overlay_for_n_execute"]
+
+    execute = client.post(
+        f"/cw/v1/runs/{run_id}/nodes/n_execute:run-once",
+        headers=_AUTH_HEADERS,
+        json={"schema_version": "0.1.0", "execution": {"output": {"draft": "still uses overlay"}}},
+    )
+
+    assert execute.status_code == 200
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    retry_attempt = attempts[-1]
+    assert retry_attempt["node_id"] == "n_execute"
+    assert retry_attempt["effective_prompt_overlay_ref"] == f"overlays/{retry_attempt['attempt_id']}.json"
+    attempt_overlay = json.loads((run_root / retry_attempt["effective_prompt_overlay_ref"]).read_text(encoding="utf-8"))
+    assert attempt_overlay["patch_ids"] == [patch_id]
+    assert attempt_overlay["source_overlays"][0]["scope"] == "persistent_for_run"
+    execution_pack = json.loads(
+        (run_root / "execution_packs" / f"{retry_attempt['execution_pack_id']}.json").read_text(encoding="utf-8")
+    )
+    assert execution_pack["effective_prompt_overlay"]["append_to_instructions"] == [
+        "Tighten the output format before retry."
+    ]
+    assert execution_pack["effective_prompt_overlay"]["source_patch_id"] == patch_id
+    assert (run_root / "run_overlay.json").exists()

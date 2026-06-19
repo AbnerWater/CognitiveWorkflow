@@ -231,7 +231,7 @@ class RepairAdvanceInput(BaseModel):
     instruction_text: str = Field(default="Tighten the output format before retry.", min_length=1)
     expected_effect: str = Field(default="The next attempt should satisfy the failed criterion.", min_length=1)
     rationale: str | None = None
-    scope: Literal[PatchScope.UNTIL_PASS] = PatchScope.UNTIL_PASS
+    scope: ImplementedRepairScope = PatchScope.UNTIL_PASS
     risk_level: RiskLevel = RiskLevel.LOW
     model_profile_id: str | None = None
     usage: RunUsage = Field(default_factory=RunUsage)
@@ -320,7 +320,10 @@ class _AttemptArtifacts(BaseModel):
     source_patch_id: str | None = None
 
 
-class _PendingPromptOverlay(BaseModel):
+ImplementedRepairScope: TypeAlias = Literal[PatchScope.UNTIL_PASS, PatchScope.PERSISTENT_FOR_RUN]
+
+
+class _StoredPromptOverlay(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     patch_id: str
@@ -329,6 +332,15 @@ class _PendingPromptOverlay(BaseModel):
     repair_attempt_id: str
     evaluation_id: str
     instruction_text: str
+    scope: ImplementedRepairScope
+    applied_at: str
+
+
+class _RunPromptOverlayDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    prompt_overlays: dict[str, list[_StoredPromptOverlay]] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1453,16 +1465,13 @@ def _complete_repair_adapter_outcome_locked(
         metadata_base={"cw": {"adapter_bridge": True}},
     )
     append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
-    pending_overlay = _PendingPromptOverlay(
-        patch_id=patch.patch_id,
-        patch_kind=patch.patch_kind.value,
-        repair_node_id=node.node_id,
-        repair_attempt_id=artifacts.attempt_id,
-        evaluation_id=evaluation_id,
+    run, side_effects = _apply_repair_prompt_overlay(
+        project_root=project_root,
+        run=run,
+        node=node,
+        artifacts=artifacts,
+        patch=patch,
         instruction_text=repair.instruction_text,
-    )
-    _store_runtime_value(
-        run, "pending_prompt_overlays", node.repair_target_node_id, pending_overlay.model_dump(mode="json")
     )
 
     proposed_event = RepairEvent(
@@ -1527,7 +1536,7 @@ def _complete_repair_adapter_outcome_locked(
         payload={
             "patch_id": patch.patch_id,
             "patch_kind": patch.patch_kind.value,
-            "side_effects": [f"pending_prompt_overlay_for_{node.repair_target_node_id}"],
+            "side_effects": side_effects,
         },
         display_level=DisplayLevel.DEFAULT,
         expandable=False,
@@ -1840,16 +1849,13 @@ def _advance_repair(
         target_attempt_id=target_attempt_id,
     )
     append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
-    pending_overlay = _PendingPromptOverlay(
-        patch_id=patch.patch_id,
-        patch_kind=patch.patch_kind.value,
-        repair_node_id=node.node_id,
-        repair_attempt_id=artifacts.attempt_id,
-        evaluation_id=evaluation_id,
+    run, side_effects = _apply_repair_prompt_overlay(
+        project_root=project_root,
+        run=run,
+        node=node,
+        artifacts=artifacts,
+        patch=patch,
         instruction_text=repair.instruction_text,
-    )
-    _store_runtime_value(
-        run, "pending_prompt_overlays", node.repair_target_node_id, pending_overlay.model_dump(mode="json")
     )
 
     proposed_event = RepairEvent(
@@ -1915,7 +1921,7 @@ def _advance_repair(
         payload={
             "patch_id": patch.patch_id,
             "patch_kind": patch.patch_kind.value,
-            "side_effects": [f"pending_prompt_overlay_for_{node.repair_target_node_id}"],
+            "side_effects": side_effects,
         },
         display_level=DisplayLevel.DEFAULT,
         expandable=False,
@@ -2255,13 +2261,8 @@ def _prepare_attempt(
     context_pack_id = new_runtime_id()
     execution_pack_id = new_runtime_id()
     evidence_pack_id = new_runtime_id() if contract.evidence_requirements else None
-    pending_overlay = _consume_pending_prompt_overlay(run, node.node_id)
-    effective_prompt_overlay = None
-    if pending_overlay is not None:
-        effective_prompt_overlay = PromptOverlay(
-            append_to_instructions=[pending_overlay.instruction_text],
-            source_patch_id=pending_overlay.patch_id,
-        )
+    prompt_overlay_sources = _prompt_overlays_for_attempt(project_root, run, node.node_id)
+    effective_prompt_overlay = _effective_prompt_overlay(prompt_overlay_sources)
 
     pack_request = StaticAttemptPackRequest(
         run_id=run.run_id,
@@ -2390,7 +2391,7 @@ def _prepare_attempt(
         run=run,
         attempt_id=attempt_id,
         bundle=pack_bundle,
-        pending_overlay=pending_overlay,
+        prompt_overlay_sources=prompt_overlay_sources,
         effective_prompt_overlay=effective_prompt_overlay,
         evidence_pack_already_written=pack_bundle.evidence_pack is not None,
     )
@@ -2427,8 +2428,8 @@ def _prepare_attempt(
         model_profile_id=routing_decision.model_profile_id,
         model_cost_profile=selected_profile.cost_profile,
         execution_pack=execution_pack,
-        effective_prompt_overlay_ref=None if pending_overlay is None else f"overlays/{attempt_id}.json",
-        source_patch_id=None if pending_overlay is None else pending_overlay.patch_id,
+        effective_prompt_overlay_ref=None if not prompt_overlay_sources else f"overlays/{attempt_id}.json",
+        source_patch_id=None if not prompt_overlay_sources else prompt_overlay_sources[-1].patch_id,
     )
 
 
@@ -2460,20 +2461,18 @@ def _write_attempt_pack_bundle(
     run: WorkflowRunDocument,
     attempt_id: str,
     bundle: AttemptPackBundle,
-    pending_overlay: _PendingPromptOverlay | None,
+    prompt_overlay_sources: Sequence[_StoredPromptOverlay],
     effective_prompt_overlay: PromptOverlay | None,
     evidence_pack_already_written: bool = False,
 ) -> None:
-    if pending_overlay is not None and effective_prompt_overlay is not None:
+    if prompt_overlay_sources and effective_prompt_overlay is not None:
         write_run_json_locked(
             project_root,
             run.run_id,
             f"overlays/{attempt_id}.json",
             {
-                "patch_id": pending_overlay.patch_id,
-                "repair_node_id": pending_overlay.repair_node_id,
-                "repair_attempt_id": pending_overlay.repair_attempt_id,
-                "patch_kind": pending_overlay.patch_kind,
+                "patch_ids": [overlay.patch_id for overlay in prompt_overlay_sources],
+                "source_overlays": [overlay.model_dump(mode="json") for overlay in prompt_overlay_sources],
                 "prompt_overlay": effective_prompt_overlay.model_dump(mode="json"),
                 "applies_to_attempt_id": attempt_id,
             },
@@ -2503,6 +2502,120 @@ def _explicit_usage(input_data: ExecutionAdvanceInput | EvaluationAdvanceInput |
     if "usage" not in input_data.model_fields_set:
         return None
     return input_data.usage
+
+
+def _apply_repair_prompt_overlay(
+    *,
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node: RepairTaskNode,
+    artifacts: _AttemptArtifacts,
+    patch: RepairPatch,
+    instruction_text: str,
+) -> tuple[WorkflowRunDocument, list[str]]:
+    if patch.scope == PatchScope.UNTIL_PASS:
+        scope: ImplementedRepairScope = PatchScope.UNTIL_PASS
+        overlay = _stored_prompt_overlay(
+            node=node,
+            artifacts=artifacts,
+            patch=patch,
+            instruction_text=instruction_text,
+            scope=scope,
+        )
+        overlays = _runtime_prompt_overlay_list(run, "active_prompt_overlays", node.repair_target_node_id)
+        overlays.append(overlay)
+        _store_runtime_value(
+            run,
+            "active_prompt_overlays",
+            node.repair_target_node_id,
+            [item.model_dump(mode="json") for item in overlays],
+        )
+        return run, [f"active_prompt_overlay_until_pass_for_{node.repair_target_node_id}"]
+
+    if patch.scope == PatchScope.PERSISTENT_FOR_RUN:
+        scope = PatchScope.PERSISTENT_FOR_RUN
+        overlay = _stored_prompt_overlay(
+            node=node,
+            artifacts=artifacts,
+            patch=patch,
+            instruction_text=instruction_text,
+            scope=scope,
+        )
+        _store_run_prompt_overlay(project_root, run.run_id, node.repair_target_node_id, overlay)
+        return run, [f"run_overlay_for_{node.repair_target_node_id}"]
+
+    raise RunError(
+        "NL_STATE_FORBIDDEN_TRANSITION",
+        "Repair scope is not implemented by the runtime foundation.",
+        details={"run_id": run.run_id, "node_id": node.node_id, "scope": patch.scope.value},
+    )
+
+
+def _stored_prompt_overlay(
+    *,
+    node: RepairTaskNode,
+    artifacts: _AttemptArtifacts,
+    patch: RepairPatch,
+    instruction_text: str,
+    scope: ImplementedRepairScope,
+) -> _StoredPromptOverlay:
+    return _StoredPromptOverlay(
+        patch_id=patch.patch_id,
+        patch_kind=patch.patch_kind.value,
+        repair_node_id=node.node_id,
+        repair_attempt_id=artifacts.attempt_id,
+        evaluation_id=patch.evaluation_id,
+        instruction_text=instruction_text,
+        scope=scope,
+        applied_at=utc_now_ms(),
+    )
+
+
+def _prompt_overlays_for_attempt(
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node_id: str,
+) -> list[_StoredPromptOverlay]:
+    persistent = _read_run_prompt_overlay(project_root, run.run_id).prompt_overlays.get(node_id, [])
+    active = _runtime_prompt_overlay_list(run, "active_prompt_overlays", node_id)
+    return [*persistent, *active]
+
+
+def _effective_prompt_overlay(overlays: Sequence[_StoredPromptOverlay]) -> PromptOverlay | None:
+    if not overlays:
+        return None
+    return PromptOverlay(
+        append_to_instructions=[overlay.instruction_text for overlay in overlays],
+        source_patch_id=overlays[-1].patch_id,
+    )
+
+
+def _read_run_prompt_overlay(project_root: Path, run_id: str) -> _RunPromptOverlayDocument:
+    overlay_path = run_directory(project_root, run_id) / "run_overlay.json"
+    if not overlay_path.exists():
+        return _RunPromptOverlayDocument()
+    try:
+        loaded = json.loads(overlay_path.read_text(encoding="utf-8"))
+        return _RunPromptOverlayDocument.model_validate(loaded)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run overlay file is not valid JSON.",
+            status_code=500,
+            details={"run_id": run_id, "path": overlay_path.as_posix()},
+        ) from exc
+
+
+def _store_run_prompt_overlay(
+    project_root: Path,
+    run_id: str,
+    node_id: str,
+    overlay: _StoredPromptOverlay,
+) -> None:
+    document = _read_run_prompt_overlay(project_root, run_id)
+    overlays = [*document.prompt_overlays.get(node_id, []), overlay]
+    document.prompt_overlays[node_id] = overlays
+    write_run_json_locked(project_root, run_id, "run_overlay.json", document.model_dump(mode="json"))
 
 
 def _usage_with_profile_estimated_cost(artifacts: _AttemptArtifacts, usage: RunUsage | None) -> RunUsage | None:
@@ -3195,6 +3308,7 @@ def _build_repair_patch(
         "repair_node_id": node.node_id,
         "target_node_id": node.repair_target_node_id,
         "evaluation_id": evaluation_id,
+        "source_attempt_id": target_attempt_id,
         "operation": operation.model_dump(mode="json"),
     }
     return RepairPatch(
@@ -3209,7 +3323,7 @@ def _build_repair_patch(
         operations=[operation],
         expected_effect=input_data.expected_effect,
         rationale=input_data.rationale,
-        applies_to_attempts=[target_attempt_id],
+        applies_to_attempts=[],
         scope=input_data.scope,
         risk_level=input_data.risk_level,
         provenance=RepairProvenance(
@@ -3571,6 +3685,8 @@ def _transition_node(
             details={"run_id": run.run_id, "node_id": node_id, "from": from_state.value, "to": to_state.value},
         )
     _store_runtime_value(run, "node_states", node_id, to_state.value)
+    if to_state == NodeRuntimeState.PASSED:
+        _remove_runtime_value(run, "active_prompt_overlays", node_id)
     run = _persist_runtime_metadata(project_root, run)
     payload = {"node_id": node_id, "from": from_state.value, "to": to_state.value}
     event = _lifecycle_event(
@@ -3910,16 +4026,20 @@ def _runtime_string(run: WorkflowRunDocument, bucket: str, key: str) -> str | No
     raise _metadata_corrupted(run, bucket, key, raw_value)
 
 
-def _consume_pending_prompt_overlay(run: WorkflowRunDocument, node_id: str) -> _PendingPromptOverlay | None:
-    raw_value = _runtime_lookup(run, "pending_prompt_overlays", node_id)
+def _runtime_prompt_overlay_list(
+    run: WorkflowRunDocument,
+    bucket: str,
+    key: str,
+) -> list[_StoredPromptOverlay]:
+    raw_value = _runtime_lookup(run, bucket, key)
     if raw_value is None:
-        return None
+        return []
+    if not isinstance(raw_value, list):
+        raise _metadata_corrupted(run, bucket, key, raw_value)
     try:
-        pending = _PendingPromptOverlay.model_validate(raw_value)
+        return [_StoredPromptOverlay.model_validate(item) for item in raw_value]
     except ValidationError as exc:
-        raise _metadata_corrupted(run, "pending_prompt_overlays", node_id, raw_value) from exc
-    _remove_runtime_value(run, "pending_prompt_overlays", node_id)
-    return pending
+        raise _metadata_corrupted(run, bucket, key, raw_value) from exc
 
 
 def _metadata_corrupted(run: WorkflowRunDocument, bucket: str, key: str, value: object) -> RunError:

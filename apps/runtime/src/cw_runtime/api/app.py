@@ -590,14 +590,18 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
                 status_code=422,
                 details={"preferred_strategy": repair_request.preferred_strategy.value},
             )
-        if repair_request.scope != PatchScope.UNTIL_PASS:
+        if repair_request.scope == PatchScope.UNTIL_PASS:
+            scope: Literal[PatchScope.UNTIL_PASS, PatchScope.PERSISTENT_FOR_RUN] = PatchScope.UNTIL_PASS
+        elif repair_request.scope == PatchScope.PERSISTENT_FOR_RUN:
+            scope = PatchScope.PERSISTENT_FOR_RUN
+        else:
             raise RunError(
                 "NL_STATE_FORBIDDEN_TRANSITION",
-                "Manual repair API foundation only supports scope=until_pass.",
+                "Manual repair API foundation only supports scope=until_pass or persistent_for_run.",
                 details={"scope": repair_request.scope.value},
             )
         return RepairAdvanceInput(
-            scope=repair_request.scope,
+            scope=scope,
             metadata={
                 "cw": {
                     "api_action": "manual_repair",

@@ -703,9 +703,65 @@ async def test_adapter_repair_bridge_persists_patch_and_prompt_overlay(tmp_path:
     assert usage[-1]["est_cost_usd"] == pytest.approx(0.0069)
 
     run_json = _read_run_json(project_root, run_id)
-    pending_overlay = run_json["metadata"]["cw"]["pending_prompt_overlays"]["n_execute"]
-    assert pending_overlay["patch_id"] == advanced.patch_id
-    assert pending_overlay["instruction_text"] == "Always return JSON with the required key."
+    active_overlay = run_json["metadata"]["cw"]["active_prompt_overlays"]["n_execute"][0]
+    assert active_overlay["patch_id"] == advanced.patch_id
+    assert active_overlay["scope"] == "until_pass"
+    assert active_overlay["instruction_text"] == "Always return JSON with the required key."
+
+
+@pytest.mark.asyncio
+async def test_adapter_repair_bridge_persists_run_scope_prompt_overlay(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _review_repair_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+    adapter = _FakeAdapter(
+        usage=RunUsage(input_tokens=300, output_tokens=400, total_tokens=700, requests=1),
+        output={
+            "failure_type": "format_error",
+            "instruction_text": "Keep JSON output rules for this run.",
+            "expected_effect": "The remaining run attempts keep the required JSON shape.",
+            "scope": "persistent_for_run",
+            "metadata": {"source": "adapter_repair"},
+        },
+    )
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "invalid"})),
+    )
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                passed=False,
+                score=0.2,
+                failure_type=FailureType.FORMAT_ERROR,
+                finding_message="Format is invalid.",
+                recommended_action="repair_with_patch",
+                target_repair_node_id="n_repair",
+            )
+        ),
+    )
+    advanced = await advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
+
+    assert advanced.node_id == "n_repair"
+    assert advanced.patch_id is not None
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    repair = repairs[0]
+    assert repair["scope"] == "persistent_for_run"
+    assert repair["applies_to_attempts"] == []
+
+    run_overlay = json.loads((run_root / "run_overlay.json").read_text(encoding="utf-8"))
+    persistent_overlay = run_overlay["prompt_overlays"]["n_execute"][0]
+    assert persistent_overlay["patch_id"] == advanced.patch_id
+    assert persistent_overlay["scope"] == "persistent_for_run"
+    assert persistent_overlay["instruction_text"] == "Keep JSON output rules for this run."
+
+    run_json = _read_run_json(project_root, run_id)
+    assert "active_prompt_overlays" not in run_json["metadata"].get("cw", {})
 
 
 @pytest.mark.asyncio
