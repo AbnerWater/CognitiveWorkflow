@@ -79,6 +79,14 @@ _MCP_DISCOVERY_ERROR_STAGES: Final = {
 }
 _MCP_HTTP_MAX_RESPONSE_BYTES: Final = 4 * 1024 * 1024
 _MCP_PROTOCOL_VERSION: Final = "2025-06-18"
+_MCP_HTTP_RESERVED_HEADER_NAMES: Final = {
+    "accept",
+    "content-length",
+    "content-type",
+    "host",
+    "mcp-protocol-version",
+    "mcp-session-id",
+}
 _TRACKED_INIT_PATHS: Final = [
     ".gitignore",
     ".gitattributes",
@@ -558,8 +566,15 @@ class ProjectMCPStdioDiscoveryClient:
 class ProjectMCPHttpDiscoveryClient:
     """Minimal Streamable HTTP MCP client for initialize, tools/list, and tools/call."""
 
-    def __init__(self, *, timeout_seconds: float = 5.0) -> None:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 5.0,
+        secret_headers: Mapping[str, str] | None = None,
+    ) -> None:
         self._timeout_seconds = timeout_seconds
+        self._raw_secret_headers = {} if secret_headers is None else dict(secret_headers)
+        self._secret_headers: dict[str, str] = {}
         self._config: ProjectMCPServerConfig | None = None
         self._endpoint_url: str | None = None
         self._next_id = 1
@@ -597,6 +612,7 @@ class ProjectMCPHttpDiscoveryClient:
                 details={"url_scheme": parsed.scheme or "missing"},
             )
         self._endpoint_url = endpoint_url
+        self._secret_headers = _mcp_http_secret_headers(self._raw_secret_headers, mcp_config=config)
 
     def health_check(self) -> ProjectMCPHealthCheck:
         result = self._request(
@@ -881,7 +897,7 @@ class ProjectMCPHttpDiscoveryClient:
         request = Request(
             self._require_endpoint_url(),
             method="GET",
-            headers={"Accept": "text/event-stream"},
+            headers=self._legacy_sse_headers(),
         )
         try:
             response = urlopen(request, timeout=self._timeout_seconds)
@@ -961,7 +977,7 @@ class ProjectMCPHttpDiscoveryClient:
             self._require_legacy_message_endpoint_url(),
             data=body,
             method="POST",
-            headers={"Content-Type": "application/json"},
+            headers=self._legacy_post_headers(),
         )
         try:
             with urlopen(request, timeout=self._timeout_seconds) as response:
@@ -1127,14 +1143,27 @@ class ProjectMCPHttpDiscoveryClient:
         return result
 
     def _http_headers(self) -> dict[str, str]:
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-        }
+        headers = dict(self._secret_headers)
+        headers.update(
+            {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+        )
         if self._protocol_version is not None:
             headers["MCP-Protocol-Version"] = self._protocol_version
         if self._session_id is not None:
             headers["Mcp-Session-Id"] = self._session_id
+        return headers
+
+    def _legacy_sse_headers(self) -> dict[str, str]:
+        headers = dict(self._secret_headers)
+        headers["Accept"] = "text/event-stream"
+        return headers
+
+    def _legacy_post_headers(self) -> dict[str, str]:
+        headers = dict(self._secret_headers)
+        headers["Content-Type"] = "application/json"
         return headers
 
     def _capture_http_session_id(self, response: HTTPResponse, *, stage: str) -> None:
@@ -1934,6 +1963,39 @@ def _read_http_sse_lines(response: HTTPResponse, output_queue: queue.Queue[bytes
         output_queue.put(exc)
     finally:
         output_queue.put(None)
+
+
+def _mcp_http_secret_headers(
+    secret_headers: Mapping[str, str],
+    *,
+    mcp_config: ProjectMCPServerConfig,
+) -> dict[str, str]:
+    sanitized: dict[str, str] = {}
+    for raw_name, raw_value in secret_headers.items():
+        header_name = raw_name.strip()
+        if header_name == "" or any(char in header_name for char in "\r\n:"):
+            raise _mcp_discovery_error(
+                mcp_config,
+                stage="client_lifecycle",
+                message="Project MCP HTTP secret header name is invalid.",
+                details={"header_name_type": type(raw_name).__name__},
+            )
+        if header_name.lower() in _MCP_HTTP_RESERVED_HEADER_NAMES:
+            raise _mcp_discovery_error(
+                mcp_config,
+                stage="client_lifecycle",
+                message="Project MCP HTTP secret header cannot override protocol headers.",
+                details={"header_name": header_name},
+            )
+        if "\r" in raw_value or "\n" in raw_value:
+            raise _mcp_discovery_error(
+                mcp_config,
+                stage="client_lifecycle",
+                message="Project MCP HTTP secret header value is invalid.",
+                details={"header_name": header_name},
+            )
+        sanitized[header_name] = raw_value
+    return sanitized
 
 
 def _mcp_server_version(result: Mapping[str, object], *, default: str) -> str:

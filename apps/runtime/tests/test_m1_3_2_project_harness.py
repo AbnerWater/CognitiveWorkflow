@@ -32,6 +32,7 @@ from cw_runtime.harness import (
     ProjectMCPServerConfig,
     ProjectMCPStdioDiscoveryClient,
     ProjectSecretStoreError,
+    build_project_mcp_http_discovery_client_factory,
     build_project_secret_decryptor,
     decrypt_project_secret_value,
     delete_windows_credential_manager_master_key,
@@ -654,6 +655,8 @@ class FakeMCPHttpServer(ThreadingHTTPServer):
 
     mode: str
     request_headers_log: list[dict[str, str]]
+    secret_headers_log: list[dict[str, str]]
+    all_headers_log: list[dict[str, str]]
     legacy_response_queue: queue.Queue[Mapping[str, object] | None]
 
     def __init__(
@@ -666,6 +669,8 @@ class FakeMCPHttpServer(ThreadingHTTPServer):
         super().__init__(server_address, handler_class)
         self.mode = mode
         self.request_headers_log = []
+        self.secret_headers_log = []
+        self.all_headers_log = []
         self.legacy_response_queue = queue.Queue()
 
 
@@ -692,6 +697,13 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
                 "session_id": self.headers.get("Mcp-Session-Id", ""),
             }
         )
+        server.secret_headers_log.append(
+            {
+                "authorization": self.headers.get("Authorization", ""),
+                "x_cw_mcp_token": self.headers.get("X-CW-MCP-Token", ""),
+            }
+        )
+        server.all_headers_log.append({key.lower(): value for key, value in self.headers.items()})
         if server.mode in {"legacy", "legacy_error"} and self.path == "/mcp":
             self._send_empty(405)
             return
@@ -1260,6 +1272,107 @@ def test_project_mcp_http_client_smoke_with_external_provider_process(tmp_path: 
         _stop_external_mcp_http_provider(process)
 
 
+def test_project_mcp_http_client_uses_secure_store_headers_for_discovery_and_invocation(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_http_secure_headers_project"
+    response = initialize_project(_request("MCP HTTP Secure Headers", project_root))
+    agent_root = project_root / ".agent-workflow"
+    secret_ref = "secure://mcp/http"
+    plaintext = json.dumps(
+        {
+            "headers": {
+                "Authorization": "Bearer fake-access-token",
+                "X-CW-MCP-Token": "fake-access-token",
+            },
+            "env": {"CW_MCP_TOKEN": "fake-env-token"},
+        }
+    )
+    encrypted = encrypt_project_secret_value(
+        response.project_id,
+        plaintext,
+        master_key=b"test-master-key",
+        encrypt_aead=_fake_encrypt_aead,
+        nonce_factory=lambda size: b"\x07" * size,
+    )
+    _write_secure_secret(project_root, secret_ref, encrypted)
+    server, thread, endpoint_url = _start_fake_mcp_http_server("json")
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_secure",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                    "secret_ref": secret_ref,
+                }
+            ],
+        )
+        decrypt_secret = build_project_secret_decryptor(
+            project_root,
+            master_key_provider=lambda _project_id: b"test-master-key",
+            decrypt_aead=_fake_decrypt_aead,
+        )
+        client_factory = build_project_mcp_http_discovery_client_factory(
+            project_root,
+            decrypt_secret=decrypt_secret,
+            timeout_seconds=2.0,
+        )
+
+        locks = load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(client_factory),
+        )
+
+        assert [entry.model_dump(mode="json") for entry in locks.mcps] == [
+            {
+                "server_id": "mcp_http_secure",
+                "version": "0.6.0",
+                "tools_snapshot": [
+                    {
+                        "name": "run",
+                        "title": "Run",
+                        "description": "Run remote Python.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"code": {"type": "string"}},
+                        },
+                    }
+                ],
+            }
+        ]
+
+        config = ProjectMCPServerConfig(
+            server_id="mcp_http_secure",
+            transport="http",
+            command_or_url=endpoint_url,
+            secret_ref=secret_ref,
+        )
+        client = client_factory(config)
+        try:
+            client.start(config)
+            assert client.health_check().healthy is True
+            assert client.discover_tools() is not None
+            assert client.invoke_tool("run", {"code": "print(48)"}) == {
+                "content": [{"type": "text", "text": "ran remote: print(48)"}],
+                "isError": False,
+                "structuredContent": {"ok": True},
+            }
+        finally:
+            client.close()
+
+        expected_secret_headers = {
+            "authorization": "Bearer fake-access-token",
+            "x_cw_mcp_token": "fake-access-token",
+        }
+        assert server.secret_headers_log == [expected_secret_headers] * 7
+        assert all("cw_mcp_token" not in entry for entry in server.all_headers_log)
+        assert all("fake-env-token" not in value for entry in server.all_headers_log for value in entry.values())
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
 def test_project_mcp_http_discovery_client_smoke_lists_tools_sse(tmp_path: Path) -> None:
     project_root = tmp_path / "mcp_http_sse_discovery_project"
     initialize_project(_request("MCP HTTP SSE Discovery", project_root))
@@ -1338,6 +1451,31 @@ def test_project_mcp_http_client_smoke_invokes_tool(mode: str) -> None:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_client_rejects_secret_header_protocol_override() -> None:
+    client = ProjectMCPHttpDiscoveryClient(
+        timeout_seconds=2.0,
+        secret_headers={"Content-Type": "fake secret should not leak"},
+    )
+    config = ProjectMCPServerConfig(
+        server_id="mcp_http_secure",
+        transport="http",
+        command_or_url="http://127.0.0.1:1/mcp",
+    )
+
+    with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+        client.start(config)
+
+    assert exc_info.value.server_id == "mcp_http_secure"
+    assert exc_info.value.stage == "client_lifecycle"
+    assert exc_info.value.details == {
+        "server_id": "mcp_http_secure",
+        "transport": "http",
+        "header_name": "Content-Type",
+    }
+    assert "fake secret" not in str(exc_info.value)
+    assert "fake secret" not in str(exc_info.value.details)
 
 
 def test_project_mcp_http_client_sanitizes_tool_invocation_error() -> None:

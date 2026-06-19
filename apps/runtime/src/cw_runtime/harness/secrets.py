@@ -23,7 +23,7 @@ from typing import Any, ClassVar, Final, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .project import AGENT_WORKFLOW_DIR
+from .project import AGENT_WORKFLOW_DIR, ProjectMCPHttpDiscoveryClient, ProjectMCPServerConfig
 
 ProjectSecretDecryptor: TypeAlias = Callable[[bytes], bytes | str]
 ProjectSecretMasterKeyProvider: TypeAlias = Callable[[str], bytes | str]
@@ -385,6 +385,34 @@ def load_project_mcp_secret_material(
         return None
     plaintext = _decrypt_secret_value(encrypted_value, decrypt_secret=decrypt_secret)
     return _parse_secret_material(plaintext)
+
+
+def build_project_mcp_http_discovery_client_factory(
+    project_root: str | Path,
+    *,
+    decrypt_secret: ProjectSecretDecryptor,
+    timeout_seconds: float = 5.0,
+) -> Callable[[ProjectMCPServerConfig], ProjectMCPHttpDiscoveryClient]:
+    """Build an HTTP MCP client factory backed by project secure-store material."""
+
+    project_root_path = Path(project_root)
+
+    def create_client(config: ProjectMCPServerConfig) -> ProjectMCPHttpDiscoveryClient:
+        material = None
+        if config.secret_ref is not None:
+            material = load_project_mcp_secret_material(
+                project_root_path,
+                config.secret_ref,
+                decrypt_secret=decrypt_secret,
+            )
+            if material is None:
+                raise ProjectSecretStoreError("Project MCP secret material could not be loaded.")
+        return ProjectMCPHttpDiscoveryClient(
+            timeout_seconds=timeout_seconds,
+            secret_headers=None if material is None else material.headers,
+        )
+
+    return create_client
 
 
 def _read_encrypted_secret(database_path: Path, secret_ref: str) -> bytes | None:
