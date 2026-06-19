@@ -589,6 +589,54 @@ def test_runner_skips_expired_this_attempt_overlay_and_consumes_reserved_attempt
     assert "n_execute" not in cw_after_attempt.get("reserved_attempt_ids", {})
 
 
+def test_runner_treats_malformed_this_attempt_expires_at_as_expired(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+
+    advance_workflow_run(project_root, run_id)
+    reserved_attempt_id = "att_malformed_expiry_reserved"
+    run_json = _read_run_json(project_root, run_id)
+    edited = copy.deepcopy(run_json)
+    cw_metadata = edited["metadata"].setdefault("cw", {})
+    cw_metadata["active_prompt_overlays"] = {
+        "n_execute": [
+            {
+                "patch_id": "rp_malformed_expiry_attempt",
+                "patch_kind": "prompt_patch",
+                "repair_node_id": "n_repair",
+                "repair_attempt_id": "att_repair",
+                "evaluation_id": "ev_review",
+                "instruction_text": "Malformed expiry overlay must not be applied.",
+                "scope": "this_attempt_only",
+                "applies_to_attempts": [reserved_attempt_id],
+                "expires_at": "not-a-valid-iso-timestamp",
+                "applied_at": "2026-06-19T00:00:00.000Z",
+            }
+        ]
+    }
+    cw_metadata["reserved_attempt_ids"] = {"n_execute": reserved_attempt_id}
+    _write_run_json(project_root, run_id, edited)
+
+    advanced = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "malformed overlay skipped"})),
+    )
+
+    assert advanced.node_id == "n_execute"
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempt = _read_jsonl(run_root / "attempts.jsonl")[-1]
+    assert attempt["attempt_id"] == reserved_attempt_id
+    assert attempt["effective_prompt_overlay_ref"] is None
+    assert not (run_root / "overlays" / f"{reserved_attempt_id}.json").exists()
+    execution_pack = json.loads((run_root / "execution_packs" / f"{attempt['execution_pack_id']}.json").read_text())
+    assert execution_pack["effective_prompt_overlay"] is None
+    run_json_after_attempt = _read_run_json(project_root, run_id)
+    cw_after_attempt = run_json_after_attempt["metadata"]["cw"]
+    assert "n_execute" not in cw_after_attempt.get("active_prompt_overlays", {})
+    assert "n_execute" not in cw_after_attempt.get("reserved_attempt_ids", {})
+
+
 def test_runner_applies_unexpired_this_attempt_overlay_and_consumes_reserved_attempt(tmp_path: Path) -> None:
     project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
     run_id = _start_run(project_root, workflow_id)
