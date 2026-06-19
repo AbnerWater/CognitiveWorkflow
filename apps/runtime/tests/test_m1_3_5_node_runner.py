@@ -499,6 +499,48 @@ def test_runner_persists_failed_evaluation_repair_patch_and_retries_target(tmp_p
     assert "n_execute" not in run_json_after_pass["metadata"]["cw"]["active_prompt_overlays"]
 
 
+def test_runner_ignores_this_attempt_overlay_for_non_matching_attempt_id(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+
+    advance_workflow_run(project_root, run_id)
+    run_json = _read_run_json(project_root, run_id)
+    edited = copy.deepcopy(run_json)
+    edited["metadata"].setdefault("cw", {})["active_prompt_overlays"] = {
+        "n_execute": [
+            {
+                "patch_id": "rp_non_matching_attempt",
+                "patch_kind": "prompt_patch",
+                "repair_node_id": "n_repair",
+                "repair_attempt_id": "att_repair",
+                "evaluation_id": "ev_review",
+                "instruction_text": "This overlay must not be applied.",
+                "scope": "this_attempt_only",
+                "applies_to_attempts": ["att_other"],
+                "applied_at": "2026-06-19T00:00:00.000Z",
+            }
+        ]
+    }
+    _write_run_json(project_root, run_id, edited)
+
+    advanced = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "no overlay"})),
+    )
+
+    assert advanced.node_id == "n_execute"
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    attempt = _read_jsonl(run_root / "attempts.jsonl")[-1]
+    assert attempt["effective_prompt_overlay_ref"] is None
+    execution_pack = json.loads((run_root / "execution_packs" / f"{attempt['execution_pack_id']}.json").read_text())
+    assert execution_pack["effective_prompt_overlay"] is None
+    run_json_after_attempt = _read_run_json(project_root, run_id)
+    assert run_json_after_attempt["metadata"]["cw"]["active_prompt_overlays"]["n_execute"][0]["patch_id"] == (
+        "rp_non_matching_attempt"
+    )
+
+
 def test_runner_writes_usage_ledger_for_failed_execution_attempt(tmp_path: Path) -> None:
     project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload())
     run_id = _start_run(project_root, workflow_id)

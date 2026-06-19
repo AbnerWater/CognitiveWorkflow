@@ -843,6 +843,89 @@ async def test_adapter_repair_bridge_this_attempt_only_targets_reserved_retry(tm
     assert "n_execute" not in cw_metadata.get("active_prompt_overlays", {})
     assert "n_execute" not in cw_metadata.get("reserved_attempt_ids", {})
 
+    retry_again = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                passed=False,
+                score=0.2,
+                failure_type=FailureType.FORMAT_ERROR,
+                finding_message="Retry same target without another repair.",
+                recommended_action="retry_same",
+            )
+        ),
+    )
+    assert retry_again.next_node_ids == ["n_execute"]
+
+    second_retry = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "fixed without overlay"})),
+    )
+
+    assert second_retry.node_id == "n_execute"
+    second_retry_attempt = _read_jsonl(run_root / "attempts.jsonl")[-1]
+    assert second_retry_attempt["node_id"] == "n_execute"
+    assert second_retry_attempt["attempt_id"] != reserved_attempt_id
+    assert second_retry_attempt["effective_prompt_overlay_ref"] is None
+    second_execution_pack = json.loads(
+        (run_root / "execution_packs" / f"{second_retry_attempt['execution_pack_id']}.json").read_text(encoding="utf-8")
+    )
+    assert second_execution_pack["effective_prompt_overlay"] is None
+
+
+@pytest.mark.asyncio
+async def test_adapter_repair_bridge_rejects_workflow_scope_without_persisting_patch(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _review_repair_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+    adapter = _FakeAdapter(
+        usage=RunUsage(input_tokens=300, output_tokens=400, total_tokens=700, requests=1),
+        output={
+            "failure_type": "format_error",
+            "instruction_text": "Persist this instruction into the workflow.",
+            "expected_effect": "The workflow version should change.",
+            "scope": "persistent_for_workflow",
+            "metadata": {"source": "adapter_repair"},
+        },
+    )
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "invalid"})),
+    )
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                passed=False,
+                score=0.2,
+                failure_type=FailureType.FORMAT_ERROR,
+                finding_message="Format is invalid.",
+                recommended_action="repair_with_patch",
+                target_repair_node_id="n_repair",
+            )
+        ),
+    )
+    failed = await advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
+
+    assert failed.run.state == RunState.FAILED
+    assert adapter.closed is True
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    assert _read_jsonl(run_root / "repairs.jsonl") == []
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    repair_attempt = attempts[-1]
+    assert repair_attempt["node_id"] == "n_repair"
+    assert repair_attempt["state"] == "failed"
+    error_payload = repair_attempt["errors"][0]["payload"]
+    assert error_payload["error_code"] == "AA_RUN_OUTPUT_VALIDATION_FAILED"
+    assert error_payload["node_kind"] == "repair"
+    assert error_payload["output_type"] == "dict"
+    assert error_payload["validation_error_count"] == 1
+
 
 @pytest.mark.asyncio
 async def test_adapter_evaluation_bridge_rejects_invalid_output(tmp_path: Path) -> None:
