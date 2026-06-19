@@ -13,6 +13,7 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from os import PathLike
 from pathlib import Path
 from typing import Any, Literal, TypeAlias, cast
@@ -338,6 +339,7 @@ class _StoredPromptOverlay(BaseModel):
     instruction_text: str
     scope: ImplementedRepairScope
     applies_to_attempts: list[str] = Field(default_factory=list)
+    expires_at: str | None = None
     applied_at: str
 
 
@@ -2617,6 +2619,7 @@ def _stored_prompt_overlay(
         instruction_text=instruction_text,
         scope=scope,
         applies_to_attempts=list(patch.applies_to_attempts),
+        expires_at=patch.expires_at,
         applied_at=utc_now_ms(),
     )
 
@@ -2633,9 +2636,23 @@ def _prompt_overlays_for_attempt(
 
 
 def _prompt_overlay_applies_to_attempt(overlay: _StoredPromptOverlay, attempt_id: str) -> bool:
+    if overlay.scope == PatchScope.THIS_ATTEMPT_ONLY and _prompt_overlay_expired(overlay):
+        return False
     if overlay.applies_to_attempts:
         return attempt_id in overlay.applies_to_attempts
     return overlay.scope != PatchScope.THIS_ATTEMPT_ONLY
+
+
+def _prompt_overlay_expired(overlay: _StoredPromptOverlay) -> bool:
+    if overlay.expires_at is None:
+        return False
+    try:
+        expires_at = datetime.fromisoformat(overlay.expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at <= datetime.now(UTC)
 
 
 def _consume_this_attempt_prompt_overlays(
