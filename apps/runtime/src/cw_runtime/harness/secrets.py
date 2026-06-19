@@ -2,22 +2,23 @@
 
 This module stays below the runtime harness boundary: it reads the spec-defined
 ``secure/secrets.encrypted.sqlite`` table. The envelope and PBKDF2 derivation
-live here, while the OS keychain and AES-GCM primitive are injected by the
-caller so the default runtime does not grow platform keychain or crypto
-dependencies.
+live here. OS keychain access remains injected by the caller; the optional
+Windows CNG AES-GCM primitive below keeps the runtime dependency-free.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+import ctypes
 import hashlib
 import json
 import os
 import sqlite3
+import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Final, Literal, TypeAlias
+from typing import Any, ClassVar, Final, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -35,6 +36,32 @@ _SECRET_KDF: Final = "PBKDF2-HMAC-SHA256"
 _SECRET_KEY_BYTES: Final = 32
 _SECRET_NONCE_BYTES: Final = 12
 _SECRET_PBKDF2_ITERATIONS: Final = 600_000
+_SECRET_AES_GCM_TAG_BYTES: Final = 16
+_WINDOWS_CNG_STATUS_SUCCESS: Final = 0
+_WINDOWS_CNG_AES_ALGORITHM: Final = "AES"
+_WINDOWS_CNG_CHAINING_MODE_PROPERTY: Final = "ChainingMode"
+_WINDOWS_CNG_CHAIN_MODE_GCM: Final = "ChainingModeGCM"
+_WINDOWS_CNG_AUTH_INFO_VERSION: Final = 1
+
+
+class _WindowsCngAuthenticatedCipherModeInfo(ctypes.Structure):
+    """ctypes projection of BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO."""
+
+    _fields_: ClassVar[list[tuple[str, Any]]] = [
+        ("cbSize", ctypes.c_ulong),
+        ("dwInfoVersion", ctypes.c_ulong),
+        ("pbNonce", ctypes.c_void_p),
+        ("cbNonce", ctypes.c_ulong),
+        ("pbAuthData", ctypes.c_void_p),
+        ("cbAuthData", ctypes.c_ulong),
+        ("pbTag", ctypes.c_void_p),
+        ("cbTag", ctypes.c_ulong),
+        ("pbMacContext", ctypes.c_void_p),
+        ("cbMacContext", ctypes.c_ulong),
+        ("cbAAD", ctypes.c_ulong),
+        ("cbData", ctypes.c_ulonglong),
+        ("dwFlags", ctypes.c_ulong),
+    ]
 
 
 class ProjectSecretStoreError(RuntimeError):
@@ -48,6 +75,39 @@ class ProjectMCPSecretMaterial(BaseModel):
 
     headers: dict[str, str] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)
+
+
+def windows_cng_encrypt_aes_gcm(key: bytes, nonce: bytes, plaintext: bytes, associated_data: bytes) -> bytes:
+    """Encrypt with Windows CNG AES-GCM-256.
+
+    The return shape is ``ciphertext || tag``, matching common AES-GCM AEAD
+    providers and the existing project secret envelope seam.
+    """
+
+    return _windows_cng_aes_gcm_crypt(
+        key=key,
+        nonce=nonce,
+        data=plaintext,
+        associated_data=associated_data,
+        decrypt=False,
+    )
+
+
+def windows_cng_decrypt_aes_gcm(key: bytes, nonce: bytes, ciphertext: bytes, associated_data: bytes) -> bytes:
+    """Decrypt ``ciphertext || tag`` with Windows CNG AES-GCM-256."""
+
+    if len(ciphertext) < _SECRET_AES_GCM_TAG_BYTES:
+        raise ProjectSecretStoreError("Project secure secret AES-GCM ciphertext was invalid.")
+    encrypted = ciphertext[:-_SECRET_AES_GCM_TAG_BYTES]
+    tag = ciphertext[-_SECRET_AES_GCM_TAG_BYTES:]
+    return _windows_cng_aes_gcm_crypt(
+        key=key,
+        nonce=nonce,
+        data=encrypted,
+        associated_data=associated_data,
+        decrypt=True,
+        tag=tag,
+    )
 
 
 class ProjectSecretEncryptedValue(BaseModel):
@@ -397,3 +457,202 @@ def _parse_secret_material(plaintext: bytes) -> ProjectMCPSecretMaterial:
     if not material.headers and not material.env:
         raise ProjectSecretStoreError("Project secure secret plaintext did not contain MCP material.")
     return material
+
+
+def _windows_cng_aes_gcm_crypt(
+    *,
+    key: bytes,
+    nonce: bytes,
+    data: bytes,
+    associated_data: bytes,
+    decrypt: bool,
+    tag: bytes | None = None,
+) -> bytes:
+    if sys.platform != "win32":
+        raise ProjectSecretStoreError("Windows CNG AES-GCM provider is unavailable on this platform.")
+    if len(key) != _SECRET_KEY_BYTES:
+        raise ProjectSecretStoreError("Project secure secret AES-GCM key must be 256-bit.")
+    if len(nonce) != _SECRET_NONCE_BYTES:
+        raise ProjectSecretStoreError("Project secure secret AES-GCM nonce was invalid.")
+    if decrypt and (tag is None or len(tag) != _SECRET_AES_GCM_TAG_BYTES):
+        raise ProjectSecretStoreError("Project secure secret AES-GCM authentication tag was invalid.")
+
+    bcrypt = _load_windows_bcrypt()
+    algorithm_handle = ctypes.c_void_p()
+    key_handle = ctypes.c_void_p()
+    key_buffer = _ctypes_buffer(key)
+    nonce_buffer = _ctypes_buffer(nonce)
+    aad_buffer = _ctypes_buffer(associated_data)
+    data_buffer = _ctypes_buffer(data)
+    output_buffer = _empty_ctypes_buffer(len(data))
+    tag_buffer = _ctypes_buffer(b"\x00" * _SECRET_AES_GCM_TAG_BYTES if tag is None else tag)
+    result_size = ctypes.c_ulong(0)
+    auth_info = _build_windows_cng_auth_info(
+        nonce_buffer=nonce_buffer,
+        auth_data_buffer=aad_buffer,
+        tag_buffer=tag_buffer,
+    )
+
+    try:
+        _check_windows_cng_status(
+            bcrypt.BCryptOpenAlgorithmProvider(
+                ctypes.byref(algorithm_handle),
+                _WINDOWS_CNG_AES_ALGORITHM,
+                None,
+                0,
+            ),
+            "open algorithm",
+        )
+        _set_windows_cng_chaining_mode(bcrypt, algorithm_handle)
+        _check_windows_cng_status(
+            bcrypt.BCryptGenerateSymmetricKey(
+                algorithm_handle,
+                ctypes.byref(key_handle),
+                None,
+                0,
+                _ctypes_void_pointer(key_buffer),
+                len(key),
+                0,
+            ),
+            "generate key",
+        )
+        crypt_function = bcrypt.BCryptDecrypt if decrypt else bcrypt.BCryptEncrypt
+        _check_windows_cng_status(
+            crypt_function(
+                key_handle,
+                _ctypes_void_pointer(data_buffer),
+                len(data),
+                ctypes.byref(auth_info),
+                None,
+                0,
+                _ctypes_void_pointer(output_buffer),
+                len(data),
+                ctypes.byref(result_size),
+                0,
+            ),
+            "decrypt" if decrypt else "encrypt",
+        )
+    finally:
+        if key_handle.value is not None:
+            bcrypt.BCryptDestroyKey(key_handle)
+        if algorithm_handle.value is not None:
+            bcrypt.BCryptCloseAlgorithmProvider(algorithm_handle, 0)
+
+    if int(result_size.value) != len(data):
+        raise ProjectSecretStoreError("Windows CNG AES-GCM provider returned an invalid result.")
+    output = bytes(output_buffer)
+    if decrypt:
+        return output
+    return output + bytes(tag_buffer)
+
+
+def _load_windows_bcrypt() -> Any:
+    windll_factory = getattr(ctypes, "WinDLL", None)
+    if windll_factory is None:
+        raise ProjectSecretStoreError("Windows CNG AES-GCM provider is unavailable on this platform.")
+    bcrypt = windll_factory("bcrypt")
+    bcrypt.BCryptOpenAlgorithmProvider.argtypes = [
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.c_wchar_p,
+        ctypes.c_wchar_p,
+        ctypes.c_ulong,
+    ]
+    bcrypt.BCryptOpenAlgorithmProvider.restype = ctypes.c_long
+    bcrypt.BCryptSetProperty.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_wchar_p,
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+    ]
+    bcrypt.BCryptSetProperty.restype = ctypes.c_long
+    bcrypt.BCryptGenerateSymmetricKey.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+    ]
+    bcrypt.BCryptGenerateSymmetricKey.restype = ctypes.c_long
+    bcrypt.BCryptEncrypt.argtypes = _windows_cng_crypt_argtypes()
+    bcrypt.BCryptEncrypt.restype = ctypes.c_long
+    bcrypt.BCryptDecrypt.argtypes = _windows_cng_crypt_argtypes()
+    bcrypt.BCryptDecrypt.restype = ctypes.c_long
+    bcrypt.BCryptDestroyKey.argtypes = [ctypes.c_void_p]
+    bcrypt.BCryptDestroyKey.restype = ctypes.c_long
+    bcrypt.BCryptCloseAlgorithmProvider.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    bcrypt.BCryptCloseAlgorithmProvider.restype = ctypes.c_long
+    return bcrypt
+
+
+def _windows_cng_crypt_argtypes() -> list[Any]:
+    return [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.c_ulong,
+    ]
+
+
+def _set_windows_cng_chaining_mode(bcrypt: Any, algorithm_handle: ctypes.c_void_p) -> None:
+    chaining_mode = ctypes.create_unicode_buffer(_WINDOWS_CNG_CHAIN_MODE_GCM)
+    _check_windows_cng_status(
+        bcrypt.BCryptSetProperty(
+            algorithm_handle,
+            _WINDOWS_CNG_CHAINING_MODE_PROPERTY,
+            ctypes.cast(chaining_mode, ctypes.c_void_p),
+            ctypes.sizeof(chaining_mode),
+            0,
+        ),
+        "set chaining mode",
+    )
+
+
+def _build_windows_cng_auth_info(
+    *,
+    nonce_buffer: ctypes.Array[ctypes.c_ubyte],
+    auth_data_buffer: ctypes.Array[ctypes.c_ubyte],
+    tag_buffer: ctypes.Array[ctypes.c_ubyte],
+) -> _WindowsCngAuthenticatedCipherModeInfo:
+    auth_info = _WindowsCngAuthenticatedCipherModeInfo()
+    auth_info.cbSize = ctypes.sizeof(_WindowsCngAuthenticatedCipherModeInfo)
+    auth_info.dwInfoVersion = _WINDOWS_CNG_AUTH_INFO_VERSION
+    auth_info.pbNonce = _ctypes_void_pointer(nonce_buffer)
+    auth_info.cbNonce = len(nonce_buffer)
+    auth_info.pbAuthData = _ctypes_void_pointer(auth_data_buffer)
+    auth_info.cbAuthData = len(auth_data_buffer)
+    auth_info.pbTag = _ctypes_void_pointer(tag_buffer)
+    auth_info.cbTag = len(tag_buffer)
+    auth_info.pbMacContext = None
+    auth_info.cbMacContext = 0
+    auth_info.cbAAD = 0
+    auth_info.cbData = 0
+    auth_info.dwFlags = 0
+    return auth_info
+
+
+def _ctypes_buffer(value: bytes) -> ctypes.Array[ctypes.c_ubyte]:
+    buffer_type = ctypes.c_ubyte * len(value)
+    return buffer_type.from_buffer_copy(value)
+
+
+def _empty_ctypes_buffer(size: int) -> ctypes.Array[ctypes.c_ubyte]:
+    buffer_type = ctypes.c_ubyte * size
+    return buffer_type()
+
+
+def _ctypes_void_pointer(buffer: ctypes.Array[ctypes.c_ubyte]) -> ctypes.c_void_p:
+    return ctypes.cast(buffer, ctypes.c_void_p)
+
+
+def _check_windows_cng_status(status: int, operation: str) -> None:
+    if int(status) != _WINDOWS_CNG_STATUS_SUCCESS:
+        raise ProjectSecretStoreError(f"Windows CNG AES-GCM provider failed during {operation}.")

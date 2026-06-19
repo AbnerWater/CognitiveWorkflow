@@ -45,6 +45,8 @@ from .secrets import (
     decrypt_project_secret_value,
     encrypt_project_secret_value,
     load_project_mcp_secret_material,
+    windows_cng_decrypt_aes_gcm,
+    windows_cng_encrypt_aes_gcm,
 )
 
 __all__ = [
@@ -88,4 +90,6 @@ __all__ = [
     "load_project_tool_lock_snapshot",
     "read_project",
     "update_manifest_json",
+    "windows_cng_decrypt_aes_gcm",
+    "windows_cng_encrypt_aes_gcm",
 ]

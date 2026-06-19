@@ -40,6 +40,8 @@ from cw_runtime.harness import (
     load_project_tool_availability,
     load_project_tool_lock_snapshot,
     update_manifest_json,
+    windows_cng_decrypt_aes_gcm,
+    windows_cng_encrypt_aes_gcm,
 )
 
 
@@ -1777,6 +1779,46 @@ def test_project_secret_envelope_round_trips_with_project_salt(tmp_path: Path) -
         )
         == plaintext
     )
+
+
+def test_project_secret_envelope_round_trips_with_windows_cng_aes_gcm(tmp_path: Path) -> None:
+    if sys.platform != "win32":
+        pytest.skip("Windows CNG AES-GCM provider is only available on Windows.")
+    project_root = tmp_path / "mcp_secret_windows_cng_project"
+    response = initialize_project(_request("MCP Secret Windows CNG", project_root))
+    plaintext = b'{"headers":{"Authorization":"Bearer fake-access-token"}}'
+
+    encrypted = encrypt_project_secret_value(
+        response.project_id,
+        plaintext,
+        master_key=b"test-master-key",
+        encrypt_aead=windows_cng_encrypt_aes_gcm,
+        nonce_factory=lambda size: b"\x04" * size,
+    )
+    envelope = json.loads(encrypted.decode("utf-8"))
+    ciphertext = base64.b64decode(envelope["ciphertext"].encode("ascii"), validate=True)
+
+    assert b"fake-access-token" not in ciphertext
+    assert (
+        decrypt_project_secret_value(
+            response.project_id,
+            encrypted,
+            master_key=b"test-master-key",
+            decrypt_aead=windows_cng_decrypt_aes_gcm,
+        )
+        == plaintext
+    )
+
+    with pytest.raises(ProjectSecretStoreError) as exc_info:
+        decrypt_project_secret_value(
+            response.project_id,
+            encrypted,
+            master_key=b"different-master-key",
+            decrypt_aead=windows_cng_decrypt_aes_gcm,
+        )
+
+    assert "fake-access-token" not in str(exc_info.value)
+    assert response.project_id not in str(exc_info.value)
 
 
 def test_project_secret_envelope_rejects_wrong_project_salt(tmp_path: Path) -> None:
