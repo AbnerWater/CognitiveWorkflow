@@ -2277,6 +2277,7 @@ def _prepare_attempt(
         initial_input=_initial_input_from_run(run),
         effective_prompt_overlay=effective_prompt_overlay,
         usage_limits=_usage_limits_from_run(run),
+        metadata={"cw": {"project_root": str(project_root)}},
         reflection_lookup_result=lookup_reflection_memory(
             project_root,
             ReflectionLookupRequest(

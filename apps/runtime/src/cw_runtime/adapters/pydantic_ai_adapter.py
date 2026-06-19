@@ -17,7 +17,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Literal, Protocol, TypeAlias, cast
+from typing import Any, Literal, Protocol, TypeAlias, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,7 +35,16 @@ from cw_runtime.adapters.builtin_tools import (
     default_builtin_tool_names,
     file_io_for_project_root,
 )
-from cw_runtime.harness.project import load_enabled_skill_refs
+from cw_runtime.harness.project import (
+    ProjectMCPDiscoveredTools,
+    ProjectMCPDiscoveryError,
+    ProjectMCPHealthCheck,
+    ProjectMCPHttpDiscoveryClient,
+    ProjectMCPServerConfig,
+    ProjectMCPStdioDiscoveryClient,
+    load_enabled_skill_refs,
+    load_project_mcp_server_configs,
+)
 from cw_runtime.model_router.router import AdapterCapabilities
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_schemas import ExecutionPack
@@ -54,7 +63,9 @@ from cw_schemas.types import (
 )
 
 RawPydanticAIEvent: TypeAlias = Mapping[str, Any]
+_ProjectMCPOperationResult = TypeVar("_ProjectMCPOperationResult")
 _EVIDENCE_LOOKUP_MISS_CODE = "EP_RUNTIME_EVIDENCE_LOOKUP_MISS"
+_PROJECT_MCP_TIMEOUT_SECONDS = 5.0
 
 
 class _AttemptTimeoutExpired(RuntimeError):
@@ -181,6 +192,18 @@ class PydanticAIToolsets:
 
 
 PydanticAIToolsetFactory: TypeAlias = Callable[[ModuleType, PydanticAIToolsetRequest], PydanticAIToolsets]
+
+
+class _ProjectMCPInvocationClient(Protocol):
+    def start(self, config: ProjectMCPServerConfig) -> None: ...
+
+    def health_check(self) -> ProjectMCPHealthCheck: ...
+
+    def discover_tools(self) -> ProjectMCPDiscoveredTools | None: ...
+
+    def invoke_tool(self, tool_name: str, arguments: Mapping[str, object] | None = None) -> dict[str, Any]: ...
+
+    def close(self) -> None: ...
 
 
 def _registry_key(value: str, field_name: str) -> str:
@@ -471,17 +494,19 @@ class PydanticAIAdapter:
     def capabilities(self) -> AdapterCapabilities:
         common_settings = {"temperature", "top_p", "max_tokens", "reasoning_effort", "seed"}
         adapter_owned_tooling_enabled = self._session_factory is None and bool(default_builtin_tool_names())
-        tooling_enabled = adapter_owned_tooling_enabled or self._toolset_factory is not None
+        project_mcp_enabled = self._session_factory is None
+        tooling_enabled = adapter_owned_tooling_enabled or project_mcp_enabled or self._toolset_factory is not None
         external_tooling_enabled = self._toolset_factory is not None
+        mcp_tooling_enabled = project_mcp_enabled or external_tooling_enabled
         return AdapterCapabilities(
             kinds={AdapterKind.CHAT},
             provider_kinds={ProviderKind.CLOUD, ProviderKind.PRIVATE, ProviderKind.LOCAL},
             structured_output=True,
             streaming=True,
             tool_call=tooling_enabled,
-            mcp=external_tooling_enabled,
+            mcp=mcp_tooling_enabled,
             human_in_the_loop=external_tooling_enabled,
-            deferred_tool_results=external_tooling_enabled,
+            deferred_tool_results=mcp_tooling_enabled,
             multi_modal=set(),
             long_context_tokens=200_000,
             max_tool_iterations=16 if tooling_enabled else 0,
@@ -1787,6 +1812,20 @@ def _sdk_toolsets(
         factory_toolset_request = toolset_request
 
     factory_toolset_request = _project_scoped_toolset_request(factory_toolset_request, project_root)
+    project_mcp_toolsets, project_mcp_server_ids = _project_mcp_adapter_toolsets(
+        sdk,
+        factory_toolset_request.mcp_tools,
+        project_root,
+    )
+    if project_mcp_toolsets:
+        adapter_toolsets.extend(project_mcp_toolsets)
+        factory_toolset_request = factory_toolset_request.model_copy(
+            update={
+                "mcp_tools": [
+                    tool for tool in factory_toolset_request.mcp_tools if tool.server_id not in project_mcp_server_ids
+                ]
+            }
+        )
     if not _has_toolset_request(factory_toolset_request):
         return adapter_toolsets
     if toolset_factory is None:
@@ -1819,6 +1858,223 @@ def _project_scoped_toolset_request(
             },
         )
     return toolset_request
+
+
+def _project_mcp_adapter_toolsets(
+    sdk: ModuleType,
+    mcp_tools: Sequence[PydanticAIMCPToolRequest],
+    project_root: str | None,
+) -> tuple[list[object], set[str]]:
+    if project_root is None or not mcp_tools:
+        return [], set()
+
+    project_root_path = Path(project_root)
+    try:
+        configs = load_project_mcp_server_configs(project_root_path)
+    except Exception as exc:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Pydantic AI project MCP configs could not be loaded.",
+            payload={
+                "project_root": project_root,
+                "exception_type": type(exc).__name__,
+            },
+        ) from exc
+
+    requests_by_server: dict[str, list[PydanticAIMCPToolRequest]] = {}
+    for tool in mcp_tools:
+        requests_by_server.setdefault(tool.server_id, []).append(tool)
+
+    handled_server_ids: set[str] = set()
+    mcp_toolsets_by_server: dict[str, object] = {}
+    for server_id in _unique_strings([tool.server_id for tool in mcp_tools]):
+        config = configs.get(server_id)
+        if config is None:
+            continue
+        if config.secret_ref is not None:
+            raise AdapterRuntimeError(
+                "AA_RUN_TOOL_NOT_FOUND",
+                "Pydantic AI project MCP toolset requires a secret resolver that is not configured.",
+                payload={"mcp_secret_ref_server_ids": [server_id]},
+            )
+        mcp_toolsets_by_server[server_id] = _project_mcp_function_toolset(
+            sdk,
+            config,
+            requests_by_server[server_id],
+        )
+        handled_server_ids.add(server_id)
+
+    if not mcp_toolsets_by_server:
+        return [], set()
+    wrapped = _approval_wrapped_mcp_toolsets(
+        sdk,
+        [tool for tool in mcp_tools if tool.server_id in handled_server_ids],
+        mcp_toolsets_by_server,
+    )
+    return wrapped, handled_server_ids
+
+
+def _project_mcp_function_toolset(
+    sdk: ModuleType,
+    config: ProjectMCPServerConfig,
+    requested_tools: Sequence[PydanticAIMCPToolRequest],
+) -> object:
+    tool_names = _project_mcp_tool_names(config, requested_tools)
+    if not tool_names:
+        raise AdapterRuntimeError(
+            "AA_RUN_TOOL_NOT_FOUND",
+            "Project MCP server did not expose requested tools.",
+            payload={"server_id": config.server_id},
+        )
+    tool_functions = [(tool_name, _project_mcp_tool_func(config, tool_name)) for tool_name in tool_names]
+    return _sdk_function_toolset(
+        sdk,
+        tool_functions,
+        toolset_id=f"cw_project_mcp_{_sdk_identifier(config.server_id)}",
+    )
+
+
+def _project_mcp_tool_names(
+    config: ProjectMCPServerConfig,
+    requested_tools: Sequence[PydanticAIMCPToolRequest],
+) -> list[str]:
+    explicit_names = [tool.tool_name for tool in requested_tools if tool.tool_name != "*"]
+    if not any(tool.tool_name == "*" for tool in requested_tools):
+        return _unique_strings(explicit_names)
+
+    discovered = _discover_project_mcp_tools_for_adapter(config)
+    snapshot_names = [
+        str(item.get("name"))
+        for item in discovered.tools_snapshot
+        if isinstance(item.get("name"), str) and str(item.get("name")).strip() != ""
+    ]
+    return _unique_strings([*explicit_names, *snapshot_names])
+
+
+def _discover_project_mcp_tools_for_adapter(config: ProjectMCPServerConfig) -> ProjectMCPDiscoveredTools:
+    def discover(client: _ProjectMCPInvocationClient) -> ProjectMCPDiscoveredTools:
+        client.start(config)
+        health = client.health_check()
+        if not health.healthy:
+            raise ProjectMCPDiscoveryError(
+                config.server_id,
+                "health_check",
+                "Project MCP server health check failed before adapter toolset construction.",
+                details={"server_id": config.server_id, "transport": config.transport},
+            )
+        discovered = client.discover_tools()
+        if discovered is None:
+            raise ProjectMCPDiscoveryError(
+                config.server_id,
+                "discover_tools",
+                "Project MCP server did not return tools for adapter toolset construction.",
+                details={"server_id": config.server_id, "transport": config.transport},
+            )
+        return discovered
+
+    try:
+        return _with_project_mcp_client(config, discover)
+    except ProjectMCPDiscoveryError as exc:
+        raise _project_mcp_adapter_error(config, exc) from exc
+
+
+def _project_mcp_tool_func(config: ProjectMCPServerConfig, tool_name: str) -> PydanticAIBuiltinToolFunc:
+    def invoke_project_mcp_tool(**arguments: Any) -> dict[str, Any]:
+        return _invoke_project_mcp_tool(config, tool_name, arguments)
+
+    invoke_project_mcp_tool.__name__ = f"project_mcp_{_sdk_identifier(config.server_id)}_{_sdk_identifier(tool_name)}"
+    invoke_project_mcp_tool.__doc__ = f"Invoke project MCP tool {tool_name} on server {config.server_id}."
+    return invoke_project_mcp_tool
+
+
+def _invoke_project_mcp_tool(
+    config: ProjectMCPServerConfig,
+    tool_name: str,
+    arguments: Mapping[str, object],
+) -> dict[str, Any]:
+    def invoke(client: _ProjectMCPInvocationClient) -> dict[str, Any]:
+        client.start(config)
+        health = client.health_check()
+        if not health.healthy:
+            raise ProjectMCPDiscoveryError(
+                config.server_id,
+                "health_check",
+                "Project MCP server health check failed before tool invocation.",
+                details={"server_id": config.server_id, "transport": config.transport},
+            )
+        return client.invoke_tool(tool_name, arguments)
+
+    try:
+        return _with_project_mcp_client(config, invoke)
+    except ProjectMCPDiscoveryError as exc:
+        raise _project_mcp_adapter_error(config, exc) from exc
+
+
+def _with_project_mcp_client(
+    config: ProjectMCPServerConfig,
+    operation: Callable[[_ProjectMCPInvocationClient], _ProjectMCPOperationResult],
+) -> _ProjectMCPOperationResult:
+    client = _project_mcp_client_for_config(config)
+    primary_error: BaseException | None = None
+    try:
+        try:
+            return operation(client)
+        except ProjectMCPDiscoveryError as exc:
+            primary_error = exc
+            raise
+        except Exception as exc:
+            primary_error = exc
+            raise AdapterRuntimeError(
+                "AA_RUN_TOOL_NOT_FOUND",
+                "Project MCP tool invocation failed.",
+                payload={
+                    "server_id": config.server_id,
+                    "transport": config.transport,
+                    "exception_type": type(exc).__name__,
+                },
+            ) from exc
+    finally:
+        try:
+            client.close()
+        except Exception as exc:
+            if primary_error is None:
+                raise AdapterRuntimeError(
+                    "AA_RUN_TOOL_NOT_FOUND",
+                    "Project MCP client close failed.",
+                    payload={
+                        "server_id": config.server_id,
+                        "transport": config.transport,
+                        "exception_type": type(exc).__name__,
+                    },
+                ) from exc
+
+
+def _project_mcp_client_for_config(config: ProjectMCPServerConfig) -> _ProjectMCPInvocationClient:
+    if config.transport == "stdio":
+        return ProjectMCPStdioDiscoveryClient(timeout_seconds=_PROJECT_MCP_TIMEOUT_SECONDS)
+    if config.transport == "http":
+        return ProjectMCPHttpDiscoveryClient(timeout_seconds=_PROJECT_MCP_TIMEOUT_SECONDS)
+    raise AdapterRuntimeError(
+        "AA_RUN_TOOL_NOT_FOUND",
+        "Project MCP transport is not supported by Pydantic AI adapter toolsets.",
+        payload={"server_id": config.server_id, "transport": config.transport},
+    )
+
+
+def _project_mcp_adapter_error(
+    config: ProjectMCPServerConfig,
+    exc: ProjectMCPDiscoveryError,
+) -> AdapterRuntimeError:
+    return AdapterRuntimeError(
+        "AA_RUN_TOOL_NOT_FOUND",
+        "Project MCP toolset resolution failed.",
+        payload={
+            "server_id": config.server_id,
+            "transport": config.transport,
+            "stage": exc.stage,
+            "details": dict(exc.details),
+        },
+    )
 
 
 def _factory_sdk_toolsets(
@@ -1927,6 +2183,15 @@ def _sdk_builtin_function_toolset(
     sdk: ModuleType,
     builtin_tool_functions: Sequence[tuple[str, PydanticAIBuiltinToolFunc]],
 ) -> object:
+    return _sdk_function_toolset(sdk, builtin_tool_functions, toolset_id="cw_builtin_tools")
+
+
+def _sdk_function_toolset(
+    sdk: ModuleType,
+    tool_functions: Sequence[tuple[str, PydanticAIBuiltinToolFunc]],
+    *,
+    toolset_id: str,
+) -> object:
     function_toolset_cls = getattr(sdk, "FunctionToolset", None)
     if not callable(function_toolset_cls):
         raise AdapterRuntimeError(
@@ -1935,7 +2200,7 @@ def _sdk_builtin_function_toolset(
             payload={"module": "pydantic_ai"},
         )
 
-    toolset: object = function_toolset_cls(id="cw_builtin_tools")
+    toolset: object = function_toolset_cls(id=toolset_id)
     add_function = getattr(toolset, "add_function", None)
     if not callable(add_function):
         raise AdapterRuntimeError(
@@ -1943,8 +2208,19 @@ def _sdk_builtin_function_toolset(
             "pydantic_ai FunctionToolset does not expose add_function.",
             payload={"module": "pydantic_ai", "toolset_type": type(toolset).__name__},
         )
-    for tool_id, func in builtin_tool_functions:
-        add_function(func, name=tool_id)
+    for tool_id, func in tool_functions:
+        try:
+            add_function(func, name=tool_id)
+        except Exception as exc:
+            raise AdapterRuntimeError(
+                "AA_RUN_TOOL_NOT_FOUND",
+                "pydantic_ai FunctionToolset rejected an adapter-owned tool function.",
+                payload={
+                    "toolset_id": toolset_id,
+                    "tool_id": tool_id,
+                    "exception_type": type(exc).__name__,
+                },
+            ) from exc
     return toolset
 
 
@@ -2958,6 +3234,11 @@ def _unique_strings(values: Sequence[str]) -> list[str]:
             result.append(value)
             seen.add(value)
     return result
+
+
+def _sdk_identifier(value: str) -> str:
+    identifier = "".join(character if character.isalnum() or character == "_" else "_" for character in value)
+    return identifier or "tool"
 
 
 __all__ = [

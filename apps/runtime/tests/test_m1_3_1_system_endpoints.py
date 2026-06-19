@@ -125,7 +125,9 @@ def test_system_capabilities_and_shutdown_foundation() -> None:
     assert set(pydantic_ai["provider_kinds"]) == {"cloud", "local", "private"}
     assert pydantic_ai["structured_output"] is True
     assert pydantic_ai["streaming"] is True
-    assert pydantic_ai["mcp"] is False
+    assert pydantic_ai["mcp"] is True
+    assert pydantic_ai["human_in_the_loop"] is False
+    assert pydantic_ai["deferred_tool_results"] is True
     assert pydantic_ai["cancel"] is False
     assert set(pydantic_ai["metadata"]["cw"]["supported_builtin_tools"]) == {
         "evidence_lookup",

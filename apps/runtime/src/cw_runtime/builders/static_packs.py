@@ -118,6 +118,14 @@ def build_static_execution_pack(
     """Build the ExecutionPack wrapper for one attempt."""
 
     effective_model_settings = request.effective_model_settings or request.contract.model_policy.model_settings
+    cw_metadata = {
+        "builder": "static_phase1",
+        "context_builder_version": _BUILDER_VERSION,
+        "evidence_builder_version": _BUILDER_VERSION if evidence_pack is not None else None,
+    }
+    request_cw_metadata = request.metadata.get("cw")
+    if isinstance(request_cw_metadata, Mapping):
+        cw_metadata.update({key: value for key, value in request_cw_metadata.items() if isinstance(key, str)})
     execution_pack = ExecutionPack(
         pack_id=request.execution_pack_id,
         run_id=request.run_id,
@@ -134,13 +142,7 @@ def build_static_execution_pack(
         usage_limits=request.usage_limits,
         cancel_token=_derived_id("cancel", request.attempt_id),
         correlation_id=request.attempt_id,
-        metadata={
-            "cw": {
-                "builder": "static_phase1",
-                "context_builder_version": _BUILDER_VERSION,
-                "evidence_builder_version": _BUILDER_VERSION if evidence_pack is not None else None,
-            }
-        },
+        metadata={"cw": cw_metadata},
     )
     return execution_pack
 

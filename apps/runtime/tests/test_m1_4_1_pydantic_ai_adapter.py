@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from pathlib import Path
 from types import ModuleType, SimpleNamespace, TracebackType
 from typing import Any, ClassVar, cast
 
 import pytest
 
+import cw_runtime.adapters.pydantic_ai_adapter as pydantic_ai_adapter_module
 from cw_runtime.adapters import (
     AttemptResumption,
     HumanDecisionResolution,
@@ -28,6 +29,7 @@ from cw_runtime.adapters import (
     python_sandbox,
     web_fetch,
 )
+from cw_runtime.harness.project import ProjectMCPDiscoveredTools, ProjectMCPHealthCheck, ProjectMCPServerConfig
 from cw_schemas.contract import (
     EvidenceRequirement,
     ExecutionContract,
@@ -256,6 +258,55 @@ class FakeSDKFunctionToolset:
     def add_function(self, func: Callable[..., Any], *, name: str | None = None) -> object:
         self.functions.append((name, func))
         return SimpleNamespace(name=name, func=func)
+
+
+class FakeProjectMCPClient:
+    instances: ClassVar[list[FakeProjectMCPClient]] = []
+
+    def __init__(self) -> None:
+        self.config: ProjectMCPServerConfig | None = None
+        self.started = False
+        self.health_checked = False
+        self.discovered = False
+        self.closed = False
+        self.invocations: list[tuple[str, dict[str, object]]] = []
+        FakeProjectMCPClient.instances.append(self)
+
+    def start(self, config: ProjectMCPServerConfig) -> None:
+        self.config = config
+        self.started = True
+
+    def health_check(self) -> ProjectMCPHealthCheck:
+        self.health_checked = True
+        return ProjectMCPHealthCheck(healthy=True)
+
+    def discover_tools(self) -> ProjectMCPDiscoveredTools:
+        self.discovered = True
+        return ProjectMCPDiscoveredTools(
+            version="fake",
+            tools_snapshot=[
+                {
+                    "name": "search",
+                    "title": "Search",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"query": {"type": "string"}},
+                    },
+                }
+            ],
+        )
+
+    def invoke_tool(self, tool_name: str, arguments: Mapping[str, object] | None = None) -> dict[str, Any]:
+        invocation_arguments = {} if arguments is None else dict(arguments)
+        self.invocations.append((tool_name, invocation_arguments))
+        return {
+            "content": [{"type": "text", "text": f"{tool_name}:{invocation_arguments.get('query', '')}"}],
+            "isError": False,
+            "structuredContent": {"server_id": self.config.server_id if self.config is not None else "missing"},
+        }
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class FakeSDKFunctionToolsetWithoutAddFunction:
@@ -783,9 +834,9 @@ async def test_pydantic_ai_adapter_capabilities_descriptor_and_prepare() -> None
     descriptor = build_pydantic_ai_descriptor()
     assert descriptor.adapter_id == "pydantic_ai"
     assert descriptor.capabilities.tool_call is True
-    assert descriptor.capabilities.mcp is False
+    assert descriptor.capabilities.mcp is True
     assert descriptor.capabilities.human_in_the_loop is False
-    assert descriptor.capabilities.deferred_tool_results is False
+    assert descriptor.capabilities.deferred_tool_results is True
     assert descriptor.capabilities.max_tool_iterations == 16
     assert descriptor.capabilities.metadata == {
         "cw": {
@@ -1868,6 +1919,154 @@ async def test_pydantic_ai_toolset_registry_resolves_registered_toolsets(
     assert mcp_wrapper.wrapped is mcp_toolset
     assert mcp_wrapper.approval_required_func(None, SimpleNamespace(name="search"), {}) is True
     assert mcp_wrapper.approval_required_func(None, SimpleNamespace(name="write_file"), {}) is False
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_resolves_project_mcp_toolset(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    FakeProjectMCPClient.instances.clear()
+
+    def create_client(_config: ProjectMCPServerConfig) -> FakeProjectMCPClient:
+        return FakeProjectMCPClient()
+
+    monkeypatch.setattr(pydantic_ai_adapter_module, "_project_mcp_client_for_config", create_client)
+    project_root = _initialized_project_root(tmp_path / "project_mcp_adapter")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_research",
+                "transport": "stdio",
+                "command_or_url": "python fake_mcp_server.py",
+            }
+        ],
+    )
+
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            mcp_tools=[MCPToolRef(server_id="mcp_research", tool_name="search", requires_approval=True)],
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["mcp_research"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    assert len(FakeSDKAgent.instances) == 1
+    sdk_toolsets = FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert len(sdk_toolsets) == 1
+    approval_wrapper = sdk_toolsets[0]
+    assert isinstance(approval_wrapper, FakeSDKApprovalRequiredToolset)
+    assert approval_wrapper.approval_required_func(None, SimpleNamespace(name="search"), {"query": "cw"}) is True
+    project_toolset = approval_wrapper.wrapped
+    assert isinstance(project_toolset, FakeSDKFunctionToolset)
+    assert project_toolset.id == "cw_project_mcp_mcp_research"
+    assert len(project_toolset.functions) == 1
+    tool_name, tool_func = project_toolset.functions[0]
+    assert tool_name == "search"
+
+    result = tool_func(query="cw")
+
+    assert result == {
+        "content": [{"type": "text", "text": "search:cw"}],
+        "isError": False,
+        "structuredContent": {"server_id": "mcp_research"},
+    }
+    invocation_client = FakeProjectMCPClient.instances[-1]
+    assert invocation_client.started is True
+    assert invocation_client.health_checked is True
+    assert invocation_client.invocations == [("search", {"query": "cw"})]
+    assert invocation_client.closed is True
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_default_sdk_session_discovers_project_mcp_wildcard(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    FakeProjectMCPClient.instances.clear()
+
+    def create_client(_config: ProjectMCPServerConfig) -> FakeProjectMCPClient:
+        return FakeProjectMCPClient()
+
+    monkeypatch.setattr(pydantic_ai_adapter_module, "_project_mcp_client_for_config", create_client)
+    project_root = _initialized_project_root(tmp_path / "project_mcp_adapter_wildcard")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_research",
+                "transport": "http",
+                "command_or_url": "http://127.0.0.1:18181/mcp",
+            }
+        ],
+    )
+
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["mcp_research"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    discovery_client = FakeProjectMCPClient.instances[0]
+    assert discovery_client.discovered is True
+    assert discovery_client.closed is True
+    project_toolset = FakeSDKAgent.instances[0].kwargs["toolsets"][0]
+    assert isinstance(project_toolset, FakeSDKFunctionToolset)
+    assert [name for name, _func in project_toolset.functions] == ["search"]
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_project_mcp_secret_ref_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    project_root = _initialized_project_root(tmp_path / "project_mcp_secret_ref")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_secure",
+                "transport": "http",
+                "command_or_url": "http://127.0.0.1:18182/mcp",
+                "secret_ref": "secure://mcp/token",
+            }
+        ],
+    )
+
+    adapter = PydanticAIAdapter()
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            mcp_tools=[MCPToolRef(server_id="mcp_secure", tool_name="search", requires_approval=False)],
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["mcp_secure"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    assert len(FakeSDKAgent.instances) == 0
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    assert outcome.errors[0].payload["mcp_secret_ref_server_ids"] == ["mcp_secure"]
 
 
 @pytest.mark.asyncio

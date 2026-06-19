@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+import sys
+from collections.abc import AsyncIterator, Callable
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Any, ClassVar
 
 import pytest
 from pydantic import SecretStr
@@ -19,6 +21,7 @@ from cw_runtime.adapters import (
     build_pydantic_ai_descriptor,
 )
 from cw_runtime.api import create_app
+from cw_runtime.harness.project import ProjectMCPHealthCheck, ProjectMCPServerConfig
 from cw_runtime.model_router import AdapterCapabilities
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_runtime.settings import RuntimeSettings
@@ -207,6 +210,10 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _write_json_value(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
 class _FakeAdapter:
     def __init__(self, *, output: dict[str, Any] | None = None) -> None:
         self.adapter_id = "pydantic_ai"
@@ -288,6 +295,117 @@ class _FakeAdapter:
         self.closed = True
 
 
+class _FakeSDKUsage:
+    input_tokens = 2
+    output_tokens = 3
+    cache_write_tokens = 0
+    cache_read_tokens = 0
+    requests = 1
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
+class _FakeSDKMessage:
+    def model_dump(self, *, mode: str = "json") -> dict[str, Any]:
+        return {"role": "assistant", "content": "sdk ok", "mode": mode}
+
+
+class _FakeSDKResult:
+    output: ClassVar[dict[str, str]] = {"draft": "sdk ok"}
+    usage: ClassVar[_FakeSDKUsage] = _FakeSDKUsage()
+
+    def all_messages(self) -> list[object]:
+        return [_FakeSDKMessage()]
+
+    def _traceparent(self, *, required: bool = True) -> str:
+        return "00-api-sdk-trace"
+
+
+class _FakeSDKAgent:
+    instances: ClassVar[list[_FakeSDKAgent]] = []
+
+    def __init__(self, model: str, **kwargs: Any) -> None:
+        self.model = model
+        self.kwargs = kwargs
+        self.run_user_prompt: str | None = None
+        _FakeSDKAgent.instances.append(self)
+
+    async def run(
+        self,
+        user_prompt: str | None = None,
+        *,
+        message_history: list[object] | None = None,
+        deferred_tool_results: object | None = None,
+        model_settings: dict[str, Any] | None = None,
+        usage_limits: object | None = None,
+    ) -> _FakeSDKResult:
+        self.run_user_prompt = user_prompt
+        return _FakeSDKResult()
+
+
+class _FakeSDKFunctionToolset:
+    def __init__(self, *, id: str | None = None) -> None:
+        self.id = id
+        self.functions: list[tuple[str | None, Callable[..., Any]]] = []
+
+    def add_function(self, func: Callable[..., Any], *, name: str | None = None) -> object:
+        self.functions.append((name, func))
+        return {"name": name}
+
+
+class _FakeSDKApprovalRequiredToolset:
+    def __init__(self, wrapped: object, approval_required_func: object) -> None:
+        self.wrapped = wrapped
+        self.approval_required_func = approval_required_func
+
+
+class _FakeSDKDeferredToolRequests:
+    pass
+
+
+class _FakeProjectMCPClient:
+    instances: ClassVar[list[_FakeProjectMCPClient]] = []
+
+    def __init__(self) -> None:
+        self.config: ProjectMCPServerConfig | None = None
+        self.closed = False
+        self.invocations: list[tuple[str, dict[str, object]]] = []
+        _FakeProjectMCPClient.instances.append(self)
+
+    def start(self, config: ProjectMCPServerConfig) -> None:
+        self.config = config
+
+    def health_check(self) -> ProjectMCPHealthCheck:
+        return ProjectMCPHealthCheck(healthy=True)
+
+    def discover_tools(self) -> None:
+        return None
+
+    def invoke_tool(self, tool_name: str, arguments: dict[str, object] | None = None) -> dict[str, Any]:
+        self.invocations.append((tool_name, {} if arguments is None else dict(arguments)))
+        return {"content": [{"type": "text", "text": "api mcp ok"}], "isError": False}
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _install_fake_pydantic_ai_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    _FakeSDKAgent.instances.clear()
+    fake_sdk = ModuleType("pydantic_ai")
+    fake_sdk.__dict__["Agent"] = _FakeSDKAgent
+    fake_sdk.__dict__["FunctionToolset"] = _FakeSDKFunctionToolset
+    fake_sdk.__dict__["ApprovalRequiredToolset"] = _FakeSDKApprovalRequiredToolset
+    fake_sdk.__dict__["DeferredToolRequests"] = _FakeSDKDeferredToolRequests
+    fake_sdk.__dict__["StructuredDict"] = lambda json_schema, *, name=None, description=None: {
+        "json_schema": json_schema,
+        "name": name,
+        "description": description,
+    }
+    monkeypatch.setitem(sys.modules, "pydantic_ai", fake_sdk)
+
+
 def _adapter_registry(adapter: _FakeAdapter) -> AdapterRegistry:
     registry = AdapterRegistry()
 
@@ -340,6 +458,75 @@ def test_run_once_node_action_uses_injected_adapter_registry_and_idempotency(tmp
     attempts = _read_jsonl(run_root / "attempts.jsonl")
     assert attempts[0]["adapter_id"] == "pydantic_ai"
     assert attempts[0]["metadata"]["cw"]["adapter_bridge"] is True
+
+
+def test_run_once_node_action_uses_default_project_mcp_toolset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    _FakeProjectMCPClient.instances.clear()
+
+    def create_client(_config: ProjectMCPServerConfig) -> _FakeProjectMCPClient:
+        return _FakeProjectMCPClient()
+
+    monkeypatch.setattr(
+        "cw_runtime.adapters.pydantic_ai_adapter._project_mcp_client_for_config",
+        create_client,
+    )
+    testclient_module = import_module("starlette.testclient")
+    client = testclient_module.TestClient(create_app(RuntimeSettings(auth_token=SecretStr("expected-token"))))
+    graph_payload = _base_graph_payload()
+    graph_payload["workflow_id"] = "wf_node_action_api_mcp"
+    execute_node = graph_payload["nodes"][1]
+    assert isinstance(execute_node["contract"], dict)
+    execute_node["contract"]["mcp_tools"] = [
+        {"server_id": "mcp_research", "tool_name": "search", "requires_approval": False}
+    ]
+    project_root, workflow_id = _create_project_with_graph(client, tmp_path, graph_payload)
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_research",
+                "transport": "stdio",
+                "command_or_url": "python fake_mcp_server.py",
+            }
+        ],
+    )
+    run_id = _start_run(client, workflow_id)
+
+    start = client.post(
+        f"/cw/v1/runs/{run_id}/nodes/n_start:run-once",
+        headers=_AUTH_HEADERS,
+        json={"schema_version": "0.1.0"},
+    )
+    assert start.status_code == 200
+    execute = client.post(
+        f"/cw/v1/runs/{run_id}/nodes/n_execute:run-once",
+        headers=_AUTH_HEADERS,
+        json={"schema_version": "0.1.0"},
+    )
+
+    assert execute.status_code == 200
+    assert execute.json()["node_id"] == "n_execute"
+    assert len(_FakeSDKAgent.instances) == 1
+    sdk_toolsets = _FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert len(sdk_toolsets) == 1
+    project_toolset = sdk_toolsets[0]
+    assert isinstance(project_toolset, _FakeSDKFunctionToolset)
+    assert project_toolset.id == "cw_project_mcp_mcp_research"
+    assert len(project_toolset.functions) == 1
+    tool_name, tool_func = project_toolset.functions[0]
+    assert tool_name == "search"
+    assert callable(tool_func)
+
+    result = tool_func(query="api")
+
+    assert result == {"content": [{"type": "text", "text": "api mcp ok"}], "isError": False}
+    invocation_client = _FakeProjectMCPClient.instances[-1]
+    assert invocation_client.invocations == [("search", {"query": "api"})]
+    assert invocation_client.closed is True
 
 
 def test_re_evaluate_node_action_uses_injected_adapter_registry(tmp_path: Path) -> None:
