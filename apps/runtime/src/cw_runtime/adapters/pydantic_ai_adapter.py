@@ -45,6 +45,12 @@ from cw_runtime.harness.project import (
     load_enabled_skill_refs,
     load_project_mcp_server_configs,
 )
+from cw_runtime.harness.secrets import (
+    ProjectSecretDecryptor,
+    ProjectSecretStoreError,
+    build_project_mcp_http_discovery_client_factory,
+    build_project_mcp_stdio_discovery_client_factory,
+)
 from cw_runtime.model_router.router import AdapterCapabilities
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
 from cw_schemas import ExecutionPack
@@ -206,6 +212,9 @@ class _ProjectMCPInvocationClient(Protocol):
     def close(self) -> None: ...
 
 
+_ProjectMCPInvocationClientFactory: TypeAlias = Callable[[ProjectMCPServerConfig], _ProjectMCPInvocationClient]
+
+
 def _registry_key(value: str, field_name: str) -> str:
     if not value:
         raise ValueError(f"{field_name} must be non-empty.")
@@ -317,9 +326,11 @@ class PydanticAISDKSession:
         sdk_module: ModuleType | None = None,
         *,
         toolset_factory: PydanticAIToolsetFactory | None = None,
+        project_mcp_secret_decryptor: ProjectSecretDecryptor | None = None,
     ) -> None:
         self._sdk_module = sdk_module
         self._toolset_factory = toolset_factory
+        self._project_mcp_secret_decryptor = project_mcp_secret_decryptor
         self._agents: dict[str, Any] = {}
         self._message_history: dict[str, list[object]] = {}
         self._run_requests: dict[str, PydanticAIRunRequest] = {}
@@ -329,7 +340,7 @@ class PydanticAISDKSession:
 
     async def run(self, request: PydanticAIRunRequest) -> AsyncIterator[RawPydanticAIEvent]:
         sdk = self._sdk()
-        agent = _build_sdk_agent(sdk, request, self._toolset_factory)
+        agent = _build_sdk_agent(sdk, request, self._toolset_factory, self._project_mcp_secret_decryptor)
         usage_limits = _sdk_usage_limits(sdk, request)
         self._agents[request.handle_id] = agent
         self._run_requests[request.handle_id] = request
@@ -469,10 +480,12 @@ class PydanticAIAdapter:
         *,
         session_factory: PydanticAISessionFactory | None = None,
         toolset_factory: PydanticAIToolsetFactory | None = None,
+        project_mcp_secret_decryptor: ProjectSecretDecryptor | None = None,
     ) -> None:
         self._config = config or AdapterConfig(adapter_id=self._ADAPTER_ID)
         self._session_factory = session_factory
         self._toolset_factory = toolset_factory
+        self._project_mcp_secret_decryptor = project_mcp_secret_decryptor
         self._packs: dict[str, ExecutionPack] = {}
         self._sessions: dict[str, PydanticAISession] = {}
         self._outputs: dict[str, dict[str, Any]] = {}
@@ -816,7 +829,10 @@ class PydanticAIAdapter:
         if session is not None:
             return session
         session = (
-            PydanticAISDKSession(toolset_factory=self._toolset_factory)
+            PydanticAISDKSession(
+                toolset_factory=self._toolset_factory,
+                project_mcp_secret_decryptor=self._project_mcp_secret_decryptor,
+            )
             if self._session_factory is None
             else self._session_factory()
         )
@@ -1720,6 +1736,7 @@ def _build_sdk_agent(
     sdk: ModuleType,
     request: PydanticAIRunRequest,
     toolset_factory: PydanticAIToolsetFactory | None,
+    project_mcp_secret_decryptor: ProjectSecretDecryptor | None,
 ) -> Any:
     agent_cls = getattr(sdk, "Agent", None)
     structured_dict = getattr(sdk, "StructuredDict", None)
@@ -1766,7 +1783,14 @@ def _build_sdk_agent(
         kwargs["instructions"] = request.instructions
     if request.model_settings:
         kwargs["model_settings"] = request.model_settings
-    toolsets = _sdk_toolsets(sdk, request.toolsets, toolset_factory, request.evidence_pack, request.project_root)
+    toolsets = _sdk_toolsets(
+        sdk,
+        request.toolsets,
+        toolset_factory,
+        request.evidence_pack,
+        request.project_root,
+        project_mcp_secret_decryptor,
+    )
     if toolsets:
         kwargs["toolsets"] = toolsets
     kwargs["retries"] = _sdk_agent_retries(request.retry_policy)
@@ -1792,6 +1816,7 @@ def _sdk_toolsets(
     toolset_factory: PydanticAIToolsetFactory | None,
     evidence_pack: Mapping[str, Any] | None,
     project_root: str | None,
+    project_mcp_secret_decryptor: ProjectSecretDecryptor | None,
 ) -> list[object]:
     adapter_toolsets: list[object] = []
     adapter_builtin_functions, adapter_owned_builtin_tool_ids = _adapter_owned_builtin_tool_functions(
@@ -1816,6 +1841,7 @@ def _sdk_toolsets(
         sdk,
         factory_toolset_request.mcp_tools,
         project_root,
+        project_mcp_secret_decryptor,
     )
     if project_mcp_toolsets:
         adapter_toolsets.extend(project_mcp_toolsets)
@@ -1864,6 +1890,7 @@ def _project_mcp_adapter_toolsets(
     sdk: ModuleType,
     mcp_tools: Sequence[PydanticAIMCPToolRequest],
     project_root: str | None,
+    project_mcp_secret_decryptor: ProjectSecretDecryptor | None,
 ) -> tuple[list[object], set[str]]:
     if project_root is None or not mcp_tools:
         return [], set()
@@ -1881,6 +1908,7 @@ def _project_mcp_adapter_toolsets(
             },
         ) from exc
 
+    client_factory = _project_mcp_client_factory_for_project(project_root_path, project_mcp_secret_decryptor)
     requests_by_server: dict[str, list[PydanticAIMCPToolRequest]] = {}
     for tool in mcp_tools:
         requests_by_server.setdefault(tool.server_id, []).append(tool)
@@ -1891,7 +1919,7 @@ def _project_mcp_adapter_toolsets(
         config = configs.get(server_id)
         if config is None:
             continue
-        if config.secret_ref is not None:
+        if config.secret_ref is not None and project_mcp_secret_decryptor is None:
             raise AdapterRuntimeError(
                 "AA_RUN_TOOL_NOT_FOUND",
                 "Pydantic AI project MCP toolset requires a secret resolver that is not configured.",
@@ -1901,6 +1929,7 @@ def _project_mcp_adapter_toolsets(
             sdk,
             config,
             requests_by_server[server_id],
+            client_factory,
         )
         handled_server_ids.add(server_id)
 
@@ -1918,15 +1947,18 @@ def _project_mcp_function_toolset(
     sdk: ModuleType,
     config: ProjectMCPServerConfig,
     requested_tools: Sequence[PydanticAIMCPToolRequest],
+    client_factory: _ProjectMCPInvocationClientFactory,
 ) -> object:
-    tool_names = _project_mcp_tool_names(config, requested_tools)
+    tool_names = _project_mcp_tool_names(config, requested_tools, client_factory)
     if not tool_names:
         raise AdapterRuntimeError(
             "AA_RUN_TOOL_NOT_FOUND",
             "Project MCP server did not expose requested tools.",
             payload={"server_id": config.server_id},
         )
-    tool_functions = [(tool_name, _project_mcp_tool_func(config, tool_name)) for tool_name in tool_names]
+    tool_functions = [
+        (tool_name, _project_mcp_tool_func(config, tool_name, client_factory)) for tool_name in tool_names
+    ]
     return _sdk_function_toolset(
         sdk,
         tool_functions,
@@ -1937,12 +1969,13 @@ def _project_mcp_function_toolset(
 def _project_mcp_tool_names(
     config: ProjectMCPServerConfig,
     requested_tools: Sequence[PydanticAIMCPToolRequest],
+    client_factory: _ProjectMCPInvocationClientFactory,
 ) -> list[str]:
     explicit_names = [tool.tool_name for tool in requested_tools if tool.tool_name != "*"]
     if not any(tool.tool_name == "*" for tool in requested_tools):
         return _unique_strings(explicit_names)
 
-    discovered = _discover_project_mcp_tools_for_adapter(config)
+    discovered = _discover_project_mcp_tools_for_adapter(config, client_factory)
     snapshot_names = [
         str(item.get("name"))
         for item in discovered.tools_snapshot
@@ -1951,7 +1984,10 @@ def _project_mcp_tool_names(
     return _unique_strings([*explicit_names, *snapshot_names])
 
 
-def _discover_project_mcp_tools_for_adapter(config: ProjectMCPServerConfig) -> ProjectMCPDiscoveredTools:
+def _discover_project_mcp_tools_for_adapter(
+    config: ProjectMCPServerConfig,
+    client_factory: _ProjectMCPInvocationClientFactory,
+) -> ProjectMCPDiscoveredTools:
     def discover(client: _ProjectMCPInvocationClient) -> ProjectMCPDiscoveredTools:
         client.start(config)
         health = client.health_check()
@@ -1973,14 +2009,18 @@ def _discover_project_mcp_tools_for_adapter(config: ProjectMCPServerConfig) -> P
         return discovered
 
     try:
-        return _with_project_mcp_client(config, discover)
+        return _with_project_mcp_client(config, client_factory, discover)
     except ProjectMCPDiscoveryError as exc:
         raise _project_mcp_adapter_error(config, exc) from exc
 
 
-def _project_mcp_tool_func(config: ProjectMCPServerConfig, tool_name: str) -> PydanticAIBuiltinToolFunc:
+def _project_mcp_tool_func(
+    config: ProjectMCPServerConfig,
+    tool_name: str,
+    client_factory: _ProjectMCPInvocationClientFactory,
+) -> PydanticAIBuiltinToolFunc:
     def invoke_project_mcp_tool(**arguments: Any) -> dict[str, Any]:
-        return _invoke_project_mcp_tool(config, tool_name, arguments)
+        return _invoke_project_mcp_tool(config, tool_name, arguments, client_factory)
 
     invoke_project_mcp_tool.__name__ = f"project_mcp_{_sdk_identifier(config.server_id)}_{_sdk_identifier(tool_name)}"
     invoke_project_mcp_tool.__doc__ = f"Invoke project MCP tool {tool_name} on server {config.server_id}."
@@ -1991,6 +2031,7 @@ def _invoke_project_mcp_tool(
     config: ProjectMCPServerConfig,
     tool_name: str,
     arguments: Mapping[str, object],
+    client_factory: _ProjectMCPInvocationClientFactory,
 ) -> dict[str, Any]:
     def invoke(client: _ProjectMCPInvocationClient) -> dict[str, Any]:
         client.start(config)
@@ -2005,23 +2046,39 @@ def _invoke_project_mcp_tool(
         return client.invoke_tool(tool_name, arguments)
 
     try:
-        return _with_project_mcp_client(config, invoke)
+        return _with_project_mcp_client(config, client_factory, invoke)
     except ProjectMCPDiscoveryError as exc:
         raise _project_mcp_adapter_error(config, exc) from exc
 
 
 def _with_project_mcp_client(
     config: ProjectMCPServerConfig,
+    client_factory: _ProjectMCPInvocationClientFactory,
     operation: Callable[[_ProjectMCPInvocationClient], _ProjectMCPOperationResult],
 ) -> _ProjectMCPOperationResult:
-    client = _project_mcp_client_for_config(config)
+    client: _ProjectMCPInvocationClient | None = None
     primary_error: BaseException | None = None
     try:
         try:
+            client = client_factory(config)
             return operation(client)
+        except AdapterRuntimeError as exc:
+            primary_error = exc
+            raise
         except ProjectMCPDiscoveryError as exc:
             primary_error = exc
             raise
+        except ProjectSecretStoreError as exc:
+            primary_error = exc
+            raise AdapterRuntimeError(
+                "AA_RUN_TOOL_NOT_FOUND",
+                "Project MCP secret material could not be resolved.",
+                payload={
+                    "server_id": config.server_id,
+                    "transport": config.transport,
+                    "exception_type": type(exc).__name__,
+                },
+            ) from exc
         except Exception as exc:
             primary_error = exc
             raise AdapterRuntimeError(
@@ -2034,19 +2091,50 @@ def _with_project_mcp_client(
                 },
             ) from exc
     finally:
-        try:
-            client.close()
-        except Exception as exc:
-            if primary_error is None:
-                raise AdapterRuntimeError(
-                    "AA_RUN_TOOL_NOT_FOUND",
-                    "Project MCP client close failed.",
-                    payload={
-                        "server_id": config.server_id,
-                        "transport": config.transport,
-                        "exception_type": type(exc).__name__,
-                    },
-                ) from exc
+        if client is not None:
+            try:
+                client.close()
+            except Exception as exc:
+                if primary_error is None:
+                    raise AdapterRuntimeError(
+                        "AA_RUN_TOOL_NOT_FOUND",
+                        "Project MCP client close failed.",
+                        payload={
+                            "server_id": config.server_id,
+                            "transport": config.transport,
+                            "exception_type": type(exc).__name__,
+                        },
+                    ) from exc
+
+
+def _project_mcp_client_factory_for_project(
+    project_root: Path,
+    project_mcp_secret_decryptor: ProjectSecretDecryptor | None,
+) -> _ProjectMCPInvocationClientFactory:
+    def create_client(config: ProjectMCPServerConfig) -> _ProjectMCPInvocationClient:
+        if config.secret_ref is None:
+            return _project_mcp_client_for_config(config)
+        if project_mcp_secret_decryptor is None:
+            raise AdapterRuntimeError(
+                "AA_RUN_TOOL_NOT_FOUND",
+                "Pydantic AI project MCP toolset requires a secret resolver that is not configured.",
+                payload={"mcp_secret_ref_server_ids": [config.server_id]},
+            )
+        if config.transport == "stdio":
+            return build_project_mcp_stdio_discovery_client_factory(
+                project_root,
+                decrypt_secret=project_mcp_secret_decryptor,
+                timeout_seconds=_PROJECT_MCP_TIMEOUT_SECONDS,
+            )(config)
+        if config.transport == "http":
+            return build_project_mcp_http_discovery_client_factory(
+                project_root,
+                decrypt_secret=project_mcp_secret_decryptor,
+                timeout_seconds=_PROJECT_MCP_TIMEOUT_SECONDS,
+            )(config)
+        return _project_mcp_client_for_config(config)
+
+    return create_client
 
 
 def _project_mcp_client_for_config(config: ProjectMCPServerConfig) -> _ProjectMCPInvocationClient:

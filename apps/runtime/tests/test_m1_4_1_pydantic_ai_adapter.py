@@ -30,6 +30,7 @@ from cw_runtime.adapters import (
     web_fetch,
 )
 from cw_runtime.harness.project import ProjectMCPDiscoveredTools, ProjectMCPHealthCheck, ProjectMCPServerConfig
+from cw_runtime.harness.secrets import ProjectSecretStoreError
 from cw_schemas.contract import (
     EvidenceRequirement,
     ExecutionContract,
@@ -2067,6 +2068,224 @@ async def test_pydantic_ai_project_mcp_secret_ref_fails_closed(
     assert outcome.errors[0].payload is not None
     assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
     assert outcome.errors[0].payload["mcp_secret_ref_server_ids"] == ["mcp_secure"]
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_project_mcp_secret_ref_uses_configured_decryptor(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    FakeProjectMCPClient.instances.clear()
+    project_root = _initialized_project_root(tmp_path / "project_mcp_secret_ref_success")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_secure",
+                "transport": "http",
+                "command_or_url": "http://127.0.0.1:18183/mcp",
+                "secret_ref": "secure://mcp/token",
+            }
+        ],
+    )
+    decrypted_material = b'{"headers":{"Authorization":"Bearer adapter-token"}}'
+    decrypt_calls: list[bytes] = []
+    factory_configs: list[ProjectMCPServerConfig] = []
+
+    def project_decrypt_secret(encrypted_value: bytes) -> bytes:
+        decrypt_calls.append(encrypted_value)
+        return decrypted_material
+
+    def build_http_factory(
+        project_root_arg: str | Path,
+        *,
+        decrypt_secret: Callable[[bytes], bytes | str],
+        timeout_seconds: float = 5.0,
+    ) -> Callable[[ProjectMCPServerConfig], FakeProjectMCPClient]:
+        assert Path(project_root_arg) == project_root
+        assert decrypt_secret is project_decrypt_secret
+        assert timeout_seconds == 5.0
+
+        def create_client(config: ProjectMCPServerConfig) -> FakeProjectMCPClient:
+            factory_configs.append(config)
+            assert decrypt_secret(b"encrypted-secret") == decrypted_material
+            return FakeProjectMCPClient()
+
+        return create_client
+
+    monkeypatch.setattr(
+        pydantic_ai_adapter_module,
+        "build_project_mcp_http_discovery_client_factory",
+        build_http_factory,
+    )
+
+    adapter = PydanticAIAdapter(project_mcp_secret_decryptor=project_decrypt_secret)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            mcp_tools=[MCPToolRef(server_id="mcp_secure", tool_name="search", requires_approval=False)],
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["mcp_secure"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    project_toolset = FakeSDKAgent.instances[0].kwargs["toolsets"][0]
+    assert isinstance(project_toolset, FakeSDKFunctionToolset)
+    tool_name, tool_func = project_toolset.functions[0]
+    assert tool_name == "search"
+
+    result = tool_func(query="cw")
+
+    assert result["structuredContent"] == {"server_id": "mcp_secure"}
+    assert decrypt_calls == [b"encrypted-secret"]
+    assert len(factory_configs) == 1
+    assert factory_configs[0].secret_ref == "secure://mcp/token"
+    invocation_client = FakeProjectMCPClient.instances[-1]
+    assert invocation_client.invocations == [("search", {"query": "cw"})]
+    assert invocation_client.closed is True
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_project_mcp_stdio_secret_ref_uses_configured_decryptor(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    FakeProjectMCPClient.instances.clear()
+    project_root = _initialized_project_root(tmp_path / "project_mcp_stdio_secret_ref_success")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_stdio_secure",
+                "transport": "stdio",
+                "command_or_url": "python fake_mcp_server.py",
+                "secret_ref": "secure://mcp/stdio-token",
+            }
+        ],
+    )
+    decrypted_material = b'{"env":{"CW_MCP_TOKEN":"adapter-token"}}'
+    decrypt_calls: list[bytes] = []
+    factory_configs: list[ProjectMCPServerConfig] = []
+
+    def project_decrypt_secret(encrypted_value: bytes) -> bytes:
+        decrypt_calls.append(encrypted_value)
+        return decrypted_material
+
+    def build_stdio_factory(
+        project_root_arg: str | Path,
+        *,
+        decrypt_secret: Callable[[bytes], bytes | str],
+        timeout_seconds: float = 5.0,
+    ) -> Callable[[ProjectMCPServerConfig], FakeProjectMCPClient]:
+        assert Path(project_root_arg) == project_root
+        assert decrypt_secret is project_decrypt_secret
+        assert timeout_seconds == 5.0
+
+        def create_client(config: ProjectMCPServerConfig) -> FakeProjectMCPClient:
+            factory_configs.append(config)
+            assert decrypt_secret(b"encrypted-stdio-secret") == decrypted_material
+            return FakeProjectMCPClient()
+
+        return create_client
+
+    monkeypatch.setattr(
+        pydantic_ai_adapter_module,
+        "build_project_mcp_stdio_discovery_client_factory",
+        build_stdio_factory,
+    )
+
+    adapter = PydanticAIAdapter(project_mcp_secret_decryptor=project_decrypt_secret)
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            mcp_tools=[MCPToolRef(server_id="mcp_stdio_secure", tool_name="search", requires_approval=False)],
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["mcp_stdio_secure"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert events[-1].type == "attempt.completed"
+    project_toolset = FakeSDKAgent.instances[0].kwargs["toolsets"][0]
+    assert isinstance(project_toolset, FakeSDKFunctionToolset)
+    tool_name, tool_func = project_toolset.functions[0]
+    assert tool_name == "search"
+
+    result = tool_func(query="cw")
+
+    assert result["structuredContent"] == {"server_id": "mcp_stdio_secure"}
+    assert decrypt_calls == [b"encrypted-stdio-secret"]
+    assert len(factory_configs) == 1
+    assert factory_configs[0].secret_ref == "secure://mcp/stdio-token"
+    invocation_client = FakeProjectMCPClient.instances[-1]
+    assert invocation_client.invocations == [("search", {"query": "cw"})]
+    assert invocation_client.closed is True
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_project_mcp_secret_ref_sanitizes_secret_store_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    project_root = _initialized_project_root(tmp_path / "project_mcp_secret_ref_sanitized")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_secure",
+                "transport": "http",
+                "command_or_url": "http://127.0.0.1:18184/mcp",
+                "secret_ref": "secure://mcp/token",
+            }
+        ],
+    )
+
+    def build_http_factory(
+        _project_root_arg: str | Path,
+        *,
+        decrypt_secret: Callable[[bytes], bytes | str],
+        timeout_seconds: float = 5.0,
+    ) -> Callable[[ProjectMCPServerConfig], FakeProjectMCPClient]:
+        del decrypt_secret, timeout_seconds
+
+        def create_client(_config: ProjectMCPServerConfig) -> FakeProjectMCPClient:
+            raise ProjectSecretStoreError("dirty secure://mcp/token Bearer adapter-token")
+
+        return create_client
+
+    monkeypatch.setattr(
+        pydantic_ai_adapter_module,
+        "build_project_mcp_http_discovery_client_factory",
+        build_http_factory,
+    )
+
+    adapter = PydanticAIAdapter(project_mcp_secret_decryptor=lambda _encrypted_value: b"{}")
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["mcp_secure"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "attempt.failed"]
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.FAILED
+    assert outcome.errors[0].payload is not None
+    assert outcome.errors[0].payload["error_code"] == "AA_RUN_TOOL_NOT_FOUND"
+    serialized_payload = json.dumps(outcome.errors[0].payload, sort_keys=True)
+    assert "secure://mcp/token" not in serialized_payload
+    assert "adapter-token" not in serialized_payload
+    assert "dirty" not in serialized_payload
 
 
 @pytest.mark.asyncio
