@@ -449,6 +449,24 @@ def _write_fake_mcp_stdio_server(script_path: Path) -> None:
                             ]
                         },
                     }
+                elif method == "tools/call" and mode == "call_error":
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": message.get("id"),
+                        "error": {"code": -32000, "message": "fake secret should not leak"},
+                    }
+                elif method == "tools/call":
+                    params = message.get("params")
+                    arguments = params.get("arguments") if isinstance(params, dict) else {}
+                    code = arguments.get("code") if isinstance(arguments, dict) else ""
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": message.get("id"),
+                        "result": {
+                            "content": [{"type": "text", "text": f"ran stdio: {code}"}],
+                            "isError": False,
+                        },
+                    }
                 else:
                     response = {
                         "jsonrpc": "2.0",
@@ -559,6 +577,27 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
         if method == "tools/list":
             self._send_json(200, self._tools_response(message.get("id")))
             return
+        if method == "tools/call" and server.mode == "call_error":
+            self._send_json(
+                200,
+                {
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "error": {"code": -32000, "message": "fake secret should not leak"},
+                },
+            )
+            return
+        if method == "tools/call" and server.mode == "sse":
+            self._send_sse(
+                [
+                    {"jsonrpc": "2.0", "method": "notifications/tools/list_changed"},
+                    self._tool_call_response(message),
+                ]
+            )
+            return
+        if method == "tools/call":
+            self._send_json(200, self._tool_call_response(message))
+            return
         self._send_json(
             200,
             {
@@ -603,6 +642,15 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
             )
             server.legacy_response_queue.put(self._tools_response(message.get("id"), description="Run legacy Python."))
             return
+        if method == "tools/call":
+            server.legacy_response_queue.put(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/tools/list_changed",
+                }
+            )
+            server.legacy_response_queue.put(self._tool_call_response(message, prefix="legacy"))
+            return
         server.legacy_response_queue.put(
             {
                 "jsonrpc": "2.0",
@@ -638,6 +686,20 @@ class FakeMCPHttpHandler(BaseHTTPRequestHandler):
                         },
                     }
                 ]
+            },
+        }
+
+    def _tool_call_response(self, message: Mapping[str, object], *, prefix: str = "remote") -> dict[str, object]:
+        params = message.get("params")
+        arguments = params.get("arguments") if isinstance(params, Mapping) else {}
+        code = arguments.get("code") if isinstance(arguments, Mapping) else ""
+        return {
+            "jsonrpc": "2.0",
+            "id": message.get("id"),
+            "result": {
+                "content": [{"type": "text", "text": f"ran {prefix}: {code}"}],
+                "isError": False,
+                "structuredContent": {"ok": True},
             },
         }
 
@@ -794,6 +856,31 @@ def test_project_mcp_stdio_discovery_client_smoke_lists_tools(tmp_path: Path) ->
             ],
         }
     ]
+
+
+def test_project_mcp_stdio_client_smoke_invokes_tool(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_stdio_invocation_project"
+    initialize_project(_request("MCP Stdio Invocation", project_root))
+    server_script = tmp_path / "fake_mcp_server.py"
+    _write_fake_mcp_stdio_server(server_script)
+    client = ProjectMCPStdioDiscoveryClient(timeout_seconds=2.0)
+    config = ProjectMCPServerConfig(
+        server_id="mcp_stdio_python",
+        transport="stdio",
+        command_or_url=_python_script_command(server_script),
+    )
+
+    try:
+        client.start(config)
+        assert client.health_check().healthy is True
+        assert client.discover_tools() is not None
+
+        assert client.invoke_tool("run", {"code": "print(1)"}) == {
+            "content": [{"type": "text", "text": "ran stdio: print(1)"}],
+            "isError": False,
+        }
+    finally:
+        client.close()
 
 
 def test_project_mcp_stdio_discovery_client_sanitizes_json_rpc_error(tmp_path: Path) -> None:
@@ -982,6 +1069,71 @@ def test_project_mcp_http_discovery_client_smoke_lists_tools_sse(tmp_path: Path)
             }
         ]
     finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+@pytest.mark.parametrize("mode", ["json", "sse"])
+def test_project_mcp_http_client_smoke_invokes_tool(mode: str) -> None:
+    server, thread, endpoint_url = _start_fake_mcp_http_server(mode)
+    client = ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+    config = ProjectMCPServerConfig(
+        server_id="mcp_http_python",
+        transport="http",
+        command_or_url=endpoint_url,
+    )
+    try:
+        client.start(config)
+        assert client.health_check().healthy is True
+        assert client.discover_tools() is not None
+
+        assert client.invoke_tool("run", {"code": "print(2)"}) == {
+            "content": [{"type": "text", "text": "ran remote: print(2)"}],
+            "isError": False,
+            "structuredContent": {"ok": True},
+        }
+        assert server.request_headers_log[-1] == {
+            "method": "tools/call",
+            "accept": "application/json, text/event-stream",
+            "content_type": "application/json",
+            "protocol_version": "2025-06-18",
+            "session_id": "test-session-1",
+        }
+    finally:
+        client.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_client_sanitizes_tool_invocation_error() -> None:
+    server, thread, endpoint_url = _start_fake_mcp_http_server("call_error")
+    client = ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+    config = ProjectMCPServerConfig(
+        server_id="mcp_http_python",
+        transport="http",
+        command_or_url=endpoint_url,
+    )
+    try:
+        client.start(config)
+        assert client.health_check().healthy is True
+
+        with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+            client.invoke_tool("run", {"code": "print-secret"})
+
+        assert exc_info.value.server_id == "mcp_http_python"
+        assert exc_info.value.stage == "invoke_tool"
+        assert exc_info.value.details == {
+            "server_id": "mcp_http_python",
+            "transport": "http",
+            "jsonrpc_error_type": "int",
+        }
+        assert "fake secret" not in str(exc_info.value)
+        assert "print-secret" not in str(exc_info.value)
+        assert "command_or_url" not in str(exc_info.value.details)
+    finally:
+        client.close()
         server.shutdown()
         server.server_close()
         thread.join(timeout=2.0)
@@ -1233,6 +1385,39 @@ def test_project_mcp_http_discovery_client_falls_back_to_legacy_sse(tmp_path: Pa
             },
         ]
     finally:
+        server.legacy_response_queue.put(None)
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2.0)
+
+
+def test_project_mcp_legacy_http_client_smoke_invokes_tool() -> None:
+    server, thread, endpoint_url = _start_fake_mcp_http_server("legacy")
+    client = ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+    config = ProjectMCPServerConfig(
+        server_id="mcp_http_legacy_python",
+        transport="http",
+        command_or_url=endpoint_url,
+    )
+    try:
+        client.start(config)
+        assert client.health_check().healthy is True
+        assert client.discover_tools() is not None
+
+        assert client.invoke_tool("run", {"code": "print(3)"}) == {
+            "content": [{"type": "text", "text": "ran legacy: print(3)"}],
+            "isError": False,
+            "structuredContent": {"ok": True},
+        }
+        assert [entry["method"] for entry in server.request_headers_log] == [
+            "initialize",
+            "initialize",
+            "notifications/initialized",
+            "tools/list",
+            "tools/call",
+        ]
+    finally:
+        client.close()
         server.legacy_response_queue.put(None)
         server.shutdown()
         server.server_close()

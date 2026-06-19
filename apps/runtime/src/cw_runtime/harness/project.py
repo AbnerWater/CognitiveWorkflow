@@ -74,6 +74,7 @@ _MCP_DISCOVERY_ERROR_STAGES: Final = {
     "initialize",
     "health_check",
     "discover_tools",
+    "invoke_tool",
     "close",
 }
 _MCP_HTTP_MAX_RESPONSE_BYTES: Final = 4 * 1024 * 1024
@@ -321,7 +322,7 @@ class ProjectMCPDiscoveryRunner:
 
 
 class ProjectMCPStdioDiscoveryClient:
-    """Minimal stdio MCP client for initialize + tools/list discovery."""
+    """Minimal stdio MCP client for initialize, tools/list, and tools/call."""
 
     def __init__(self, *, timeout_seconds: float = 5.0) -> None:
         self._timeout_seconds = timeout_seconds
@@ -410,6 +411,18 @@ class ProjectMCPStdioDiscoveryClient:
             version=self._version,
             tools_snapshot=[_mcp_tool_snapshot(tool, self._require_config()) for tool in tools_value],
         )
+
+    def invoke_tool(self, tool_name: str, arguments: Mapping[str, object] | None = None) -> dict[str, Any]:
+        """Invoke one MCP tool over the active stdio session."""
+
+        if tool_name.strip() == "":
+            raise self._error("invoke_tool", "Project MCP tools/call tool name is required.")
+        result = self._request(
+            "tools/call",
+            stage="invoke_tool",
+            params=_mcp_tool_call_params(tool_name, arguments),
+        )
+        return _mcp_tool_call_result(result, self._require_config())
 
     def close(self) -> None:
         process = self._process
@@ -543,7 +556,7 @@ class ProjectMCPStdioDiscoveryClient:
 
 
 class ProjectMCPHttpDiscoveryClient:
-    """Minimal Streamable HTTP MCP client for initialize + tools/list discovery."""
+    """Minimal Streamable HTTP MCP client for initialize, tools/list, and tools/call."""
 
     def __init__(self, *, timeout_seconds: float = 5.0) -> None:
         self._timeout_seconds = timeout_seconds
@@ -623,6 +636,18 @@ class ProjectMCPHttpDiscoveryClient:
             tools_snapshot=[_mcp_tool_snapshot(tool, self._require_config()) for tool in tools_value],
         )
 
+    def invoke_tool(self, tool_name: str, arguments: Mapping[str, object] | None = None) -> dict[str, Any]:
+        """Invoke one MCP tool over the active HTTP session."""
+
+        if tool_name.strip() == "":
+            raise self._error("invoke_tool", "Project MCP tools/call tool name is required.")
+        result = self._request(
+            "tools/call",
+            stage="invoke_tool",
+            params=_mcp_tool_call_params(tool_name, arguments),
+        )
+        return _mcp_tool_call_result(result, self._require_config())
+
     def close(self) -> None:
         if self._legacy_sse_response is not None:
             self._legacy_sse_response.close()
@@ -668,9 +693,17 @@ class ProjectMCPHttpDiscoveryClient:
     ) -> Mapping[str, object] | None:
         if self._legacy_message_endpoint_url is not None:
             return self._legacy_post_json_rpc(message, stage=stage, expected_response_id=expected_response_id)
+        try:
+            body = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise self._error(
+                stage,
+                "Project MCP HTTP request body could not be encoded.",
+                details={"exception_type": type(exc).__name__},
+            ) from exc
         request = Request(
             self._require_endpoint_url(),
-            data=json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            data=body,
             method="POST",
             headers=self._http_headers(),
         )
@@ -916,9 +949,17 @@ class ProjectMCPHttpDiscoveryClient:
         stage: str,
         expected_response_id: int | None,
     ) -> Mapping[str, object] | None:
+        try:
+            body = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise self._error(
+                stage,
+                "Project MCP legacy HTTP+SSE request body could not be encoded.",
+                details={"exception_type": type(exc).__name__},
+            ) from exc
         request = Request(
             self._require_legacy_message_endpoint_url(),
-            data=json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            data=body,
             method="POST",
             headers={"Content-Type": "application/json"},
         )
@@ -1930,6 +1971,49 @@ def _mcp_tool_snapshot(tool: object, mcp_config: ProjectMCPServerConfig) -> dict
     if isinstance(input_schema, Mapping):
         snapshot["input_schema"] = dict(input_schema)
     return snapshot
+
+
+def _mcp_tool_call_params(tool_name: str, arguments: Mapping[str, object] | None) -> dict[str, object]:
+    return {
+        "name": tool_name.strip(),
+        "arguments": {} if arguments is None else dict(arguments),
+    }
+
+
+def _mcp_tool_call_result(result: Mapping[str, object], mcp_config: ProjectMCPServerConfig) -> dict[str, Any]:
+    content = result.get("content")
+    if not isinstance(content, list):
+        raise _mcp_discovery_error(
+            mcp_config,
+            stage="invoke_tool",
+            message="Project MCP tools/call response is missing content list.",
+            details={"result_type": type(content).__name__},
+        )
+    call_result: dict[str, Any] = {
+        "content": [_mcp_json_object(item, mcp_config, field_name="content") for item in content],
+    }
+    is_error = result.get("isError")
+    if isinstance(is_error, bool):
+        call_result["isError"] = is_error
+    structured_content = result.get("structuredContent")
+    if isinstance(structured_content, Mapping):
+        call_result["structuredContent"] = _mcp_json_object(
+            structured_content,
+            mcp_config,
+            field_name="structuredContent",
+        )
+    return call_result
+
+
+def _mcp_json_object(value: object, mcp_config: ProjectMCPServerConfig, *, field_name: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise _mcp_discovery_error(
+            mcp_config,
+            stage="invoke_tool",
+            message=f"Project MCP tools/call response {field_name} item was not an object.",
+            details={"result_type": type(value).__name__},
+        )
+    return {key: item for key, item in value.items() if isinstance(key, str)}
 
 
 def _string_mapping_value(payload: Mapping[str, object], field: str) -> str | None:
