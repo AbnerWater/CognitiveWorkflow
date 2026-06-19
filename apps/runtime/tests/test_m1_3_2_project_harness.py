@@ -485,6 +485,170 @@ def _write_fake_mcp_stdio_server(script_path: Path) -> None:
     )
 
 
+def _write_external_mcp_http_provider(script_path: Path) -> None:
+    _write_text_value(
+        script_path,
+        textwrap.dedent(
+            """
+            import json
+            import sys
+            from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+            endpoint_path = sys.argv[1]
+
+            class ExternalMCPHttpHandler(BaseHTTPRequestHandler):
+                protocol_version = "HTTP/1.1"
+
+                def do_POST(self):
+                    message = self._read_json_body()
+                    method = message.get("method")
+                    if method == "initialize":
+                        self._send_json(
+                            200,
+                            {
+                                "jsonrpc": "2.0",
+                                "id": message.get("id"),
+                                "result": {
+                                    "protocolVersion": "2025-06-18",
+                                    "capabilities": {"tools": {}},
+                                    "serverInfo": {"name": "external-http-mcp", "version": "0.7.0"},
+                                },
+                            },
+                            extra_headers={"Mcp-Session-Id": "external-session-1"},
+                        )
+                        return
+                    if method == "notifications/initialized":
+                        self._send_empty(202)
+                        return
+                    if method == "tools/list":
+                        self._send_json(
+                            200,
+                            {
+                                "jsonrpc": "2.0",
+                                "id": message.get("id"),
+                                "result": {
+                                    "tools": [
+                                        {
+                                            "name": "run",
+                                            "title": "Run",
+                                            "description": "Run external Python.",
+                                            "inputSchema": {
+                                                "type": "object",
+                                                "properties": {"code": {"type": "string"}},
+                                            },
+                                        }
+                                    ]
+                                },
+                            },
+                        )
+                        return
+                    if method == "tools/call":
+                        params = message.get("params")
+                        arguments = params.get("arguments") if isinstance(params, dict) else {}
+                        code = arguments.get("code") if isinstance(arguments, dict) else ""
+                        self._send_json(
+                            200,
+                            {
+                                "jsonrpc": "2.0",
+                                "id": message.get("id"),
+                                "result": {
+                                    "content": [{"type": "text", "text": f"ran external: {code}"}],
+                                    "isError": False,
+                                    "structuredContent": {"provider": "external"},
+                                },
+                            },
+                        )
+                        return
+                    self._send_json(
+                        200,
+                        {
+                            "jsonrpc": "2.0",
+                            "id": message.get("id"),
+                            "error": {"code": -32601, "message": "method not found"},
+                        },
+                    )
+
+                def log_message(self, format, *args):
+                    return
+
+                def _read_json_body(self):
+                    length = int(self.headers.get("Content-Length", "0"))
+                    message = json.loads(self.rfile.read(length))
+                    if not isinstance(message, dict):
+                        raise AssertionError("request body was not an object")
+                    return message
+
+                def _send_empty(self, status):
+                    self.send_response(status)
+                    self.send_header("Content-Length", "0")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.close_connection = True
+
+                def _send_json(self, status, payload, *, extra_headers=None):
+                    body = json.dumps(payload).encode("utf-8")
+                    self.send_response(status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Connection", "close")
+                    if extra_headers is not None:
+                        for key, value in extra_headers.items():
+                            self.send_header(key, value)
+                    self.end_headers()
+                    self.wfile.write(body)
+                    self.close_connection = True
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), ExternalMCPHttpHandler)
+            with open(endpoint_path, "w", encoding="utf-8") as file:
+                file.write(f"http://127.0.0.1:{server.server_port}/mcp")
+            server.serve_forever()
+            """
+        ).lstrip(),
+    )
+
+
+def _start_external_mcp_http_provider(tmp_path: Path) -> tuple[subprocess.Popen[str], str]:
+    script_path = tmp_path / "external_mcp_http_provider.py"
+    endpoint_path = tmp_path / "external_mcp_http_provider_endpoint.txt"
+    _write_external_mcp_http_provider(script_path)
+    process = subprocess.Popen(
+        [sys.executable, str(script_path), str(endpoint_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return process, _wait_for_external_mcp_http_endpoint(process, endpoint_path)
+
+
+def _wait_for_external_mcp_http_endpoint(process: subprocess.Popen[str], endpoint_path: Path) -> str:
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if endpoint_path.exists():
+            endpoint_url = endpoint_path.read_text(encoding="utf-8").strip()
+            if endpoint_url:
+                return endpoint_url
+        if process.poll() is not None:
+            stdout, stderr = process.communicate(timeout=1.0)
+            raise AssertionError(
+                f"external MCP HTTP provider exited before startup: stdout={stdout!r} stderr={stderr!r}"
+            )
+        time.sleep(0.05)
+    _stop_external_mcp_http_provider(process)
+    raise AssertionError("external MCP HTTP provider did not publish an endpoint")
+
+
+def _stop_external_mcp_http_provider(process: subprocess.Popen[str]) -> None:
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.communicate(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate(timeout=2.0)
+    else:
+        process.communicate(timeout=1.0)
+
+
 class FakeMCPHttpServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -1031,6 +1195,69 @@ def test_project_mcp_http_discovery_client_smoke_lists_tools_json(tmp_path: Path
         server.shutdown()
         server.server_close()
         thread.join(timeout=2.0)
+
+
+def test_project_mcp_http_client_smoke_with_external_provider_process(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_http_external_provider_project"
+    initialize_project(_request("MCP HTTP External Provider", project_root))
+    agent_root = project_root / ".agent-workflow"
+    process, endpoint_url = _start_external_mcp_http_provider(tmp_path)
+    try:
+        _write_json_value(
+            agent_root / "mcp.config.json",
+            [
+                {
+                    "server_id": "mcp_http_external_python",
+                    "transport": "http",
+                    "command_or_url": endpoint_url,
+                }
+            ],
+        )
+
+        locks = load_project_tool_lock_snapshot(
+            project_root,
+            mcp_tool_discovery=ProjectMCPDiscoveryRunner(
+                lambda config: ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+            ),
+        )
+
+        assert [entry.model_dump(mode="json") for entry in locks.mcps] == [
+            {
+                "server_id": "mcp_http_external_python",
+                "version": "0.7.0",
+                "tools_snapshot": [
+                    {
+                        "name": "run",
+                        "title": "Run",
+                        "description": "Run external Python.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"code": {"type": "string"}},
+                        },
+                    }
+                ],
+            }
+        ]
+
+        client = ProjectMCPHttpDiscoveryClient(timeout_seconds=2.0)
+        config = ProjectMCPServerConfig(
+            server_id="mcp_http_external_python",
+            transport="http",
+            command_or_url=endpoint_url,
+        )
+        try:
+            client.start(config)
+            assert client.health_check().healthy is True
+            assert client.discover_tools() is not None
+            assert client.invoke_tool("run", {"code": "print(47)"}) == {
+                "content": [{"type": "text", "text": "ran external: print(47)"}],
+                "isError": False,
+                "structuredContent": {"provider": "external"},
+            }
+        finally:
+            client.close()
+    finally:
+        _stop_external_mcp_http_provider(process)
 
 
 def test_project_mcp_http_discovery_client_smoke_lists_tools_sse(tmp_path: Path) -> None:
