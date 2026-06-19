@@ -112,7 +112,27 @@ def test_system_capabilities_and_shutdown_foundation() -> None:
 
     capabilities_response = client.get("/cw/v1/system/capabilities", headers=headers)
     assert capabilities_response.status_code == 200
-    assert capabilities_response.json() == []
+    capabilities = capabilities_response.json()
+    assert len(capabilities) == 2
+    assert all("adapter_id" not in capability for capability in capabilities)
+    assert all("default_config" not in capability for capability in capabilities)
+    claude = next(capability for capability in capabilities if capability["kinds"] == ["coding_agent"])
+    pydantic_ai = next(capability for capability in capabilities if capability["kinds"] == ["chat"])
+    assert claude["provider_kinds"] == ["cloud"]
+    assert claude["mcp"] is True
+    assert claude["human_in_the_loop"] is True
+    assert claude["cancel"] is True
+    assert set(pydantic_ai["provider_kinds"]) == {"cloud", "local", "private"}
+    assert pydantic_ai["structured_output"] is True
+    assert pydantic_ai["streaming"] is True
+    assert pydantic_ai["mcp"] is False
+    assert pydantic_ai["cancel"] is False
+    assert set(pydantic_ai["metadata"]["cw"]["supported_builtin_tools"]) == {
+        "evidence_lookup",
+        "file_io",
+        "python_sandbox",
+        "web_fetch",
+    }
 
     shutdown_response = client.post("/cw/v1/system/shutdown", headers=headers)
     assert shutdown_response.status_code == 202

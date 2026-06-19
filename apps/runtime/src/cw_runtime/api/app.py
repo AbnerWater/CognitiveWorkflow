@@ -18,6 +18,13 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ValidationError
 
 from cw_runtime import __version__
+from cw_runtime.adapters import (
+    AdapterRegistry,
+    ClaudeCodeAdapter,
+    PydanticAIAdapter,
+    build_claude_code_descriptor,
+    build_pydantic_ai_descriptor,
+)
 from cw_runtime.engine import WorkflowValidationError, load_workflow_graph
 from cw_runtime.harness import HarnessError, ProjectCreateRequest, initialize_project, read_project
 from cw_runtime.runner import HumanDecisionRequest, resolve_human_decision
@@ -84,7 +91,14 @@ def _is_allowed_origin(origin: str | None) -> bool:
     return parsed.scheme == "http" and parsed.hostname == "127.0.0.1" and parsed.port is not None
 
 
-def create_app(settings: RuntimeSettings) -> AsgiApp:
+def _default_adapter_registry() -> AdapterRegistry:
+    registry = AdapterRegistry()
+    registry.register(build_pydantic_ai_descriptor(), lambda config: PydanticAIAdapter(config=config))
+    registry.register(build_claude_code_descriptor(), lambda config: ClaudeCodeAdapter(config=config))
+    return registry
+
+
+def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry | None = None) -> AsgiApp:
     fastapi = _load_module("fastapi")
     responses = _load_module("starlette.responses")
     requests = _load_module("starlette.requests")
@@ -98,6 +112,7 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
     )
     json_response: Any = responses.JSONResponse
     streaming_response: Any = responses.StreamingResponse
+    adapters = _default_adapter_registry() if adapter_registry is None else adapter_registry
     project_locations: dict[str, Path] = {}
     run_locations: dict[str, Path] = {}
     idempotency_cache: dict[tuple[str, str], tuple[float, str, int, dict[str, object]]] = {}
@@ -149,7 +164,7 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
         return _dump_model(HealthStatus(checks={"api": "ok"}))
 
     def get_system_capabilities() -> list[dict[str, object]]:
-        return []
+        return [_dump_model(descriptor.capabilities) for descriptor in adapters.list_available()]
 
     def post_system_shutdown() -> dict[str, object]:
         return {"schema_version": RUNTIME_SCHEMA_VERSION, "accepted": True}
