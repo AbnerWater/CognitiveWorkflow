@@ -27,7 +27,12 @@ from cw_runtime.adapters import (
 )
 from cw_runtime.engine import WorkflowValidationError, load_workflow_graph
 from cw_runtime.harness import HarnessError, ProjectCreateRequest, initialize_project, read_project
-from cw_runtime.runner import HumanDecisionRequest, resolve_human_decision
+from cw_runtime.runner import (
+    HumanDecisionRequest,
+    NodeAdvanceRequest,
+    advance_workflow_run_with_adapters,
+    resolve_human_decision,
+)
 from cw_runtime.runs import (
     RunActionRequest,
     RunError,
@@ -45,6 +50,7 @@ from cw_runtime.runs import (
     stream_sse_events,
 )
 from cw_runtime.settings import RUNTIME_SCHEMA_VERSION, RuntimeSettings
+from cw_schemas.workflow import EvaluationTaskNode
 
 from .auth import AuthenticationError, validate_bearer_authorization
 from .contracts import APIErrorCode, HealthStatus, RuntimeInfo, build_error_envelope
@@ -381,6 +387,80 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
         remember_idempotency_response(request, body, status_code=200, content=content)
         return secure_json_response(status_code=200, content=content)
 
+    async def post_run_node_run_once(run_id: str, node_id: str, request: Any) -> Any:
+        return await _run_node_advance(run_id, node_id, request)
+
+    async def post_run_node_re_evaluate(run_id: str, node_id: str, request: Any) -> Any:
+        return await _run_node_advance(run_id, node_id, request, require_evaluation_node=True)
+
+    async def _run_node_advance(
+        run_id: str,
+        node_id: str,
+        request: Any,
+        *,
+        require_evaluation_node: bool = False,
+    ) -> Any:
+        body_or_response = await _body_or_error_response(request)
+        if not isinstance(body_or_response, dict):
+            return body_or_response
+        body = body_or_response
+        replay = idempotency_replay_response(request, body)
+        if replay is not None:
+            return replay
+        project_root = run_locations.get(run_id)
+        if project_root is None:
+            return _resource_not_found("Run is not registered in this runtime process.", {"run_id": run_id})
+        body_node_id = body.get("node_id")
+        if body_node_id is not None and body_node_id != node_id:
+            return _run_error_response(
+                RunError(
+                    "NL_STATE_FORBIDDEN_TRANSITION",
+                    "node_id in request body must match the path node_id.",
+                    details={"path_node_id": node_id, "body_node_id": body_node_id},
+                )
+            )
+        try:
+            if require_evaluation_node:
+                _ensure_re_evaluate_node(project_root, node_id)
+            advance_request = NodeAdvanceRequest.model_validate({**body, "node_id": node_id})
+            result = await advance_workflow_run_with_adapters(project_root, run_id, adapters, advance_request)
+        except ValidationError as exc:
+            return secure_json_response(status_code=400, content=_dump_model(_validation_error_envelope(exc)))
+        except WorkflowValidationError as exc:
+            return secure_json_response(
+                status_code=_workflow_validation_status(exc),
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=exc.error_code,
+                        message=str(exc),
+                        details=exc.details,
+                    )
+                ),
+            )
+        except RunError as exc:
+            return _run_error_response(exc)
+        content = _dump_model(result)
+        remember_idempotency_response(request, body, status_code=200, content=content)
+        return secure_json_response(status_code=200, content=content)
+
+    def _ensure_re_evaluate_node(project_root: Path, node_id: str) -> None:
+        graph = load_workflow_graph(project_root)
+        for node in graph.nodes:
+            if node.node_id != node_id:
+                continue
+            if isinstance(node, EvaluationTaskNode):
+                return
+            raise RunError(
+                "NL_STATE_FORBIDDEN_TRANSITION",
+                "re-evaluate can only target an evaluation_task node.",
+                details={"node_id": node_id, "node_type": node.type},
+            )
+        raise RunError(
+            "NL_STATE_FORBIDDEN_TRANSITION",
+            "Requested node does not exist in the workflow graph.",
+            details={"node_id": node_id},
+        )
+
     async def _workflow_action(
         workflow_id: str,
         request: Any,
@@ -558,6 +638,8 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     post_workflow_resume.__annotations__["request"] = requests.Request
     post_workflow_cancel.__annotations__["request"] = requests.Request
     post_run_decision.__annotations__["request"] = requests.Request
+    post_run_node_run_once.__annotations__["request"] = requests.Request
+    post_run_node_re_evaluate.__annotations__["request"] = requests.Request
     post_run_cancel.__annotations__["request"] = requests.Request
     get_run_stream.__annotations__["request"] = requests.Request
 
@@ -577,6 +659,8 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/cancel")(post_workflow_cancel)
     app.get(f"{settings.api_prefix}/runs/{{run_id}}")(get_run)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/decisions")(post_run_decision)
+    app.post(f"{settings.api_prefix}/runs/{{run_id}}/nodes/{{node_id}}:run-once")(post_run_node_run_once)
+    app.post(f"{settings.api_prefix}/runs/{{run_id}}/nodes/{{node_id}}:re-evaluate")(post_run_node_re_evaluate)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/cancel")(post_run_cancel)
     app.get(f"{settings.api_prefix}/runs/{{run_id}}/stream")(get_run_stream)
     app.get(f"{settings.api_prefix}/observability/runs/{{run_id}}/stream")(get_run_stream)
