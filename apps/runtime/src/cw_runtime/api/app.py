@@ -274,6 +274,15 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
             )
         return _dump_model(project)
 
+    def get_project_skills(project_id: str) -> Any:
+        return _read_project_config(project_id, "skills.config.json")
+
+    def get_project_mcps(project_id: str) -> Any:
+        return _read_project_config(project_id, "mcp.config.json")
+
+    def get_project_adapters(project_id: str) -> Any:
+        return _read_project_config(project_id, "adapters.config.json")
+
     async def post_workflow_run(workflow_id: str, request: Any) -> Any:
         body_or_response = await _body_or_error_response(request)
         if not isinstance(body_or_response, dict):
@@ -505,6 +514,29 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
             ),
         )
 
+    def _read_project_config(project_id: str, manifest_name: str) -> Any:
+        project_root = project_locations.get(project_id)
+        if project_root is None:
+            return _resource_not_found(
+                "Project is not registered in this runtime process.",
+                {"project_id": project_id},
+            )
+        config_path = project_root / ".agent-workflow" / manifest_name
+        try:
+            with config_path.open("r", encoding="utf-8") as file:
+                loaded: object = json.load(file)
+        except FileNotFoundError:
+            return _resource_not_found(
+                "Project configuration file was not found.",
+                {"project_id": project_id, "manifest_name": manifest_name},
+            )
+        except (OSError, json.JSONDecodeError):
+            return _resource_not_found(
+                "Project configuration resource is not available.",
+                {"project_id": project_id, "manifest_name": manifest_name},
+            )
+        return loaded
+
     post_projects.__annotations__["request"] = requests.Request
     post_workflow_run.__annotations__["request"] = requests.Request
     post_workflow_pause.__annotations__["request"] = requests.Request
@@ -521,6 +553,9 @@ def create_app(settings: RuntimeSettings) -> AsgiApp:
     app.post(f"{settings.api_prefix}/system/shutdown", status_code=202)(post_system_shutdown)
     app.post(f"{settings.api_prefix}/projects")(post_projects)
     app.get(f"{settings.api_prefix}/projects/{{project_id}}")(get_project)
+    app.get(f"{settings.api_prefix}/projects/{{project_id}}/skills")(get_project_skills)
+    app.get(f"{settings.api_prefix}/projects/{{project_id}}/mcps")(get_project_mcps)
+    app.get(f"{settings.api_prefix}/projects/{{project_id}}/adapters")(get_project_adapters)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/run")(post_workflow_run)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/pause")(post_workflow_pause)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/resume")(post_workflow_resume)

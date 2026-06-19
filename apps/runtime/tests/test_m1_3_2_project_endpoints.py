@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,10 @@ def _test_client() -> Any:
     testclient_module = import_module("starlette.testclient")
     app = create_app(RuntimeSettings(auth_token=SecretStr("expected-token")))
     return testclient_module.TestClient(app)
+
+
+def _write_json_value(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def test_create_and_read_project_endpoint(tmp_path: Path) -> None:
@@ -52,6 +57,51 @@ def test_create_and_read_project_endpoint(tmp_path: Path) -> None:
     assert read_body["project_id"] == project_id
     assert read_body["display_name"] == "API Project"
     assert read_body["host_path"] == host_path.resolve().as_posix()
+
+
+def test_read_project_config_endpoints_return_manifest_files(tmp_path: Path) -> None:
+    client = _test_client()
+    host_path = tmp_path / "api_config_project"
+    create_response = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "display_name": "API Config Project", "host_path": str(host_path)},
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["project_id"]
+    agent_root = host_path.resolve() / ".agent-workflow"
+    skills_payload: list[dict[str, object]] = [
+        {"skill_id": "file_io", "enabled": True, "version": "1.0.0"},
+    ]
+    mcp_payload: list[dict[str, object]] = [
+        {"server_id": "docs", "enabled": True, "transport": "stdio", "command_or_url": "docs-mcp"},
+    ]
+    adapters_payload: list[dict[str, object]] = [
+        {"adapter_id": "pydantic-ai", "enabled": True},
+    ]
+    _write_json_value(agent_root / "skills.config.json", skills_payload)
+    _write_json_value(agent_root / "mcp.config.json", mcp_payload)
+    _write_json_value(agent_root / "adapters.config.json", adapters_payload)
+
+    skills_response = client.get(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+    mcps_response = client.get(
+        f"/cw/v1/projects/{project_id}/mcps",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+    adapters_response = client.get(
+        f"/cw/v1/projects/{project_id}/adapters",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+
+    assert skills_response.status_code == 200
+    assert skills_response.json() == skills_payload
+    assert mcps_response.status_code == 200
+    assert mcps_response.json() == mcp_payload
+    assert adapters_response.status_code == 200
+    assert adapters_response.json() == adapters_payload
 
 
 def test_create_project_idempotency_replays_matching_body(tmp_path: Path) -> None:
@@ -150,3 +200,52 @@ def test_read_unknown_project_returns_res_not_found() -> None:
 
     assert response.status_code == 404
     assert response.json()["error_code"] == "RES_NOT_FOUND"
+
+
+def test_read_unknown_project_config_returns_res_not_found() -> None:
+    client = _test_client()
+
+    response = client.get("/cw/v1/projects/unknown-project/mcps", headers={"Authorization": "Bearer expected-token"})
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "RES_NOT_FOUND"
+
+
+def test_read_missing_project_config_returns_res_not_found(tmp_path: Path) -> None:
+    client = _test_client()
+    host_path = tmp_path / "missing_config_project"
+    create_response = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "display_name": "Missing Config Project", "host_path": str(host_path)},
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["project_id"]
+    (host_path.resolve() / ".agent-workflow" / "mcp.config.json").unlink()
+
+    response = client.get(f"/cw/v1/projects/{project_id}/mcps", headers={"Authorization": "Bearer expected-token"})
+
+    assert response.status_code == 404
+    body = response.json()
+    assert body["error_code"] == "RES_NOT_FOUND"
+    assert body["details"]["manifest_name"] == "mcp.config.json"
+
+
+def test_read_malformed_project_config_returns_res_not_found(tmp_path: Path) -> None:
+    client = _test_client()
+    host_path = tmp_path / "malformed_config_project"
+    create_response = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "display_name": "Malformed Config Project", "host_path": str(host_path)},
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["project_id"]
+    (host_path.resolve() / ".agent-workflow" / "mcp.config.json").write_text("{", encoding="utf-8")
+
+    response = client.get(f"/cw/v1/projects/{project_id}/mcps", headers={"Authorization": "Bearer expected-token"})
+
+    assert response.status_code == 404
+    body = response.json()
+    assert body["error_code"] == "RES_NOT_FOUND"
+    assert body["details"]["manifest_name"] == "mcp.config.json"
