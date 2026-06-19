@@ -99,6 +99,50 @@ class FakeResultMessage:
         self.duration_ms = duration_ms
 
 
+class FakePermissionResultAllow:
+    def __init__(
+        self,
+        *,
+        updated_input: dict[str, Any] | None = None,
+        updated_permissions: list[object] | None = None,
+    ) -> None:
+        self.behavior = "allow"
+        self.updated_input = updated_input
+        self.updated_permissions = updated_permissions
+
+
+class FakePermissionResultDeny:
+    def __init__(self, *, message: str = "", interrupt: bool = False) -> None:
+        self.behavior = "deny"
+        self.message = message
+        self.interrupt = interrupt
+
+
+class FakeHookMatcher:
+    def __init__(self, *, matcher: str | None, hooks: list[object]) -> None:
+        self.matcher = matcher
+        self.hooks = hooks
+
+
+class FakeToolPermissionContext:
+    def __init__(self) -> None:
+        self.signal: None = None
+        self.suggestions: list[object] = []
+
+
+class FakePermissionCallbackMessage:
+    def __init__(
+        self,
+        *,
+        tool_name: str,
+        input_data: dict[str, Any],
+        after_result: FakeResultMessage,
+    ) -> None:
+        self.tool_name = tool_name
+        self.input_data = input_data
+        self.after_result = after_result
+
+
 class FakeClaudeSDKClient:
     instances: ClassVar[list[FakeClaudeSDKClient]] = []
     response_messages: ClassVar[list[object]] = []
@@ -110,6 +154,7 @@ class FakeClaudeSDKClient:
         self.queries: list[str] = []
         self.interrupted = False
         self.disconnected = False
+        self.permission_results: list[object] = []
         type(self).instances.append(self)
 
     async def connect(self) -> None:
@@ -121,6 +166,17 @@ class FakeClaudeSDKClient:
     def receive_response(self) -> AsyncIterator[object]:
         async def iterator() -> AsyncIterator[object]:
             for message in list(type(self).response_messages):
+                if isinstance(message, FakePermissionCallbackMessage):
+                    can_use_tool = self.options.kwargs.get("can_use_tool")
+                    assert callable(can_use_tool)
+                    result = await can_use_tool(
+                        message.tool_name,
+                        message.input_data,
+                        FakeToolPermissionContext(),
+                    )
+                    self.permission_results.append(result)
+                    yield message.after_result
+                    continue
                 yield message
             if type(self).block_after_messages:
                 await asyncio.Event().wait()
@@ -165,6 +221,9 @@ def _install_fake_claude_agent_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_sdk = ModuleType("claude_agent_sdk")
     fake_sdk.__dict__["ClaudeAgentOptions"] = FakeClaudeAgentOptions
     fake_sdk.__dict__["ClaudeSDKClient"] = FakeClaudeSDKClient
+    fake_sdk.__dict__["PermissionResultAllow"] = FakePermissionResultAllow
+    fake_sdk.__dict__["PermissionResultDeny"] = FakePermissionResultDeny
+    fake_sdk.__dict__["HookMatcher"] = FakeHookMatcher
     real_import_module = importlib.import_module
 
     def fake_import_module(name: str, package: str | None = None) -> ModuleType:
@@ -886,6 +945,8 @@ async def test_claude_code_default_sdk_session_streams_and_finalizes(monkeypatch
     assert client.options.kwargs["allowed_tools"] == []
     assert client.options.kwargs["mcp_servers"] == {}
     assert client.options.kwargs["permission_mode"] == "dontAsk"
+    assert "can_use_tool" not in client.options.kwargs
+    assert "hooks" not in client.options.kwargs
     assert client.options.kwargs["setting_sources"] == []
     assert client.options.kwargs["system_prompt"] == {"type": "preset", "preset": "claude_code"}
 
@@ -926,6 +987,188 @@ async def test_claude_code_default_sdk_receives_allowed_tools_projection(
         "db": {"command": "db-mcp", "args": ["--stdio"]},
     }
     assert FakeClaudeSDKClient.instances[0].options.kwargs["permission_mode"] == "dontAsk"
+
+
+@pytest.mark.asyncio
+async def test_claude_code_can_use_tool_bridge_emits_human_gate_and_resumes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_claude_agent_sdk(monkeypatch)
+    FakeClaudeSDKClient.response_messages = [
+        FakePermissionCallbackMessage(
+            tool_name="mcp__db__query",
+            input_data={"sql": "select 1"},
+            after_result=FakeResultMessage(result='{"answer":"approved"}'),
+        ),
+    ]
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(
+            adapter_id="claude_code",
+            settings={
+                "enable_can_use_tool_bridge": True,
+                "mcp_servers": {"db": {"command": "db-mcp", "args": ["--stdio"]}},
+            },
+        )
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["db"]),
+            mcp_tools=[MCPToolRef(server_id="db", tool_name="query", requires_approval=True)],
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "tool.approval_required", "human.gate_required"]
+    client = FakeClaudeSDKClient.instances[0]
+    assert client.options.kwargs["allowed_tools"] == []
+    assert "mcp__db__*" not in client.options.kwargs["allowed_tools"]
+    assert client.options.kwargs["permission_mode"] == "default"
+    assert callable(client.options.kwargs["can_use_tool"])
+    hooks = client.options.kwargs["hooks"]
+    assert isinstance(hooks, dict)
+    assert hooks["PreToolUse"]
+    approval = events[-2]
+    gate = events[-1]
+    assert approval.payload is not None
+    assert approval.payload["tool_id"] == "mcp__db__query"
+    assert gate.parent_event_id == approval.event_id
+    assert gate.payload is not None
+    assert gate.payload["human_node_id"] == "n_extract"
+    assert gate.payload["decisions"][0]["key"].startswith("approve:perm_")
+    assert handle.state == AttemptState.AWAITING_HUMAN
+
+    resumed = await _collect(
+        adapter.resume(
+            handle,
+            AttemptResumption(
+                kind=ResumptionKind.HUMAN_DECISION,
+                human_decision=HumanDecisionResolution(
+                    key=gate.payload["decisions"][0]["key"],
+                    by="user_01",
+                    decided_at="2026-06-19T00:00:01.000Z",
+                ),
+            ),
+        )
+    )
+
+    assert [event.type for event in resumed] == [
+        "human.gate_resolved",
+        "tool.approved",
+        "model.request_completed",
+        "attempt.completed",
+    ]
+    approved = resumed[1]
+    assert approved.parent_event_id == approval.event_id
+    assert approved.payload == {"tool_id": "mcp__db__query", "decision_by": "user_01"}
+    assert client.permission_results
+    permission_result = client.permission_results[0]
+    assert isinstance(permission_result, FakePermissionResultAllow)
+    assert permission_result.updated_input == {"sql": "select 1"}
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.COMPLETED
+    assert outcome.output == {"answer": "approved"}
+
+
+@pytest.mark.asyncio
+async def test_claude_code_can_use_tool_bridge_rejects_approval_required_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_claude_agent_sdk(monkeypatch)
+    FakeClaudeSDKClient.response_messages = [
+        FakePermissionCallbackMessage(
+            tool_name="mcp__db__query",
+            input_data={"sql": "drop table demo"},
+            after_result=FakeResultMessage(result='{"answer":"denied"}'),
+        ),
+    ]
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(
+            adapter_id="claude_code",
+            settings={
+                "enable_can_use_tool_bridge": True,
+                "mcp_servers": {"db": {"command": "db-mcp", "args": ["--stdio"]}},
+            },
+        )
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["db"]),
+            mcp_tools=[MCPToolRef(server_id="db", tool_name="query", requires_approval=True)],
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "tool.approval_required", "human.gate_required"]
+    approval = events[-2]
+    gate = events[-1]
+    assert gate.payload is not None
+    resumed = await _collect(
+        adapter.resume(
+            handle,
+            AttemptResumption(
+                kind=ResumptionKind.HUMAN_DECISION,
+                human_decision=HumanDecisionResolution(
+                    key=gate.payload["decisions"][1]["key"],
+                    custom_value="SQL write rejected",
+                    by="user_01",
+                    decided_at="2026-06-19T00:00:02.000Z",
+                ),
+            ),
+        )
+    )
+
+    assert [event.type for event in resumed] == [
+        "human.gate_resolved",
+        "tool.rejected",
+        "model.request_completed",
+        "attempt.completed",
+    ]
+    rejected = resumed[1]
+    assert rejected.parent_event_id == approval.event_id
+    assert rejected.payload == {"tool_id": "mcp__db__query", "reason": "SQL write rejected"}
+    client = FakeClaudeSDKClient.instances[0]
+    assert client.permission_results
+    permission_result = client.permission_results[0]
+    assert isinstance(permission_result, FakePermissionResultDeny)
+    assert permission_result.message == "SQL write rejected"
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.COMPLETED
+    assert outcome.output == {"answer": "denied"}
+
+
+@pytest.mark.asyncio
+async def test_claude_code_can_use_tool_bridge_denies_unpermitted_tool_without_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_claude_agent_sdk(monkeypatch)
+    FakeClaudeSDKClient.response_messages = [
+        FakePermissionCallbackMessage(
+            tool_name="Bash",
+            input_data={"command": "rm -rf ."},
+            after_result=FakeResultMessage(result='{"answer":"fallback"}'),
+        ),
+    ]
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(adapter_id="claude_code", settings={"enable_can_use_tool_bridge": True})
+    )
+    handle = await adapter.prepare(_execution_pack({"type": "object", "required": ["answer"]}))
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "model.request_completed", "attempt.completed"]
+    client = FakeClaudeSDKClient.instances[0]
+    assert client.permission_results
+    permission_result = client.permission_results[0]
+    assert isinstance(permission_result, FakePermissionResultDeny)
+    assert permission_result.message == "Claude Code tool request is outside the CW NodeContract permission boundary."
+    assert "rm -rf" not in permission_result.message
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.COMPLETED
+    assert outcome.output == {"answer": "fallback"}
 
 
 @pytest.mark.asyncio
@@ -976,12 +1219,14 @@ async def test_claude_code_permission_prompt_translates_to_human_gate_and_resume
         )
     )
 
-    assert [event.type for event in resumed] == ["human.gate_resolved", "attempt.completed"]
+    assert [event.type for event in resumed] == ["human.gate_resolved", "tool.approved", "attempt.completed"]
     assert resumed[0].payload == {
         "human_node_id": "n_extract",
         "decision": "continue",
         "by": "user_01",
     }
+    assert resumed[1].parent_event_id == approval.event_id
+    assert resumed[1].payload == {"tool_id": "Edit", "decision_by": "user_01"}
     assert session.resume_request is not None
     assert session.resume_request.resumption.human_decision is not None
     assert session.resume_request.resumption.human_decision.key == "continue"

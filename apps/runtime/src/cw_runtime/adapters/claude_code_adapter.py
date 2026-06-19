@@ -15,6 +15,7 @@ import inspect
 import json
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import suppress
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Literal, Protocol, TypeAlias, cast
@@ -69,7 +70,10 @@ class ClaudeCodeRunRequest(BaseModel):
     model_profile_id: str = Field(..., min_length=1)
     prompt: str = Field(..., min_length=1)
     allowed_tools: list[str] = Field(default_factory=list)
+    permitted_tools: list[str] = Field(default_factory=list)
+    approval_required_tools: list[str] = Field(default_factory=list)
     mcp_servers: dict[str, Any] = Field(default_factory=dict)
+    can_use_tool_bridge: bool = False
     correlation_id: str = Field(..., min_length=1)
 
 
@@ -115,6 +119,32 @@ ClaudeCodeMCPSecretResolver: TypeAlias = Callable[
 ]
 
 
+@dataclass
+class _ClaudeCodePendingPermission:
+    permission_id: str
+    tool_name: str
+    input_data: dict[str, Any]
+    future: asyncio.Future[AttemptResumption | None]
+
+
+@dataclass(frozen=True)
+class _PendingToolApproval:
+    tool_id: str
+    invocation_id: str | None
+    approval_event_id: str
+
+
+@dataclass
+class _ClaudeCodeSDKRunState:
+    handle_id: str
+    client: object | None = None
+    message_iterator: AsyncIterator[object] | None = None
+    next_message: asyncio.Task[list[RawClaudeCodeEvent]] | None = None
+    raw_event_buffer: list[RawClaudeCodeEvent] = field(default_factory=list)
+    permission_events: asyncio.Queue[RawClaudeCodeEvent] = field(default_factory=asyncio.Queue)
+    pending_permission: _ClaudeCodePendingPermission | None = None
+
+
 class ClaudeCodeSDKSession:
     """Default Claude Agent SDK-backed session.
 
@@ -126,17 +156,23 @@ class ClaudeCodeSDKSession:
     def __init__(self, sdk_module: ModuleType | None = None) -> None:
         self._sdk_module = sdk_module
         self._clients: dict[str, object] = {}
+        self._run_states: dict[str, _ClaudeCodeSDKRunState] = {}
 
     async def run(self, request: ClaudeCodeRunRequest) -> AsyncIterator[RawClaudeCodeEvent]:
         sdk = self._sdk()
-        client = _build_sdk_client(sdk, request)
+        run_state = _ClaudeCodeSDKRunState(handle_id=request.handle_id)
+        client = _build_sdk_client(sdk, request, run_state)
+        run_state.client = client
         self._clients[request.handle_id] = client
+        self._run_states[request.handle_id] = run_state
         await _connect_sdk_client(client)
         await _query_sdk_client(client, request.prompt)
-        async for raw_event in _receive_sdk_client_raw_events(client):
+        run_state.message_iterator = _sdk_client_message_iterator(client)
+        async for raw_event in _receive_sdk_client_raw_events(run_state):
             yield raw_event
 
     async def resume(self, request: ClaudeCodeResumeRequest) -> AsyncIterator[RawClaudeCodeEvent]:
+        run_state = self._run_states.get(request.handle_id)
         client = self._clients.get(request.handle_id)
         if client is None:
             raise AdapterRuntimeError(
@@ -144,11 +180,21 @@ class ClaudeCodeSDKSession:
                 "Claude Agent SDK resume requires an existing client session.",
                 payload={"handle_id": request.handle_id, "kind": request.resumption.kind.value},
             )
-        await _query_sdk_client(client, _resume_prompt(request.resumption))
-        async for raw_event in _receive_sdk_client_raw_events(client):
+        if run_state is None:
+            run_state = _ClaudeCodeSDKRunState(handle_id=request.handle_id, client=client)
+            run_state.message_iterator = _sdk_client_message_iterator(client)
+            self._run_states[request.handle_id] = run_state
+        if not _resolve_pending_sdk_permission(run_state, request.resumption):
+            await _query_sdk_client(client, _resume_prompt(request.resumption))
+            if run_state.message_iterator is None:
+                run_state.message_iterator = _sdk_client_message_iterator(client)
+        async for raw_event in _receive_sdk_client_raw_events(run_state):
             yield raw_event
 
     async def cancel(self, handle_id: str, reason: CancelReason) -> None:
+        run_state = self._run_states.get(handle_id)
+        if run_state is not None:
+            _cancel_pending_sdk_permission(run_state)
         client = self._clients.get(handle_id)
         if client is None:
             return
@@ -161,6 +207,11 @@ class ClaudeCodeSDKSession:
             with suppress(Exception):
                 await _close_sdk_client(client)
         self._clients.clear()
+        for run_state in self._run_states.values():
+            _cancel_pending_sdk_permission(run_state)
+            if run_state.next_message is not None:
+                await _cancel_task(run_state.next_message)
+        self._run_states.clear()
 
     def _sdk(self) -> ModuleType:
         if self._sdk_module is not None:
@@ -196,6 +247,7 @@ class ClaudeCodeAdapter:
         self._errors: dict[str, list[AdapterError]] = {}
         self._stream_seq: dict[str, int] = {}
         self._cancel_events: dict[str, asyncio.Event] = {}
+        self._pending_tool_approvals: dict[str, _PendingToolApproval] = {}
 
     @property
     def adapter_id(self) -> str:
@@ -307,6 +359,9 @@ class ClaudeCodeAdapter:
             decision_key=resumption.human_decision.key,
             user_id=resumption.human_decision.by,
         )
+        tool_approval_event = self._tool_approval_result_event(handle, resumption)
+        if tool_approval_event is not None:
+            yield tool_approval_event
 
         try:
             session = self._session_for(handle)
@@ -338,6 +393,7 @@ class ClaudeCodeAdapter:
                 payload={"reason": reason.value},
             )
         ]
+        self._pending_tool_approvals.pop(handle.handle_id, None)
         cancel_event = self._cancel_events.get(handle.handle_id)
         if cancel_event is not None:
             cancel_event.set()
@@ -435,6 +491,7 @@ class ClaudeCodeAdapter:
 
     def _run_request(self, handle: AttemptHandle) -> ClaudeCodeRunRequest:
         pack = self._packs[handle.handle_id]
+        can_use_tool_bridge = _can_use_tool_bridge_enabled(self._config)
         return ClaudeCodeRunRequest(
             handle_id=handle.handle_id,
             run_id=handle.run_id,
@@ -443,8 +500,11 @@ class ClaudeCodeAdapter:
             execution_pack_id=pack.pack_id,
             model_profile_id=pack.effective_model_profile_id,
             prompt=_render_prompt(pack),
-            allowed_tools=_claude_allowed_tools(pack),
+            allowed_tools=_claude_auto_approved_tools(pack, can_use_tool_bridge=can_use_tool_bridge),
+            permitted_tools=_claude_allowed_tools(pack),
+            approval_required_tools=_claude_approval_required_tools(pack),
             mcp_servers=_claude_mcp_servers(self._config, pack),
+            can_use_tool_bridge=can_use_tool_bridge,
             correlation_id=pack.correlation_id,
         )
 
@@ -570,6 +630,11 @@ class ClaudeCodeAdapter:
                 tool_id=tool_id,
                 invocation_id=_optional_str(raw_event, "invocation_id"),
                 display_level=DisplayLevel.DETAILED,
+            )
+            self._pending_tool_approvals[handle.handle_id] = _PendingToolApproval(
+                tool_id=tool_id,
+                invocation_id=_optional_str(raw_event, "invocation_id"),
+                approval_event_id=approval_event.event_id,
             )
             decisions = _decisions(raw_event)
             human_payload: dict[str, Any] = {
@@ -786,12 +851,19 @@ class ClaudeCodeAdapter:
         self,
         handle: AttemptHandle,
         *,
-        event_type: Literal["tool.call_started", "tool.call_completed", "tool.approval_required"],
+        event_type: Literal[
+            "tool.call_started",
+            "tool.call_completed",
+            "tool.approval_required",
+            "tool.approved",
+            "tool.rejected",
+        ],
         title: str,
         payload: dict[str, Any],
         tool_id: str,
         invocation_id: str | None,
         display_level: DisplayLevel = DisplayLevel.DEFAULT,
+        parent_event_id: str | None = None,
     ) -> ToolEvent:
         return ToolEvent(
             event_id=new_runtime_id(),
@@ -799,6 +871,7 @@ class ClaudeCodeAdapter:
             run_id=handle.run_id,
             node_id=handle.node_id,
             attempt_id=handle.attempt_id,
+            parent_event_id=parent_event_id,
             type=event_type,
             phase=EventPhase.ATTEMPT_TOOL_CALLING,
             title=title,
@@ -812,6 +885,39 @@ class ClaudeCodeAdapter:
             created_at=utc_now_ms(),
             tool_id=tool_id,
             invocation_id=invocation_id,
+        )
+
+    def _tool_approval_result_event(
+        self,
+        handle: AttemptHandle,
+        resumption: AttemptResumption,
+    ) -> ToolEvent | None:
+        pending = self._pending_tool_approvals.pop(handle.handle_id, None)
+        if pending is None:
+            return None
+        decision = resumption.human_decision
+        if decision is None:
+            return None
+        if _permission_decision_approves(decision.key, pending.invocation_id):
+            return self._tool_event(
+                handle,
+                event_type="tool.approved",
+                title="Claude Code tool approved",
+                payload={"tool_id": pending.tool_id, "decision_by": decision.by},
+                tool_id=pending.tool_id,
+                invocation_id=pending.invocation_id,
+                display_level=DisplayLevel.MINIMAL,
+                parent_event_id=pending.approval_event_id,
+            )
+        return self._tool_event(
+            handle,
+            event_type="tool.rejected",
+            title="Claude Code tool rejected",
+            payload={"tool_id": pending.tool_id, "reason": decision.custom_value or decision.key},
+            tool_id=pending.tool_id,
+            invocation_id=pending.invocation_id,
+            display_level=DisplayLevel.DEFAULT,
+            parent_event_id=pending.approval_event_id,
         )
 
     def _human_event(
@@ -888,6 +994,34 @@ def _claude_allowed_tools(pack: ExecutionPack) -> list[str]:
     allowed_tools.extend([_claude_mcp_server_tool(server_id) for server_id in pack.effective_toolsets.mcp_server_ids])
     allowed_tools.extend(_claude_mcp_tool_ref(tool.server_id, tool.tool_name) for tool in contract.mcp_tools)
     return _unique_strings(allowed_tools)
+
+
+def _claude_auto_approved_tools(pack: ExecutionPack, *, can_use_tool_bridge: bool) -> list[str]:
+    allowed_tools = _claude_allowed_tools(pack)
+    if not can_use_tool_bridge:
+        return allowed_tools
+    approval_required_tools = _claude_approval_required_tools(pack)
+    return [
+        tool_ref
+        for tool_ref in allowed_tools
+        if not any(
+            _claude_tool_ref_overlaps(tool_ref, approval_tool_ref) for approval_tool_ref in approval_required_tools
+        )
+    ]
+
+
+def _claude_approval_required_tools(pack: ExecutionPack) -> list[str]:
+    return _unique_strings(
+        [
+            _claude_mcp_tool_ref(tool.server_id, tool.tool_name)
+            for tool in pack.node_contract_snapshot.mcp_tools
+            if tool.requires_approval
+        ]
+    )
+
+
+def _can_use_tool_bridge_enabled(config: AdapterConfig) -> bool:
+    return config.settings.get("enable_can_use_tool_bridge") is True
 
 
 def _claude_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str, Any]:
@@ -1157,7 +1291,11 @@ def _claude_mcp_server_tool(server_id: str) -> str:
     return f"mcp__{server_id}__*"
 
 
-def _build_sdk_client(sdk: ModuleType, request: ClaudeCodeRunRequest) -> object:
+def _build_sdk_client(
+    sdk: ModuleType,
+    request: ClaudeCodeRunRequest,
+    run_state: _ClaudeCodeSDKRunState,
+) -> object:
     options_cls = getattr(sdk, "ClaudeAgentOptions", None)
     client_cls = getattr(sdk, "ClaudeSDKClient", None)
     if not callable(options_cls) or not callable(client_cls):
@@ -1170,7 +1308,7 @@ def _build_sdk_client(sdk: ModuleType, request: ClaudeCodeRunRequest) -> object:
             },
         )
     try:
-        options = options_cls(**_sdk_options_kwargs(request))
+        options = options_cls(**_sdk_options_kwargs(sdk, request, run_state))
         return client_cls(options=options)
     except TypeError as exc:
         raise AdapterRuntimeError(
@@ -1180,15 +1318,206 @@ def _build_sdk_client(sdk: ModuleType, request: ClaudeCodeRunRequest) -> object:
         ) from exc
 
 
-def _sdk_options_kwargs(request: ClaudeCodeRunRequest) -> dict[str, Any]:
-    return {
+def _sdk_options_kwargs(
+    sdk: ModuleType,
+    request: ClaudeCodeRunRequest,
+    run_state: _ClaudeCodeSDKRunState,
+) -> dict[str, Any]:
+    options: dict[str, Any] = {
         "tools": {"type": "preset", "preset": "claude_code"},
         "allowed_tools": list(request.allowed_tools),
         "mcp_servers": dict(request.mcp_servers),
-        "permission_mode": "dontAsk",
+        "permission_mode": "default" if request.can_use_tool_bridge else "dontAsk",
         "system_prompt": {"type": "preset", "preset": "claude_code"},
         "setting_sources": [],
     }
+    if request.can_use_tool_bridge:
+        options["can_use_tool"] = _sdk_can_use_tool_callback(sdk, request, run_state)
+        options["hooks"] = _sdk_can_use_tool_hooks(sdk)
+    return options
+
+
+def _sdk_can_use_tool_callback(
+    sdk: ModuleType,
+    request: ClaudeCodeRunRequest,
+    run_state: _ClaudeCodeSDKRunState,
+) -> Callable[[str, dict[str, Any], object], Any]:
+    async def can_use_tool(tool_name: str, input_data: dict[str, Any], _context: object) -> object:
+        tool_input = dict(input_data)
+        if not _claude_tool_ref_matches(tool_name, request.permitted_tools):
+            return _sdk_permission_deny(
+                sdk,
+                "Claude Code tool request is outside the CW NodeContract permission boundary.",
+            )
+        if not _claude_tool_ref_matches(tool_name, request.approval_required_tools):
+            return _sdk_permission_allow(sdk, tool_input)
+
+        pending = _enqueue_sdk_permission_prompt(run_state, tool_name=tool_name, input_data=tool_input)
+        resumption = await pending.future
+        if _permission_resumption_approved(resumption, pending.permission_id):
+            return _sdk_permission_allow(sdk, tool_input)
+        return _sdk_permission_deny(sdk, _permission_resumption_denial_message(resumption))
+
+    return can_use_tool
+
+
+def _sdk_can_use_tool_hooks(sdk: ModuleType) -> dict[str, list[object]]:
+    hook_matcher_cls = _sdk_optional_callable(sdk, "HookMatcher")
+    if hook_matcher_cls is None:
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "Claude Agent SDK permission bridge requires HookMatcher for the PreToolUse keepalive hook.",
+            payload={"module": "claude_agent_sdk", "missing": "HookMatcher"},
+        )
+    try:
+        return {"PreToolUse": [hook_matcher_cls(matcher=None, hooks=[_sdk_pre_tool_use_keepalive_hook])]}
+    except TypeError as exc:
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "Claude Agent SDK HookMatcher could not be constructed for the permission bridge.",
+            payload={"exception_type": type(exc).__name__},
+        ) from exc
+
+
+async def _sdk_pre_tool_use_keepalive_hook(_input_data: object, _tool_use_id: str, _context: object) -> dict[str, bool]:
+    return {"continue_": True}
+
+
+def _sdk_permission_allow(sdk: ModuleType, input_data: dict[str, Any]) -> object:
+    allow_cls = _sdk_required_callable(sdk, "PermissionResultAllow")
+    return allow_cls(updated_input=dict(input_data))
+
+
+def _sdk_permission_deny(sdk: ModuleType, message: str) -> object:
+    deny_cls = _sdk_required_callable(sdk, "PermissionResultDeny")
+    try:
+        return deny_cls(message=message, interrupt=False)
+    except TypeError:
+        return deny_cls(message=message)
+
+
+def _sdk_required_callable(sdk: ModuleType, name: str) -> Callable[..., object]:
+    value = _sdk_optional_callable(sdk, name)
+    if value is None:
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            f"Claude Agent SDK permission bridge requires {name}.",
+            payload={"module": "claude_agent_sdk", "missing": name},
+        )
+    return value
+
+
+def _sdk_optional_callable(sdk: ModuleType, name: str) -> Callable[..., object] | None:
+    value = getattr(sdk, name, None)
+    if callable(value):
+        return cast(Callable[..., object], value)
+    types_module = _sdk_types_module(sdk)
+    if types_module is None:
+        return None
+    value = getattr(types_module, name, None)
+    if callable(value):
+        return cast(Callable[..., object], value)
+    return None
+
+
+def _sdk_types_module(sdk: ModuleType) -> ModuleType | None:
+    sdk_name = getattr(sdk, "__name__", "")
+    if not sdk_name:
+        return None
+    try:
+        return importlib.import_module(f"{sdk_name}.types")
+    except ImportError:
+        return None
+
+
+def _enqueue_sdk_permission_prompt(
+    run_state: _ClaudeCodeSDKRunState,
+    *,
+    tool_name: str,
+    input_data: dict[str, Any],
+) -> _ClaudeCodePendingPermission:
+    if run_state.pending_permission is not None and not run_state.pending_permission.future.done():
+        return run_state.pending_permission
+
+    loop = asyncio.get_running_loop()
+    permission_id = f"perm_{new_runtime_id()}"
+    pending = _ClaudeCodePendingPermission(
+        permission_id=permission_id,
+        tool_name=tool_name,
+        input_data=dict(input_data),
+        future=loop.create_future(),
+    )
+    run_state.pending_permission = pending
+    run_state.permission_events.put_nowait(
+        {
+            "type": "permission_prompt",
+            "tool_id": tool_name,
+            "invocation_id": permission_id,
+            "args": dict(input_data),
+            "args_hash": _stable_hash(input_data),
+            "prompt": f"Claude Code requests approval to use {tool_name}.",
+            "decisions": [
+                {"key": f"approve:{permission_id}", "label": "Approve"},
+                {"key": f"reject:{permission_id}", "label": "Reject"},
+            ],
+        }
+    )
+    return pending
+
+
+def _resolve_pending_sdk_permission(run_state: _ClaudeCodeSDKRunState, resumption: AttemptResumption) -> bool:
+    pending = run_state.pending_permission
+    if pending is None:
+        return False
+    if not pending.future.done():
+        pending.future.set_result(resumption)
+    run_state.pending_permission = None
+    return True
+
+
+def _cancel_pending_sdk_permission(run_state: _ClaudeCodeSDKRunState) -> None:
+    pending = run_state.pending_permission
+    if pending is None:
+        return
+    if not pending.future.done():
+        pending.future.set_result(None)
+    run_state.pending_permission = None
+
+
+def _permission_resumption_approved(resumption: AttemptResumption | None, permission_id: str) -> bool:
+    if resumption is None or resumption.human_decision is None:
+        return False
+    return _permission_decision_approves(resumption.human_decision.key, permission_id)
+
+
+def _permission_resumption_denial_message(resumption: AttemptResumption | None) -> str:
+    if resumption is not None and resumption.human_decision is not None and resumption.human_decision.custom_value:
+        return resumption.human_decision.custom_value
+    return "Human rejected the Claude Code tool request."
+
+
+def _claude_tool_ref_matches(tool_name: str, tool_refs: list[str]) -> bool:
+    for tool_ref in tool_refs:
+        if tool_ref == tool_name:
+            return True
+        if tool_ref.endswith("*") and tool_name.startswith(tool_ref[:-1]):
+            return True
+    return False
+
+
+def _claude_tool_ref_overlaps(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if left.endswith("*") and right.startswith(left[:-1]):
+        return True
+    return right.endswith("*") and left.startswith(right[:-1])
+
+
+def _permission_decision_approves(decision_key: str, invocation_id: str | None) -> bool:
+    approve_keys = {"continue", "approve"}
+    if invocation_id is not None:
+        approve_keys.add(f"approve:{invocation_id}")
+    return decision_key in approve_keys
 
 
 async def _connect_sdk_client(client: object) -> None:
@@ -1199,7 +1528,7 @@ async def _query_sdk_client(client: object, prompt: str) -> None:
     await _call_required_async_method(client, "query", prompt)
 
 
-async def _receive_sdk_client_raw_events(client: object) -> AsyncIterator[RawClaudeCodeEvent]:
+def _sdk_client_message_iterator(client: object) -> AsyncIterator[object]:
     receiver = getattr(client, "receive_response", None)
     if not callable(receiver):
         raise AdapterRuntimeError(
@@ -1213,9 +1542,54 @@ async def _receive_sdk_client_raw_events(client: object) -> AsyncIterator[RawCla
             "Claude Agent SDK receive_response() did not return an async iterator.",
             payload={"messages_type": type(messages).__name__},
         )
-    async for message in cast(AsyncIterator[object], messages):
-        for raw_event in _sdk_message_to_raw_events(message):
-            yield raw_event
+    return cast(AsyncIterator[object], messages.__aiter__())
+
+
+async def _receive_sdk_client_raw_events(run_state: _ClaudeCodeSDKRunState) -> AsyncIterator[RawClaudeCodeEvent]:
+    while True:
+        if run_state.raw_event_buffer:
+            yield run_state.raw_event_buffer.pop(0)
+            continue
+
+        permission_task = asyncio.create_task(run_state.permission_events.get())
+        if run_state.next_message is None:
+            run_state.next_message = asyncio.create_task(_receive_next_sdk_client_raw_events(run_state))
+        done, pending = await asyncio.wait(
+            {permission_task, run_state.next_message},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if permission_task in done:
+            for task in pending:
+                if task is not run_state.next_message:
+                    await _cancel_task(task)
+            yield permission_task.result()
+            continue
+
+        await _cancel_task(permission_task)
+        next_message = run_state.next_message
+        if next_message not in done:
+            continue
+        try:
+            raw_events = next_message.result()
+        except StopAsyncIteration:
+            run_state.next_message = None
+            return
+        run_state.next_message = None
+        run_state.raw_event_buffer.extend(raw_events)
+
+
+async def _receive_next_sdk_client_raw_events(
+    run_state: _ClaudeCodeSDKRunState,
+) -> list[RawClaudeCodeEvent]:
+    message_iterator = run_state.message_iterator
+    if message_iterator is None:
+        raise AdapterRuntimeError(
+            "AA_RUN_INTERNAL",
+            "Claude Agent SDK receive loop was not initialized.",
+            payload={"handle_id": run_state.handle_id},
+        )
+    message = await message_iterator.__anext__()
+    return _sdk_message_to_raw_events(message)
 
 
 def _sdk_message_to_raw_events(message: object) -> list[RawClaudeCodeEvent]:
