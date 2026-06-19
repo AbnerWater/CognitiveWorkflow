@@ -492,6 +492,7 @@ class ClaudeCodeAdapter:
     def _run_request(self, handle: AttemptHandle) -> ClaudeCodeRunRequest:
         pack = self._packs[handle.handle_id]
         can_use_tool_bridge = _can_use_tool_bridge_enabled(self._config)
+        approval_required_tools = _claude_approval_required_tools(self._config, pack)
         return ClaudeCodeRunRequest(
             handle_id=handle.handle_id,
             run_id=handle.run_id,
@@ -500,10 +501,14 @@ class ClaudeCodeAdapter:
             execution_pack_id=pack.pack_id,
             model_profile_id=pack.effective_model_profile_id,
             prompt=_render_prompt(pack),
-            allowed_tools=_claude_auto_approved_tools(pack, can_use_tool_bridge=can_use_tool_bridge),
+            allowed_tools=_claude_auto_approved_tools(
+                pack,
+                can_use_tool_bridge=can_use_tool_bridge,
+                approval_required_tools=approval_required_tools,
+            ),
             permitted_tools=_claude_allowed_tools(pack),
-            approval_required_tools=_claude_approval_required_tools(pack),
-            mcp_servers=_claude_mcp_servers(self._config, pack),
+            approval_required_tools=approval_required_tools,
+            mcp_servers=_claude_mcp_servers(self._config, pack, can_use_tool_bridge=can_use_tool_bridge),
             can_use_tool_bridge=can_use_tool_bridge,
             correlation_id=pack.correlation_id,
         )
@@ -996,11 +1001,15 @@ def _claude_allowed_tools(pack: ExecutionPack) -> list[str]:
     return _unique_strings(allowed_tools)
 
 
-def _claude_auto_approved_tools(pack: ExecutionPack, *, can_use_tool_bridge: bool) -> list[str]:
+def _claude_auto_approved_tools(
+    pack: ExecutionPack,
+    *,
+    can_use_tool_bridge: bool,
+    approval_required_tools: list[str],
+) -> list[str]:
     allowed_tools = _claude_allowed_tools(pack)
     if not can_use_tool_bridge:
         return allowed_tools
-    approval_required_tools = _claude_approval_required_tools(pack)
     return [
         tool_ref
         for tool_ref in allowed_tools
@@ -1010,13 +1019,14 @@ def _claude_auto_approved_tools(pack: ExecutionPack, *, can_use_tool_bridge: boo
     ]
 
 
-def _claude_approval_required_tools(pack: ExecutionPack) -> list[str]:
+def _claude_approval_required_tools(config: AdapterConfig, pack: ExecutionPack) -> list[str]:
     return _unique_strings(
         [
             _claude_mcp_tool_ref(tool.server_id, tool.tool_name)
             for tool in pack.node_contract_snapshot.mcp_tools
             if tool.requires_approval
         ]
+        + _project_approval_required_mcp_server_tools(config, pack)
     )
 
 
@@ -1024,11 +1034,16 @@ def _can_use_tool_bridge_enabled(config: AdapterConfig) -> bool:
     return config.settings.get("enable_can_use_tool_bridge") is True
 
 
-def _claude_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str, Any]:
+def _claude_mcp_servers(
+    config: AdapterConfig,
+    pack: ExecutionPack,
+    *,
+    can_use_tool_bridge: bool,
+) -> dict[str, Any]:
     requested_server_ids = _claude_requested_mcp_server_ids(pack)
     if not requested_server_ids:
         return {}
-    configured_servers = _project_mcp_servers(config, pack)
+    configured_servers = _project_mcp_servers(config, pack, can_use_tool_bridge=can_use_tool_bridge)
     if configured_servers is None:
         configured_servers = _configured_mcp_servers(config)
     missing_server_ids = [server_id for server_id in requested_server_ids if server_id not in configured_servers]
@@ -1044,7 +1059,12 @@ def _claude_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str,
     return {server_id: configured_servers[server_id] for server_id in requested_server_ids}
 
 
-def _project_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str, Any] | None:
+def _project_mcp_servers(
+    config: AdapterConfig,
+    pack: ExecutionPack,
+    *,
+    can_use_tool_bridge: bool,
+) -> dict[str, Any] | None:
     project_root = _project_root_from_pack(pack)
     if project_root is None:
         return None
@@ -1062,6 +1082,7 @@ def _project_mcp_servers(config: AdapterConfig, pack: ExecutionPack) -> dict[str
     _reject_project_mcp_configs_requiring_future_lifecycle(
         requested_configs,
         secret_resolver_available=secret_resolver is not None,
+        can_use_tool_bridge=can_use_tool_bridge,
     )
     return {
         server_id: _claude_project_mcp_server_config(
@@ -1082,6 +1103,7 @@ def _reject_project_mcp_configs_requiring_future_lifecycle(
     project_configs: Mapping[str, ProjectMCPServerConfig],
     *,
     secret_resolver_available: bool,
+    can_use_tool_bridge: bool,
 ) -> None:
     secret_server_ids = [
         server_id
@@ -1089,7 +1111,9 @@ def _reject_project_mcp_configs_requiring_future_lifecycle(
         if project_config.secret_ref and not secret_resolver_available
     ]
     approval_server_ids = [
-        server_id for server_id, project_config in project_configs.items() if project_config.requires_approval
+        server_id
+        for server_id, project_config in project_configs.items()
+        if project_config.requires_approval and not can_use_tool_bridge
     ]
     if not secret_server_ids and not approval_server_ids:
         return
@@ -1103,6 +1127,18 @@ def _reject_project_mcp_configs_requiring_future_lifecycle(
         "Project MCP server configuration requires lifecycle support not implemented by ClaudeCodeAdapter.",
         payload=payload,
     )
+
+
+def _project_approval_required_mcp_server_tools(config: AdapterConfig, pack: ExecutionPack) -> list[str]:
+    project_root = _project_root_from_pack(pack)
+    if project_root is None:
+        return []
+    project_configs = load_project_mcp_server_configs(Path(project_root))
+    return [
+        _claude_mcp_server_tool(server_id)
+        for server_id in _claude_requested_mcp_server_ids(pack)
+        if server_id in project_configs and project_configs[server_id].requires_approval
+    ]
 
 
 def _project_mcp_secret_resolver(

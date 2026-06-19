@@ -1072,6 +1072,92 @@ async def test_claude_code_can_use_tool_bridge_emits_human_gate_and_resumes(
 
 
 @pytest.mark.asyncio
+async def test_claude_code_project_mcp_requires_approval_uses_can_use_tool_bridge(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = _initialized_project_root(tmp_path / "claude_project_mcp_approval")
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "approval_server",
+                "transport": "stdio",
+                "command_or_url": "approval-mcp",
+                "requires_approval": True,
+            }
+        ],
+    )
+    _install_fake_claude_agent_sdk(monkeypatch)
+    FakeClaudeSDKClient.response_messages = [
+        FakePermissionCallbackMessage(
+            tool_name="mcp__approval_server__lookup",
+            input_data={"query": "cw"},
+            after_result=FakeResultMessage(result='{"answer":"approved"}'),
+        ),
+    ]
+    adapter = ClaudeCodeAdapter(
+        config=AdapterConfig(
+            adapter_id="claude_code",
+            settings={"enable_can_use_tool_bridge": True},
+        )
+    )
+    handle = await adapter.prepare(
+        _execution_pack(
+            {"type": "object", "required": ["answer"]},
+            effective_toolsets=ToolsetSpec(mcp_server_ids=["approval_server"]),
+            metadata={"cw": {"project_root": str(project_root)}},
+        )
+    )
+
+    events = await _collect(adapter.run(handle))
+
+    assert [event.type for event in events] == ["attempt.started", "tool.approval_required", "human.gate_required"]
+    client = FakeClaudeSDKClient.instances[0]
+    assert client.options.kwargs["mcp_servers"] == {"approval_server": {"command": "approval-mcp"}}
+    assert client.options.kwargs["allowed_tools"] == []
+    assert client.options.kwargs["permission_mode"] == "default"
+    assert callable(client.options.kwargs["can_use_tool"])
+    hooks = client.options.kwargs["hooks"]
+    assert isinstance(hooks, dict)
+    assert hooks["PreToolUse"]
+    approval = events[-2]
+    gate = events[-1]
+    assert approval.payload is not None
+    assert approval.payload["tool_id"] == "mcp__approval_server__lookup"
+    assert gate.parent_event_id == approval.event_id
+    assert gate.payload is not None
+
+    resumed = await _collect(
+        adapter.resume(
+            handle,
+            AttemptResumption(
+                kind=ResumptionKind.HUMAN_DECISION,
+                human_decision=HumanDecisionResolution(
+                    key=gate.payload["decisions"][0]["key"],
+                    by="user_01",
+                    decided_at="2026-06-19T00:00:01.000Z",
+                ),
+            ),
+        )
+    )
+
+    assert [event.type for event in resumed] == [
+        "human.gate_resolved",
+        "tool.approved",
+        "model.request_completed",
+        "attempt.completed",
+    ]
+    assert client.permission_results
+    permission_result = client.permission_results[0]
+    assert isinstance(permission_result, FakePermissionResultAllow)
+    assert permission_result.updated_input == {"query": "cw"}
+    outcome = await adapter.finalize(handle)
+    assert outcome.state == AttemptState.COMPLETED
+    assert outcome.output == {"answer": "approved"}
+
+
+@pytest.mark.asyncio
 async def test_claude_code_can_use_tool_bridge_rejects_approval_required_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
