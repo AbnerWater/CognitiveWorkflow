@@ -12,10 +12,10 @@ import time
 from collections.abc import Awaitable, Callable, Iterable
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from cw_runtime import __version__
 from cw_runtime.adapters import (
@@ -30,6 +30,7 @@ from cw_runtime.harness import HarnessError, ProjectCreateRequest, initialize_pr
 from cw_runtime.runner import (
     HumanDecisionRequest,
     NodeAdvanceRequest,
+    RepairAdvanceInput,
     advance_workflow_run_with_adapters,
     resolve_human_decision,
 )
@@ -50,7 +51,9 @@ from cw_runtime.runs import (
     stream_sse_events,
 )
 from cw_runtime.settings import RUNTIME_SCHEMA_VERSION, RuntimeSettings
-from cw_schemas.workflow import EvaluationTaskNode
+from cw_schemas import RepairPatch
+from cw_schemas.types import PatchScope, RepairKind
+from cw_schemas.workflow import EvaluationTaskNode, RepairTaskNode
 
 from .auth import AuthenticationError, validate_bearer_authorization
 from .contracts import APIErrorCode, HealthStatus, RuntimeInfo, build_error_envelope
@@ -71,6 +74,17 @@ class AsgiApp(Protocol):
         receive: Callable[[], Awaitable[dict[str, Any]]],
         send: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> Awaitable[None]: ...
+
+
+class RunNodeRepairRequest(BaseModel):
+    """Request body for POST /cw/v1/runs/{run_id}/nodes/{node_id}:repair."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["0.1.0"]
+    based_on_evaluation_id: str = Field(..., min_length=1)
+    preferred_strategy: RepairKind = RepairKind.PROMPT_PATCH
+    scope: PatchScope = PatchScope.UNTIL_PASS
 
 
 def _load_module(module_name: str) -> Any:
@@ -393,6 +407,51 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     async def post_run_node_re_evaluate(run_id: str, node_id: str, request: Any) -> Any:
         return await _run_node_advance(run_id, node_id, request, require_evaluation_node=True)
 
+    async def post_run_node_repair(run_id: str, node_id: str, request: Any) -> Any:
+        body_or_response = await _body_or_error_response(request)
+        if not isinstance(body_or_response, dict):
+            return body_or_response
+        body = body_or_response
+        replay = idempotency_replay_response(request, body)
+        if replay is not None:
+            return replay
+        project_root = run_locations.get(run_id)
+        if project_root is None:
+            return _resource_not_found("Run is not registered in this runtime process.", {"run_id": run_id})
+        try:
+            repair_request = RunNodeRepairRequest.model_validate(body)
+            _ensure_manual_repair_request(project_root, run_id, node_id, repair_request)
+            repair_input = _repair_advance_input_from_request(repair_request)
+            advance_request = NodeAdvanceRequest(
+                schema_version=repair_request.schema_version,
+                node_id=node_id,
+                repair=repair_input,
+            )
+            result = await advance_workflow_run_with_adapters(project_root, run_id, adapters, advance_request)
+            repair_patch = _repair_patch_for_result(project_root, run_id, result.patch_id)
+        except ValidationError as exc:
+            return secure_json_response(status_code=400, content=_dump_model(_validation_error_envelope(exc)))
+        except WorkflowValidationError as exc:
+            return secure_json_response(
+                status_code=_workflow_validation_status(exc),
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=exc.error_code,
+                        message=str(exc),
+                        details=exc.details,
+                    )
+                ),
+            )
+        except RunError as exc:
+            return _run_error_response(exc)
+        content: dict[str, object] = {
+            **_dump_model(result),
+            "repair_patch": _dump_model(repair_patch),
+            "applied": True,
+        }
+        remember_idempotency_response(request, body, status_code=200, content=content)
+        return secure_json_response(status_code=200, content=content)
+
     async def _run_node_advance(
         run_id: str,
         node_id: str,
@@ -459,6 +518,132 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
             "NL_STATE_FORBIDDEN_TRANSITION",
             "Requested node does not exist in the workflow graph.",
             details={"node_id": node_id},
+        )
+
+    def _ensure_manual_repair_request(
+        project_root: Path,
+        run_id: str,
+        node_id: str,
+        repair_request: RunNodeRepairRequest,
+    ) -> None:
+        repair_node = _repair_node_for_path(project_root, node_id)
+        run = read_workflow_run(project_root, run_id)
+        current_evaluation_id = _runtime_metadata_string(
+            run,
+            "last_evaluation_by_target",
+            repair_node.repair_target_node_id,
+        )
+        if current_evaluation_id == repair_request.based_on_evaluation_id:
+            return
+        raise RunError(
+            "NL_STATE_FORBIDDEN_TRANSITION",
+            "Repair request must reference the current evaluation for the repair target.",
+            details={
+                "run_id": run_id,
+                "node_id": node_id,
+                "target_node_id": repair_node.repair_target_node_id,
+                "based_on_evaluation_id": repair_request.based_on_evaluation_id,
+                "current_evaluation_id": current_evaluation_id,
+            },
+        )
+
+    def _repair_node_for_path(project_root: Path, node_id: str) -> RepairTaskNode:
+        graph = load_workflow_graph(project_root)
+        for node in graph.nodes:
+            if node.node_id != node_id:
+                continue
+            if isinstance(node, RepairTaskNode):
+                return node
+            raise RunError(
+                "NL_STATE_FORBIDDEN_TRANSITION",
+                "repair can only target a repair_task node.",
+                details={"node_id": node_id, "node_type": node.type},
+            )
+        raise RunError(
+            "NL_STATE_FORBIDDEN_TRANSITION",
+            "Requested node does not exist in the workflow graph.",
+            details={"node_id": node_id},
+        )
+
+    def _runtime_metadata_string(run: WorkflowRunDocument, bucket: str, key: str) -> str | None:
+        cw_metadata = run.metadata.get("cw")
+        if not isinstance(cw_metadata, dict):
+            return None
+        bucket_value = cw_metadata.get(bucket)
+        if not isinstance(bucket_value, dict):
+            return None
+        raw_value = bucket_value.get(key)
+        if raw_value is None or isinstance(raw_value, str):
+            return raw_value
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run metadata contains an invalid runner value.",
+            status_code=500,
+            details={"run_id": run.run_id, "bucket": bucket, "key": key, "value": raw_value},
+        )
+
+    def _repair_advance_input_from_request(repair_request: RunNodeRepairRequest) -> RepairAdvanceInput:
+        if repair_request.preferred_strategy != RepairKind.PROMPT_PATCH:
+            raise RunError(
+                "RP_BUILD_KIND_NOT_ALLOWED",
+                "Manual repair API foundation only supports prompt_patch.",
+                status_code=422,
+                details={"preferred_strategy": repair_request.preferred_strategy.value},
+            )
+        if repair_request.scope != PatchScope.UNTIL_PASS:
+            raise RunError(
+                "NL_STATE_FORBIDDEN_TRANSITION",
+                "Manual repair API foundation only supports scope=until_pass.",
+                details={"scope": repair_request.scope.value},
+            )
+        return RepairAdvanceInput(
+            scope=repair_request.scope,
+            metadata={
+                "cw": {
+                    "api_action": "manual_repair",
+                    "based_on_evaluation_id": repair_request.based_on_evaluation_id,
+                }
+            },
+        )
+
+    def _repair_patch_for_result(project_root: Path, run_id: str, patch_id: str | None) -> RepairPatch:
+        if patch_id is None:
+            raise RunError(
+                "RH_RUN_DIR_CORRUPTED",
+                "Repair action completed without a patch_id.",
+                status_code=500,
+                details={"run_id": run_id},
+            )
+        repairs_path = project_root / ".agent-workflow" / "runs" / run_id / "repairs.jsonl"
+        try:
+            raw_lines = repairs_path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise RunError(
+                "RH_RUN_DIR_CORRUPTED",
+                "Repair action did not persist repairs.jsonl.",
+                status_code=500,
+                details={"run_id": run_id, "patch_id": patch_id},
+            ) from exc
+        for raw_line in raw_lines:
+            if not raw_line:
+                continue
+            try:
+                raw_patch = json.loads(raw_line)
+                repair_patch = RepairPatch.model_validate(raw_patch)
+            except (json.JSONDecodeError, ValidationError) as exc:
+                raise RunError(
+                    "RH_RUN_DIR_CORRUPTED",
+                    "repairs.jsonl contains an invalid RepairPatch record.",
+                    status_code=500,
+                    details={"run_id": run_id, "patch_id": patch_id},
+                ) from exc
+            if repair_patch.patch_id == patch_id:
+                return repair_patch
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Repair action did not persist the returned patch_id.",
+            status_code=500,
+            details={"run_id": run_id, "patch_id": patch_id},
         )
 
     async def _workflow_action(
@@ -640,6 +825,7 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     post_run_decision.__annotations__["request"] = requests.Request
     post_run_node_run_once.__annotations__["request"] = requests.Request
     post_run_node_re_evaluate.__annotations__["request"] = requests.Request
+    post_run_node_repair.__annotations__["request"] = requests.Request
     post_run_cancel.__annotations__["request"] = requests.Request
     get_run_stream.__annotations__["request"] = requests.Request
 
@@ -661,6 +847,7 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/decisions")(post_run_decision)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/nodes/{{node_id}}:run-once")(post_run_node_run_once)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/nodes/{{node_id}}:re-evaluate")(post_run_node_re_evaluate)
+    app.post(f"{settings.api_prefix}/runs/{{run_id}}/nodes/{{node_id}}:repair")(post_run_node_repair)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/cancel")(post_run_cancel)
     app.get(f"{settings.api_prefix}/runs/{{run_id}}/stream")(get_run_stream)
     app.get(f"{settings.api_prefix}/observability/runs/{{run_id}}/stream")(get_run_stream)

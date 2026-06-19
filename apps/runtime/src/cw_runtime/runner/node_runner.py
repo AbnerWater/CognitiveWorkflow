@@ -111,6 +111,7 @@ from cw_schemas.types import (
     FailureType,
     HumanDecisionKey,
     NodeRuntimeState,
+    PatchScope,
     RepairKind,
     RiskLevel,
     RunState,
@@ -230,6 +231,7 @@ class RepairAdvanceInput(BaseModel):
     instruction_text: str = Field(default="Tighten the output format before retry.", min_length=1)
     expected_effect: str = Field(default="The next attempt should satisfy the failed criterion.", min_length=1)
     rationale: str | None = None
+    scope: Literal[PatchScope.UNTIL_PASS] = PatchScope.UNTIL_PASS
     risk_level: RiskLevel = RiskLevel.LOW
     model_profile_id: str | None = None
     usage: RunUsage = Field(default_factory=RunUsage)
@@ -3208,6 +3210,7 @@ def _build_repair_patch(
         expected_effect=input_data.expected_effect,
         rationale=input_data.rationale,
         applies_to_attempts=[target_attempt_id],
+        scope=input_data.scope,
         risk_level=input_data.risk_level,
         provenance=RepairProvenance(
             repair_started_at=artifacts.started_at,
