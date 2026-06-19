@@ -33,6 +33,7 @@ from cw_runtime.harness import (
     ProjectMCPStdioDiscoveryClient,
     ProjectSecretStoreError,
     build_project_mcp_http_discovery_client_factory,
+    build_project_mcp_stdio_discovery_client_factory,
     build_project_secret_decryptor,
     decrypt_project_secret_value,
     delete_windows_credential_manager_master_key,
@@ -408,10 +409,24 @@ def _write_fake_mcp_stdio_server(script_path: Path) -> None:
         textwrap.dedent(
             """
             import json
+            import os
             import sys
             import time
 
             mode = sys.argv[1] if len(sys.argv) > 1 else "ok"
+            env_log_path = sys.argv[2] if len(sys.argv) > 2 else ""
+            if env_log_path:
+                with open(env_log_path, "w", encoding="utf-8") as file:
+                    json.dump(
+                        {
+                            "CW_MCP_TOKEN": os.environ.get("CW_MCP_TOKEN", ""),
+                            "Authorization": os.environ.get("Authorization", ""),
+                            "AUTHORIZATION": os.environ.get("AUTHORIZATION", ""),
+                            "X-CW-MCP-Token": os.environ.get("X-CW-MCP-Token", ""),
+                            "X_CW_MCP_TOKEN": os.environ.get("X_CW_MCP_TOKEN", ""),
+                        },
+                        file,
+                    )
 
             for line in sys.stdin:
                 message = json.loads(line)
@@ -1063,6 +1078,146 @@ def test_project_mcp_stdio_client_smoke_invokes_tool(tmp_path: Path) -> None:
         }
     finally:
         client.close()
+
+
+def test_project_mcp_stdio_client_uses_secure_store_env_for_discovery_and_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for env_name in (
+        "CW_MCP_TOKEN",
+        "Authorization",
+        "AUTHORIZATION",
+        "X-CW-MCP-Token",
+        "X_CW_MCP_TOKEN",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+
+    project_root = tmp_path / "mcp_stdio_secure_env_project"
+    response = initialize_project(_request("MCP Stdio Secure Env", project_root))
+    agent_root = project_root / ".agent-workflow"
+    secret_ref = "secure://mcp/stdio"
+    plaintext = json.dumps(
+        {
+            "headers": {"Authorization": "Bearer fake-header-token"},
+            "env": {"CW_MCP_TOKEN": "fake-env-token"},
+        }
+    )
+    encrypted = encrypt_project_secret_value(
+        response.project_id,
+        plaintext,
+        master_key=b"test-master-key",
+        encrypt_aead=_fake_encrypt_aead,
+        nonce_factory=lambda size: b"\x08" * size,
+    )
+    _write_secure_secret(project_root, secret_ref, encrypted)
+    server_script = tmp_path / "fake_mcp_server.py"
+    env_log_path = tmp_path / "fake_mcp_server_env.json"
+    _write_fake_mcp_stdio_server(server_script)
+
+    _write_json_value(
+        agent_root / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_stdio_secure",
+                "transport": "stdio",
+                "command_or_url": _python_script_command(server_script, "ok", str(env_log_path)),
+                "secret_ref": secret_ref,
+            }
+        ],
+    )
+    decrypt_secret = build_project_secret_decryptor(
+        project_root,
+        master_key_provider=lambda _project_id: b"test-master-key",
+        decrypt_aead=_fake_decrypt_aead,
+    )
+    client_factory = build_project_mcp_stdio_discovery_client_factory(
+        project_root,
+        decrypt_secret=decrypt_secret,
+        timeout_seconds=2.0,
+    )
+
+    locks = load_project_tool_lock_snapshot(
+        project_root,
+        mcp_tool_discovery=ProjectMCPDiscoveryRunner(client_factory),
+    )
+
+    assert [entry.model_dump(mode="json") for entry in locks.mcps] == [
+        {
+            "server_id": "mcp_stdio_secure",
+            "version": "0.5.1",
+            "tools_snapshot": [
+                {
+                    "name": "run",
+                    "title": "Run",
+                    "description": "Run local Python.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"code": {"type": "string"}},
+                    },
+                }
+            ],
+        }
+    ]
+    assert _read_json(env_log_path) == {
+        "CW_MCP_TOKEN": "fake-env-token",
+        "Authorization": "",
+        "AUTHORIZATION": "",
+        "X-CW-MCP-Token": "",
+        "X_CW_MCP_TOKEN": "",
+    }
+
+    config = ProjectMCPServerConfig(
+        server_id="mcp_stdio_secure",
+        transport="stdio",
+        command_or_url=_python_script_command(server_script, "ok", str(env_log_path)),
+        secret_ref=secret_ref,
+    )
+    client = client_factory(config)
+    try:
+        client.start(config)
+        assert client.health_check().healthy is True
+        assert client.discover_tools() is not None
+        assert client.invoke_tool("run", {"code": "print(49)"}) == {
+            "content": [{"type": "text", "text": "ran stdio: print(49)"}],
+            "isError": False,
+        }
+    finally:
+        client.close()
+    env_log = _read_json(env_log_path)
+    assert env_log == {
+        "CW_MCP_TOKEN": "fake-env-token",
+        "Authorization": "",
+        "AUTHORIZATION": "",
+        "X-CW-MCP-Token": "",
+        "X_CW_MCP_TOKEN": "",
+    }
+    assert "fake-header-token" not in str(env_log)
+
+
+def test_project_mcp_stdio_client_rejects_invalid_secret_env_name() -> None:
+    client = ProjectMCPStdioDiscoveryClient(
+        timeout_seconds=2.0,
+        secret_env={"BAD=NAME": "fake secret should not leak"},
+    )
+    config = ProjectMCPServerConfig(
+        server_id="mcp_stdio_secure",
+        transport="stdio",
+        command_or_url="python -m local_mcp",
+    )
+
+    with pytest.raises(ProjectMCPDiscoveryError) as exc_info:
+        client.start(config)
+
+    assert exc_info.value.server_id == "mcp_stdio_secure"
+    assert exc_info.value.stage == "client_lifecycle"
+    assert exc_info.value.details == {
+        "server_id": "mcp_stdio_secure",
+        "transport": "stdio",
+        "env_name_type": "str",
+    }
+    assert "fake secret" not in str(exc_info.value)
+    assert "fake secret" not in str(exc_info.value.details)
 
 
 def test_project_mcp_stdio_discovery_client_sanitizes_json_rpc_error(tmp_path: Path) -> None:

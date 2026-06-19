@@ -332,8 +332,15 @@ class ProjectMCPDiscoveryRunner:
 class ProjectMCPStdioDiscoveryClient:
     """Minimal stdio MCP client for initialize, tools/list, and tools/call."""
 
-    def __init__(self, *, timeout_seconds: float = 5.0) -> None:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 5.0,
+        secret_env: Mapping[str, str] | None = None,
+    ) -> None:
         self._timeout_seconds = timeout_seconds
+        self._raw_secret_env = {} if secret_env is None else dict(secret_env)
+        self._secret_env: dict[str, str] = {}
         self._config: ProjectMCPServerConfig | None = None
         self._process: subprocess.Popen[str] | None = None
         self._stdout_queue: queue.Queue[str | None] = queue.Queue()
@@ -355,12 +362,14 @@ class ProjectMCPStdioDiscoveryClient:
                 "client_lifecycle",
                 "Project MCP stdio discovery command is empty.",
             )
+        self._secret_env = _mcp_stdio_secret_env(self._raw_secret_env, mcp_config=config)
         try:
             process = subprocess.Popen(
                 command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
+                env=_mcp_stdio_process_env(self._secret_env),
                 text=True,
                 encoding="utf-8",
             )
@@ -1941,6 +1950,40 @@ def _stdio_command(command_or_url: str) -> str | list[str] | None:
     if os.name == "nt":
         return command
     return shlex.split(command)
+
+
+def _mcp_stdio_process_env(secret_env: Mapping[str, str]) -> dict[str, str] | None:
+    if not secret_env:
+        return None
+    process_env = dict(os.environ)
+    process_env.update(secret_env)
+    return process_env
+
+
+def _mcp_stdio_secret_env(
+    secret_env: Mapping[str, str],
+    *,
+    mcp_config: ProjectMCPServerConfig,
+) -> dict[str, str]:
+    sanitized: dict[str, str] = {}
+    for raw_name, raw_value in secret_env.items():
+        env_name = raw_name.strip()
+        if env_name == "" or any(char in env_name for char in "\x00="):
+            raise _mcp_discovery_error(
+                mcp_config,
+                stage="client_lifecycle",
+                message="Project MCP stdio secret env name is invalid.",
+                details={"env_name_type": type(raw_name).__name__},
+            )
+        if "\x00" in raw_value:
+            raise _mcp_discovery_error(
+                mcp_config,
+                stage="client_lifecycle",
+                message="Project MCP stdio secret env value is invalid.",
+                details={"env_name": env_name},
+            )
+        sanitized[env_name] = raw_value
+    return sanitized
 
 
 def _read_stdio_stdout(stdout: TextIO, output_queue: queue.Queue[str | None]) -> None:

@@ -23,7 +23,12 @@ from typing import Any, ClassVar, Final, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .project import AGENT_WORKFLOW_DIR, ProjectMCPHttpDiscoveryClient, ProjectMCPServerConfig
+from .project import (
+    AGENT_WORKFLOW_DIR,
+    ProjectMCPHttpDiscoveryClient,
+    ProjectMCPServerConfig,
+    ProjectMCPStdioDiscoveryClient,
+)
 
 ProjectSecretDecryptor: TypeAlias = Callable[[bytes], bytes | str]
 ProjectSecretMasterKeyProvider: TypeAlias = Callable[[str], bytes | str]
@@ -410,6 +415,34 @@ def build_project_mcp_http_discovery_client_factory(
         return ProjectMCPHttpDiscoveryClient(
             timeout_seconds=timeout_seconds,
             secret_headers=None if material is None else material.headers,
+        )
+
+    return create_client
+
+
+def build_project_mcp_stdio_discovery_client_factory(
+    project_root: str | Path,
+    *,
+    decrypt_secret: ProjectSecretDecryptor,
+    timeout_seconds: float = 5.0,
+) -> Callable[[ProjectMCPServerConfig], ProjectMCPStdioDiscoveryClient]:
+    """Build a stdio MCP client factory backed by project secure-store material."""
+
+    project_root_path = Path(project_root)
+
+    def create_client(config: ProjectMCPServerConfig) -> ProjectMCPStdioDiscoveryClient:
+        material = None
+        if config.secret_ref is not None:
+            material = load_project_mcp_secret_material(
+                project_root_path,
+                config.secret_ref,
+                decrypt_secret=decrypt_secret,
+            )
+            if material is None:
+                raise ProjectSecretStoreError("Project MCP secret material could not be loaded.")
+        return ProjectMCPStdioDiscoveryClient(
+            timeout_seconds=timeout_seconds,
+            secret_env=None if material is None else material.env,
         )
 
     return create_client
