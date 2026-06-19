@@ -320,7 +320,11 @@ class _AttemptArtifacts(BaseModel):
     source_patch_id: str | None = None
 
 
-ImplementedRepairScope: TypeAlias = Literal[PatchScope.UNTIL_PASS, PatchScope.PERSISTENT_FOR_RUN]
+ImplementedRepairScope: TypeAlias = Literal[
+    PatchScope.THIS_ATTEMPT_ONLY,
+    PatchScope.UNTIL_PASS,
+    PatchScope.PERSISTENT_FOR_RUN,
+]
 
 
 class _StoredPromptOverlay(BaseModel):
@@ -333,6 +337,7 @@ class _StoredPromptOverlay(BaseModel):
     evaluation_id: str
     instruction_text: str
     scope: ImplementedRepairScope
+    applies_to_attempts: list[str] = Field(default_factory=list)
     applied_at: str
 
 
@@ -1455,6 +1460,7 @@ def _complete_repair_adapter_outcome_locked(
             project_root, run, node, artifacts, [budget_error], usage=outcome_usage, attempt=attempt
         )
 
+    next_target_attempt_id = new_runtime_id() if repair.scope == PatchScope.THIS_ATTEMPT_ONLY else None
     patch = _build_repair_patch(
         run=run,
         node=node,
@@ -1462,6 +1468,7 @@ def _complete_repair_adapter_outcome_locked(
         input_data=repair,
         evaluation_id=evaluation_id,
         target_attempt_id=target_attempt_id,
+        next_target_attempt_id=next_target_attempt_id,
         metadata_base={"cw": {"adapter_bridge": True}},
     )
     append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
@@ -1840,6 +1847,7 @@ def _advance_repair(
     if budget_error is not None:
         return _fail_attempt_and_run(project_root, run, node, artifacts, [budget_error], usage=repair_usage)
 
+    next_target_attempt_id = new_runtime_id() if repair.scope == PatchScope.THIS_ATTEMPT_ONLY else None
     patch = _build_repair_patch(
         run=run,
         node=node,
@@ -1847,6 +1855,7 @@ def _advance_repair(
         input_data=repair,
         evaluation_id=evaluation_id,
         target_attempt_id=target_attempt_id,
+        next_target_attempt_id=next_target_attempt_id,
     )
     append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
     run, side_effects = _apply_repair_prompt_overlay(
@@ -2257,11 +2266,12 @@ def _prepare_attempt(
         )
 
     now = utc_now_ms()
-    attempt_id = new_runtime_id()
+    reserved_attempt_id = _runtime_string(run, "reserved_attempt_ids", node.node_id)
+    attempt_id = new_runtime_id() if reserved_attempt_id is None else reserved_attempt_id
     context_pack_id = new_runtime_id()
     execution_pack_id = new_runtime_id()
     evidence_pack_id = new_runtime_id() if contract.evidence_requirements else None
-    prompt_overlay_sources = _prompt_overlays_for_attempt(project_root, run, node.node_id)
+    prompt_overlay_sources = _prompt_overlays_for_attempt(project_root, run, node.node_id, attempt_id)
     effective_prompt_overlay = _effective_prompt_overlay(prompt_overlay_sources)
 
     pack_request = StaticAttemptPackRequest(
@@ -2418,6 +2428,9 @@ def _prepare_attempt(
     append_run_event_locked(project_root, run, context_completed)
 
     _store_runtime_value(run, "attempt_counts", node.node_id, attempt_index + 1)
+    if reserved_attempt_id is not None:
+        _remove_runtime_value(run, "reserved_attempt_ids", node.node_id)
+    _consume_this_attempt_prompt_overlays(run, node.node_id, attempt_id)
     return _AttemptArtifacts(
         attempt_id=attempt_id,
         attempt_index=attempt_index,
@@ -2514,14 +2527,49 @@ def _apply_repair_prompt_overlay(
     patch: RepairPatch,
     instruction_text: str,
 ) -> tuple[WorkflowRunDocument, list[str]]:
-    if patch.scope == PatchScope.UNTIL_PASS:
-        scope: ImplementedRepairScope = PatchScope.UNTIL_PASS
+    if patch.scope == PatchScope.THIS_ATTEMPT_ONLY:
+        if len(patch.applies_to_attempts) != 1:
+            raise RunError(
+                "RP_APPLY_OVERLAY_CONFLICT",
+                "this_attempt_only repair scope requires exactly one target attempt.",
+                status_code=500,
+                details={
+                    "run_id": run.run_id,
+                    "node_id": node.node_id,
+                    "patch_id": patch.patch_id,
+                    "applies_to_attempts": list(patch.applies_to_attempts),
+                },
+            )
+        one_shot_scope: ImplementedRepairScope = PatchScope.THIS_ATTEMPT_ONLY
         overlay = _stored_prompt_overlay(
             node=node,
             artifacts=artifacts,
             patch=patch,
             instruction_text=instruction_text,
-            scope=scope,
+            scope=one_shot_scope,
+        )
+        overlays = _runtime_prompt_overlay_list(run, "active_prompt_overlays", node.repair_target_node_id)
+        overlays.append(overlay)
+        _store_runtime_value(
+            run,
+            "active_prompt_overlays",
+            node.repair_target_node_id,
+            [item.model_dump(mode="json") for item in overlays],
+        )
+        _store_runtime_value(run, "reserved_attempt_ids", node.repair_target_node_id, patch.applies_to_attempts[0])
+        return run, [
+            f"active_prompt_overlay_this_attempt_only_for_{node.repair_target_node_id}",
+            f"reserved_attempt_id_for_{node.repair_target_node_id}",
+        ]
+
+    if patch.scope == PatchScope.UNTIL_PASS:
+        until_pass_scope: ImplementedRepairScope = PatchScope.UNTIL_PASS
+        overlay = _stored_prompt_overlay(
+            node=node,
+            artifacts=artifacts,
+            patch=patch,
+            instruction_text=instruction_text,
+            scope=until_pass_scope,
         )
         overlays = _runtime_prompt_overlay_list(run, "active_prompt_overlays", node.repair_target_node_id)
         overlays.append(overlay)
@@ -2534,13 +2582,13 @@ def _apply_repair_prompt_overlay(
         return run, [f"active_prompt_overlay_until_pass_for_{node.repair_target_node_id}"]
 
     if patch.scope == PatchScope.PERSISTENT_FOR_RUN:
-        scope = PatchScope.PERSISTENT_FOR_RUN
+        run_scope: ImplementedRepairScope = PatchScope.PERSISTENT_FOR_RUN
         overlay = _stored_prompt_overlay(
             node=node,
             artifacts=artifacts,
             patch=patch,
             instruction_text=instruction_text,
-            scope=scope,
+            scope=run_scope,
         )
         _store_run_prompt_overlay(project_root, run.run_id, node.repair_target_node_id, overlay)
         return run, [f"run_overlay_for_{node.repair_target_node_id}"]
@@ -2568,6 +2616,7 @@ def _stored_prompt_overlay(
         evaluation_id=patch.evaluation_id,
         instruction_text=instruction_text,
         scope=scope,
+        applies_to_attempts=list(patch.applies_to_attempts),
         applied_at=utc_now_ms(),
     )
 
@@ -2576,10 +2625,43 @@ def _prompt_overlays_for_attempt(
     project_root: Path,
     run: WorkflowRunDocument,
     node_id: str,
+    attempt_id: str,
 ) -> list[_StoredPromptOverlay]:
     persistent = _read_run_prompt_overlay(project_root, run.run_id).prompt_overlays.get(node_id, [])
     active = _runtime_prompt_overlay_list(run, "active_prompt_overlays", node_id)
-    return [*persistent, *active]
+    return [overlay for overlay in [*persistent, *active] if _prompt_overlay_applies_to_attempt(overlay, attempt_id)]
+
+
+def _prompt_overlay_applies_to_attempt(overlay: _StoredPromptOverlay, attempt_id: str) -> bool:
+    if overlay.applies_to_attempts:
+        return attempt_id in overlay.applies_to_attempts
+    return overlay.scope != PatchScope.THIS_ATTEMPT_ONLY
+
+
+def _consume_this_attempt_prompt_overlays(
+    run: WorkflowRunDocument,
+    node_id: str,
+    attempt_id: str,
+) -> None:
+    active = _runtime_prompt_overlay_list(run, "active_prompt_overlays", node_id)
+    if not active:
+        return
+    remaining = [
+        overlay
+        for overlay in active
+        if not (overlay.scope == PatchScope.THIS_ATTEMPT_ONLY and attempt_id in overlay.applies_to_attempts)
+    ]
+    if len(remaining) == len(active):
+        return
+    if remaining:
+        _store_runtime_value(
+            run,
+            "active_prompt_overlays",
+            node_id,
+            [item.model_dump(mode="json") for item in remaining],
+        )
+    else:
+        _remove_runtime_value(run, "active_prompt_overlays", node_id)
 
 
 def _effective_prompt_overlay(overlays: Sequence[_StoredPromptOverlay]) -> PromptOverlay | None:
@@ -3301,6 +3383,7 @@ def _build_repair_patch(
     input_data: RepairAdvanceInput,
     evaluation_id: str,
     target_attempt_id: str,
+    next_target_attempt_id: str | None = None,
     metadata_base: dict[str, Any] | None = None,
 ) -> RepairPatch:
     now = utc_now_ms()
@@ -3310,6 +3393,7 @@ def _build_repair_patch(
         "target_node_id": node.repair_target_node_id,
         "evaluation_id": evaluation_id,
         "source_attempt_id": target_attempt_id,
+        "applies_to_attempts": [] if next_target_attempt_id is None else [next_target_attempt_id],
         "operation": operation.model_dump(mode="json"),
     }
     return RepairPatch(
@@ -3324,7 +3408,7 @@ def _build_repair_patch(
         operations=[operation],
         expected_effect=input_data.expected_effect,
         rationale=input_data.rationale,
-        applies_to_attempts=[],
+        applies_to_attempts=[] if next_target_attempt_id is None else [next_target_attempt_id],
         scope=input_data.scope,
         risk_level=input_data.risk_level,
         provenance=RepairProvenance(

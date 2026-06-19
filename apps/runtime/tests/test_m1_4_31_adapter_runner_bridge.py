@@ -765,6 +765,86 @@ async def test_adapter_repair_bridge_persists_run_scope_prompt_overlay(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_adapter_repair_bridge_this_attempt_only_targets_reserved_retry(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _review_repair_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+    adapter = _FakeAdapter(
+        usage=RunUsage(input_tokens=300, output_tokens=400, total_tokens=700, requests=1),
+        output={
+            "failure_type": "format_error",
+            "instruction_text": "Use this one-shot JSON repair rule.",
+            "expected_effect": "Only the next target attempt uses the one-shot overlay.",
+            "scope": "this_attempt_only",
+            "metadata": {"source": "adapter_repair"},
+        },
+    )
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "invalid"})),
+    )
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                passed=False,
+                score=0.2,
+                failure_type=FailureType.FORMAT_ERROR,
+                finding_message="Format is invalid.",
+                recommended_action="repair_with_patch",
+                target_repair_node_id="n_repair",
+            )
+        ),
+    )
+    advanced = await advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
+
+    assert advanced.node_id == "n_repair"
+    assert advanced.patch_id is not None
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    repair = repairs[0]
+    reserved_attempt_id = repair["applies_to_attempts"][0]
+    assert repair["scope"] == "this_attempt_only"
+    assert repair["applies_to_attempts"] == [reserved_attempt_id]
+
+    run_json = _read_run_json(project_root, run_id)
+    active_overlay = run_json["metadata"]["cw"]["active_prompt_overlays"]["n_execute"][0]
+    assert active_overlay["patch_id"] == advanced.patch_id
+    assert active_overlay["scope"] == "this_attempt_only"
+    assert active_overlay["applies_to_attempts"] == [reserved_attempt_id]
+    assert run_json["metadata"]["cw"]["reserved_attempt_ids"]["n_execute"] == reserved_attempt_id
+
+    retried = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "fixed"})),
+    )
+
+    assert retried.node_id == "n_execute"
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    retry_attempt = attempts[-1]
+    assert retry_attempt["node_id"] == "n_execute"
+    assert retry_attempt["attempt_id"] == reserved_attempt_id
+    assert retry_attempt["effective_prompt_overlay_ref"] == f"overlays/{reserved_attempt_id}.json"
+    attempt_overlay = json.loads((run_root / retry_attempt["effective_prompt_overlay_ref"]).read_text(encoding="utf-8"))
+    assert attempt_overlay["patch_ids"] == [advanced.patch_id]
+    assert attempt_overlay["source_overlays"][0]["scope"] == "this_attempt_only"
+    assert attempt_overlay["source_overlays"][0]["applies_to_attempts"] == [reserved_attempt_id]
+    execution_pack = json.loads(
+        (run_root / "execution_packs" / f"{retry_attempt['execution_pack_id']}.json").read_text(encoding="utf-8")
+    )
+    assert execution_pack["effective_prompt_overlay"]["source_patch_id"] == advanced.patch_id
+
+    run_json_after_retry = _read_run_json(project_root, run_id)
+    cw_metadata = run_json_after_retry["metadata"]["cw"]
+    assert "n_execute" not in cw_metadata.get("active_prompt_overlays", {})
+    assert "n_execute" not in cw_metadata.get("reserved_attempt_ids", {})
+
+
+@pytest.mark.asyncio
 async def test_adapter_evaluation_bridge_rejects_invalid_output(tmp_path: Path) -> None:
     project_root, workflow_id = _create_project_with_graph(tmp_path, _review_repair_graph_payload())
     run_id = _start_run(project_root, workflow_id)

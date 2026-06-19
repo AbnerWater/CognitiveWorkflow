@@ -382,6 +382,76 @@ def test_run_once_rejects_unimplemented_repair_workflow_scope(tmp_path: Path) ->
     assert _read_jsonl(repairs_path) == []
 
 
+def test_repair_node_action_this_attempt_only_applies_to_reserved_next_attempt(tmp_path: Path) -> None:
+    client = _test_client()
+    project_root, workflow_id = _create_project_with_graph(client, tmp_path)
+    run_id, eval_id = _start_failed_run_at_repair(client, workflow_id)
+
+    repair = client.post(
+        f"/cw/v1/runs/{run_id}/nodes/n_repair:repair",
+        headers=_AUTH_HEADERS,
+        json={
+            "schema_version": "0.1.0",
+            "based_on_evaluation_id": eval_id,
+            "preferred_strategy": "prompt_patch",
+            "scope": "this_attempt_only",
+        },
+    )
+
+    assert repair.status_code == 200
+    body = repair.json()
+    assert body["repair_patch"]["scope"] == "this_attempt_only"
+    patch_id = str(body["patch_id"])
+
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    reserved_attempt_id = repairs[-1]["applies_to_attempts"][0]
+    assert repairs[-1]["scope"] == "this_attempt_only"
+    assert repairs[-1]["applies_to_attempts"] == [reserved_attempt_id]
+
+    run_json = json.loads((run_root / "run.json").read_text(encoding="utf-8"))
+    active_overlay = run_json["metadata"]["cw"]["active_prompt_overlays"]["n_execute"][0]
+    assert active_overlay["patch_id"] == patch_id
+    assert active_overlay["scope"] == "this_attempt_only"
+    assert active_overlay["applies_to_attempts"] == [reserved_attempt_id]
+    assert run_json["metadata"]["cw"]["reserved_attempt_ids"]["n_execute"] == reserved_attempt_id
+
+    applied_events = [
+        event for event in list_stream_events(project_root, run_id) if event.type == "repair.patch_applied"
+    ]
+    assert applied_events[-1].payload is not None
+    assert applied_events[-1].payload["side_effects"] == [
+        "active_prompt_overlay_this_attempt_only_for_n_execute",
+        "reserved_attempt_id_for_n_execute",
+    ]
+
+    execute = client.post(
+        f"/cw/v1/runs/{run_id}/nodes/n_execute:run-once",
+        headers=_AUTH_HEADERS,
+        json={"schema_version": "0.1.0", "execution": {"output": {"draft": "uses one-shot overlay"}}},
+    )
+
+    assert execute.status_code == 200
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    retry_attempt = attempts[-1]
+    assert retry_attempt["node_id"] == "n_execute"
+    assert retry_attempt["attempt_id"] == reserved_attempt_id
+    assert retry_attempt["effective_prompt_overlay_ref"] == f"overlays/{reserved_attempt_id}.json"
+    attempt_overlay = json.loads((run_root / retry_attempt["effective_prompt_overlay_ref"]).read_text(encoding="utf-8"))
+    assert attempt_overlay["patch_ids"] == [patch_id]
+    assert attempt_overlay["source_overlays"][0]["scope"] == "this_attempt_only"
+    assert attempt_overlay["source_overlays"][0]["applies_to_attempts"] == [reserved_attempt_id]
+    execution_pack = json.loads(
+        (run_root / "execution_packs" / f"{retry_attempt['execution_pack_id']}.json").read_text(encoding="utf-8")
+    )
+    assert execution_pack["effective_prompt_overlay"]["source_patch_id"] == patch_id
+
+    run_json_after_retry = json.loads((run_root / "run.json").read_text(encoding="utf-8"))
+    cw_metadata = run_json_after_retry["metadata"]["cw"]
+    assert "n_execute" not in cw_metadata.get("active_prompt_overlays", {})
+    assert "n_execute" not in cw_metadata.get("reserved_attempt_ids", {})
+
+
 def test_repair_node_action_persistent_for_run_writes_run_overlay(tmp_path: Path) -> None:
     client = _test_client()
     project_root, workflow_id = _create_project_with_graph(client, tmp_path)
