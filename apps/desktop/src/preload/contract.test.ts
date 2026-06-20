@@ -12,9 +12,11 @@ import {
 import {
   assertRuntimeRequestPath,
   buildRuntimeRequestHeaders,
+  type CwDesktopApi,
   type RuntimeRequestInit,
 } from "./contract.js";
 import { CW_PRELOAD_API_KEY, createCwDesktopApi } from "./api.js";
+import { installCwPreloadApi } from "./bootstrap.js";
 import { createRuntimePreloadBridge } from "./runtime-bridge.js";
 
 test("accepts only relative runtime API paths", () => {
@@ -274,6 +276,110 @@ test("builds a frozen cw desktop API over injected IPC invoke", async () => {
   );
 
   assert.deepEqual(calls, [
+    { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
+    { channel: RUNTIME_IPC_CONNECTION_INFO_CHANNEL },
+    {
+      channel: RUNTIME_IPC_FETCH_CHANNEL,
+      payload: {
+        path: "/system/info",
+        init: {
+          method: "GET",
+          projectId: "prj_123",
+          headers: { Accept: "application/json" },
+        },
+      },
+    },
+  ]);
+});
+
+test("installs the cw preload API through injected Electron-like bridges", async () => {
+  const exposures: Array<{
+    readonly apiKey: string;
+    readonly api: CwDesktopApi;
+  }> = [];
+  const ipcCalls: Array<{
+    readonly channel: RuntimeIpcChannel;
+    readonly payload?: unknown;
+  }> = [];
+  const waitingStatus: RuntimeIpcStartupStatus = {
+    kind: "waiting_for_existing",
+    action: "wait_for_existing",
+    attempt: 1,
+    lockStatus: "active",
+    severity: "info",
+    message: "Waiting for existing runtime sidecar.",
+    lifecycleComplete: false,
+    userActionRequired: false,
+    retryable: false,
+  };
+  const statuses: RuntimeIpcStartupStatusResponse = [waitingStatus];
+  const api = installCwPreloadApi({
+    contextBridge: {
+      exposeInMainWorld: (apiKey: string, apiValue: CwDesktopApi) => {
+        exposures.push({ apiKey, api: apiValue });
+      },
+    },
+    ipcRenderer: {
+      invoke: async (
+        channel: RuntimeIpcChannel,
+        payload?: unknown,
+      ): Promise<unknown> => {
+        ipcCalls.push(
+          payload === undefined ? { channel } : { channel, payload },
+        );
+        switch (channel) {
+          case RUNTIME_IPC_STARTUP_STATUS_CHANNEL:
+            return statuses;
+          case RUNTIME_IPC_CONNECTION_INFO_CHANNEL:
+            return {
+              base_url: "http://127.0.0.1:51234/cw/v1",
+              token: "token_abc123",
+            };
+          case RUNTIME_IPC_FETCH_CHANNEL:
+            return {
+              ok: true,
+              status: 200,
+              headers: { "content-type": "application/json" },
+              body: { ok: true },
+            };
+        }
+      },
+    },
+  });
+
+  assert.deepEqual(ipcCalls, []);
+  assert.equal(exposures.length, 1);
+  const [exposure] = exposures;
+  assert.ok(exposure);
+  assert.equal(exposure.apiKey, CW_PRELOAD_API_KEY);
+  assert.equal(exposure.api, api);
+  assert.equal(Object.isFrozen(api), true);
+  assert.equal(Object.isFrozen(api.runtime), true);
+
+  assert.deepEqual(await api.runtime.startupStatus(), statuses);
+  assert.deepEqual(await api.runtime.connectionInfo(), {
+    base_url: "http://127.0.0.1:51234/cw/v1",
+    token: "token_abc123",
+  });
+  assert.deepEqual(
+    await api.runtime.fetch<{ ok: boolean }>("/system/info", {
+      method: "GET",
+      projectId: "prj_123",
+      headers: { Accept: "application/json" },
+    }),
+    {
+      ok: true,
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: { ok: true },
+    },
+  );
+  await assert.rejects(
+    api.runtime.fetch("/system/info", "bad-init" as RuntimeRequestInit),
+    /init must be an object/u,
+  );
+
+  assert.deepEqual(ipcCalls, [
     { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
     { channel: RUNTIME_IPC_CONNECTION_INFO_CHANNEL },
     {
