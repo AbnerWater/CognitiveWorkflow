@@ -38,16 +38,26 @@ import {
   buildRuntimeStreamConnectionRequest,
   createRuntimeStreamReplayState,
   isRuntimeStreamReplayNotFoundFailure,
+  type OpenRuntimeStreamReconnectingClientOptions,
   openRuntimeStreamClient,
   openRuntimeStreamReconnectingClient,
   RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
   type RuntimeStreamConnectionRequest,
+  type RuntimeStreamEvent,
   type RuntimeStreamEventSource,
   type RuntimeStreamFullReloadDecision,
+  type RuntimeStreamReconnectingClient,
   type RuntimeStreamReconnectScheduler,
   type RuntimeStreamSourceEvent,
   type RuntimeStreamSourceListener,
 } from "../renderer/runtime-stream-client.js";
+import {
+  bindRuntimeStreamEventStoreToPageLifecycle,
+  createRuntimeStreamEventStore,
+  type RuntimeStreamEventStorePageLifecycleEvent,
+  type RuntimeStreamEventStorePageLifecycleListener,
+  type RuntimeStreamEventStoreSnapshot,
+} from "../renderer/runtime-stream-store.js";
 
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
@@ -1242,6 +1252,214 @@ test("renderer runtime stream reconnecting client maps replay miss to full reloa
   assert.equal(client.close(), false);
 });
 
+test("renderer runtime stream event store records capped isolated snapshots", async () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const errors: unknown[] = [];
+  const snapshots: RuntimeStreamEventStoreSnapshot[] = [];
+  const store = createRuntimeStreamEventStore({
+    clientOptions: createRuntimeStreamEventStoreClientOptions(),
+    eventTypes: ["model.text_delta", "tool.call_started", "model.text_delta"],
+    maxEvents: 2,
+    clientFactory: clientFactory.factory,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+
+  assert.deepEqual(store.snapshot(), {
+    status: "idle",
+    events: [],
+    totalEvents: 0,
+  });
+  const unsubscribeStore = store.subscribe((snapshot) => {
+    snapshots.push(snapshot);
+    if (snapshot.totalEvents === 2) {
+      throw new Error("listener failed");
+    }
+  });
+
+  assert.deepEqual(await store.start(), {
+    status: "running",
+    events: [],
+    totalEvents: 0,
+  });
+  const client = clientFactory.clients.at(0);
+  assert.ok(client);
+  assert.equal(client.listenerCount("model.text_delta"), 1);
+  assert.equal(client.listenerCount("tool.call_started"), 1);
+
+  client.emit({
+    id: "evt_1",
+    type: "model.text_delta",
+    data: { content: "one" },
+    rawData: JSON.stringify({ event_id: "evt_1" }),
+  });
+  client.emit({
+    id: "evt_2",
+    type: "tool.call_started",
+    data: { tool_name: "search" },
+    rawData: JSON.stringify({ event_id: "evt_2" }),
+  });
+  const mutablePayload: Record<string, unknown> = { content: "three" };
+  client.emit({
+    id: "evt_3",
+    type: "model.text_delta",
+    data: mutablePayload,
+    rawData: JSON.stringify({ event_id: "evt_3" }),
+  });
+  mutablePayload.content = "mutated source";
+
+  const snapshot = store.snapshot();
+  assert.equal(snapshot.status, "running");
+  assert.equal(snapshot.totalEvents, 3);
+  assert.deepEqual(
+    snapshot.events.map((event) => event.id),
+    ["evt_2", "evt_3"],
+  );
+  assert.notEqual(store.snapshot().events, store.snapshot().events);
+  const snapshotPayload = snapshot.events.at(-1)?.data;
+  assertRecordData(snapshotPayload);
+  snapshotPayload.content = "mutated snapshot";
+  assert.deepEqual(store.snapshot().events.at(-1)?.data, {
+    content: "three",
+  });
+  assert.equal(errors.length, 1);
+  assert.ok(snapshots.length >= 4);
+
+  assert.equal(unsubscribeStore(), true);
+  assert.equal(unsubscribeStore(), false);
+  assert.equal(store.stop(), true);
+  assert.equal(store.snapshot().status, "stopped");
+  assert.equal(store.isStarted(), false);
+  assert.equal(client.closeCount(), 1);
+  assert.equal(client.listenerCount("model.text_delta"), 0);
+  assert.equal(client.listenerCount("tool.call_started"), 0);
+  assert.equal(store.stop(), false);
+});
+
+test("renderer runtime stream event store handles full reload terminal cleanup", async () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const upstreamReloads: RuntimeStreamFullReloadDecision[] = [];
+  const errors: unknown[] = [];
+  const store = createRuntimeStreamEventStore({
+    clientOptions: createRuntimeStreamEventStoreClientOptions({
+      onFullReloadRequired: (decision) => {
+        upstreamReloads.push(decision);
+        throw new Error("upstream full reload hook failed");
+      },
+    }),
+    eventTypes: ["model.text_delta"],
+    clientFactory: clientFactory.factory,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+
+  await store.start();
+  const client = clientFactory.clients.at(0);
+  assert.ok(client);
+  client.emit({
+    id: "evt_5",
+    type: "model.text_delta",
+    data: { content: "before reload" },
+    rawData: JSON.stringify({ event_id: "evt_5" }),
+  });
+  client.fullReload({
+    action: "full_reload",
+    lastEventId: "evt_5",
+    reason: "Last-Event-ID was not found",
+    status: 412,
+    errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+  });
+
+  assert.equal(client.closeCount(), 1);
+  assert.equal(client.listenerCount("model.text_delta"), 0);
+  assert.deepEqual(upstreamReloads, [
+    {
+      action: "full_reload",
+      lastEventId: "evt_5",
+      reason: "Last-Event-ID was not found",
+      status: 412,
+      errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+    },
+  ]);
+  assert.equal(errors.length, 1);
+  assert.deepEqual(store.snapshot(), {
+    status: "full_reload_required",
+    events: [
+      {
+        id: "evt_5",
+        type: "model.text_delta",
+        data: { content: "before reload" },
+        rawData: JSON.stringify({ event_id: "evt_5" }),
+      },
+    ],
+    totalEvents: 1,
+    fullReloadDecision: {
+      action: "full_reload",
+      lastEventId: "evt_5",
+      reason: "Last-Event-ID was not found",
+      status: 412,
+      errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+    },
+  });
+  assert.equal(store.isStarted(), false);
+  assert.equal(store.stop(), false);
+});
+
+test("renderer runtime stream event store stops on page lifecycle", async () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const lifecycle = createFakeRuntimeStreamEventStorePageLifecycleTarget();
+  const store = createRuntimeStreamEventStore({
+    clientOptions: createRuntimeStreamEventStoreClientOptions(),
+    eventTypes: ["model.text_delta"],
+    clientFactory: clientFactory.factory,
+  });
+
+  await store.start();
+  const client = clientFactory.clients.at(0);
+  assert.ok(client);
+  const dispose = bindRuntimeStreamEventStoreToPageLifecycle(store, lifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(lifecycle.listenerCount("pagehide"), 1);
+  lifecycle.emit("pagehide");
+
+  assert.equal(store.snapshot().status, "stopped");
+  assert.equal(client.closeCount(), 1);
+  assert.equal(dispose(), true);
+  assert.equal(dispose(), false);
+  assert.equal(lifecycle.listenerCount("pagehide"), 0);
+});
+
+test("renderer runtime stream event store rejects unsafe options", () => {
+  assert.throws(
+    () =>
+      createRuntimeStreamEventStore({
+        clientOptions: createRuntimeStreamEventStoreClientOptions(),
+        eventTypes: [],
+      }),
+    /at least one event type/u,
+  );
+  assert.throws(
+    () =>
+      createRuntimeStreamEventStore({
+        clientOptions: createRuntimeStreamEventStoreClientOptions(),
+        eventTypes: ["bad type"],
+      }),
+    /event type/u,
+  );
+  assert.throws(
+    () =>
+      createRuntimeStreamEventStore({
+        clientOptions: createRuntimeStreamEventStoreClientOptions(),
+        eventTypes: ["model.text_delta"],
+        maxEvents: 0,
+      }),
+    /maxEvents/u,
+  );
+});
+
 function createNoopSubscribe(): RuntimePreloadIpcSubscribe {
   return () => () => false;
 }
@@ -1462,4 +1680,151 @@ async function flushRuntimeStreamReconnect(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
+}
+
+function createRuntimeStreamEventStoreClientOptions(
+  overrides: Partial<OpenRuntimeStreamReconnectingClientOptions> = {},
+): OpenRuntimeStreamReconnectingClientOptions {
+  return {
+    runtime: {
+      connectionInfo: async () => ({
+        base_url: "http://127.0.0.1:51234/cw/v1",
+        token: "token_abc123",
+      }),
+    },
+    channel: { kind: "run", runId: "run_01J" },
+    eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+    ...overrides,
+  };
+}
+
+function createFakeRuntimeStreamEventStoreClientFactory(): {
+  readonly factory: (
+    options: OpenRuntimeStreamReconnectingClientOptions,
+  ) => Promise<RuntimeStreamReconnectingClient>;
+  readonly clients: ReturnType<
+    typeof createFakeRuntimeStreamReconnectingClient
+  >[];
+} {
+  const clients: ReturnType<
+    typeof createFakeRuntimeStreamReconnectingClient
+  >[] = [];
+  return {
+    factory: async (options) => {
+      const client = createFakeRuntimeStreamReconnectingClient(options);
+      clients.push(client);
+      return client.client;
+    },
+    clients,
+  };
+}
+
+function createFakeRuntimeStreamReconnectingClient(
+  options: OpenRuntimeStreamReconnectingClientOptions,
+): {
+  readonly client: RuntimeStreamReconnectingClient;
+  readonly emit: (event: RuntimeStreamEvent<unknown>) => void;
+  readonly fullReload: (decision: RuntimeStreamFullReloadDecision) => void;
+  readonly listenerCount: (eventType: string) => number;
+  readonly closeCount: () => number;
+} {
+  const listeners = new Map<
+    string,
+    Set<(event: RuntimeStreamEvent<unknown>) => void>
+  >();
+  let closed = false;
+  let closeCount = 0;
+  return {
+    client: {
+      subscribe: (eventType, listener) => {
+        if (closed) {
+          return () => false;
+        }
+        const unknownListener = listener as (
+          event: RuntimeStreamEvent<unknown>,
+        ) => void;
+        const eventListeners = listeners.get(eventType) ?? new Set();
+        eventListeners.add(unknownListener);
+        listeners.set(eventType, eventListeners);
+        let subscribed = true;
+        return () => {
+          if (!subscribed) {
+            return false;
+          }
+          subscribed = false;
+          return eventListeners.delete(unknownListener);
+        };
+      },
+      close: () => {
+        if (closed) {
+          return false;
+        }
+        closed = true;
+        closeCount += 1;
+        listeners.clear();
+        return true;
+      },
+      isClosed: () => closed,
+      activeRequest: () => null,
+      replaySnapshot: () => ({
+        mode: "ready",
+        lastEventId: null,
+        reconnectAttempt: 0,
+      }),
+    },
+    emit: (event) => {
+      for (const listener of [...(listeners.get(event.type) ?? [])]) {
+        listener(event);
+      }
+    },
+    fullReload: (decision) => {
+      options.onFullReloadRequired?.(decision);
+    },
+    listenerCount: (eventType) => listeners.get(eventType)?.size ?? 0,
+    closeCount: () => closeCount,
+  };
+}
+
+function createFakeRuntimeStreamEventStorePageLifecycleTarget(): {
+  readonly addEventListener: (
+    eventType: RuntimeStreamEventStorePageLifecycleEvent,
+    listener: RuntimeStreamEventStorePageLifecycleListener,
+  ) => void;
+  readonly removeEventListener: (
+    eventType: RuntimeStreamEventStorePageLifecycleEvent,
+    listener: RuntimeStreamEventStorePageLifecycleListener,
+  ) => void;
+  readonly emit: (eventType: RuntimeStreamEventStorePageLifecycleEvent) => void;
+  readonly listenerCount: (
+    eventType: RuntimeStreamEventStorePageLifecycleEvent,
+  ) => number;
+} {
+  const listeners = new Map<
+    RuntimeStreamEventStorePageLifecycleEvent,
+    Set<RuntimeStreamEventStorePageLifecycleListener>
+  >();
+  return {
+    addEventListener: (eventType, listener) => {
+      const eventListeners = listeners.get(eventType) ?? new Set();
+      eventListeners.add(listener);
+      listeners.set(eventType, eventListeners);
+    },
+    removeEventListener: (eventType, listener) => {
+      listeners.get(eventType)?.delete(listener);
+    },
+    emit: (eventType) => {
+      for (const listener of [...(listeners.get(eventType) ?? [])]) {
+        listener();
+      }
+    },
+    listenerCount: (eventType) => listeners.get(eventType)?.size ?? 0,
+  };
+}
+
+function assertRecordData(
+  value: unknown,
+): asserts value is Record<string, unknown> {
+  assert.ok(
+    typeof value === "object" && value !== null && !Array.isArray(value),
+  );
 }
