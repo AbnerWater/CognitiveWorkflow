@@ -10,6 +10,7 @@ import {
   RUNTIME_HTTP_PORT_ARG,
   type RuntimeSidecarProcess,
 } from "./sidecar.js";
+import { createRuntimeBaseUrl } from "./runtime.js";
 import { resolveRuntimeConnectionHandoff } from "./runtime-handoff.js";
 import { startRuntimeOrchestration } from "./runtime-orchestration.js";
 import { resolveRuntimeLockPath } from "./runtime-lock.js";
@@ -101,10 +102,114 @@ test("starts runtime sidecar under runtime.lock and exposes IPC handlers", async
 
     assert.equal(await session.stop(), true);
     assert.deepEqual(fake.killedSignals, ["SIGTERM"]);
+    await session.closed;
     assert.equal(connectionRegistry.get(projectRoot), null);
     await assert.rejects(readFile(session.lock.lockPath, "utf8"), {
       code: "ENOENT",
     });
+    assert.equal(await session.stop(), false);
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
+test("cleans runtime ownership when sidecar exits after READY", async () => {
+  const projectRoot = await makeTempProject();
+  const fake = new FakeSidecarProcess();
+  const connectionRegistry = createRuntimeConnectionRegistry();
+  const lockPath = resolveRuntimeLockPath(projectRoot);
+
+  try {
+    const session = await startRuntimeOrchestration({
+      projectRoot,
+      command: { devCommand: "cw-runtime" },
+      readyTimeoutMs: 100,
+      tokenFactory: () => "token_abc123",
+      connectionRegistry,
+      spawn: () => {
+        queueMicrotask(() => fake.stdout.write("READY 51234\n"));
+        return fake;
+      },
+    });
+
+    assert.deepEqual(connectionRegistry.get(projectRoot), {
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_abc123",
+    });
+    assert.match(await readFile(lockPath, "utf8"), /adapter_id=/u);
+
+    fake.emit("exit", 0, null);
+    await session.closed;
+
+    assert.equal(connectionRegistry.get(projectRoot), null);
+    await assert.rejects(readFile(lockPath, "utf8"), { code: "ENOENT" });
+    assert.equal(await session.stop(), false);
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
+test("cleans runtime ownership when sidecar exits in the READY transition", async () => {
+  const projectRoot = await makeTempProject();
+  const fake = new FakeSidecarProcess();
+  const connectionRegistry = createRuntimeConnectionRegistry();
+  const lockPath = resolveRuntimeLockPath(projectRoot);
+
+  try {
+    const session = await startRuntimeOrchestration({
+      projectRoot,
+      command: { devCommand: "cw-runtime" },
+      readyTimeoutMs: 100,
+      tokenFactory: () => "token_abc123",
+      connectionRegistry,
+      spawn: () => {
+        queueMicrotask(() => {
+          fake.stdout.write("READY 51234\n");
+          fake.emit("exit", 0, null);
+        });
+        return fake;
+      },
+    });
+
+    await session.closed;
+    assert.equal(connectionRegistry.get(projectRoot), null);
+    await assert.rejects(readFile(lockPath, "utf8"), { code: "ENOENT" });
+    assert.equal(await session.stop(), false);
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
+test("sidecar exit does not unregister a newer registry connection", async () => {
+  const projectRoot = await makeTempProject();
+  const fake = new FakeSidecarProcess();
+  const connectionRegistry = createRuntimeConnectionRegistry();
+
+  try {
+    const session = await startRuntimeOrchestration({
+      projectRoot,
+      command: { devCommand: "cw-runtime" },
+      readyTimeoutMs: 100,
+      tokenFactory: () => "token_abc123",
+      connectionRegistry,
+      spawn: () => {
+        queueMicrotask(() => fake.stdout.write("READY 51234\n"));
+        return fake;
+      },
+    });
+    const newerConnection = {
+      base_url: createRuntimeBaseUrl(51235),
+      token: "token_def456",
+    };
+    connectionRegistry.register({
+      projectRoot,
+      connection: newerConnection,
+    });
+
+    fake.emit("exit", 0, null);
+    await session.closed;
+
+    assert.deepEqual(connectionRegistry.get(projectRoot), newerConnection);
     assert.equal(await session.stop(), false);
   } finally {
     await removeTempProject(projectRoot);

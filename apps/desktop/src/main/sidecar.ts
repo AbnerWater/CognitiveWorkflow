@@ -61,7 +61,13 @@ export interface RuntimeSidecarSession {
   readonly process: RuntimeSidecarProcess;
   readonly ready: RuntimeReady;
   readonly connection: RuntimeConnectionInfo;
+  readonly closed: Promise<RuntimeSidecarExit>;
   stop(signal?: NodeJS.Signals): boolean;
+}
+
+export interface RuntimeSidecarExit {
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
 }
 
 export function generateRuntimeAuthToken(
@@ -181,6 +187,8 @@ function waitForRuntimeReady(
     return Promise.reject(new Error("Runtime sidecar stdout pipe is required"));
   }
 
+  const closed = waitForRuntimeExit(processHandle);
+
   return new Promise((resolve, reject) => {
     let settled = false;
     let pendingStdout = "";
@@ -214,6 +222,7 @@ function waitForRuntimeReady(
         process: processHandle,
         ready,
         connection: buildRuntimeConnectionInfo(ready, token),
+        closed,
         stop: (signal: NodeJS.Signals = "SIGTERM") =>
           processHandle.kill(signal),
       });
@@ -266,5 +275,18 @@ function waitForRuntimeReady(
     stdout.on("data", onStdoutData);
     processHandle.once("error", onError);
     processHandle.once("exit", onExit);
+  });
+}
+
+function waitForRuntimeExit(
+  processHandle: RuntimeSidecarProcess,
+): Promise<RuntimeSidecarExit> {
+  return new Promise((resolve) => {
+    processHandle.once(
+      "exit",
+      (code: number | null, signal: NodeJS.Signals | null): void => {
+        resolve({ code, signal });
+      },
+    );
   });
 }

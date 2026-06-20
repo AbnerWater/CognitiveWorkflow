@@ -47,6 +47,7 @@ export interface RuntimeOrchestrationSession {
   readonly lock: RuntimeLockLease;
   readonly sidecar: RuntimeSidecarSession;
   readonly handlers: RuntimeIpcMainHandlers;
+  readonly closed: Promise<void>;
   stop(signal?: NodeJS.Signals): Promise<boolean>;
 }
 
@@ -94,7 +95,17 @@ export async function startRuntimeOrchestration(
   });
 
   let lockReleased = false;
+  let connectionUnregistered = false;
   let stopped = false;
+  let ownershipCleanup: Promise<void> | undefined;
+  let resolveClosed: (() => void) | undefined;
+  let rejectClosed: ((reason: unknown) => void) | undefined;
+  const closed = new Promise<void>((resolve, reject) => {
+    resolveClosed = resolve;
+    rejectClosed = reject;
+  });
+  closed.catch(() => undefined);
+
   const releaseLockOnce = async (): Promise<void> => {
     if (lockReleased) {
       return;
@@ -102,6 +113,38 @@ export async function startRuntimeOrchestration(
     await lock.release();
     lockReleased = true;
   };
+  const unregisterConnectionOnce = (): void => {
+    if (connectionUnregistered) {
+      return;
+    }
+    connectionRegistry.unregister(options.projectRoot, sidecar.connection);
+    connectionUnregistered = true;
+  };
+  const cleanupRuntimeOwnership = (): Promise<void> => {
+    if (ownershipCleanup !== undefined) {
+      return ownershipCleanup;
+    }
+
+    ownershipCleanup = (async (): Promise<void> => {
+      try {
+        unregisterConnectionOnce();
+        await releaseLockOnce();
+        resolveClosed?.();
+      } catch (error) {
+        rejectClosed?.(error);
+        throw error;
+      }
+    })();
+    return ownershipCleanup;
+  };
+  const onSidecarClosed = (): void => {
+    if (stopped) {
+      return;
+    }
+    stopped = true;
+    void cleanupRuntimeOwnership().catch(() => undefined);
+  };
+  void sidecar.closed.then(onSidecarClosed);
 
   return {
     projectRoot: options.projectRoot,
@@ -109,14 +152,14 @@ export async function startRuntimeOrchestration(
     lock,
     sidecar,
     handlers,
+    closed,
     stop: async (signal: NodeJS.Signals = "SIGTERM"): Promise<boolean> => {
       if (stopped) {
         return false;
       }
-      const sidecarStopped = sidecar.stop(signal);
-      connectionRegistry.unregister(options.projectRoot, sidecar.connection);
-      await releaseLockOnce();
       stopped = true;
+      const sidecarStopped = sidecar.stop(signal);
+      await cleanupRuntimeOwnership();
       return sidecarStopped;
     },
   };

@@ -133,6 +133,7 @@ export {
   buildRuntimeSidecarEnvironment,
   generateRuntimeAuthToken,
   startRuntimeSidecar,
+  type RuntimeSidecarExit,
   type RuntimeSidecarProcess,
   type RuntimeSidecarSession,
   type RuntimeSidecarSpawn,

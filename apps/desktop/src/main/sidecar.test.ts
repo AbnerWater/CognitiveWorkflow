@@ -103,6 +103,24 @@ test("starts a runtime sidecar with token env and resolves on READY", async () =
   assert.deepEqual(fake.killedSignals, ["SIGTERM"]);
 });
 
+test("keeps a sidecar closed observer armed across READY", async () => {
+  const fake = new FakeSidecarProcess();
+  const spawn: RuntimeSidecarSpawn = () => {
+    queueMicrotask(() => fake.stdout.write("READY 51234\n"));
+    return fake;
+  };
+
+  const session = await startRuntimeSidecar({
+    command: "cw-runtime",
+    readyTimeoutMs: 100,
+    spawn,
+    tokenFactory: () => "token_abc123",
+  });
+
+  fake.emit("exit", 7, null);
+  assert.deepEqual(await session.closed, { code: 7, signal: null });
+});
+
 test("rejects unsafe token factories before spawning", async () => {
   let spawnCalled = false;
   const spawn: RuntimeSidecarSpawn = () => {
