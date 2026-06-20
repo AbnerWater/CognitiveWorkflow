@@ -54,6 +54,7 @@ export {
   type RuntimeConnectionRegistryEntry,
   type RuntimeConnectionRegistryOptions,
   type RuntimeConnectionRegistryProjectRootCaseSensitivity,
+  type RuntimeConnectionRegistryProjectRootRealpathResolver,
   type RuntimeConnectionRegistryRegisterOptions,
 } from "./runtime-connection-registry.js";
 

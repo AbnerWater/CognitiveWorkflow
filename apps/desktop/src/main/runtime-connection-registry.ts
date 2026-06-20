@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import type { RuntimeConnectionInfo } from "./runtime.js";
@@ -19,9 +20,16 @@ export type RuntimeConnectionRegistryProjectRootCaseSensitivity =
   | "case_sensitive"
   | "case_insensitive";
 
+export type RuntimeConnectionRegistryProjectRootRealpathResolver = (
+  projectRoot: string,
+) => string | null | undefined;
+
 export interface RuntimeConnectionRegistryOptions {
   readonly nowMs?: () => number;
   readonly projectRootCaseSensitivity?: RuntimeConnectionRegistryProjectRootCaseSensitivity;
+  readonly projectRootRealpath?:
+    | RuntimeConnectionRegistryProjectRootRealpathResolver
+    | false;
 }
 
 export interface RuntimeConnectionRegistry {
@@ -46,10 +54,18 @@ export function createRuntimeConnectionRegistry(
   const projectRootCaseSensitivity =
     options.projectRootCaseSensitivity ??
     (process.platform === "win32" ? "case_insensitive" : "case_sensitive");
+  const projectRootRealpath =
+    options.projectRootRealpath === undefined
+      ? defaultProjectRootRealpath
+      : options.projectRootRealpath;
 
   const get = (projectRoot: string): RuntimeConnectionInfo | null => {
     const entry = entries.get(
-      normalizeProjectRoot(projectRoot, projectRootCaseSensitivity).lookupKey,
+      normalizeProjectRoot(
+        projectRoot,
+        projectRootCaseSensitivity,
+        projectRootRealpath,
+      ).lookupKey,
     );
     return entry === undefined ? null : cloneConnection(entry.connection);
   };
@@ -61,6 +77,7 @@ export function createRuntimeConnectionRegistry(
       const projectRoot = normalizeProjectRoot(
         registerOptions.projectRoot,
         projectRootCaseSensitivity,
+        projectRootRealpath,
       );
       const connection = normalizeRuntimeConnectionInfo(
         registerOptions.connection,
@@ -85,6 +102,7 @@ export function createRuntimeConnectionRegistry(
       const normalizedProjectRoot = normalizeProjectRoot(
         projectRoot,
         projectRootCaseSensitivity,
+        projectRootRealpath,
       );
       const current = entries.get(normalizedProjectRoot.lookupKey);
       if (current === undefined) {
@@ -119,6 +137,7 @@ interface NormalizedProjectRoot {
 function normalizeProjectRoot(
   projectRoot: string,
   caseSensitivity: RuntimeConnectionRegistryProjectRootCaseSensitivity,
+  realpath: RuntimeConnectionRegistryProjectRootRealpathResolver | false,
 ): NormalizedProjectRoot {
   const trimmedProjectRoot = projectRoot.trim();
   if (trimmedProjectRoot.length === 0) {
@@ -128,12 +147,42 @@ function normalizeProjectRoot(
   }
 
   const displayPath = path.resolve(trimmedProjectRoot);
+  const canonicalPath = resolveProjectRootCanonicalPath(displayPath, realpath);
   const lookupKey =
     caseSensitivity === "case_insensitive"
-      ? displayPath.toLowerCase()
-      : displayPath;
+      ? canonicalPath.toLowerCase()
+      : canonicalPath;
 
   return { displayPath, lookupKey };
+}
+
+function resolveProjectRootCanonicalPath(
+  displayPath: string,
+  realpath: RuntimeConnectionRegistryProjectRootRealpathResolver | false,
+): string {
+  if (realpath === false) {
+    return displayPath;
+  }
+
+  let realPath: string | null | undefined;
+  try {
+    realPath = realpath(displayPath);
+  } catch {
+    return displayPath;
+  }
+
+  if (realPath === null || realPath === undefined) {
+    return displayPath;
+  }
+
+  const trimmedRealPath = realPath.trim();
+  if (trimmedRealPath.length === 0) {
+    throw new Error(
+      "Runtime connection registry realpath must be non-empty when provided",
+    );
+  }
+
+  return path.resolve(trimmedRealPath);
 }
 
 function cloneEntry(
@@ -160,4 +209,12 @@ function runtimeConnectionsEqual(
   right: RuntimeConnectionInfo,
 ): boolean {
   return left.base_url === right.base_url && left.token === right.token;
+}
+
+function defaultProjectRootRealpath(projectRoot: string): string | undefined {
+  try {
+    return fs.realpathSync.native(projectRoot);
+  } catch {
+    return undefined;
+  }
 }

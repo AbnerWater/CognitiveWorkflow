@@ -112,6 +112,80 @@ test("keeps project roots case-sensitive when configured", () => {
   assert.deepEqual(registry.get(mixedCaseProjectRoot), connection);
 });
 
+test("matches symlink and junction aliases with realpath canonicalization", () => {
+  const symlinkProjectRoot = path.join("C:", "CW", "project-link");
+  const targetProjectRoot = path.join("C:", "CW", "project-target");
+  const targetRealpath = path.resolve(targetProjectRoot);
+  const registry = createRuntimeConnectionRegistry({
+    projectRootCaseSensitivity: "case_sensitive",
+    projectRootRealpath: (projectRoot) => {
+      const resolvedProjectRoot = path.resolve(projectRoot);
+      if (
+        resolvedProjectRoot === path.resolve(symlinkProjectRoot) ||
+        resolvedProjectRoot === targetRealpath
+      ) {
+        return targetRealpath;
+      }
+
+      return undefined;
+    },
+  });
+  const connection: RuntimeConnectionInfo = {
+    base_url: createRuntimeBaseUrl(51234),
+    token: "token_abc123",
+  };
+
+  const entry = registry.register({
+    projectRoot: symlinkProjectRoot,
+    connection,
+  });
+
+  assert.equal(entry.projectRoot, path.resolve(symlinkProjectRoot));
+  assert.deepEqual(registry.get(targetProjectRoot), connection);
+  assert.deepEqual(registry.snapshot(), [entry]);
+  assert.equal(registry.unregister(targetProjectRoot, connection), true);
+  assert.equal(registry.get(symlinkProjectRoot), null);
+});
+
+test("falls back to resolved project root when realpath is unavailable", () => {
+  const registry = createRuntimeConnectionRegistry({
+    projectRootCaseSensitivity: "case_sensitive",
+    projectRootRealpath: () => {
+      throw new Error("realpath unavailable");
+    },
+  });
+  const symlinkProjectRoot = path.join("C:", "CW", "project-link");
+  const targetProjectRoot = path.join("C:", "CW", "project-target");
+  const connection: RuntimeConnectionInfo = {
+    base_url: createRuntimeBaseUrl(51234),
+    token: "token_abc123",
+  };
+
+  registry.register({ projectRoot: symlinkProjectRoot, connection });
+
+  assert.deepEqual(registry.get(symlinkProjectRoot), connection);
+  assert.equal(registry.get(targetProjectRoot), null);
+  assert.equal(registry.unregister(targetProjectRoot, connection), false);
+});
+
+test("allows callers to disable realpath lookup explicitly", () => {
+  const registry = createRuntimeConnectionRegistry({
+    projectRootRealpath: false,
+  });
+  const symlinkProjectRoot = path.join("C:", "CW", "project-link");
+  const targetProjectRoot = path.join("C:", "CW", "project-target");
+  const connection: RuntimeConnectionInfo = {
+    base_url: createRuntimeBaseUrl(51234),
+    token: "token_abc123",
+  };
+
+  registry.register({ projectRoot: symlinkProjectRoot, connection });
+
+  assert.deepEqual(registry.get(symlinkProjectRoot), connection);
+  assert.equal(registry.get(targetProjectRoot), null);
+  assert.equal(registry.unregister(targetProjectRoot, connection), false);
+});
+
 test("rejects unsafe project roots and connection payloads", () => {
   const registry = createRuntimeConnectionRegistry();
 
@@ -148,5 +222,19 @@ test("rejects unsafe project roots and connection payloads", () => {
         },
       }),
     /Runtime auth token/u,
+  );
+
+  assert.throws(
+    () =>
+      createRuntimeConnectionRegistry({
+        projectRootRealpath: () => " ",
+      }).register({
+        projectRoot: PROJECT_ROOT,
+        connection: {
+          base_url: createRuntimeBaseUrl(51234),
+          token: "token_abc123",
+        },
+      }),
+    /realpath/u,
   );
 });
