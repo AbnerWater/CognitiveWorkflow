@@ -47,6 +47,13 @@ export {
 } from "./runtime-ipc-handlers.js";
 
 export {
+  startRuntimeOrchestration,
+  type RuntimeOrchestrationLockOptions,
+  type RuntimeOrchestrationSession,
+  type StartRuntimeOrchestrationOptions,
+} from "./runtime-orchestration.js";
+
+export {
   AGENT_WORKFLOW_DIRNAME,
   DEFAULT_RUNTIME_LOCK_ACQUIRE_TIMEOUT_MS,
   DEFAULT_RUNTIME_LOCK_ADAPTER_ID,
