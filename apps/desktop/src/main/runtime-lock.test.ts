@@ -173,6 +173,117 @@ test("cleans stale runtime.lock before acquiring", async () => {
   }
 });
 
+test("cleans stale runtime.lock mutation guard before stale lock cleanup", async () => {
+  const projectRoot = await makeTempProject();
+  try {
+    const lockPath = resolveRuntimeLockPath(projectRoot);
+    const guardPath = `${lockPath}${RUNTIME_LOCK_MUTATION_GUARD_SUFFIX}`;
+    await writeLockFile(lockPath, `pid=1234\nacquired_at=${ACQUIRED_AT}\n`);
+    await writeLockFile(
+      guardPath,
+      `pid=9999\nacquired_at=${ACQUIRED_AT}\nadapter_id=desktop-main.mutation\n`,
+    );
+
+    const lease = await acquireRuntimeLock({
+      projectRoot,
+      pid: 4321,
+      nowMs: NEXT_ACQUIRED_AT_MS,
+      staleMs: DEFAULT_RUNTIME_LOCK_STALE_MS,
+    });
+
+    assert.equal(lease.record.pid, 4321);
+    assert.equal(await readFile(lockPath, "utf8"), lease.content);
+    await assert.rejects(readFile(guardPath, "utf8"), { code: "ENOENT" });
+
+    await lease.release();
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
+test("waits on a fresh runtime.lock mutation guard", async () => {
+  const projectRoot = await makeTempProject();
+  try {
+    const lockPath = resolveRuntimeLockPath(projectRoot);
+    const guardPath = `${lockPath}${RUNTIME_LOCK_MUTATION_GUARD_SUFFIX}`;
+    const freshGuardContent = `pid=9999\nacquired_at=${NEXT_ACQUIRED_AT}\nadapter_id=desktop-main.mutation\n`;
+    await writeLockFile(lockPath, `pid=1234\nacquired_at=${ACQUIRED_AT}\n`);
+    await writeLockFile(guardPath, freshGuardContent);
+
+    await assert.rejects(
+      acquireRuntimeLock({
+        projectRoot,
+        pid: 4321,
+        nowMs: NEXT_ACQUIRED_AT_MS + 1_000,
+        timeoutMs: 1,
+        retryMs: 1,
+      }),
+      /Timed out acquiring runtime\.lock mutation guard/u,
+    );
+    assert.equal(await readFile(guardPath, "utf8"), freshGuardContent);
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
+test("fails closed on corrupt runtime.lock mutation guard", async () => {
+  const projectRoot = await makeTempProject();
+  try {
+    const lockPath = resolveRuntimeLockPath(projectRoot);
+    const guardPath = `${lockPath}${RUNTIME_LOCK_MUTATION_GUARD_SUFFIX}`;
+    const corruptGuardContent = "pid=abc\n";
+    await writeLockFile(lockPath, `pid=1234\nacquired_at=${ACQUIRED_AT}\n`);
+    await writeLockFile(guardPath, corruptGuardContent);
+
+    await assert.rejects(
+      acquireRuntimeLock({
+        projectRoot,
+        pid: 4321,
+        nowMs: NEXT_ACQUIRED_AT_MS + 1_000,
+      }),
+      /mutation guard is corrupt/u,
+    );
+    assert.equal(await readFile(guardPath, "utf8"), corruptGuardContent);
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
+test("fails closed on unreadable runtime.lock mutation guard", async () => {
+  const projectRoot = await makeTempProject();
+  try {
+    const lockPath = resolveRuntimeLockPath(projectRoot);
+    const guardPath = `${lockPath}${RUNTIME_LOCK_MUTATION_GUARD_SUFFIX}`;
+    await writeLockFile(lockPath, `pid=1234\nacquired_at=${ACQUIRED_AT}\n`);
+
+    await assert.rejects(
+      acquireRuntimeLock({
+        projectRoot,
+        pid: 4321,
+        nowMs: NEXT_ACQUIRED_AT_MS + 1_000,
+        writeTextExclusive: async (targetPath, content) => {
+          if (targetPath === guardPath) {
+            throw Object.assign(new Error("exists"), { code: "EEXIST" });
+          }
+          await writeFile(targetPath, content, {
+            encoding: "utf8",
+            flag: "wx",
+          });
+        },
+        readText: async (targetPath) => {
+          if (targetPath === guardPath) {
+            throw Object.assign(new Error("denied"), { code: "EACCES" });
+          }
+          return readFile(targetPath, "utf8");
+        },
+      }),
+      /mutation guard could not be read/u,
+    );
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
 test("rechecks stale runtime.lock under mutation guard before deletion", async () => {
   const projectRoot = await makeTempProject();
   try {
@@ -207,6 +318,31 @@ test("rechecks stale runtime.lock under mutation guard before deletion", async (
 
     assert.equal(replacedBeforeGuardedCleanup, true);
     assert.equal(await readFile(lockPath, "utf8"), replacementContent);
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
+test("cleans stale runtime.lock mutation guard before release", async () => {
+  const projectRoot = await makeTempProject();
+  try {
+    const lease = await acquireRuntimeLock({
+      projectRoot,
+      pid: 1234,
+      nowMs: NEXT_ACQUIRED_AT_MS,
+    });
+    const guardPath = `${lease.lockPath}${RUNTIME_LOCK_MUTATION_GUARD_SUFFIX}`;
+    await writeLockFile(
+      guardPath,
+      `pid=9999\nacquired_at=${ACQUIRED_AT}\nadapter_id=desktop-main.mutation\n`,
+    );
+
+    await lease.release();
+
+    await assert.rejects(readFile(lease.lockPath, "utf8"), {
+      code: "ENOENT",
+    });
+    await assert.rejects(readFile(guardPath, "utf8"), { code: "ENOENT" });
   } finally {
     await removeTempProject(projectRoot);
   }

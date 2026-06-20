@@ -158,8 +158,10 @@ export async function acquireRuntimeLock(
   const timeoutMs =
     options.timeoutMs ?? DEFAULT_RUNTIME_LOCK_ACQUIRE_TIMEOUT_MS;
   const retryMs = options.retryMs ?? DEFAULT_RUNTIME_LOCK_RETRY_MS;
+  const staleMs = options.staleMs ?? DEFAULT_RUNTIME_LOCK_STALE_MS;
   assertPositiveInteger(timeoutMs, "Runtime lock acquire timeout");
   assertPositiveInteger(retryMs, "Runtime lock retry interval");
+  assertPositiveInteger(staleMs, "Runtime lock stale threshold");
 
   const ensureDirectory = options.ensureDirectory ?? ensureRuntimeLockDirectory;
   const readText = options.readText ?? readRuntimeLockText;
@@ -190,6 +192,7 @@ export async function acquireRuntimeLock(
         sleep,
         timeoutMs,
         retryMs,
+        staleMs,
         ...(options.pid !== undefined ? { pid: options.pid } : {}),
         ...(options.adapterId !== undefined
           ? { adapterId: options.adapterId }
@@ -218,6 +221,7 @@ export async function acquireRuntimeLock(
         sleep,
         timeoutMs,
         retryMs,
+        staleMs,
       });
       continue;
     }
@@ -250,16 +254,19 @@ async function cleanupStaleRuntimeLock(
     readonly sleep: RuntimeLockSleep;
     readonly timeoutMs: number;
     readonly retryMs: number;
+    readonly staleMs: number;
   },
 ): Promise<void> {
   await withRuntimeLockMutationGuard(
     lockPath,
     {
+      readText: io.readText,
       writeTextExclusive: io.writeTextExclusive,
       removeFile: io.removeFile,
       sleep: io.sleep,
       timeoutMs: io.timeoutMs,
       retryMs: io.retryMs,
+      staleMs: io.staleMs,
       ...(options.pid !== undefined ? { pid: options.pid } : {}),
       ...(options.adapterId !== undefined
         ? { adapterId: options.adapterId }
@@ -364,6 +371,7 @@ function createRuntimeLockLease(
     readonly sleep: RuntimeLockSleep;
     readonly timeoutMs: number;
     readonly retryMs: number;
+    readonly staleMs: number;
     readonly pid?: number;
     readonly adapterId?: string;
     readonly nowMs?: number;
@@ -377,11 +385,13 @@ function createRuntimeLockLease(
       await withRuntimeLockMutationGuard(
         lockPath,
         {
+          readText: io.readText,
           writeTextExclusive: io.writeTextExclusive,
           removeFile: io.removeFile,
           sleep: io.sleep,
           timeoutMs: io.timeoutMs,
           retryMs: io.retryMs,
+          staleMs: io.staleMs,
           ...(io.pid !== undefined ? { pid: io.pid } : {}),
           ...(io.adapterId !== undefined ? { adapterId: io.adapterId } : {}),
           ...(io.nowMs !== undefined ? { nowMs: io.nowMs } : {}),
@@ -413,11 +423,13 @@ function createRuntimeLockLease(
 async function withRuntimeLockMutationGuard<T>(
   lockPath: string,
   io: {
+    readonly readText: RuntimeLockReadText;
     readonly writeTextExclusive: RuntimeLockWriteTextExclusive;
     readonly removeFile: RuntimeLockRemoveFile;
     readonly sleep: RuntimeLockSleep;
     readonly timeoutMs: number;
     readonly retryMs: number;
+    readonly staleMs: number;
     readonly pid?: number;
     readonly adapterId?: string;
     readonly nowMs?: number;
@@ -442,6 +454,9 @@ async function withRuntimeLockMutationGuard<T>(
       if (!isNodeErrorCode(error, "EEXIST")) {
         throw error;
       }
+      if (await cleanupStaleRuntimeLockMutationGuard(guardPath, io)) {
+        continue;
+      }
       if (Date.now() - startedAtMs >= io.timeoutMs) {
         throw new Error("Timed out acquiring runtime.lock mutation guard");
       }
@@ -454,6 +469,64 @@ async function withRuntimeLockMutationGuard<T>(
   } finally {
     await io.removeFile(guardPath);
   }
+}
+
+async function cleanupStaleRuntimeLockMutationGuard(
+  guardPath: string,
+  io: {
+    readonly readText: RuntimeLockReadText;
+    readonly removeFile: RuntimeLockRemoveFile;
+    readonly staleMs: number;
+    readonly nowMs?: number;
+  },
+): Promise<boolean> {
+  let content: string;
+  try {
+    content = await io.readText(guardPath);
+  } catch (error) {
+    if (isNodeErrorCode(error, "ENOENT")) {
+      return true;
+    }
+    throw new Error(
+      `Runtime lock mutation guard could not be read: ${errorName(error)}`,
+    );
+  }
+
+  let record: RuntimeLockRecord;
+  try {
+    record = parseRuntimeLockContent(content);
+  } catch (error) {
+    throw new Error(
+      `Runtime lock mutation guard is corrupt: ${error instanceof Error ? error.message : "invalid content"}`,
+    );
+  }
+
+  const nowMs = io.nowMs ?? Date.now();
+  if (!Number.isFinite(nowMs)) {
+    throw new RangeError("Runtime lock mutation guard time must be finite");
+  }
+
+  const ageMs = Math.max(0, nowMs - record.acquiredAtMs);
+  if (ageMs <= io.staleMs) {
+    return false;
+  }
+
+  let latestContent: string;
+  try {
+    latestContent = await io.readText(guardPath);
+  } catch (error) {
+    if (isNodeErrorCode(error, "ENOENT")) {
+      return true;
+    }
+    throw error;
+  }
+
+  if (latestContent !== content) {
+    return false;
+  }
+
+  await io.removeFile(guardPath);
+  return true;
 }
 
 function parseRuntimeLockPid(value: string | undefined): number {
