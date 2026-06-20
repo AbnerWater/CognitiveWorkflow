@@ -1,9 +1,11 @@
 import {
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   parseRuntimeIpcFetchRequestPayload,
   type RuntimeIpcChannel,
+  type RuntimeIpcShutdownStatusResponse,
   type RuntimeIpcStartupStatusResponse,
 } from "../shared/runtime-ipc.js";
 import type {
@@ -12,6 +14,7 @@ import type {
   RuntimeRequestInit,
   RuntimeRequestPath,
   RuntimeResponse,
+  RuntimeShutdownStatus,
   RuntimeStartupStatus,
 } from "./contract.js";
 
@@ -35,6 +38,14 @@ export function createRuntimePreloadBridge(
       return statuses.map((status) => ({
         ...status,
       })) satisfies readonly RuntimeStartupStatus[];
+    },
+    shutdownStatus: async () => {
+      const statuses = await options.invoke<RuntimeIpcShutdownStatusResponse>(
+        RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+      );
+      return statuses.map((status) => ({
+        ...status,
+      })) satisfies readonly RuntimeShutdownStatus[];
     },
     connectionInfo: () =>
       options.invoke<RuntimeConnectionInfo>(

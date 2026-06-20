@@ -1,12 +1,14 @@
 import {
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   parseRuntimeIpcFetchRequestPayload,
   type RuntimeIpcConnectionInfo,
   type RuntimeIpcFetchRequest,
   type RuntimeIpcMainHandlers,
   type RuntimeIpcResponse,
+  type RuntimeIpcShutdownStatusResponse,
   type RuntimeIpcStartupStatusResponse,
 } from "../shared/runtime-ipc.js";
 import {
@@ -32,6 +34,10 @@ export type RuntimeIpcMainChannelRegistration =
   | {
       readonly channel: typeof RUNTIME_IPC_STARTUP_STATUS_CHANNEL;
       readonly handle: () => Promise<RuntimeIpcStartupStatusResponse>;
+    }
+  | {
+      readonly channel: typeof RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL;
+      readonly handle: () => Promise<RuntimeIpcShutdownStatusResponse>;
     };
 
 export type RuntimeIpcStartupControllerStarter = (
@@ -55,12 +61,18 @@ export interface RuntimeIpcMainChannelRegistrationOptions {
   readonly startupStatus?: () =>
     | RuntimeIpcStartupStatusResponse
     | Promise<RuntimeIpcStartupStatusResponse>;
+  readonly shutdownStatus?: () =>
+    | RuntimeIpcShutdownStatusResponse
+    | Promise<RuntimeIpcShutdownStatusResponse>;
 }
 
 export interface CreateRuntimeIpcStartupHandlersOptions {
   readonly startup: StartRuntimeWithLifecycleOptions;
   readonly starter?: RuntimeIpcStartupControllerStarter;
   readonly onStatus?: RuntimeIpcStartupStatusObserver;
+  readonly shutdownStatus?: () =>
+    | RuntimeIpcShutdownStatusResponse
+    | Promise<RuntimeIpcShutdownStatusResponse>;
 }
 
 export interface RuntimeIpcStartupHandlers {
@@ -125,9 +137,14 @@ export function createRuntimeIpcMainChannelRegistrations(
   if (options?.startupStatus !== undefined) {
     registrations.push({
       channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
-      handle: async () => options.startupStatus?.() ?? [],
+      handle: async () => [...((await options.startupStatus?.()) ?? [])],
     });
   }
+
+  registrations.push({
+    channel: RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+    handle: async () => [...((await options?.shutdownStatus?.()) ?? [])],
+  });
 
   return registrations;
 }
@@ -200,6 +217,9 @@ export function createRuntimeIpcStartupHandlers(
     handlers,
     registrations: createRuntimeIpcMainChannelRegistrations(handlers, {
       startupStatus: () => statusHistory.slice(),
+      ...(options.shutdownStatus !== undefined
+        ? { shutdownStatus: options.shutdownStatus }
+        : {}),
     }),
     getStartupResult,
     snapshot: () => snapshotRuntimeIpcStartupState(state),

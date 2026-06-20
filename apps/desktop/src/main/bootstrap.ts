@@ -1,8 +1,12 @@
 import {
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   type RuntimeIpcChannel,
+  type RuntimeIpcShutdownStatus,
+  type RuntimeIpcShutdownStatusKind,
+  type RuntimeIpcShutdownStatusSeverity,
 } from "../shared/runtime-ipc.js";
 import {
   createRuntimeIpcStartupHandlers,
@@ -125,29 +129,12 @@ export type RuntimeMainLifecycleShutdownSnapshot =
   RuntimeAppLifecycleShutdownSnapshot;
 
 export type RuntimeMainLifecycleShutdownStatusKind =
-  | "registered"
-  | "app_quit_requested"
-  | "window_close_requested"
-  | "shutting_down"
-  | "shutdown_complete"
-  | "shutdown_failed"
-  | "unregistered";
+  RuntimeIpcShutdownStatusKind;
 
 export type RuntimeMainLifecycleShutdownStatusSeverity =
-  | "info"
-  | "warning"
-  | "error";
+  RuntimeIpcShutdownStatusSeverity;
 
-export interface RuntimeMainLifecycleShutdownStatus {
-  readonly kind: RuntimeMainLifecycleShutdownStatusKind;
-  readonly state: RuntimeMainLifecycleShutdownState;
-  readonly severity: RuntimeMainLifecycleShutdownStatusSeverity;
-  readonly lifecycleComplete: boolean;
-  readonly retryable: boolean;
-  readonly appQuitRequested: boolean;
-  readonly windowCloseRequested: boolean;
-  readonly reason?: string;
-}
+export type RuntimeMainLifecycleShutdownStatus = RuntimeIpcShutdownStatus;
 
 export type RuntimeMainLifecycleShutdownStatusObserver = (
   status: RuntimeMainLifecycleShutdownStatus,
@@ -182,6 +169,9 @@ export function installRuntimeIpcMainHandlers(
     startup: options.startup,
     ...(options.starter !== undefined ? { starter: options.starter } : {}),
     ...(options.onStatus !== undefined ? { onStatus: options.onStatus } : {}),
+    ...(options.shutdownStatus !== undefined
+      ? { shutdownStatus: options.shutdownStatus }
+      : {}),
   });
   const registeredChannels = registerRuntimeIpcMainChannelRegistrations(
     options.ipcMain,
@@ -606,6 +596,8 @@ function createRuntimeIpcMainInvokeHandler(
     case RUNTIME_IPC_CONNECTION_INFO_CHANNEL:
       return async () => registration.handle();
     case RUNTIME_IPC_STARTUP_STATUS_CHANNEL:
+      return async () => registration.handle();
+    case RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL:
       return async () => registration.handle();
     case RUNTIME_IPC_FETCH_CHANNEL:
       return async (_event, payload) => registration.handle(payload);

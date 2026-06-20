@@ -5,8 +5,10 @@ import {
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_CHANNELS,
   RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   type RuntimeIpcChannel,
+  type RuntimeIpcShutdownStatusResponse,
   buildRuntimeIpcFetchRequest,
 } from "../shared/runtime-ipc.js";
 import {
@@ -53,6 +55,7 @@ test("exposes stable channel registrations without importing Electron", async ()
       "cw:runtime:connection-info",
       "cw:runtime:fetch",
       "cw:runtime:startup-status",
+      "cw:runtime:shutdown-status",
     ],
   );
   assert.equal(handlers.snapshot().state, "idle");
@@ -65,6 +68,16 @@ test("exposes stable channel registrations without importing Electron", async ()
     RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   );
   assert.deepEqual(await startupStatusRegistration.handle(), []);
+  assert.equal(handlers.snapshot().state, "idle");
+  const shutdownStatusRegistration = handlers.registrations.find(
+    (registration) =>
+      registration.channel === RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+  );
+  assert.equal(
+    shutdownStatusRegistration?.channel,
+    RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+  );
+  assert.deepEqual(await shutdownStatusRegistration.handle(), []);
   assert.equal(handlers.snapshot().state, "idle");
 
   const connectionInfoRegistration = handlers.registrations.find(
@@ -185,6 +198,51 @@ test("records and forwards startup lifecycle statuses", async () => {
   );
   assert.equal(starterCalls, 1);
   assert.equal(factoryStatuses.length, 2);
+});
+
+test("exposes shutdown status registration without starting runtime", async () => {
+  let starterCalls = 0;
+  const shutdownStatuses: RuntimeIpcShutdownStatusResponse = [
+    {
+      kind: "shutting_down",
+      state: "shutting_down",
+      severity: "info",
+      lifecycleComplete: false,
+      retryable: false,
+      appQuitRequested: true,
+      windowCloseRequested: false,
+    },
+  ];
+  const handlers = createRuntimeIpcStartupHandlers({
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+    },
+    shutdownStatus: () => shutdownStatuses,
+    starter: async () => {
+      starterCalls += 1;
+      return createReadyStartupResult();
+    },
+  });
+  const shutdownStatusRegistration = handlers.registrations.find(
+    (registration) =>
+      registration.channel === RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+  );
+  assert.equal(
+    shutdownStatusRegistration?.channel,
+    RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+  );
+
+  assert.deepEqual(await shutdownStatusRegistration.handle(), shutdownStatuses);
+  const mutableShutdownStatus =
+    (await shutdownStatusRegistration.handle()) as RuntimeIpcShutdownStatusResponse extends readonly (infer TStatus)[]
+      ? TStatus[]
+      : never;
+  mutableShutdownStatus.pop();
+
+  assert.deepEqual(await shutdownStatusRegistration.handle(), shutdownStatuses);
+  assert.equal(starterCalls, 0);
+  assert.equal(handlers.snapshot().state, "idle");
 });
 
 test("validates fetch registration payload before forwarding to runtime fetch", async () => {
@@ -379,6 +437,13 @@ test("installs runtime IPC handlers through an injected Electron-like ipcMain", 
   assert.deepEqual(await startupStatusHandler({ sender: "renderer" }), []);
   assert.equal(starterCalls, 0);
   assert.equal(installed.startupHandlers.snapshot().state, "idle");
+  const shutdownStatusHandler = registeredHandlers.get(
+    RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+  );
+  assert.ok(shutdownStatusHandler);
+  assert.deepEqual(await shutdownStatusHandler({ sender: "renderer" }), []);
+  assert.equal(starterCalls, 0);
+  assert.equal(installed.startupHandlers.snapshot().state, "idle");
 
   const connectionInfoHandler = registeredHandlers.get(
     RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
@@ -558,6 +623,7 @@ test("shutdown unregisters handlers and stops a started runtime once", async () 
     "remove:cw:runtime:connection-info",
     "remove:cw:runtime:fetch",
     "remove:cw:runtime:startup-status",
+    "remove:cw:runtime:shutdown-status",
     "stop:SIGINT",
   ]);
   assert.deepEqual(stopSignals, ["SIGINT"]);

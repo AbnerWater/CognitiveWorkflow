@@ -6,6 +6,7 @@ import {
   type RuntimeIpcRequestHeadersInput,
   type RuntimeIpcRequestPath,
   type RuntimeIpcResponse,
+  type RuntimeIpcShutdownStatus,
   type RuntimeIpcStartupStatus,
 } from "../shared/runtime-ipc.js";
 
@@ -21,9 +22,11 @@ export interface RuntimeResponse<
 > extends RuntimeIpcResponse<TBody> {}
 
 export type RuntimeStartupStatus = RuntimeIpcStartupStatus;
+export type RuntimeShutdownStatus = RuntimeIpcShutdownStatus;
 
 export interface RuntimeBridge {
   readonly startupStatus: () => Promise<readonly RuntimeStartupStatus[]>;
+  readonly shutdownStatus: () => Promise<readonly RuntimeShutdownStatus[]>;
   readonly connectionInfo: () => Promise<RuntimeConnectionInfo>;
   readonly fetch: <TBody = unknown>(
     path: RuntimeRequestPath,

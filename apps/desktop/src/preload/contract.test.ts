@@ -4,8 +4,11 @@ import test from "node:test";
 import {
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   type RuntimeIpcChannel,
+  type RuntimeIpcShutdownStatus,
+  type RuntimeIpcShutdownStatusResponse,
   type RuntimeIpcStartupStatus,
   type RuntimeIpcStartupStatusResponse,
 } from "../shared/runtime-ipc.js";
@@ -106,6 +109,18 @@ test("builds a preload runtime bridge over injected IPC invoke", async () => {
     retryable: false,
   };
   const statuses: RuntimeIpcStartupStatusResponse = [waitingStatus];
+  const shuttingDownStatus: RuntimeIpcShutdownStatus = {
+    kind: "shutting_down",
+    state: "shutting_down",
+    severity: "info",
+    lifecycleComplete: false,
+    retryable: false,
+    appQuitRequested: true,
+    windowCloseRequested: false,
+  };
+  const shutdownStatuses: RuntimeIpcShutdownStatusResponse = [
+    shuttingDownStatus,
+  ];
   const bridge = createRuntimePreloadBridge({
     invoke: async <TResult>(
       channel: RuntimeIpcChannel,
@@ -115,6 +130,8 @@ test("builds a preload runtime bridge over injected IPC invoke", async () => {
       switch (channel) {
         case RUNTIME_IPC_STARTUP_STATUS_CHANNEL:
           return statuses as TResult;
+        case RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL:
+          return shutdownStatuses as TResult;
         case RUNTIME_IPC_CONNECTION_INFO_CHANNEL:
           return {
             base_url: "http://127.0.0.1:51234/cw/v1",
@@ -138,6 +155,17 @@ test("builds a preload runtime bridge over injected IPC invoke", async () => {
       : never;
   mutableStatuses[0] = { ...waitingStatus, message: "mutated" };
   assert.deepEqual(await bridge.startupStatus(), statuses);
+  assert.deepEqual(await bridge.shutdownStatus(), shutdownStatuses);
+  const mutableShutdownStatuses =
+    (await bridge.shutdownStatus()) as RuntimeIpcShutdownStatusResponse extends readonly (infer TStatus)[]
+      ? TStatus[]
+      : never;
+  mutableShutdownStatuses[0] = {
+    ...shuttingDownStatus,
+    kind: "shutdown_complete",
+    state: "shutdown_complete",
+  };
+  assert.deepEqual(await bridge.shutdownStatus(), shutdownStatuses);
   assert.deepEqual(await bridge.connectionInfo(), {
     base_url: "http://127.0.0.1:51234/cw/v1",
     token: "token_abc123",
@@ -160,6 +188,9 @@ test("builds a preload runtime bridge over injected IPC invoke", async () => {
     { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
     { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
     { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
+    { channel: RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL },
+    { channel: RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL },
+    { channel: RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL },
     { channel: RUNTIME_IPC_CONNECTION_INFO_CHANNEL },
     {
       channel: RUNTIME_IPC_FETCH_CHANNEL,
@@ -224,6 +255,17 @@ test("builds a frozen cw desktop API over injected IPC invoke", async () => {
     retryable: false,
   };
   const statuses: RuntimeIpcStartupStatusResponse = [waitingStatus];
+  const shutdownStatuses: RuntimeIpcShutdownStatusResponse = [
+    {
+      kind: "shutdown_complete",
+      state: "shutdown_complete",
+      severity: "info",
+      lifecycleComplete: true,
+      retryable: false,
+      appQuitRequested: true,
+      windowCloseRequested: true,
+    },
+  ];
   const api = createCwDesktopApi({
     invoke: async <TResult>(
       channel: RuntimeIpcChannel,
@@ -233,6 +275,8 @@ test("builds a frozen cw desktop API over injected IPC invoke", async () => {
       switch (channel) {
         case RUNTIME_IPC_STARTUP_STATUS_CHANNEL:
           return statuses as TResult;
+        case RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL:
+          return shutdownStatuses as TResult;
         case RUNTIME_IPC_CONNECTION_INFO_CHANNEL:
           return {
             base_url: "http://127.0.0.1:51234/cw/v1",
@@ -253,6 +297,7 @@ test("builds a frozen cw desktop API over injected IPC invoke", async () => {
   assert.equal(Object.isFrozen(api), true);
   assert.equal(Object.isFrozen(api.runtime), true);
   assert.deepEqual(await api.runtime.startupStatus(), statuses);
+  assert.deepEqual(await api.runtime.shutdownStatus(), shutdownStatuses);
   assert.deepEqual(await api.runtime.connectionInfo(), {
     base_url: "http://127.0.0.1:51234/cw/v1",
     token: "token_abc123",
@@ -277,6 +322,7 @@ test("builds a frozen cw desktop API over injected IPC invoke", async () => {
 
   assert.deepEqual(calls, [
     { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
+    { channel: RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL },
     { channel: RUNTIME_IPC_CONNECTION_INFO_CHANNEL },
     {
       channel: RUNTIME_IPC_FETCH_CHANNEL,
@@ -313,6 +359,18 @@ test("installs the cw preload API through injected Electron-like bridges", async
     retryable: false,
   };
   const statuses: RuntimeIpcStartupStatusResponse = [waitingStatus];
+  const shutdownStatuses: RuntimeIpcShutdownStatusResponse = [
+    {
+      kind: "shutdown_failed",
+      state: "failed",
+      severity: "error",
+      lifecycleComplete: true,
+      retryable: true,
+      appQuitRequested: true,
+      windowCloseRequested: false,
+      reason: "runtime shutdown failed",
+    },
+  ];
   const api = installCwPreloadApi({
     contextBridge: {
       exposeInMainWorld: (apiKey: string, apiValue: CwDesktopApi) => {
@@ -330,6 +388,8 @@ test("installs the cw preload API through injected Electron-like bridges", async
         switch (channel) {
           case RUNTIME_IPC_STARTUP_STATUS_CHANNEL:
             return statuses;
+          case RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL:
+            return shutdownStatuses;
           case RUNTIME_IPC_CONNECTION_INFO_CHANNEL:
             return {
               base_url: "http://127.0.0.1:51234/cw/v1",
@@ -357,6 +417,7 @@ test("installs the cw preload API through injected Electron-like bridges", async
   assert.equal(Object.isFrozen(api.runtime), true);
 
   assert.deepEqual(await api.runtime.startupStatus(), statuses);
+  assert.deepEqual(await api.runtime.shutdownStatus(), shutdownStatuses);
   assert.deepEqual(await api.runtime.connectionInfo(), {
     base_url: "http://127.0.0.1:51234/cw/v1",
     token: "token_abc123",
@@ -381,6 +442,7 @@ test("installs the cw preload API through injected Electron-like bridges", async
 
   assert.deepEqual(ipcCalls, [
     { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
+    { channel: RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL },
     { channel: RUNTIME_IPC_CONNECTION_INFO_CHANNEL },
     {
       channel: RUNTIME_IPC_FETCH_CHANNEL,

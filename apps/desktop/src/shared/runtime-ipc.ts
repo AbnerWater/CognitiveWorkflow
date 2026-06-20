@@ -3,10 +3,13 @@ export const RUNTIME_IPC_CONNECTION_INFO_CHANNEL =
 export const RUNTIME_IPC_FETCH_CHANNEL = "cw:runtime:fetch" as const;
 export const RUNTIME_IPC_STARTUP_STATUS_CHANNEL =
   "cw:runtime:startup-status" as const;
+export const RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL =
+  "cw:runtime:shutdown-status" as const;
 export const RUNTIME_IPC_CHANNELS = [
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+  RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
 ] as const;
 export const RUNTIME_IPC_METHODS = ["GET", "POST", "PATCH", "DELETE"] as const;
 
@@ -85,6 +88,38 @@ export interface RuntimeIpcStartupStatus {
 
 export type RuntimeIpcStartupStatusResponse =
   readonly RuntimeIpcStartupStatus[];
+
+export type RuntimeIpcShutdownStatusKind =
+  | "registered"
+  | "app_quit_requested"
+  | "window_close_requested"
+  | "shutting_down"
+  | "shutdown_complete"
+  | "shutdown_failed"
+  | "unregistered";
+
+export type RuntimeIpcShutdownState =
+  | "registered"
+  | "shutting_down"
+  | "shutdown_complete"
+  | "failed"
+  | "unregistered";
+
+export type RuntimeIpcShutdownStatusSeverity = "info" | "warning" | "error";
+
+export interface RuntimeIpcShutdownStatus {
+  readonly kind: RuntimeIpcShutdownStatusKind;
+  readonly state: RuntimeIpcShutdownState;
+  readonly severity: RuntimeIpcShutdownStatusSeverity;
+  readonly lifecycleComplete: boolean;
+  readonly retryable: boolean;
+  readonly appQuitRequested: boolean;
+  readonly windowCloseRequested: boolean;
+  readonly reason?: string;
+}
+
+export type RuntimeIpcShutdownStatusResponse =
+  readonly RuntimeIpcShutdownStatus[];
 
 export interface RuntimeIpcMainHandlers {
   readonly connectionInfo: () => Promise<RuntimeIpcConnectionInfo>;
