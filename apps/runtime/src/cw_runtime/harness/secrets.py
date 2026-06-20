@@ -45,6 +45,14 @@ _SECRET_KEY_BYTES: Final = 32
 _SECRET_NONCE_BYTES: Final = 12
 _SECRET_PBKDF2_ITERATIONS: Final = 600_000
 _SECRET_AES_GCM_TAG_BYTES: Final = 16
+_PROJECT_SECRET_TABLE_COLUMNS: Final[frozenset[str]] = frozenset(
+    {"secret_id", "alias", "value_encrypted", "scope", "created_at"}
+)
+_PROJECT_SECRET_LEGACY_MIGRATION_COLUMNS: Final[tuple[tuple[str, str], ...]] = (
+    ("alias", "ALTER TABLE secrets ADD COLUMN alias TEXT"),
+    ("scope", "ALTER TABLE secrets ADD COLUMN scope TEXT"),
+    ("created_at", "ALTER TABLE secrets ADD COLUMN created_at TEXT"),
+)
 _WINDOWS_CNG_STATUS_SUCCESS: Final = 0
 _WINDOWS_CNG_AES_ALGORITHM: Final = "AES"
 _WINDOWS_CNG_CHAINING_MODE_PROPERTY: Final = "ChainingMode"
@@ -418,7 +426,7 @@ def write_project_mcp_secret_material(
     try:
         database_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(database_path) as connection:
-            _ensure_project_secret_table(connection)
+            _migrate_project_secret_table(connection)
             connection.execute(
                 "INSERT INTO secrets(secret_id, alias, value_encrypted, scope, created_at) "
                 "VALUES (?, ?, ?, ?, ?) "
@@ -431,6 +439,20 @@ def write_project_mcp_secret_material(
             )
     except sqlite3.Error:
         raise ProjectSecretStoreError("Project secure secret store could not be written.") from None
+    except OSError:
+        raise ProjectSecretStoreError("Project secure secret store could not be prepared.") from None
+
+
+def migrate_project_secret_store(project_root: str | Path) -> None:
+    """Create or migrate the project secure secret store to the spec-shaped table."""
+
+    database_path = _project_secret_database_path(project_root)
+    try:
+        database_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(database_path) as connection:
+            _migrate_project_secret_table(connection)
+    except sqlite3.Error:
+        raise ProjectSecretStoreError("Project secure secret store could not be migrated.") from None
     except OSError:
         raise ProjectSecretStoreError("Project secure secret store could not be prepared.") from None
 
@@ -529,6 +551,50 @@ def _ensure_project_secret_table(connection: sqlite3.Connection) -> None:
         "scope TEXT, "
         "created_at TEXT)"
     )
+
+
+def _migrate_project_secret_table(connection: sqlite3.Connection) -> None:
+    if not _project_secret_table_exists(connection):
+        _ensure_project_secret_table(connection)
+        return
+
+    columns = _project_secret_table_columns(connection)
+    column_names = set(columns)
+    if "secret_id" not in columns or "value_encrypted" not in columns:
+        raise ProjectSecretStoreError("Project secure secret store schema is incompatible.")
+    if columns["secret_id"] != 1:
+        raise ProjectSecretStoreError("Project secure secret store schema is incompatible.")
+    if any(
+        primary_key_position != 0 for column_name, primary_key_position in columns.items() if column_name != "secret_id"
+    ):
+        raise ProjectSecretStoreError("Project secure secret store schema is incompatible.")
+    if column_names - _PROJECT_SECRET_TABLE_COLUMNS:
+        raise ProjectSecretStoreError("Project secure secret store schema is incompatible.")
+
+    for column_name, statement in _PROJECT_SECRET_LEGACY_MIGRATION_COLUMNS:
+        if column_name not in columns:
+            connection.execute(statement)
+
+    migrated_column_names = set(_project_secret_table_columns(connection))
+    if migrated_column_names != _PROJECT_SECRET_TABLE_COLUMNS:
+        raise ProjectSecretStoreError("Project secure secret store schema is incompatible.")
+
+
+def _project_secret_table_exists(connection: sqlite3.Connection) -> bool:
+    row = connection.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'secrets' LIMIT 1").fetchone()
+    return row is not None
+
+
+def _project_secret_table_columns(connection: sqlite3.Connection) -> dict[str, int]:
+    rows = connection.execute("PRAGMA table_info(secrets)").fetchall()
+    columns: dict[str, int] = {}
+    for row in rows:
+        raw_name = row[1]
+        raw_pk = row[5]
+        if not isinstance(raw_name, str) or not isinstance(raw_pk, int):
+            raise ProjectSecretStoreError("Project secure secret store schema is incompatible.")
+        columns[raw_name] = raw_pk
+    return columns
 
 
 def _read_encrypted_secret(database_path: Path, secret_ref: str) -> bytes | None:
