@@ -21,6 +21,7 @@ export interface CwMainIpcMain {
     channel: RuntimeIpcChannel,
     listener: CwMainIpcInvokeHandler,
   ) => void;
+  readonly removeHandler: (channel: RuntimeIpcChannel) => void;
 }
 
 export interface InstallRuntimeIpcMainHandlersOptions extends CreateRuntimeIpcStartupHandlersOptions {
@@ -30,6 +31,7 @@ export interface InstallRuntimeIpcMainHandlersOptions extends CreateRuntimeIpcSt
 export interface InstalledRuntimeIpcMainHandlers {
   readonly startupHandlers: RuntimeIpcStartupHandlers;
   readonly registeredChannels: readonly RuntimeIpcChannel[];
+  readonly unregister: () => readonly RuntimeIpcChannel[];
 }
 
 export function installRuntimeIpcMainHandlers(
@@ -44,10 +46,21 @@ export function installRuntimeIpcMainHandlers(
     options.ipcMain,
     startupHandlers.registrations,
   );
+  let unregistered = false;
 
   return {
     startupHandlers,
     registeredChannels,
+    unregister: () => {
+      if (unregistered) {
+        return [];
+      }
+      unregistered = true;
+      return unregisterRuntimeIpcMainChannels(
+        options.ipcMain,
+        registeredChannels,
+      );
+    },
   };
 }
 
@@ -64,6 +77,18 @@ export function registerRuntimeIpcMainChannelRegistrations(
     registeredChannels.push(registration.channel);
   }
   return registeredChannels;
+}
+
+export function unregisterRuntimeIpcMainChannels(
+  ipcMain: CwMainIpcMain,
+  channels: readonly RuntimeIpcChannel[],
+): readonly RuntimeIpcChannel[] {
+  const unregisteredChannels: RuntimeIpcChannel[] = [];
+  for (const channel of channels) {
+    ipcMain.removeHandler(channel);
+    unregisteredChannels.push(channel);
+  }
+  return unregisteredChannels;
 }
 
 function createRuntimeIpcMainInvokeHandler(

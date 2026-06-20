@@ -10,6 +10,7 @@ export {
 export {
   installRuntimeIpcMainHandlers,
   registerRuntimeIpcMainChannelRegistrations,
+  unregisterRuntimeIpcMainChannels,
   type CwMainIpcInvokeHandler,
   type CwMainIpcMain,
   type InstalledRuntimeIpcMainHandlers,

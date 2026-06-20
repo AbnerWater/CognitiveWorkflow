@@ -343,6 +343,9 @@ test("installs runtime IPC handlers through an injected Electron-like ipcMain", 
         assert.equal(registeredHandlers.has(channel), false);
         registeredHandlers.set(channel, listener);
       },
+      removeHandler: (channel) => {
+        registeredHandlers.delete(channel);
+      },
     },
     startup: {
       projectRoot: "C:/CW/project",
@@ -408,6 +411,45 @@ test("installs runtime IPC handlers through an injected Electron-like ipcMain", 
     /reserved/u,
   );
   assert.equal(starterCalls, 1);
+});
+
+test("unregisters installed runtime IPC handlers once without starting runtime", async () => {
+  let starterCalls = 0;
+  const registeredHandlers = new Map<
+    RuntimeIpcChannel,
+    CwMainIpcInvokeHandler
+  >();
+  const removedChannels: RuntimeIpcChannel[] = [];
+  const installed = installRuntimeIpcMainHandlers({
+    ipcMain: {
+      handle: (channel, listener) => {
+        registeredHandlers.set(channel, listener);
+      },
+      removeHandler: (channel) => {
+        assert.equal(registeredHandlers.delete(channel), true);
+        removedChannels.push(channel);
+      },
+    },
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+    },
+    starter: async () => {
+      starterCalls += 1;
+      return createReadyStartupResult();
+    },
+  });
+
+  assert.deepEqual([...registeredHandlers.keys()], RUNTIME_IPC_CHANNELS);
+  assert.equal(starterCalls, 0);
+  assert.equal(installed.startupHandlers.snapshot().state, "idle");
+  assert.deepEqual(installed.unregister(), RUNTIME_IPC_CHANNELS);
+  assert.deepEqual(removedChannels, RUNTIME_IPC_CHANNELS);
+  assert.deepEqual([...registeredHandlers.keys()], []);
+  assert.equal(starterCalls, 0);
+  assert.equal(installed.startupHandlers.snapshot().state, "idle");
+  assert.deepEqual(installed.unregister(), []);
+  assert.deepEqual(removedChannels, RUNTIME_IPC_CHANNELS);
 });
 
 function createReadyStartupResult(options?: {
