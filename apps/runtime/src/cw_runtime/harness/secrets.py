@@ -473,7 +473,11 @@ def load_project_mcp_secret_material(
     if secret_ref == "":
         raise ProjectSecretStoreError("Project MCP secret reference is invalid.")
     database_path = _project_secret_database_path(project_root)
-    if not database_path.exists():
+    try:
+        store_exists = database_path.exists()
+    except OSError:
+        raise ProjectSecretStoreError("Project secure secret store could not be read.") from None
+    if not store_exists:
         return None
     encrypted_value = _read_encrypted_secret(database_path, secret_ref)
     if encrypted_value is None:
@@ -600,12 +604,13 @@ def _project_secret_table_columns(connection: sqlite3.Connection) -> dict[str, i
 def _read_encrypted_secret(database_path: Path, secret_ref: str) -> bytes | None:
     try:
         with sqlite3.connect(database_path) as connection:
+            _migrate_project_secret_table(connection)
             row = connection.execute(
                 "SELECT value_encrypted FROM secrets WHERE secret_id = ? LIMIT 1",
                 (secret_ref,),
             ).fetchone()
-    except sqlite3.Error as exc:
-        raise ProjectSecretStoreError("Project secure secret store could not be read.") from exc
+    except sqlite3.Error:
+        raise ProjectSecretStoreError("Project secure secret store could not be read.") from None
     if row is None:
         return None
     return _secret_value_to_bytes(row[0])

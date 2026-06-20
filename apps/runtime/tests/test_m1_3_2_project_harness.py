@@ -2568,6 +2568,44 @@ def test_project_secret_store_migration_preserves_legacy_minimal_rows(tmp_path: 
     }
 
 
+def test_project_mcp_secret_material_load_migrates_legacy_table(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_load_legacy_migration_project"
+    initialize_project(_request("MCP Secret Load Legacy Migration", project_root))
+    database_path = _secure_secret_database_path(project_root)
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("CREATE TABLE secrets(secret_id TEXT PRIMARY KEY, value_encrypted BLOB NOT NULL)")
+        connection.execute(
+            "INSERT INTO secrets(secret_id, value_encrypted) VALUES (?, ?)",
+            ("secure://mcp/load-legacy", b"encrypted-load-legacy-token"),
+        )
+
+    def decrypt_secret(encrypted_value: bytes) -> bytes:
+        assert encrypted_value == b"encrypted-load-legacy-token"
+        return b'{"headers":{"Authorization":"Bearer load-legacy-token"},"env":{}}'
+
+    material = load_project_mcp_secret_material(project_root, "secure://mcp/load-legacy", decrypt_secret=decrypt_secret)
+
+    assert material is not None
+    assert material.model_dump(mode="json") == {
+        "headers": {"Authorization": "Bearer load-legacy-token"},
+        "env": {},
+    }
+    assert _secure_secret_table_column_names(project_root) == {
+        "secret_id",
+        "alias",
+        "value_encrypted",
+        "scope",
+        "created_at",
+    }
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            "SELECT value_encrypted, alias, scope, created_at FROM secrets WHERE secret_id = ?",
+            ("secure://mcp/load-legacy",),
+        ).fetchone()
+    assert row == (b"encrypted-load-legacy-token", None, None, None)
+
+
 def test_project_mcp_secret_material_write_migrates_legacy_table(tmp_path: Path) -> None:
     project_root = tmp_path / "mcp_secret_write_legacy_migration_project"
     initialize_project(_request("MCP Secret Write Legacy Migration", project_root))
@@ -2651,6 +2689,39 @@ def test_project_secret_store_migration_rejects_composite_primary_key(tmp_path: 
     assert exc_info.value.__cause__ is None
 
 
+def test_project_mcp_secret_material_load_rejects_incompatible_schema_safely(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_bad_load_schema_project"
+    initialize_project(_request("MCP Secret Bad Load Schema", project_root))
+    database_path = _secure_secret_database_path(project_root)
+    secret_ref = "secure://mcp/" + "bad-load"
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "CREATE TABLE secrets(secret_id TEXT PRIMARY KEY, value_encrypted BLOB NOT NULL, unexpected_extra TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO secrets(secret_id, value_encrypted, unexpected_extra) VALUES (?, ?, ?)",
+            (secret_ref, b"encrypted-bad-load-token", "dirty extra schema detail"),
+        )
+
+    def decrypt_secret(_encrypted_value: bytes) -> bytes:
+        raise AssertionError("incompatible schema should fail before decrypting")
+
+    with pytest.raises(ProjectSecretStoreError) as exc_info:
+        load_project_mcp_secret_material(project_root, secret_ref, decrypt_secret=decrypt_secret)
+
+    serialized_error = str(exc_info.value)
+    serialized_traceback = _format_exception(exc_info.value)
+    assert "unexpected_extra" not in serialized_error
+    assert "unexpected_extra" not in serialized_traceback
+    assert secret_ref not in serialized_error
+    assert secret_ref not in serialized_traceback
+    assert "bad-load-token" not in serialized_traceback
+    assert str(database_path) not in serialized_error
+    assert str(database_path) not in serialized_traceback
+    assert exc_info.value.__cause__ is None
+
+
 def test_project_secret_store_migration_storage_failures_suppress_dirty_context(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2671,6 +2742,37 @@ def test_project_secret_store_migration_storage_failures_suppress_dirty_context(
     serialized_traceback = _format_exception(exc_info.value)
     assert str(dirty_path) not in serialized_error
     assert str(dirty_path) not in serialized_traceback
+    assert "fake-access-token" not in serialized_error
+    assert "fake-access-token" not in serialized_traceback
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
+
+
+def test_project_mcp_secret_material_load_storage_failures_suppress_dirty_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "mcp_secret_load_storage_failure_project"
+    initialize_project(_request("MCP Secret Load Storage Failure", project_root))
+    database_path = _secure_secret_database_path(project_root)
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    database_path.write_bytes(b"not a real sqlite database")
+    secret_ref = "secure://mcp/" + "load-failure"
+    secret_value = "Bearer " + "fake-access-token"
+
+    def fail_connect(_database_path: object) -> NoReturn:
+        raise sqlite3.OperationalError(f"dirty sqlite path {database_path} {secret_value}")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_connect)
+
+    with pytest.raises(ProjectSecretStoreError) as exc_info:
+        load_project_mcp_secret_material(project_root, secret_ref, decrypt_secret=lambda value: value)
+
+    serialized_error = str(exc_info.value)
+    serialized_traceback = _format_exception(exc_info.value)
+    assert str(database_path) not in serialized_error
+    assert str(database_path) not in serialized_traceback
+    assert secret_ref not in serialized_traceback
     assert "fake-access-token" not in serialized_error
     assert "fake-access-token" not in serialized_traceback
     assert exc_info.value.__cause__ is None
@@ -3058,6 +3160,7 @@ def test_project_mcp_secret_material_missing_store_or_row_returns_none(tmp_path:
         return b'{"headers":{"Authorization":"Bearer fake"}}'
 
     assert load_project_mcp_secret_material(project_root, "secure://mcp/missing", decrypt_secret=decrypt_secret) is None
+    assert not _secure_secret_database_path(project_root).exists()
     _write_secure_secret(project_root, "secure://mcp/other", b"encrypted-other-token")
 
     assert load_project_mcp_secret_material(project_root, "secure://mcp/missing", decrypt_secret=decrypt_secret) is None
