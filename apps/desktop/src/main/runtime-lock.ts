@@ -1,10 +1,14 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export const AGENT_WORKFLOW_DIRNAME = ".agent-workflow" as const;
 export const RUNTIME_LOCKS_DIRNAME = "locks" as const;
 export const RUNTIME_LOCK_FILENAME = "runtime.lock" as const;
 export const DEFAULT_RUNTIME_LOCK_STALE_MS = 60_000;
+export const DEFAULT_RUNTIME_LOCK_ACQUIRE_TIMEOUT_MS = 60_000;
+export const DEFAULT_RUNTIME_LOCK_RETRY_MS = 50;
+export const DEFAULT_RUNTIME_LOCK_ADAPTER_ID = "desktop-main" as const;
+export const RUNTIME_LOCK_MUTATION_GUARD_SUFFIX = ".mutation" as const;
 
 export type RuntimeLockStatus = "missing" | "active" | "stale" | "corrupt";
 export type RuntimeLockAction =
@@ -30,12 +34,49 @@ export interface RuntimeLockInspection {
 }
 
 export type RuntimeLockReadText = (lockPath: string) => Promise<string>;
+export type RuntimeLockWriteTextExclusive = (
+  lockPath: string,
+  content: string,
+) => Promise<void>;
+export type RuntimeLockRemoveFile = (lockPath: string) => Promise<void>;
+export type RuntimeLockEnsureDirectory = (
+  directoryPath: string,
+) => Promise<void>;
+export type RuntimeLockSleep = (delayMs: number) => Promise<void>;
 
 export interface InspectRuntimeLockOptions {
   readonly projectRoot: string;
   readonly nowMs?: number;
   readonly staleMs?: number;
   readonly readText?: RuntimeLockReadText;
+}
+
+export interface BuildRuntimeLockContentOptions {
+  readonly pid?: number;
+  readonly nowMs?: number;
+  readonly adapterId?: string;
+}
+
+export interface AcquireRuntimeLockOptions {
+  readonly projectRoot: string;
+  readonly pid?: number;
+  readonly adapterId?: string;
+  readonly nowMs?: number;
+  readonly staleMs?: number;
+  readonly timeoutMs?: number;
+  readonly retryMs?: number;
+  readonly readText?: RuntimeLockReadText;
+  readonly writeTextExclusive?: RuntimeLockWriteTextExclusive;
+  readonly removeFile?: RuntimeLockRemoveFile;
+  readonly ensureDirectory?: RuntimeLockEnsureDirectory;
+  readonly sleep?: RuntimeLockSleep;
+}
+
+export interface RuntimeLockLease {
+  readonly lockPath: string;
+  readonly record: RuntimeLockRecord;
+  readonly content: string;
+  release: () => Promise<void>;
 }
 
 export function resolveRuntimeLockPath(projectRoot: string): string {
@@ -45,6 +86,18 @@ export function resolveRuntimeLockPath(projectRoot: string): string {
     RUNTIME_LOCKS_DIRNAME,
     RUNTIME_LOCK_FILENAME,
   );
+}
+
+export function buildRuntimeLockContent(
+  options: BuildRuntimeLockContentOptions = {},
+): string {
+  const pid = normalizeRuntimeLockPid(options.pid ?? process.pid);
+  const acquiredAt = formatUtcSecond(options.nowMs ?? Date.now());
+  const adapterId = normalizeRuntimeLockAdapterId(
+    options.adapterId ?? DEFAULT_RUNTIME_LOCK_ADAPTER_ID,
+  );
+
+  return `pid=${pid}\nacquired_at=${acquiredAt}\nadapter_id=${adapterId}\n`;
 }
 
 export function parseRuntimeLockContent(content: string): RuntimeLockRecord {
@@ -96,6 +149,144 @@ export function parseRuntimeLockContent(content: string): RuntimeLockRecord {
   }
 
   return record;
+}
+
+export async function acquireRuntimeLock(
+  options: AcquireRuntimeLockOptions,
+): Promise<RuntimeLockLease> {
+  const lockPath = resolveRuntimeLockPath(options.projectRoot);
+  const timeoutMs =
+    options.timeoutMs ?? DEFAULT_RUNTIME_LOCK_ACQUIRE_TIMEOUT_MS;
+  const retryMs = options.retryMs ?? DEFAULT_RUNTIME_LOCK_RETRY_MS;
+  assertPositiveInteger(timeoutMs, "Runtime lock acquire timeout");
+  assertPositiveInteger(retryMs, "Runtime lock retry interval");
+
+  const ensureDirectory = options.ensureDirectory ?? ensureRuntimeLockDirectory;
+  const readText = options.readText ?? readRuntimeLockText;
+  const writeTextExclusive =
+    options.writeTextExclusive ?? writeRuntimeLockTextExclusive;
+  const removeFile = options.removeFile ?? removeRuntimeLockFile;
+  const sleep = options.sleep ?? sleepMs;
+  const startedAtMs = Date.now();
+
+  await ensureDirectory(path.dirname(lockPath));
+
+  while (true) {
+    const content = buildRuntimeLockContent({
+      ...(options.pid !== undefined ? { pid: options.pid } : {}),
+      ...(options.adapterId !== undefined
+        ? { adapterId: options.adapterId }
+        : {}),
+      ...(options.nowMs !== undefined ? { nowMs: options.nowMs } : {}),
+    });
+
+    try {
+      await writeTextExclusive(lockPath, content);
+      const record = parseRuntimeLockContent(content);
+      return createRuntimeLockLease(lockPath, content, record, {
+        readText,
+        writeTextExclusive,
+        removeFile,
+        sleep,
+        timeoutMs,
+        retryMs,
+        ...(options.pid !== undefined ? { pid: options.pid } : {}),
+        ...(options.adapterId !== undefined
+          ? { adapterId: options.adapterId }
+          : {}),
+        ...(options.nowMs !== undefined ? { nowMs: options.nowMs } : {}),
+      });
+    } catch (error) {
+      if (!isNodeErrorCode(error, "EEXIST")) {
+        throw error;
+      }
+    }
+
+    const inspection = await inspectRuntimeLock({
+      projectRoot: options.projectRoot,
+      readText,
+      ...(options.nowMs !== undefined ? { nowMs: options.nowMs } : {}),
+      ...(options.staleMs !== undefined ? { staleMs: options.staleMs } : {}),
+    });
+    const action = decideRuntimeLockAction(inspection);
+
+    if (action === "cleanup_then_start") {
+      await cleanupStaleRuntimeLock(lockPath, options, {
+        readText,
+        writeTextExclusive,
+        removeFile,
+        sleep,
+        timeoutMs,
+        retryMs,
+      });
+      continue;
+    }
+
+    if (action === "start_sidecar") {
+      continue;
+    }
+
+    if (action === "block_startup") {
+      throw new Error(
+        `Runtime lock acquisition blocked: ${inspection.error ?? "lock is corrupt"}`,
+      );
+    }
+
+    if (Date.now() - startedAtMs >= timeoutMs) {
+      throw new Error("Timed out acquiring runtime.lock");
+    }
+
+    await sleep(retryMs);
+  }
+}
+
+async function cleanupStaleRuntimeLock(
+  lockPath: string,
+  options: AcquireRuntimeLockOptions,
+  io: {
+    readonly readText: RuntimeLockReadText;
+    readonly writeTextExclusive: RuntimeLockWriteTextExclusive;
+    readonly removeFile: RuntimeLockRemoveFile;
+    readonly sleep: RuntimeLockSleep;
+    readonly timeoutMs: number;
+    readonly retryMs: number;
+  },
+): Promise<void> {
+  await withRuntimeLockMutationGuard(
+    lockPath,
+    {
+      writeTextExclusive: io.writeTextExclusive,
+      removeFile: io.removeFile,
+      sleep: io.sleep,
+      timeoutMs: io.timeoutMs,
+      retryMs: io.retryMs,
+      ...(options.pid !== undefined ? { pid: options.pid } : {}),
+      ...(options.adapterId !== undefined
+        ? { adapterId: options.adapterId }
+        : {}),
+      ...(options.nowMs !== undefined ? { nowMs: options.nowMs } : {}),
+    },
+    async () => {
+      const inspection = await inspectRuntimeLock({
+        projectRoot: options.projectRoot,
+        readText: io.readText,
+        ...(options.nowMs !== undefined ? { nowMs: options.nowMs } : {}),
+        ...(options.staleMs !== undefined ? { staleMs: options.staleMs } : {}),
+      });
+      const action = decideRuntimeLockAction(inspection);
+
+      if (action === "cleanup_then_start") {
+        await io.removeFile(lockPath);
+        return;
+      }
+
+      if (action === "block_startup") {
+        throw new Error(
+          `Runtime lock acquisition blocked: ${inspection.error ?? "lock is corrupt"}`,
+        );
+      }
+    },
+  );
 }
 
 export async function inspectRuntimeLock(
@@ -162,6 +353,109 @@ export function decideRuntimeLockAction(
   }
 }
 
+function createRuntimeLockLease(
+  lockPath: string,
+  content: string,
+  record: RuntimeLockRecord,
+  io: {
+    readonly readText: RuntimeLockReadText;
+    readonly writeTextExclusive: RuntimeLockWriteTextExclusive;
+    readonly removeFile: RuntimeLockRemoveFile;
+    readonly sleep: RuntimeLockSleep;
+    readonly timeoutMs: number;
+    readonly retryMs: number;
+    readonly pid?: number;
+    readonly adapterId?: string;
+    readonly nowMs?: number;
+  },
+): RuntimeLockLease {
+  return {
+    lockPath,
+    content,
+    record,
+    release: async () => {
+      await withRuntimeLockMutationGuard(
+        lockPath,
+        {
+          writeTextExclusive: io.writeTextExclusive,
+          removeFile: io.removeFile,
+          sleep: io.sleep,
+          timeoutMs: io.timeoutMs,
+          retryMs: io.retryMs,
+          ...(io.pid !== undefined ? { pid: io.pid } : {}),
+          ...(io.adapterId !== undefined ? { adapterId: io.adapterId } : {}),
+          ...(io.nowMs !== undefined ? { nowMs: io.nowMs } : {}),
+        },
+        async () => {
+          let currentContent: string;
+          try {
+            currentContent = await io.readText(lockPath);
+          } catch (error) {
+            if (isNodeErrorCode(error, "ENOENT")) {
+              return;
+            }
+            throw error;
+          }
+
+          if (currentContent !== content) {
+            throw new Error(
+              "Runtime lock release refused because the lock content changed",
+            );
+          }
+
+          await io.removeFile(lockPath);
+        },
+      );
+    },
+  };
+}
+
+async function withRuntimeLockMutationGuard<T>(
+  lockPath: string,
+  io: {
+    readonly writeTextExclusive: RuntimeLockWriteTextExclusive;
+    readonly removeFile: RuntimeLockRemoveFile;
+    readonly sleep: RuntimeLockSleep;
+    readonly timeoutMs: number;
+    readonly retryMs: number;
+    readonly pid?: number;
+    readonly adapterId?: string;
+    readonly nowMs?: number;
+  },
+  callback: () => Promise<T>,
+): Promise<T> {
+  const guardPath = `${lockPath}${RUNTIME_LOCK_MUTATION_GUARD_SUFFIX}`;
+  const startedAtMs = Date.now();
+
+  while (true) {
+    try {
+      await io.writeTextExclusive(
+        guardPath,
+        buildRuntimeLockContent({
+          ...(io.pid !== undefined ? { pid: io.pid } : {}),
+          adapterId: `${io.adapterId ?? DEFAULT_RUNTIME_LOCK_ADAPTER_ID}.mutation`,
+          ...(io.nowMs !== undefined ? { nowMs: io.nowMs } : {}),
+        }),
+      );
+      break;
+    } catch (error) {
+      if (!isNodeErrorCode(error, "EEXIST")) {
+        throw error;
+      }
+      if (Date.now() - startedAtMs >= io.timeoutMs) {
+        throw new Error("Timed out acquiring runtime.lock mutation guard");
+      }
+      await io.sleep(io.retryMs);
+    }
+  }
+
+  try {
+    return await callback();
+  } finally {
+    await io.removeFile(guardPath);
+  }
+}
+
 function parseRuntimeLockPid(value: string | undefined): number {
   if (value === undefined || !/^[1-9]\d*$/u.test(value)) {
     throw new Error("Runtime lock pid must be a positive integer");
@@ -193,6 +487,33 @@ function parseRuntimeLockAcquiredAt(
   return { acquired_at: value, acquiredAtMs };
 }
 
+function normalizeRuntimeLockPid(pid: number): number {
+  if (!Number.isSafeInteger(pid) || pid <= 0) {
+    throw new Error("Runtime lock pid must be a positive safe integer");
+  }
+
+  return pid;
+}
+
+function normalizeRuntimeLockAdapterId(adapterId: string): string {
+  const normalized = adapterId.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(normalized)) {
+    throw new Error(
+      "Runtime lock adapter_id must be non-empty and contain only identifier characters",
+    );
+  }
+
+  return normalized;
+}
+
+function formatUtcSecond(nowMs: number): string {
+  if (!Number.isFinite(nowMs)) {
+    throw new RangeError("Runtime lock timestamp must be finite");
+  }
+
+  return new Date(nowMs).toISOString().replace(/\.\d{3}Z$/u, "Z");
+}
+
 function normalizePathValue(value: string, label: string): string {
   const normalized = value.trim();
   if (normalized.length === 0) {
@@ -205,8 +526,43 @@ function normalizePathValue(value: string, label: string): string {
   return normalized;
 }
 
+function assertPositiveInteger(value: number, label: string): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new RangeError(`${label} must be a positive integer`);
+  }
+}
+
+async function ensureRuntimeLockDirectory(
+  directoryPath: string,
+): Promise<void> {
+  await mkdir(directoryPath, { recursive: true });
+}
+
 async function readRuntimeLockText(lockPath: string): Promise<string> {
   return readFile(lockPath, "utf8");
+}
+
+async function writeRuntimeLockTextExclusive(
+  lockPath: string,
+  content: string,
+): Promise<void> {
+  await writeFile(lockPath, content, { encoding: "utf8", flag: "wx" });
+}
+
+async function removeRuntimeLockFile(lockPath: string): Promise<void> {
+  try {
+    await unlink(lockPath);
+  } catch (error) {
+    if (!isNodeErrorCode(error, "ENOENT")) {
+      throw error;
+    }
+  }
+}
+
+async function sleepMs(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
 }
 
 function isNodeErrorCode(error: unknown, code: string): boolean {

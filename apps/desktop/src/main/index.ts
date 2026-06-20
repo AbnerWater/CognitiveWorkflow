@@ -39,19 +39,32 @@ export {
 
 export {
   AGENT_WORKFLOW_DIRNAME,
+  DEFAULT_RUNTIME_LOCK_ACQUIRE_TIMEOUT_MS,
+  DEFAULT_RUNTIME_LOCK_ADAPTER_ID,
+  DEFAULT_RUNTIME_LOCK_RETRY_MS,
   DEFAULT_RUNTIME_LOCK_STALE_MS,
   RUNTIME_LOCKS_DIRNAME,
   RUNTIME_LOCK_FILENAME,
+  RUNTIME_LOCK_MUTATION_GUARD_SUFFIX,
+  acquireRuntimeLock,
+  buildRuntimeLockContent,
   decideRuntimeLockAction,
   inspectRuntimeLock,
   parseRuntimeLockContent,
   resolveRuntimeLockPath,
+  type AcquireRuntimeLockOptions,
+  type BuildRuntimeLockContentOptions,
   type InspectRuntimeLockOptions,
   type RuntimeLockAction,
+  type RuntimeLockEnsureDirectory,
   type RuntimeLockInspection,
+  type RuntimeLockLease,
+  type RuntimeLockRemoveFile,
   type RuntimeLockReadText,
   type RuntimeLockRecord,
+  type RuntimeLockSleep,
   type RuntimeLockStatus,
+  type RuntimeLockWriteTextExclusive,
 } from "./runtime-lock.js";
 
 export {
