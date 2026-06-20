@@ -15,6 +15,7 @@ import {
   installRuntimeAppLifecycleShutdown,
   installRuntimeIpcMainHandlers,
   installRuntimeMainLifecycleShutdown,
+  installRuntimeMainWithLifecycleShutdown,
   installRuntimeWindowLifecycleShutdown,
   type CwMainApp,
   type CwMainBeforeQuitEvent,
@@ -623,8 +624,8 @@ test("shutdown unregisters handlers and stops a started runtime once", async () 
     "remove:cw:runtime:connection-info",
     "remove:cw:runtime:fetch",
     "remove:cw:runtime:startup-status",
-    "remove:cw:runtime:shutdown-status",
     "stop:SIGINT",
+    "remove:cw:runtime:shutdown-status",
   ]);
   assert.deepEqual(stopSignals, ["SIGINT"]);
   assert.deepEqual([...registeredHandlers.keys()], []);
@@ -632,6 +633,192 @@ test("shutdown unregisters handlers and stops a started runtime once", async () 
   assert.deepEqual(await installed.shutdown("SIGTERM"), result);
   assert.deepEqual(stopSignals, ["SIGINT"]);
   assert.deepEqual(installed.unregister(), []);
+});
+
+test("shutdown after manual unregister does not remove IPC handlers twice", async () => {
+  let starterCalls = 0;
+  const registeredHandlers = new Map<
+    RuntimeIpcChannel,
+    CwMainIpcInvokeHandler
+  >();
+  const shutdownEvents: string[] = [];
+  const installed = installRuntimeIpcMainHandlers({
+    ipcMain: {
+      handle: (channel, listener) => {
+        registeredHandlers.set(channel, listener);
+      },
+      removeHandler: (channel) => {
+        assert.equal(registeredHandlers.delete(channel), true);
+        shutdownEvents.push(`remove:${channel}`);
+      },
+    },
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+    },
+    starter: async () => {
+      starterCalls += 1;
+      return createReadyStartupResult({
+        stop: async (signal) => {
+          shutdownEvents.push(`stop:${signal ?? "default"}`);
+          return true;
+        },
+      });
+    },
+  });
+  const connectionInfoHandler = registeredHandlers.get(
+    RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
+  );
+  assert.ok(connectionInfoHandler);
+  assert.deepEqual(await connectionInfoHandler({ sender: "renderer" }), {
+    base_url: "http://127.0.0.1:51234/cw/v1",
+    token: "token_abc123",
+  });
+
+  assert.deepEqual(installed.unregister(), RUNTIME_IPC_CHANNELS);
+  assert.deepEqual(shutdownEvents, [
+    "remove:cw:runtime:connection-info",
+    "remove:cw:runtime:fetch",
+    "remove:cw:runtime:startup-status",
+    "remove:cw:runtime:shutdown-status",
+  ]);
+  assert.deepEqual(await installed.shutdown("SIGTERM"), {
+    unregisteredChannels: [],
+    runtimeStopped: true,
+  });
+  assert.deepEqual(shutdownEvents, [
+    "remove:cw:runtime:connection-info",
+    "remove:cw:runtime:fetch",
+    "remove:cw:runtime:startup-status",
+    "remove:cw:runtime:shutdown-status",
+    "stop:SIGTERM",
+  ]);
+  assert.equal(starterCalls, 1);
+  assert.deepEqual(installed.unregister(), []);
+});
+
+test("composes main lifecycle shutdown history into IPC shutdown status", async () => {
+  let starterCalls = 0;
+  const app = createFakeMainApp();
+  const window = createFakeMainWindow();
+  const registeredHandlers = new Map<
+    RuntimeIpcChannel,
+    CwMainIpcInvokeHandler
+  >();
+  const shutdownEvents: string[] = [];
+  let resolveStop: ((stopped: boolean) => void) | undefined;
+  const stopPromise = new Promise<boolean>((resolve) => {
+    resolveStop = resolve;
+  });
+  const installed = installRuntimeMainWithLifecycleShutdown({
+    ipcMain: {
+      handle: (channel, listener) => {
+        registeredHandlers.set(channel, listener);
+      },
+      removeHandler: (channel) => {
+        assert.equal(registeredHandlers.delete(channel), true);
+        shutdownEvents.push(`remove:${channel}`);
+      },
+    },
+    app: app.app,
+    window: window.window,
+    signal: "SIGTERM",
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+    },
+    starter: async () => {
+      starterCalls += 1;
+      return createReadyStartupResult({
+        stop: async (signal) => {
+          shutdownEvents.push(`stop:${signal ?? "default"}`);
+          return stopPromise;
+        },
+      });
+    },
+  });
+
+  const shutdownStatusHandler = registeredHandlers.get(
+    RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+  );
+  assert.ok(shutdownStatusHandler);
+  const readShutdownStatusKinds = async (): Promise<readonly string[]> => {
+    const statuses = (await shutdownStatusHandler({
+      sender: "renderer",
+    })) as RuntimeIpcShutdownStatusResponse;
+    return statuses.map((status) => status.kind);
+  };
+
+  assert.deepEqual(await readShutdownStatusKinds(), ["registered"]);
+  assert.deepEqual(
+    installed.shutdownStatus().map((status) => status.kind),
+    ["registered"],
+  );
+  assert.equal(starterCalls, 0);
+
+  const connectionInfoHandler = registeredHandlers.get(
+    RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
+  );
+  assert.ok(connectionInfoHandler);
+  assert.deepEqual(await connectionInfoHandler({ sender: "renderer" }), {
+    base_url: "http://127.0.0.1:51234/cw/v1",
+    token: "token_abc123",
+  });
+  assert.equal(starterCalls, 1);
+
+  const appQuit = app.emitBeforeQuit();
+  assert.equal(appQuit.prevented, true);
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(shutdownEvents, [
+    "remove:cw:runtime:connection-info",
+    "remove:cw:runtime:fetch",
+    "remove:cw:runtime:startup-status",
+    "stop:SIGTERM",
+  ]);
+  assert.equal(
+    registeredHandlers.has(RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL),
+    true,
+  );
+  assert.deepEqual(await readShutdownStatusKinds(), [
+    "registered",
+    "app_quit_requested",
+    "shutting_down",
+  ]);
+
+  const mutableShutdownStatuses = (await shutdownStatusHandler({
+    sender: "renderer",
+  })) as RuntimeIpcShutdownStatusResponse extends readonly (infer TStatus)[]
+    ? TStatus[]
+    : never;
+  mutableShutdownStatuses.pop();
+  assert.deepEqual(await readShutdownStatusKinds(), [
+    "registered",
+    "app_quit_requested",
+    "shutting_down",
+  ]);
+
+  resolveStop?.(true);
+  assert.deepEqual(await installed.lifecycle.shutdown(), {
+    unregisteredChannels: RUNTIME_IPC_CHANNELS,
+    runtimeStopped: true,
+  });
+  assert.deepEqual(shutdownEvents, [
+    "remove:cw:runtime:connection-info",
+    "remove:cw:runtime:fetch",
+    "remove:cw:runtime:startup-status",
+    "stop:SIGTERM",
+    "remove:cw:runtime:shutdown-status",
+  ]);
+  assert.equal(
+    registeredHandlers.has(RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL),
+    false,
+  );
+  assert.deepEqual(
+    installed.shutdownStatus().map((status) => status.kind),
+    ["registered", "app_quit_requested", "shutting_down", "shutdown_complete"],
+  );
 });
 
 test("app lifecycle shutdown prevents quit until runtime shutdown completes", async () => {

@@ -76,6 +76,22 @@ export interface InstalledRuntimeIpcMainHandlersShutdownResult {
   readonly runtimeStopped: boolean;
 }
 
+export interface InstallRuntimeMainWithLifecycleShutdownOptions extends Omit<
+  InstallRuntimeIpcMainHandlersOptions,
+  "shutdownStatus"
+> {
+  readonly app: CwMainApp;
+  readonly window: CwMainWindow;
+  readonly signal?: NodeJS.Signals;
+  readonly onShutdownStatus?: RuntimeMainLifecycleShutdownStatusObserver;
+}
+
+export interface InstalledRuntimeMainWithLifecycleShutdown {
+  readonly ipc: InstalledRuntimeIpcMainHandlers;
+  readonly lifecycle: InstalledRuntimeMainLifecycleShutdown;
+  readonly shutdownStatus: () => readonly RuntimeMainLifecycleShutdownStatus[];
+}
+
 export type RuntimeAppLifecycleShutdownState =
   | "registered"
   | "shutting_down"
@@ -192,6 +208,31 @@ export function installRuntimeIpcMainHandlers(
       registeredChannels,
     );
   };
+  const unregisterForShutdown = (): RuntimeIpcMainShutdownUnregisterPlan => {
+    if (unregistered) {
+      return {
+        beforeStop: [],
+        afterStop: () => [],
+      };
+    }
+    unregistered = true;
+    const shutdownStatusChannels = registeredChannels.filter(
+      (channel) => channel === RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+    );
+    return {
+      beforeStop: unregisterRuntimeIpcMainChannels(
+        options.ipcMain,
+        registeredChannels.filter(
+          (channel) => channel !== RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+        ),
+      ),
+      afterStop: () =>
+        unregisterRuntimeIpcMainChannels(
+          options.ipcMain,
+          shutdownStatusChannels,
+        ),
+    };
+  };
 
   return {
     startupHandlers,
@@ -199,7 +240,7 @@ export function installRuntimeIpcMainHandlers(
     unregister,
     shutdown: (signal?: NodeJS.Signals) => {
       shutdownPromise ??= shutdownRuntimeIpcMainHandlers({
-        unregister,
+        unregisterForShutdown,
         stop: startupHandlers.stop,
         ...(signal !== undefined ? { signal } : {}),
       });
@@ -208,14 +249,55 @@ export function installRuntimeIpcMainHandlers(
   };
 }
 
+interface RuntimeIpcMainShutdownUnregisterPlan {
+  readonly beforeStop: readonly RuntimeIpcChannel[];
+  readonly afterStop: () => readonly RuntimeIpcChannel[];
+}
+
 async function shutdownRuntimeIpcMainHandlers(options: {
-  readonly unregister: () => readonly RuntimeIpcChannel[];
+  readonly unregisterForShutdown: () => RuntimeIpcMainShutdownUnregisterPlan;
   readonly stop: (signal?: NodeJS.Signals) => Promise<boolean>;
   readonly signal?: NodeJS.Signals;
 }): Promise<InstalledRuntimeIpcMainHandlersShutdownResult> {
-  const unregisteredChannels = options.unregister();
-  const runtimeStopped = await options.stop(options.signal);
+  const unregister = options.unregisterForShutdown();
+  let runtimeStopped: boolean;
+  try {
+    runtimeStopped = await options.stop(options.signal);
+  } catch (error) {
+    unregister.afterStop();
+    throw error;
+  }
+  const unregisteredAfterStop = unregister.afterStop();
+  const unregisteredChannels = [
+    ...unregister.beforeStop,
+    ...unregisteredAfterStop,
+  ];
   return { unregisteredChannels, runtimeStopped };
+}
+
+export function installRuntimeMainWithLifecycleShutdown(
+  options: InstallRuntimeMainWithLifecycleShutdownOptions,
+): InstalledRuntimeMainWithLifecycleShutdown {
+  const { app, window, signal, onShutdownStatus, ...ipcOptions } = options;
+  let lifecycle: InstalledRuntimeMainLifecycleShutdown | undefined;
+  const shutdownStatus = (): readonly RuntimeMainLifecycleShutdownStatus[] =>
+    lifecycle?.statusHistory() ?? [];
+  const ipc = installRuntimeIpcMainHandlers({
+    ...ipcOptions,
+    shutdownStatus,
+  });
+  lifecycle = installRuntimeMainLifecycleShutdown({
+    app,
+    window,
+    runtime: ipc,
+    ...(signal !== undefined ? { signal } : {}),
+    ...(onShutdownStatus !== undefined ? { onStatus: onShutdownStatus } : {}),
+  });
+  return {
+    ipc,
+    lifecycle,
+    shutdownStatus,
+  };
 }
 
 export function installRuntimeAppLifecycleShutdown(
