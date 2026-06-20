@@ -12,6 +12,11 @@ import {
   type RuntimeStartupControllerResult,
   type StartRuntimeWithLifecycleOptions,
 } from "./runtime-startup-controller.js";
+import type { RuntimeStartupStatus } from "./runtime-startup-status.js";
+
+export type RuntimeIpcStartupStatusObserver = (
+  status: RuntimeStartupStatus,
+) => void | Promise<void>;
 
 export type RuntimeIpcMainChannelRegistration =
   | {
@@ -43,6 +48,7 @@ export interface RuntimeIpcStartupHandlerSnapshot {
 export interface CreateRuntimeIpcStartupHandlersOptions {
   readonly startup: StartRuntimeWithLifecycleOptions;
   readonly starter?: RuntimeIpcStartupControllerStarter;
+  readonly onStatus?: RuntimeIpcStartupStatusObserver;
 }
 
 export interface RuntimeIpcStartupHandlers {
@@ -50,6 +56,7 @@ export interface RuntimeIpcStartupHandlers {
   readonly registrations: readonly RuntimeIpcMainChannelRegistration[];
   readonly getStartupResult: () => Promise<RuntimeStartupControllerResult>;
   readonly snapshot: () => RuntimeIpcStartupHandlerSnapshot;
+  readonly statusHistory: () => readonly RuntimeStartupStatus[];
   readonly closed: () => Promise<void>;
   readonly stop: (signal?: NodeJS.Signals) => Promise<boolean>;
 }
@@ -107,12 +114,21 @@ export function createRuntimeIpcStartupHandlers(
   options: CreateRuntimeIpcStartupHandlersOptions,
 ): RuntimeIpcStartupHandlers {
   const starter = options.starter ?? startRuntimeWithLifecycle;
+  const statusHistory: RuntimeStartupStatus[] = [];
   let state: RuntimeIpcStartupState = { state: "idle" };
 
   async function getStartupResult(): Promise<RuntimeStartupControllerResult> {
     switch (state.state) {
       case "idle": {
-        const promise = starter(options.startup);
+        const promise = starter(
+          withRuntimeIpcStartupStatusObserver(
+            options.startup,
+            async (status) => {
+              statusHistory.push(status);
+              await options.onStatus?.(status);
+            },
+          ),
+        );
         state = { state: "starting", promise };
         try {
           const result = await promise;
@@ -163,6 +179,7 @@ export function createRuntimeIpcStartupHandlers(
     registrations: createRuntimeIpcMainChannelRegistrations(handlers),
     getStartupResult,
     snapshot: () => snapshotRuntimeIpcStartupState(state),
+    statusHistory: () => statusHistory.slice(),
     closed: async () => {
       const result = await getRuntimeStartupResultIfStarted(
         getStartupResult,
@@ -181,6 +198,25 @@ export function createRuntimeIpcStartupHandlers(
         return false;
       }
       return result.stop(signal);
+    },
+  };
+}
+
+function withRuntimeIpcStartupStatusObserver(
+  startup: StartRuntimeWithLifecycleOptions,
+  onStatus: RuntimeIpcStartupStatusObserver,
+): StartRuntimeWithLifecycleOptions {
+  const existingLifecycle = startup.lifecycle;
+  const existingOnStatus = existingLifecycle?.onStatus;
+
+  return {
+    ...startup,
+    lifecycle: {
+      ...(existingLifecycle ?? {}),
+      onStatus: async (status) => {
+        await onStatus(status);
+        await existingOnStatus?.(status);
+      },
     },
   };
 }

@@ -110,6 +110,7 @@ export {
   type RuntimeIpcStartupHandlerSnapshot,
   type RuntimeIpcStartupHandlerState,
   type RuntimeIpcStartupHandlers,
+  type RuntimeIpcStartupStatusObserver,
 } from "./runtime-ipc-main-factory.js";
 
 export {

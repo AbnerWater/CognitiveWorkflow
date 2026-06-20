@@ -14,6 +14,7 @@ import {
   type RuntimeIpcStartupControllerStarter,
 } from "./runtime-ipc-main-factory.js";
 import type { RuntimeStartupControllerResult } from "./runtime-startup-controller.js";
+import type { RuntimeStartupStatus } from "./runtime-startup-status.js";
 
 const CONNECTION: RuntimeConnectionInfo = {
   base_url: createRuntimeBaseUrl(51234),
@@ -72,6 +73,65 @@ test("starts runtime once for concurrent IPC handler calls", async () => {
   assert.deepEqual(connectionInfo, CONNECTION);
   assert.deepEqual(response.body, { ok: true });
   assert.equal((await handlers.getStartupResult()).action, "started_sidecar");
+});
+
+test("records and forwards startup lifecycle statuses", async () => {
+  let starterCalls = 0;
+  const factoryStatuses: RuntimeStartupStatus[] = [];
+  const startupStatuses: RuntimeStartupStatus[] = [];
+  const waitingStatus = createStartupStatus({
+    kind: "waiting_for_existing",
+    action: "wait_for_existing",
+    lifecycleComplete: false,
+  });
+  const readyStatus = createStartupStatus({
+    kind: "runtime_ready",
+    action: "reuse_existing",
+    lifecycleComplete: true,
+  });
+  const handlers = createRuntimeIpcStartupHandlers({
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+      lifecycle: {
+        onStatus: (status) => {
+          startupStatuses.push(status);
+        },
+      },
+    },
+    onStatus: (status) => {
+      factoryStatuses.push(status);
+    },
+    starter: async (options) => {
+      starterCalls += 1;
+      await options.lifecycle?.onStatus?.(waitingStatus);
+      await options.lifecycle?.onStatus?.(readyStatus);
+      return createReadyStartupResult();
+    },
+  });
+
+  assert.deepEqual(handlers.statusHistory(), []);
+
+  assert.deepEqual(await handlers.handlers.connectionInfo(), CONNECTION);
+  assert.equal(starterCalls, 1);
+  assert.deepEqual(factoryStatuses, [waitingStatus, readyStatus]);
+  assert.deepEqual(startupStatuses, [waitingStatus, readyStatus]);
+  assert.deepEqual(handlers.statusHistory(), [waitingStatus, readyStatus]);
+
+  const mutableHistory = handlers.statusHistory() as RuntimeStartupStatus[];
+  mutableHistory.pop();
+
+  assert.deepEqual(handlers.statusHistory(), [waitingStatus, readyStatus]);
+  assert.deepEqual(
+    (
+      await handlers.handlers.fetch<{ ok: boolean }>(
+        buildRuntimeIpcFetchRequest("/system/info"),
+      )
+    ).body,
+    { ok: true },
+  );
+  assert.equal(starterCalls, 1);
+  assert.equal(factoryStatuses.length, 2);
 });
 
 test("validates fetch registration payload before forwarding to runtime fetch", async () => {
@@ -300,5 +360,23 @@ function createReadyStartupResult(options?: {
     handlers,
     closed: Promise.resolve(),
     stop: async () => true,
+  };
+}
+
+function createStartupStatus(options: {
+  readonly kind: RuntimeStartupStatus["kind"];
+  readonly action: RuntimeStartupStatus["action"];
+  readonly lifecycleComplete: boolean;
+}): RuntimeStartupStatus {
+  return {
+    kind: options.kind,
+    action: options.action,
+    attempt: 1,
+    lockStatus: "active",
+    severity: "info",
+    message: "Runtime startup status.",
+    lifecycleComplete: options.lifecycleComplete,
+    userActionRequired: false,
+    retryable: false,
   };
 }
