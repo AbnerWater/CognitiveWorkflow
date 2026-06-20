@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from cw_runtime import __version__
 from cw_runtime.adapters import (
+    AdapterConfig,
     AdapterRegistry,
     ClaudeCodeAdapter,
     PydanticAIAdapter,
@@ -26,7 +27,14 @@ from cw_runtime.adapters import (
     build_pydantic_ai_descriptor,
 )
 from cw_runtime.engine import WorkflowValidationError, load_workflow_graph
-from cw_runtime.harness import HarnessError, ProjectCreateRequest, initialize_project, read_project
+from cw_runtime.harness import (
+    HarnessError,
+    ProjectCreateRequest,
+    initialize_project,
+    read_project,
+    windows_cng_decrypt_aes_gcm,
+    windows_credential_manager_master_key_provider,
+)
 from cw_runtime.runner import (
     HumanDecisionRequest,
     NodeAdvanceRequest,
@@ -113,9 +121,20 @@ def _is_allowed_origin(origin: str | None) -> bool:
 
 def _default_adapter_registry() -> AdapterRegistry:
     registry = AdapterRegistry()
-    registry.register(build_pydantic_ai_descriptor(), lambda config: PydanticAIAdapter(config=config))
+    registry.register(
+        build_pydantic_ai_descriptor(), lambda config: PydanticAIAdapter(config=_pydantic_ai_config(config))
+    )
     registry.register(build_claude_code_descriptor(), lambda config: ClaudeCodeAdapter(config=config))
     return registry
+
+
+def _pydantic_ai_config(config: AdapterConfig) -> AdapterConfig:
+    settings = {
+        "project_mcp_secret_master_key_provider": windows_credential_manager_master_key_provider,
+        "project_mcp_secret_aead_decryptor": windows_cng_decrypt_aes_gcm,
+        **config.settings,
+    }
+    return config.model_copy(update={"settings": settings})
 
 
 def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry | None = None) -> AsgiApp:

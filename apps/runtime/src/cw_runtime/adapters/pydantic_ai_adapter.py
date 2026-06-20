@@ -46,10 +46,13 @@ from cw_runtime.harness.project import (
     load_project_mcp_server_configs,
 )
 from cw_runtime.harness.secrets import (
+    ProjectSecretAeadDecryptor,
     ProjectSecretDecryptor,
+    ProjectSecretMasterKeyProvider,
     ProjectSecretStoreError,
     build_project_mcp_http_discovery_client_factory,
     build_project_mcp_stdio_discovery_client_factory,
+    build_project_secret_decryptor,
 )
 from cw_runtime.model_router.router import AdapterCapabilities
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
@@ -828,10 +831,16 @@ class PydanticAIAdapter:
         session = self._sessions.get(handle.handle_id)
         if session is not None:
             return session
+        pack = self._packs[handle.handle_id]
+        project_mcp_secret_decryptor = _project_mcp_secret_decryptor_for_pack(
+            self._config,
+            project_root=_project_root_from_pack(pack),
+            explicit_decryptor=self._project_mcp_secret_decryptor,
+        )
         session = (
             PydanticAISDKSession(
                 toolset_factory=self._toolset_factory,
-                project_mcp_secret_decryptor=self._project_mcp_secret_decryptor,
+                project_mcp_secret_decryptor=project_mcp_secret_decryptor,
             )
             if self._session_factory is None
             else self._session_factory()
@@ -2135,6 +2144,52 @@ def _project_mcp_client_factory_for_project(
         return _project_mcp_client_for_config(config)
 
     return create_client
+
+
+def _project_mcp_secret_decryptor_for_pack(
+    config: AdapterConfig,
+    *,
+    project_root: str | None,
+    explicit_decryptor: ProjectSecretDecryptor | None,
+) -> ProjectSecretDecryptor | None:
+    if explicit_decryptor is not None:
+        return explicit_decryptor
+    if project_root is None or not _has_project_mcp_secret_settings(config):
+        return None
+
+    project_root_path = Path(project_root)
+
+    def decrypt_secret(encrypted_value: bytes) -> bytes | str:
+        raw_decryptor = config.settings.get("project_mcp_secret_decryptor")
+        if raw_decryptor is not None:
+            if not callable(raw_decryptor):
+                raise ProjectSecretStoreError("Project MCP secret decryptor setting was not callable.")
+            return cast(ProjectSecretDecryptor, raw_decryptor)(encrypted_value)
+        raw_master_key_provider = config.settings.get("project_mcp_secret_master_key_provider")
+        raw_aead_decryptor = config.settings.get("project_mcp_secret_aead_decryptor")
+        if not callable(raw_master_key_provider):
+            raise ProjectSecretStoreError("Project MCP secret master key provider setting was not callable.")
+        if not callable(raw_aead_decryptor):
+            raise ProjectSecretStoreError("Project MCP secret AEAD decryptor setting was not callable.")
+        project_decryptor = build_project_secret_decryptor(
+            project_root_path,
+            master_key_provider=cast(ProjectSecretMasterKeyProvider, raw_master_key_provider),
+            decrypt_aead=cast(ProjectSecretAeadDecryptor, raw_aead_decryptor),
+        )
+        return project_decryptor(encrypted_value)
+
+    return decrypt_secret
+
+
+def _has_project_mcp_secret_settings(config: AdapterConfig) -> bool:
+    return any(
+        key in config.settings
+        for key in (
+            "project_mcp_secret_decryptor",
+            "project_mcp_secret_master_key_provider",
+            "project_mcp_secret_aead_decryptor",
+        )
+    )
 
 
 def _project_mcp_client_for_config(config: ProjectMCPServerConfig) -> _ProjectMCPInvocationClient:

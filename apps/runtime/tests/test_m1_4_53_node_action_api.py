@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 from collections.abc import AsyncIterator, Callable
 from importlib import import_module
@@ -13,6 +14,8 @@ from typing import Any, ClassVar
 import pytest
 from pydantic import SecretStr
 
+import cw_runtime.api.app as api_app_module
+import cw_runtime.harness.secrets as harness_secrets_module
 from cw_runtime.adapters import (
     AdapterConfig,
     AdapterRegistry,
@@ -21,6 +24,7 @@ from cw_runtime.adapters import (
     build_pydantic_ai_descriptor,
 )
 from cw_runtime.api import create_app
+from cw_runtime.harness import encrypt_project_secret_value
 from cw_runtime.harness.project import ProjectMCPHealthCheck, ProjectMCPServerConfig
 from cw_runtime.model_router import AdapterCapabilities
 from cw_runtime.runs.lifecycle import new_runtime_id, utc_now_ms
@@ -214,6 +218,44 @@ def _write_json_value(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
+def _write_secure_secret(project_root: Path, secret_id: str, encrypted_value: bytes) -> None:
+    secure_dir = project_root / ".agent-workflow" / "secure"
+    secure_dir.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(secure_dir / "secrets.encrypted.sqlite") as connection:
+        connection.execute(
+            "CREATE TABLE secrets("
+            "secret_id TEXT PRIMARY KEY, "
+            "alias TEXT, "
+            "value_encrypted BLOB NOT NULL, "
+            "scope TEXT, "
+            "created_at TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO secrets(secret_id, alias, value_encrypted, scope, created_at) VALUES (?, ?, ?, ?, ?)",
+            (secret_id, "test secret", encrypted_value, "project", "2026-06-20T00:00:00Z"),
+        )
+
+
+def _fake_encrypt_aead(key: bytes, nonce: bytes, plaintext: bytes, associated_data: bytes) -> bytes:
+    marker = b"cwfake:" + key[:8] + nonce + len(associated_data).to_bytes(4, "big")
+    return marker + plaintext
+
+
+def _fake_decrypt_aead(key: bytes, nonce: bytes, ciphertext: bytes, associated_data: bytes) -> bytes:
+    marker = b"cwfake:" + key[:8] + nonce + len(associated_data).to_bytes(4, "big")
+    if not ciphertext.startswith(marker):
+        raise ValueError("invalid fake AEAD marker")
+    return ciphertext[len(marker) :]
+
+
+def _project_id(project_root: Path) -> str:
+    payload = json.loads((project_root / ".agent-workflow" / "project.json").read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    project_id = payload["project_id"]
+    assert isinstance(project_id, str)
+    return project_id
+
+
 class _FakeAdapter:
     def __init__(self, *, output: dict[str, Any] | None = None) -> None:
         self.adapter_id = "pydantic_ai"
@@ -391,6 +433,38 @@ class _FakeProjectMCPClient:
         self.closed = True
 
 
+class _FakeSecretHttpMCPClient:
+    instances: ClassVar[list[_FakeSecretHttpMCPClient]] = []
+
+    def __init__(self, *, timeout_seconds: float, secret_headers: dict[str, str] | None = None) -> None:
+        self.timeout_seconds = timeout_seconds
+        self.secret_headers = {} if secret_headers is None else dict(secret_headers)
+        self.config: ProjectMCPServerConfig | None = None
+        self.closed = False
+        self.invocations: list[tuple[str, dict[str, object]]] = []
+        _FakeSecretHttpMCPClient.instances.append(self)
+
+    def start(self, config: ProjectMCPServerConfig) -> None:
+        self.config = config
+
+    def health_check(self) -> ProjectMCPHealthCheck:
+        return ProjectMCPHealthCheck(healthy=True)
+
+    def discover_tools(self) -> None:
+        return None
+
+    def invoke_tool(self, tool_name: str, arguments: dict[str, object] | None = None) -> dict[str, Any]:
+        self.invocations.append((tool_name, {} if arguments is None else dict(arguments)))
+        return {
+            "content": [{"type": "text", "text": "secure api mcp ok"}],
+            "isError": False,
+            "structuredContent": {"authorization": self.secret_headers.get("Authorization")},
+        }
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def _install_fake_pydantic_ai_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeSDKAgent.instances.clear()
     fake_sdk = ModuleType("pydantic_ai")
@@ -526,6 +600,94 @@ def test_run_once_node_action_uses_default_project_mcp_toolset(
     assert result == {"content": [{"type": "text", "text": "api mcp ok"}], "isError": False}
     invocation_client = _FakeProjectMCPClient.instances[-1]
     assert invocation_client.invocations == [("search", {"query": "api"})]
+    assert invocation_client.closed is True
+
+
+def test_run_once_node_action_uses_default_project_mcp_secret_ref(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pydantic_ai_sdk(monkeypatch)
+    _FakeSecretHttpMCPClient.instances.clear()
+    requested_project_ids: list[str] = []
+
+    def master_key_provider(project_id: str) -> bytes:
+        requested_project_ids.append(project_id)
+        return b"api-default-master-key"
+
+    monkeypatch.setattr(api_app_module, "windows_credential_manager_master_key_provider", master_key_provider)
+    monkeypatch.setattr(api_app_module, "windows_cng_decrypt_aes_gcm", _fake_decrypt_aead)
+    monkeypatch.setattr(harness_secrets_module, "ProjectMCPHttpDiscoveryClient", _FakeSecretHttpMCPClient)
+
+    testclient_module = import_module("starlette.testclient")
+    client = testclient_module.TestClient(create_app(RuntimeSettings(auth_token=SecretStr("expected-token"))))
+    graph_payload = _base_graph_payload()
+    graph_payload["workflow_id"] = "wf_node_action_api_secure_mcp"
+    execute_node = graph_payload["nodes"][1]
+    assert isinstance(execute_node["contract"], dict)
+    execute_node["contract"]["mcp_tools"] = [
+        {"server_id": "mcp_secure", "tool_name": "search", "requires_approval": False}
+    ]
+    project_root, workflow_id = _create_project_with_graph(client, tmp_path, graph_payload)
+    secret_ref = "secure://mcp/api-token"
+    _write_json_value(
+        project_root / ".agent-workflow" / "mcp.config.json",
+        [
+            {
+                "server_id": "mcp_secure",
+                "transport": "http",
+                "command_or_url": "http://127.0.0.1:18183/mcp",
+                "secret_ref": secret_ref,
+            }
+        ],
+    )
+    project_id = _project_id(project_root)
+    encrypted = encrypt_project_secret_value(
+        project_id,
+        json.dumps({"headers": {"Authorization": "Bearer api-access-token"}}),
+        master_key=b"api-default-master-key",
+        encrypt_aead=_fake_encrypt_aead,
+        nonce_factory=lambda size: b"\x06" * size,
+    )
+    _write_secure_secret(project_root, secret_ref, encrypted)
+    run_id = _start_run(client, workflow_id)
+
+    start = client.post(
+        f"/cw/v1/runs/{run_id}/nodes/n_start:run-once",
+        headers=_AUTH_HEADERS,
+        json={"schema_version": "0.1.0"},
+    )
+    assert start.status_code == 200
+    execute = client.post(
+        f"/cw/v1/runs/{run_id}/nodes/n_execute:run-once",
+        headers=_AUTH_HEADERS,
+        json={"schema_version": "0.1.0"},
+    )
+
+    assert execute.status_code == 200
+    assert execute.json()["node_id"] == "n_execute"
+    assert len(_FakeSDKAgent.instances) == 1
+    sdk_toolsets = _FakeSDKAgent.instances[0].kwargs["toolsets"]
+    assert len(sdk_toolsets) == 1
+    project_toolset = sdk_toolsets[0]
+    assert isinstance(project_toolset, _FakeSDKFunctionToolset)
+    assert project_toolset.id == "cw_project_mcp_mcp_secure"
+    assert len(project_toolset.functions) == 1
+    tool_name, tool_func = project_toolset.functions[0]
+    assert tool_name == "search"
+    assert callable(tool_func)
+
+    result = tool_func(query="secure api")
+
+    assert result == {
+        "content": [{"type": "text", "text": "secure api mcp ok"}],
+        "isError": False,
+        "structuredContent": {"authorization": "Bearer api-access-token"},
+    }
+    assert requested_project_ids == [project_id]
+    invocation_client = _FakeSecretHttpMCPClient.instances[-1]
+    assert invocation_client.secret_headers == {"Authorization": "Bearer api-access-token"}
+    assert invocation_client.invocations == [("search", {"query": "secure api"})]
     assert invocation_client.closed is True
 
 
