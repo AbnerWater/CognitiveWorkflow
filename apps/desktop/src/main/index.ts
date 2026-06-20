@@ -47,6 +47,14 @@ export {
 } from "./runtime-ipc-handlers.js";
 
 export {
+  resolveRuntimeConnectionHandoff,
+  type ResolveRuntimeConnectionHandoffOptions,
+  type RuntimeConnectionHandoffAction,
+  type RuntimeConnectionHandoffDecision,
+  type RuntimeConnectionHandoffResolver,
+} from "./runtime-handoff.js";
+
+export {
   startRuntimeOrchestration,
   type RuntimeOrchestrationLockOptions,
   type RuntimeOrchestrationSession,
