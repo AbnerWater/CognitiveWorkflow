@@ -2,9 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
+  RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+  type RuntimeIpcChannel,
+  type RuntimeIpcStartupStatus,
+  type RuntimeIpcStartupStatusResponse,
+} from "../shared/runtime-ipc.js";
+import {
   assertRuntimeRequestPath,
   buildRuntimeRequestHeaders,
+  type RuntimeRequestInit,
 } from "./contract.js";
+import { createRuntimePreloadBridge } from "./runtime-bridge.js";
 
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
@@ -74,4 +84,122 @@ test("rejects header injection and reserved runtime headers", () => {
       }),
     /reserved/u,
   );
+});
+
+test("builds a preload runtime bridge over injected IPC invoke", async () => {
+  const calls: Array<{
+    readonly channel: RuntimeIpcChannel;
+    readonly payload?: unknown;
+  }> = [];
+  const waitingStatus: RuntimeIpcStartupStatus = {
+    kind: "waiting_for_existing",
+    action: "wait_for_existing",
+    attempt: 1,
+    lockStatus: "active",
+    severity: "info",
+    message: "Waiting for existing runtime sidecar.",
+    lifecycleComplete: false,
+    userActionRequired: false,
+    retryable: false,
+  };
+  const statuses: RuntimeIpcStartupStatusResponse = [waitingStatus];
+  const bridge = createRuntimePreloadBridge({
+    invoke: async <TResult>(
+      channel: RuntimeIpcChannel,
+      payload?: unknown,
+    ): Promise<TResult> => {
+      calls.push(payload === undefined ? { channel } : { channel, payload });
+      switch (channel) {
+        case RUNTIME_IPC_STARTUP_STATUS_CHANNEL:
+          return statuses as TResult;
+        case RUNTIME_IPC_CONNECTION_INFO_CHANNEL:
+          return {
+            base_url: "http://127.0.0.1:51234/cw/v1",
+            token: "token_abc123",
+          } as TResult;
+        case RUNTIME_IPC_FETCH_CHANNEL:
+          return {
+            ok: true,
+            status: 200,
+            headers: { "content-type": "application/json" },
+            body: { ok: true },
+          } as TResult;
+      }
+    },
+  });
+
+  assert.deepEqual(await bridge.startupStatus(), statuses);
+  const mutableStatuses =
+    (await bridge.startupStatus()) as RuntimeIpcStartupStatusResponse extends readonly (infer TStatus)[]
+      ? TStatus[]
+      : never;
+  mutableStatuses[0] = { ...waitingStatus, message: "mutated" };
+  assert.deepEqual(await bridge.startupStatus(), statuses);
+  assert.deepEqual(await bridge.connectionInfo(), {
+    base_url: "http://127.0.0.1:51234/cw/v1",
+    token: "token_abc123",
+  });
+  assert.deepEqual(
+    await bridge.fetch<{ ok: boolean }>("/system/info", {
+      method: "GET",
+      projectId: "prj_123",
+      headers: { Accept: "application/json" },
+    }),
+    {
+      ok: true,
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: { ok: true },
+    },
+  );
+
+  assert.deepEqual(calls, [
+    { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
+    { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
+    { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
+    { channel: RUNTIME_IPC_CONNECTION_INFO_CHANNEL },
+    {
+      channel: RUNTIME_IPC_FETCH_CHANNEL,
+      payload: {
+        path: "/system/info",
+        init: {
+          method: "GET",
+          projectId: "prj_123",
+          headers: { Accept: "application/json" },
+        },
+      },
+    },
+  ]);
+});
+
+test("preload runtime bridge validates fetch payloads before invoke", async () => {
+  const calls: RuntimeIpcChannel[] = [];
+  const bridge = createRuntimePreloadBridge({
+    invoke: async <TResult>(channel: RuntimeIpcChannel): Promise<TResult> => {
+      calls.push(channel);
+      throw new Error("invoke should not be called");
+    },
+  });
+
+  await assert.rejects(
+    bridge.fetch("system/info" as "/system/info"),
+    /absolute API path/u,
+  );
+  await assert.rejects(
+    bridge.fetch("/system/info", {
+      headers: { Authorization: "Bearer attacker" },
+    }),
+    /reserved/u,
+  );
+  await assert.rejects(
+    bridge.fetch("/system/info", "bad-init" as RuntimeRequestInit),
+    /init must be an object/u,
+  );
+  await assert.rejects(
+    bridge.fetch("/system/info", {
+      method: 42,
+    } as unknown as RuntimeRequestInit),
+    /method must be a string/u,
+  );
+  assert.deepEqual(calls, []);
 });

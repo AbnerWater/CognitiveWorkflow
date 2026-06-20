@@ -1,7 +1,7 @@
-import type { RuntimeConnectionInfo } from "../main/runtime.js";
 import {
   assertRuntimeIpcRequestPath,
   buildRuntimeIpcRequestHeaders,
+  type RuntimeIpcConnectionInfo,
   type RuntimeIpcFetchInit,
   type RuntimeIpcRequestHeadersInput,
   type RuntimeIpcRequestPath,
@@ -10,6 +10,7 @@ import {
 } from "../shared/runtime-ipc.js";
 
 export type RuntimeRequestPath = RuntimeIpcRequestPath;
+export type RuntimeConnectionInfo = RuntimeIpcConnectionInfo;
 
 export interface RuntimeRequestHeadersInput extends RuntimeIpcRequestHeadersInput {}
 
