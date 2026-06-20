@@ -9,6 +9,7 @@ export {
 
 export {
   createRuntimeMainLifecycleShutdownStatusBroadcaster,
+  createRuntimeMainLifecycleShutdownWindowBroadcaster,
   installRuntimeAppLifecycleShutdown,
   installRuntimeIpcMainHandlers,
   installRuntimeMainLifecycleShutdown,
@@ -21,10 +22,13 @@ export {
   type CwMainBeforeQuitListener,
   type CwMainIpcInvokeHandler,
   type CwMainIpcMain,
+  type CwMainShutdownStatusWebContents,
+  type CwMainShutdownStatusWindow,
   type CwMainWindow,
   type CwMainWindowCloseEvent,
   type CwMainWindowCloseListener,
   type CreateRuntimeMainLifecycleShutdownStatusBroadcasterOptions,
+  type CreateRuntimeMainLifecycleShutdownWindowBroadcasterOptions,
   type InstalledRuntimeAppLifecycleShutdown,
   type InstalledRuntimeIpcMainHandlers,
   type InstalledRuntimeIpcMainHandlersShutdownResult,
@@ -48,6 +52,9 @@ export {
   type RuntimeMainLifecycleShutdownStatusObserver,
   type RuntimeMainLifecycleShutdownStatusSeverity,
   type RuntimeMainLifecycleShutdownUnregisterResult,
+  type RuntimeMainLifecycleShutdownWindowBroadcaster,
+  type RuntimeMainLifecycleShutdownWindowSend,
+  type RuntimeMainLifecycleShutdownWindowUnregister,
   type RuntimeWindowLifecycleShutdownSnapshot,
   type RuntimeWindowLifecycleShutdownState,
 } from "./bootstrap.js";

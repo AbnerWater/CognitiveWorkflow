@@ -6,6 +6,7 @@ import {
   type RuntimeIpcChannel,
   type RuntimeIpcShutdownStatus,
   type RuntimeIpcShutdownStatusKind,
+  type RuntimeIpcShutdownStatusResponse,
   type RuntimeIpcShutdownStatusSeverity,
 } from "../shared/runtime-ipc.js";
 import {
@@ -173,6 +174,35 @@ export interface RuntimeMainLifecycleShutdownStatusBroadcaster {
     listener: RuntimeMainLifecycleShutdownStatusBroadcastListener,
   ) => RuntimeMainLifecycleShutdownStatusBroadcastUnsubscribe;
   readonly listenerCount: () => number;
+}
+
+export type RuntimeMainLifecycleShutdownWindowSend = (
+  channel: typeof RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+  payload: RuntimeIpcShutdownStatusResponse,
+) => void;
+
+export interface CwMainShutdownStatusWebContents {
+  readonly send: RuntimeMainLifecycleShutdownWindowSend;
+  readonly isDestroyed?: () => boolean;
+}
+
+export interface CwMainShutdownStatusWindow {
+  readonly webContents: CwMainShutdownStatusWebContents;
+  readonly isDestroyed?: () => boolean;
+}
+
+export type RuntimeMainLifecycleShutdownWindowUnregister = () => boolean;
+
+export interface CreateRuntimeMainLifecycleShutdownWindowBroadcasterOptions {
+  readonly onSendError?: (error: unknown) => void;
+}
+
+export interface RuntimeMainLifecycleShutdownWindowBroadcaster {
+  readonly onStatus: RuntimeMainLifecycleShutdownStatusObserver;
+  readonly registerWindow: (
+    window: CwMainShutdownStatusWindow,
+  ) => RuntimeMainLifecycleShutdownWindowUnregister;
+  readonly windowCount: () => number;
 }
 
 export interface InstallRuntimeMainLifecycleShutdownOptions {
@@ -356,6 +386,55 @@ export function createRuntimeMainLifecycleShutdownStatusBroadcaster(
       };
     },
     listenerCount: () => listeners.size,
+  };
+}
+
+export function createRuntimeMainLifecycleShutdownWindowBroadcaster(
+  options?: CreateRuntimeMainLifecycleShutdownWindowBroadcasterOptions,
+): RuntimeMainLifecycleShutdownWindowBroadcaster {
+  const windows = new Set<CwMainShutdownStatusWindow>();
+
+  const reportSendError = (error: unknown): void => {
+    try {
+      options?.onSendError?.(error);
+    } catch {
+      // Diagnostic hooks must not affect lifecycle status fan-out.
+    }
+  };
+
+  return {
+    onStatus: (status) => {
+      const snapshot = [...windows];
+      for (const window of snapshot) {
+        try {
+          if (isRuntimeMainLifecycleShutdownWindowDestroyed(window)) {
+            windows.delete(window);
+            continue;
+          }
+          window.webContents.send(RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL, [
+            { ...status },
+          ]);
+        } catch (error) {
+          windows.delete(window);
+          reportSendError(error);
+        }
+      }
+    },
+    registerWindow: (window) => {
+      if (isRuntimeMainLifecycleShutdownWindowDestroyed(window)) {
+        return () => false;
+      }
+      windows.add(window);
+      let registered = true;
+      return () => {
+        if (!registered) {
+          return false;
+        }
+        registered = false;
+        return windows.delete(window);
+      };
+    },
+    windowCount: () => windows.size,
   };
 }
 
@@ -664,6 +743,15 @@ function isMainLifecycleShutdownTerminalState(
     state === "shutdown_complete" ||
     state === "failed" ||
     state === "unregistered"
+  );
+}
+
+function isRuntimeMainLifecycleShutdownWindowDestroyed(
+  window: CwMainShutdownStatusWindow,
+): boolean {
+  return (
+    window.isDestroyed?.() === true ||
+    window.webContents.isDestroyed?.() === true
   );
 }
 

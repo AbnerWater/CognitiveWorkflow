@@ -18,10 +18,12 @@ import {
   installRuntimeMainWithLifecycleShutdown,
   installRuntimeWindowLifecycleShutdown,
   createRuntimeMainLifecycleShutdownStatusBroadcaster,
+  createRuntimeMainLifecycleShutdownWindowBroadcaster,
   type CwMainApp,
   type CwMainBeforeQuitEvent,
   type CwMainBeforeQuitListener,
   type CwMainIpcInvokeHandler,
+  type CwMainShutdownStatusWindow,
   type CwMainWindow,
   type CwMainWindowCloseEvent,
   type CwMainWindowCloseListener,
@@ -830,6 +832,145 @@ test("main lifecycle composition can broadcast shutdown statuses", async () => {
   assert.equal(unsubscribe(), true);
 });
 
+test("shutdown window broadcaster sends isolated status responses", () => {
+  const errors: unknown[] = [];
+  const broadcaster = createRuntimeMainLifecycleShutdownWindowBroadcaster({
+    onSendError: (error) => {
+      errors.push(error);
+      throw new Error("diagnostic hook failed");
+    },
+  });
+  const firstWindow = createFakeShutdownStatusWindow({
+    onSend: (_channel, payload) => {
+      const mutablePayload =
+        payload as RuntimeIpcShutdownStatusResponse extends readonly (infer TStatus)[]
+          ? TStatus[]
+          : never;
+      const [status] = mutablePayload;
+      assert.ok(status);
+      mutablePayload[0] = {
+        ...status,
+        kind: "shutdown_failed",
+        state: "failed",
+      };
+    },
+  });
+  const failingWindow = createFakeShutdownStatusWindow({
+    throwMessage: "webContents send failed",
+  });
+  const destroyedWindow = createFakeShutdownStatusWindow();
+  const secondWindow = createFakeShutdownStatusWindow();
+
+  const unregisterFirst = broadcaster.registerWindow(firstWindow.window);
+  broadcaster.registerWindow(failingWindow.window);
+  const unregisterDestroyed = broadcaster.registerWindow(
+    destroyedWindow.window,
+  );
+  const unregisterSecond = broadcaster.registerWindow(secondWindow.window);
+  destroyedWindow.destroy();
+
+  assert.equal(broadcaster.windowCount(), 4);
+  broadcaster.onStatus({
+    kind: "registered",
+    state: "registered",
+    severity: "info",
+    lifecycleComplete: false,
+    retryable: false,
+    appQuitRequested: false,
+    windowCloseRequested: false,
+  });
+
+  assert.equal(broadcaster.windowCount(), 2);
+  assert.deepEqual(sentShutdownStatusKinds(firstWindow), ["shutdown_failed"]);
+  assert.deepEqual(sentShutdownStatusKinds(secondWindow), ["registered"]);
+  assert.deepEqual(sentShutdownStatusKinds(failingWindow), []);
+  assert.deepEqual(sentShutdownStatusKinds(destroyedWindow), []);
+  assert.deepEqual(
+    firstWindow.sends.map((send) => send.channel),
+    [RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL],
+  );
+  assert.deepEqual(
+    secondWindow.sends.map((send) => send.channel),
+    [RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL],
+  );
+  assert.equal(errors.length, 1);
+  assert.equal(messageOf(errors[0]), "webContents send failed");
+  assert.equal(unregisterDestroyed(), false);
+  assert.equal(unregisterFirst(), true);
+  assert.equal(unregisterFirst(), false);
+  assert.equal(unregisterSecond(), true);
+  assert.equal(broadcaster.windowCount(), 0);
+});
+
+test("main lifecycle composition can broadcast shutdown statuses to windows", async () => {
+  const app = createFakeMainApp();
+  const window = createFakeMainWindow();
+  const statusBroadcaster =
+    createRuntimeMainLifecycleShutdownStatusBroadcaster();
+  const windowBroadcaster =
+    createRuntimeMainLifecycleShutdownWindowBroadcaster();
+  const unsubscribeStatus = statusBroadcaster.subscribe(
+    windowBroadcaster.onStatus,
+  );
+  const targetWindow = createFakeShutdownStatusWindow();
+  const unregisterWindow = windowBroadcaster.registerWindow(
+    targetWindow.window,
+  );
+  let resolveStop: ((stopped: boolean) => void) | undefined;
+  const stopPromise = new Promise<boolean>((resolve) => {
+    resolveStop = resolve;
+  });
+  const installed = installRuntimeMainWithLifecycleShutdown({
+    ipcMain: createFakeMainIpcMain().ipcMain,
+    app: app.app,
+    window: window.window,
+    onShutdownStatus: statusBroadcaster.onStatus,
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+    },
+    starter: async () =>
+      createReadyStartupResult({
+        stop: async () => stopPromise,
+      }),
+  });
+
+  assert.deepEqual(sentShutdownStatusKinds(targetWindow), ["registered"]);
+  assert.equal(windowBroadcaster.windowCount(), 1);
+  assert.deepEqual(
+    await installed.ipc.startupHandlers.handlers.connectionInfo(),
+    {
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_abc123",
+    },
+  );
+
+  const appQuit = app.emitBeforeQuit();
+  assert.equal(appQuit.prevented, true);
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(sentShutdownStatusKinds(targetWindow), [
+    "registered",
+    "app_quit_requested",
+    "shutting_down",
+  ]);
+
+  resolveStop?.(true);
+  assert.deepEqual(await installed.lifecycle.shutdown(), {
+    unregisteredChannels: RUNTIME_IPC_CHANNELS,
+    runtimeStopped: true,
+  });
+  assert.deepEqual(sentShutdownStatusKinds(targetWindow), [
+    "registered",
+    "app_quit_requested",
+    "shutting_down",
+    "shutdown_complete",
+  ]);
+  assert.equal(unregisterWindow(), true);
+  assert.equal(unsubscribeStatus(), true);
+});
+
 test("composes main lifecycle shutdown history into IPC shutdown status", async () => {
   let starterCalls = 0;
   const app = createFakeMainApp();
@@ -1604,6 +1745,58 @@ function createFakeMainIpcMain(): {
     },
     handlers,
   };
+}
+
+interface FakeShutdownStatusWindow {
+  readonly window: CwMainShutdownStatusWindow;
+  readonly sends: Array<{
+    readonly channel: typeof RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL;
+    readonly payload: RuntimeIpcShutdownStatusResponse;
+  }>;
+  readonly destroy: () => void;
+  readonly destroyWebContents: () => void;
+}
+
+function createFakeShutdownStatusWindow(options?: {
+  readonly destroyed?: boolean;
+  readonly webContentsDestroyed?: boolean;
+  readonly throwMessage?: string;
+  readonly onSend?: (
+    channel: typeof RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
+    payload: RuntimeIpcShutdownStatusResponse,
+  ) => void;
+}): FakeShutdownStatusWindow {
+  const sends: FakeShutdownStatusWindow["sends"] = [];
+  let destroyed = options?.destroyed ?? false;
+  let webContentsDestroyed = options?.webContentsDestroyed ?? false;
+  return {
+    window: {
+      isDestroyed: () => destroyed,
+      webContents: {
+        isDestroyed: () => webContentsDestroyed,
+        send: (channel, payload) => {
+          if (options?.throwMessage !== undefined) {
+            throw new Error(options.throwMessage);
+          }
+          sends.push({ channel, payload });
+          options?.onSend?.(channel, payload);
+        },
+      },
+    },
+    sends,
+    destroy: () => {
+      destroyed = true;
+    },
+    destroyWebContents: () => {
+      webContentsDestroyed = true;
+    },
+  };
+}
+
+function sentShutdownStatusKinds(
+  window: FakeShutdownStatusWindow,
+): Array<RuntimeMainLifecycleShutdownStatus["kind"] | undefined> {
+  return window.sends.map((send) => send.payload[0]?.kind);
 }
 
 function createStartupStatus(options: {
