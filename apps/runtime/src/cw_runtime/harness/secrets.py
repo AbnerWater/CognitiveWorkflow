@@ -17,6 +17,7 @@ import json
 import os
 import sqlite3
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar, Final, Literal, TypeAlias
@@ -31,6 +32,7 @@ from .project import (
 )
 
 ProjectSecretDecryptor: TypeAlias = Callable[[bytes], bytes | str]
+ProjectSecretEncryptor: TypeAlias = Callable[[bytes], bytes | str]
 ProjectSecretMasterKeyProvider: TypeAlias = Callable[[str], bytes | str]
 ProjectSecretAeadEncryptor: TypeAlias = Callable[[bytes, bytes, bytes, bytes], bytes]
 ProjectSecretAeadDecryptor: TypeAlias = Callable[[bytes, bytes, bytes, bytes], bytes]
@@ -367,6 +369,72 @@ def build_project_secret_decryptor(
     return decrypt_secret
 
 
+def build_project_secret_encryptor(
+    project_root: str | Path,
+    *,
+    master_key_provider: ProjectSecretMasterKeyProvider,
+    encrypt_aead: ProjectSecretAeadEncryptor,
+    nonce_factory: Callable[[int], bytes] = os.urandom,
+) -> ProjectSecretEncryptor:
+    """Build an encryptor from project metadata plus injected key/AEAD providers."""
+
+    project_id = _read_project_id(project_root)
+
+    def encrypt_secret(plaintext: bytes) -> bytes:
+        master_key = _load_project_master_key(project_id, master_key_provider=master_key_provider)
+        return encrypt_project_secret_value(
+            project_id,
+            plaintext,
+            master_key=master_key,
+            encrypt_aead=encrypt_aead,
+            nonce_factory=nonce_factory,
+        )
+
+    return encrypt_secret
+
+
+def write_project_mcp_secret_material(
+    project_root: str | Path,
+    secret_ref: str,
+    material: ProjectMCPSecretMaterial,
+    *,
+    encrypt_secret: ProjectSecretEncryptor,
+    alias: str | None = None,
+    scope: str = "project",
+    created_at: str | None = None,
+) -> None:
+    """Encrypt and upsert MCP secret material into the project secure store."""
+
+    if secret_ref == "":
+        raise ProjectSecretStoreError("Project MCP secret reference is invalid.")
+    if scope == "":
+        raise ProjectSecretStoreError("Project secure secret scope is invalid.")
+    encrypted_value = _encrypt_secret_value(
+        _mcp_secret_material_to_plaintext(material),
+        encrypt_secret=encrypt_secret,
+    )
+    database_path = _project_secret_database_path(project_root)
+    timestamp = _utc_now() if created_at is None else created_at
+    try:
+        database_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(database_path) as connection:
+            _ensure_project_secret_table(connection)
+            connection.execute(
+                "INSERT INTO secrets(secret_id, alias, value_encrypted, scope, created_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(secret_id) DO UPDATE SET "
+                "alias = excluded.alias, "
+                "value_encrypted = excluded.value_encrypted, "
+                "scope = excluded.scope, "
+                "created_at = excluded.created_at",
+                (secret_ref, alias, encrypted_value, scope, timestamp),
+            )
+    except sqlite3.Error:
+        raise ProjectSecretStoreError("Project secure secret store could not be written.") from None
+    except OSError:
+        raise ProjectSecretStoreError("Project secure secret store could not be prepared.") from None
+
+
 def load_project_mcp_secret_material(
     project_root: str | Path,
     secret_ref: str,
@@ -382,7 +450,7 @@ def load_project_mcp_secret_material(
 
     if secret_ref == "":
         raise ProjectSecretStoreError("Project MCP secret reference is invalid.")
-    database_path = Path(project_root) / AGENT_WORKFLOW_DIR / "secure" / "secrets.encrypted.sqlite"
+    database_path = _project_secret_database_path(project_root)
     if not database_path.exists():
         return None
     encrypted_value = _read_encrypted_secret(database_path, secret_ref)
@@ -448,6 +516,21 @@ def build_project_mcp_stdio_discovery_client_factory(
     return create_client
 
 
+def _project_secret_database_path(project_root: str | Path) -> Path:
+    return Path(project_root) / AGENT_WORKFLOW_DIR / "secure" / "secrets.encrypted.sqlite"
+
+
+def _ensure_project_secret_table(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS secrets("
+        "secret_id TEXT PRIMARY KEY, "
+        "alias TEXT, "
+        "value_encrypted BLOB NOT NULL, "
+        "scope TEXT, "
+        "created_at TEXT)"
+    )
+
+
 def _read_encrypted_secret(database_path: Path, secret_ref: str) -> bytes | None:
     try:
         with sqlite3.connect(database_path) as connection:
@@ -488,6 +571,14 @@ def _secret_plaintext_to_bytes(value: bytes | str) -> bytes:
     return plaintext
 
 
+def _encrypt_secret_value(plaintext: bytes, *, encrypt_secret: ProjectSecretEncryptor) -> bytes:
+    try:
+        encrypted = encrypt_secret(plaintext)
+    except Exception:
+        raise ProjectSecretStoreError("Project secure secret value could not be encrypted.") from None
+    return _secret_value_to_bytes(encrypted)
+
+
 def _decrypt_secret_value(encrypted_value: bytes, *, decrypt_secret: ProjectSecretDecryptor) -> bytes:
     try:
         plaintext = decrypt_secret(encrypted_value)
@@ -502,6 +593,13 @@ def _decrypt_secret_value(encrypted_value: bytes, *, decrypt_secret: ProjectSecr
     if len(plaintext_bytes) > _MAX_SECRET_VALUE_BYTES:
         raise ProjectSecretStoreError("Project secure secret plaintext exceeds the size limit.")
     return plaintext_bytes
+
+
+def _mcp_secret_material_to_plaintext(material: ProjectMCPSecretMaterial) -> bytes:
+    if not material.headers and not material.env:
+        raise ProjectSecretStoreError("Project secure secret plaintext did not contain MCP material.")
+    payload = material.model_dump(mode="json")
+    return _secret_plaintext_to_bytes(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
 
 
 def _parse_secret_envelope(encrypted_value: bytes) -> ProjectSecretEncryptedValue:
@@ -616,6 +714,10 @@ def _read_project_id(project_root: str | Path) -> str:
     if not isinstance(project_id, str) or project_id == "":
         raise ProjectSecretStoreError("Project metadata did not contain a valid project id.")
     return project_id
+
+
+def _utc_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _parse_secret_material(plaintext: bytes) -> ProjectMCPSecretMaterial:

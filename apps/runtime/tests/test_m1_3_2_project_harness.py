@@ -13,11 +13,12 @@ import sys
 import textwrap
 import threading
 import time
+import traceback
 import uuid
 from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 import pytest
 
@@ -30,12 +31,14 @@ from cw_runtime.harness import (
     ProjectMCPDiscoveryRunner,
     ProjectMCPHealthCheck,
     ProjectMCPHttpDiscoveryClient,
+    ProjectMCPSecretMaterial,
     ProjectMCPServerConfig,
     ProjectMCPStdioDiscoveryClient,
     ProjectSecretStoreError,
     build_project_mcp_http_discovery_client_factory,
     build_project_mcp_stdio_discovery_client_factory,
     build_project_secret_decryptor,
+    build_project_secret_encryptor,
     decrypt_project_secret_value,
     delete_windows_credential_manager_master_key,
     encrypt_project_secret_value,
@@ -48,6 +51,7 @@ from cw_runtime.harness import (
     windows_cng_decrypt_aes_gcm,
     windows_cng_encrypt_aes_gcm,
     windows_credential_manager_master_key_provider,
+    write_project_mcp_secret_material,
     write_windows_credential_manager_master_key,
 )
 
@@ -132,6 +136,10 @@ def _git_ls_files(project_root: Path) -> set[str]:
         text=True,
     )
     return set(result.stdout.splitlines())
+
+
+def _format_exception(exc: BaseException) -> str:
+    return "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
 
 
 def test_initialize_project_creates_runtime_harness_skeleton(tmp_path: Path) -> None:
@@ -2490,6 +2498,173 @@ def test_project_secret_envelope_round_trips_with_project_salt(tmp_path: Path) -
         )
         == plaintext
     )
+
+
+def test_project_mcp_secret_material_writes_and_loads_from_secure_store(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_write_project"
+    response = initialize_project(_request("MCP Secret Write", project_root))
+    requested_project_ids: list[str] = []
+
+    def master_key_provider(project_id: str) -> bytes:
+        requested_project_ids.append(project_id)
+        return b"test-master-key"
+
+    encrypt_secret = build_project_secret_encryptor(
+        project_root,
+        master_key_provider=master_key_provider,
+        encrypt_aead=_fake_encrypt_aead,
+        nonce_factory=lambda size: b"\x07" * size,
+    )
+    write_project_mcp_secret_material(
+        project_root,
+        "secure://mcp/write",
+        ProjectMCPSecretMaterial(
+            headers={"Authorization": "Bearer fake-access-token"},
+            env={"CW_MCP_TOKEN": "fake-access-token"},
+        ),
+        encrypt_secret=encrypt_secret,
+        alias="local write secret",
+        created_at="2026-06-20T00:00:00Z",
+    )
+
+    with sqlite3.connect(project_root / ".agent-workflow" / "secure" / "secrets.encrypted.sqlite") as connection:
+        row = connection.execute(
+            "SELECT alias, scope, created_at, value_encrypted FROM secrets WHERE secret_id = ?",
+            ("secure://mcp/write",),
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] == "local write secret"
+    assert row[1] == "project"
+    assert row[2] == "2026-06-20T00:00:00Z"
+    assert isinstance(row[3], bytes)
+    assert b"fake-access-token" not in row[3]
+
+    decrypt_secret = build_project_secret_decryptor(
+        project_root,
+        master_key_provider=master_key_provider,
+        decrypt_aead=_fake_decrypt_aead,
+    )
+    material = load_project_mcp_secret_material(project_root, "secure://mcp/write", decrypt_secret=decrypt_secret)
+
+    assert requested_project_ids == [response.project_id, response.project_id]
+    assert material is not None
+    assert material.model_dump(mode="json") == {
+        "headers": {"Authorization": "Bearer fake-access-token"},
+        "env": {"CW_MCP_TOKEN": "fake-access-token"},
+    }
+
+
+def test_project_mcp_secret_material_write_upserts_existing_row(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_upsert_project"
+    initialize_project(_request("MCP Secret Upsert", project_root))
+
+    def encrypt_secret(plaintext: bytes) -> bytes:
+        return b"encrypted:" + plaintext
+
+    def decrypt_secret(encrypted_value: bytes) -> bytes:
+        assert encrypted_value.startswith(b"encrypted:")
+        return encrypted_value.removeprefix(b"encrypted:")
+
+    write_project_mcp_secret_material(
+        project_root,
+        "secure://mcp/upsert",
+        ProjectMCPSecretMaterial(headers={"Authorization": "Bearer first-token"}),
+        encrypt_secret=encrypt_secret,
+        alias="first",
+        created_at="2026-06-20T00:00:00Z",
+    )
+    write_project_mcp_secret_material(
+        project_root,
+        "secure://mcp/upsert",
+        ProjectMCPSecretMaterial(env={"CW_MCP_TOKEN": "second-token"}),
+        encrypt_secret=encrypt_secret,
+        alias="second",
+        scope="workspace",
+        created_at="2026-06-20T00:01:00Z",
+    )
+
+    with sqlite3.connect(project_root / ".agent-workflow" / "secure" / "secrets.encrypted.sqlite") as connection:
+        rows = connection.execute(
+            "SELECT alias, scope, created_at FROM secrets WHERE secret_id = ?",
+            ("secure://mcp/upsert",),
+        ).fetchall()
+
+    assert rows == [("second", "workspace", "2026-06-20T00:01:00Z")]
+    material = load_project_mcp_secret_material(project_root, "secure://mcp/upsert", decrypt_secret=decrypt_secret)
+
+    assert material is not None
+    assert material.model_dump(mode="json") == {
+        "headers": {},
+        "env": {"CW_MCP_TOKEN": "second-token"},
+    }
+
+
+def test_project_mcp_secret_material_write_failures_are_sanitized(tmp_path: Path) -> None:
+    project_root = tmp_path / "mcp_secret_write_failure_project"
+    initialize_project(_request("MCP Secret Write Failure", project_root))
+
+    def encrypt_secret(_plaintext: bytes) -> bytes:
+        raise RuntimeError("dirty secure://mcp/write Bearer fake-access-token")
+
+    with pytest.raises(ProjectSecretStoreError) as exc_info:
+        write_project_mcp_secret_material(
+            project_root,
+            "secure://mcp/write",
+            ProjectMCPSecretMaterial(headers={"Authorization": "Bearer fake-access-token"}),
+            encrypt_secret=encrypt_secret,
+        )
+
+    serialized_error = str(exc_info.value)
+    serialized_traceback = _format_exception(exc_info.value)
+    assert "secure://mcp/write" not in serialized_error
+    assert "fake-access-token" not in serialized_error
+    assert "secure://mcp/write" not in serialized_traceback
+    assert "fake-access-token" not in serialized_traceback
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
+    assert not (project_root / ".agent-workflow" / "secure" / "secrets.encrypted.sqlite").exists()
+
+    with pytest.raises(ProjectSecretStoreError):
+        write_project_mcp_secret_material(
+            project_root,
+            "secure://mcp/empty",
+            ProjectMCPSecretMaterial(),
+            encrypt_secret=lambda plaintext: b"dirty:" + plaintext,
+        )
+
+    assert not (project_root / ".agent-workflow" / "secure" / "secrets.encrypted.sqlite").exists()
+
+
+def test_project_mcp_secret_material_write_storage_failures_suppress_dirty_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "mcp_secret_write_storage_failure_project"
+    initialize_project(_request("MCP Secret Write Storage Failure", project_root))
+    dirty_path = project_root / ".agent-workflow" / "secure" / "secrets.encrypted.sqlite"
+
+    def fail_connect(_database_path: object) -> NoReturn:
+        raise sqlite3.OperationalError(f"dirty sqlite path {dirty_path} Bearer fake-access-token")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_connect)
+
+    with pytest.raises(ProjectSecretStoreError) as exc_info:
+        write_project_mcp_secret_material(
+            project_root,
+            "secure://mcp/write",
+            ProjectMCPSecretMaterial(headers={"Authorization": "Bearer fake-access-token"}),
+            encrypt_secret=lambda plaintext: b"encrypted:" + plaintext,
+        )
+
+    serialized_error = str(exc_info.value)
+    serialized_traceback = _format_exception(exc_info.value)
+    assert str(dirty_path) not in serialized_error
+    assert str(dirty_path) not in serialized_traceback
+    assert "secure://mcp/write" not in serialized_traceback
+    assert "fake-access-token" not in serialized_traceback
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
 
 
 def test_project_secret_envelope_round_trips_with_windows_cng_aes_gcm(tmp_path: Path) -> None:
