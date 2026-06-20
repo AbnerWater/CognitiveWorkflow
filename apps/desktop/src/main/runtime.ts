@@ -53,6 +53,13 @@ export function buildRuntimeConnectionInfo(
   ready: RuntimeReady,
   token: string,
 ): RuntimeConnectionInfo {
+  return {
+    base_url: ready.base_url,
+    token: normalizeRuntimeAuthToken(token),
+  };
+}
+
+export function normalizeRuntimeAuthToken(token: string): string {
   const normalizedToken = token.trim();
   if (
     normalizedToken.length === 0 ||
@@ -63,8 +70,5 @@ export function buildRuntimeConnectionInfo(
     );
   }
 
-  return {
-    base_url: ready.base_url,
-    token: normalizedToken,
-  };
+  return normalizedToken;
 }
