@@ -19,6 +19,18 @@ export {
 } from "./runtime.js";
 
 export {
+  PACKAGED_RUNTIME_DIRNAME,
+  RUNTIME_EXECUTABLE_BASENAME,
+  getRuntimeExecutableName,
+  resolvePackagedRuntimePath,
+  resolveRuntimeCommand,
+  type ResolveRuntimeCommandOptions,
+  type RuntimeCommand,
+  type RuntimeCommandSource,
+  type RuntimeExecutableExists,
+} from "./runtime-command.js";
+
+export {
   DEFAULT_RUNTIME_READY_TIMEOUT_MS,
   RUNTIME_AUTH_TOKEN_BYTES,
   RUNTIME_AUTH_TOKEN_ENV,
