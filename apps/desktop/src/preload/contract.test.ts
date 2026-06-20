@@ -68,6 +68,11 @@ import {
   createRuntimeStreamInteraction,
   type RuntimeStreamInteractionSnapshot,
 } from "../renderer/runtime-stream-interaction.js";
+import {
+  createRuntimeStreamInteractionSession,
+  defaultRuntimeStreamSessionEventTypes,
+  type RuntimeStreamKnownEventType,
+} from "../renderer/runtime-stream-session.js";
 
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
@@ -2009,6 +2014,246 @@ test("renderer runtime stream interaction isolates listener errors and rejects u
   });
   assert.equal(published.length, 1);
 });
+
+test("renderer runtime stream session composes store view model and interaction", async () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const session = createRuntimeStreamInteractionSession({
+    clientOptions: createRuntimeStreamEventStoreClientOptions(),
+    clientFactory: clientFactory.factory,
+    eventTypes: ["model.text_delta", "tool.call_started", "model.text_delta"],
+    searchQuery: "hello",
+  });
+
+  assert.deepEqual(session.eventTypes, [
+    "model.text_delta",
+    "tool.call_started",
+  ]);
+  assert.equal(session.store.listenerCount(), 1);
+  assert.equal(session.viewModel.listenerCount(), 1);
+  assert.equal(session.interaction.listenerCount(), 0);
+
+  const started = await session.start();
+  assert.equal(started.store.status, "running");
+  const client = clientFactory.clients[0];
+  assert.ok(client !== undefined);
+  assert.equal(client.listenerCount("model.text_delta"), 1);
+  assert.equal(client.listenerCount("tool.call_started"), 1);
+
+  client.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_model_delta",
+      seq: 1,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "Model text",
+      content: "hello world",
+      expandable: false,
+      payload: { hidden_search_text: "payload-only-secret" },
+      artifact_refs: [],
+      created_at: "2026-06-21T00:00:00.001Z",
+    }),
+  );
+
+  const snapshot = session.snapshot();
+  assert.equal(snapshot.store.totalEvents, 1);
+  assert.equal(snapshot.interaction.view.visibleEventCount, 1);
+  assert.deepEqual(
+    snapshot.interaction.search.matches.map((match) => match.eventId),
+    ["evt_model_delta"],
+  );
+  assert.equal(snapshot.interaction.search.activeEventId, "evt_model_delta");
+  assert.equal(
+    session.interaction.selectActiveSearchMatch().selectedEventId,
+    "evt_model_delta",
+  );
+  assert.equal(
+    session.interaction.setSearchQuery("payload-only-secret").search.matches
+      .length,
+    0,
+  );
+
+  assert.equal(session.dispose(), true);
+});
+
+test("renderer runtime stream session uses spec channel defaults and lifecycle stop", async () => {
+  const runDefaults = defaultRuntimeStreamSessionEventTypes({
+    kind: "run",
+    runId: "run_01J",
+  });
+  assertRuntimeStreamEventTypesEqualNoDuplicates(runDefaults, [
+    "run.started",
+    "run.paused",
+    "run.resumed",
+    "run.completed",
+    "run.failed",
+    "run.cancelled",
+    "node.state_changed",
+    "attempt.started",
+    "attempt.completed",
+    "attempt.failed",
+    "model.request_started",
+    "model.thinking_delta",
+    "model.thought_completed",
+    "model.text_delta",
+    "model.text_completed",
+    "model.request_completed",
+    "model.request_failed",
+    "model.escalated",
+    "tool.call_started",
+    "tool.call_completed",
+    "tool.call_failed",
+    "tool.approval_required",
+    "tool.approved",
+    "tool.rejected",
+    "context.build_started",
+    "context.build_completed",
+    "context.compression_applied",
+    "context.over_budget_failed",
+    "evidence.build_completed",
+    "evidence.conflict_detected",
+    "evidence.feedback_written",
+    "evaluation.started",
+    "evaluation.criterion_passed",
+    "evaluation.criterion_failed",
+    "evaluation.completed",
+    "evaluation.judge_disagreement",
+    "repair.started",
+    "repair.patch_proposed",
+    "repair.patch_rejected",
+    "repair.patch_applied",
+    "repair.patch_reverted",
+    "repair.escalation_to_human",
+    "human.gate_required",
+    "human.gate_resolved",
+    "human.gate_timeout",
+    "artifact.written",
+    "artifact.deleted",
+    "git.snapshot_created",
+    "git.tag_created",
+    "export.completed",
+    "metric.snapshot",
+    "usage.delta",
+    "error.exception",
+    "error.network",
+    "error.budget_exhausted",
+    "system.heartbeat",
+  ]);
+
+  const planningDefaults = defaultRuntimeStreamSessionEventTypes({
+    kind: "planning",
+    sessionId: "wps_01J",
+  });
+  assertRuntimeStreamEventTypesEqualNoDuplicates(planningDefaults, [
+    "planning.session_started",
+    "planning.phase_changed",
+    "planning.context_built",
+    "planning.understanding_completed",
+    "planning.clarification_question",
+    "planning.clarification_answered",
+    "planning.draft_generated",
+    "planning.draft_validation",
+    "planning.draft_repaired",
+    "planning.workflow_patch_proposed",
+    "planning.workflow_instantiated",
+    "system.heartbeat",
+  ]);
+
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const lifecycle = createFakeRuntimeStreamEventStorePageLifecycleTarget();
+  const session = createRuntimeStreamInteractionSession({
+    clientOptions: createRuntimeStreamEventStoreClientOptions(),
+    clientFactory: clientFactory.factory,
+  });
+
+  await session.start();
+  const client = clientFactory.clients[0];
+  assert.ok(client !== undefined);
+  assert.equal(client.listenerCount("model.text_delta"), 1);
+  assert.equal(client.listenerCount("planning.session_started"), 0);
+  assert.equal(client.listenerCount("system.heartbeat"), 1);
+  assert.equal(client.listenerCount("system.runtime_ready"), 0);
+
+  const unbind = session.bindPageLifecycle(lifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(lifecycle.listenerCount("pagehide"), 1);
+  lifecycle.emit("pagehide");
+  assert.equal(session.snapshot().store.status, "stopped");
+  assert.equal(session.isStarted(), false);
+  assert.equal(client.closeCount(), 1);
+  assert.equal(lifecycle.listenerCount("pagehide"), 1);
+  assert.equal(unbind(), true);
+  assert.equal(lifecycle.listenerCount("pagehide"), 0);
+  assert.equal(unbind(), false);
+  assert.equal(session.dispose(), true);
+});
+
+test("renderer runtime stream session disposes and rejects unsafe options", async () => {
+  assert.throws(
+    () =>
+      createRuntimeStreamInteractionSession({
+        clientOptions: createRuntimeStreamEventStoreClientOptions(),
+        eventTypes: [],
+      }),
+    /requires at least one event type/u,
+  );
+  assert.throws(
+    () =>
+      createRuntimeStreamInteractionSession({
+        clientOptions: createRuntimeStreamEventStoreClientOptions(),
+        eventTypes: ["bad type" as RuntimeStreamKnownEventType],
+      }),
+    /event type/u,
+  );
+  assert.throws(
+    () =>
+      createRuntimeStreamInteractionSession({
+        clientOptions: createRuntimeStreamEventStoreClientOptions(),
+        eventTypes: ["model.fake" as RuntimeStreamKnownEventType],
+      }),
+    /StreamEvent spec/u,
+  );
+  assert.throws(
+    () =>
+      createRuntimeStreamInteractionSession({
+        clientOptions: createRuntimeStreamEventStoreClientOptions(),
+        selectedEventId: "evt_missing",
+      }),
+    /not visible/u,
+  );
+
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const session = createRuntimeStreamInteractionSession({
+    clientOptions: createRuntimeStreamEventStoreClientOptions(),
+    clientFactory: clientFactory.factory,
+    eventTypes: ["system.heartbeat"],
+  });
+  await session.start();
+  assert.equal(session.store.listenerCount(), 1);
+  assert.equal(session.viewModel.listenerCount(), 1);
+  assert.equal(session.dispose(), true);
+  assert.equal(session.store.listenerCount(), 0);
+  assert.equal(session.viewModel.listenerCount(), 0);
+  assert.equal(session.interaction.listenerCount(), 0);
+  const disposedSnapshot = session.snapshot();
+  assert.equal(disposedSnapshot.store.status, "stopped");
+  assert.equal(disposedSnapshot.interaction.view.status, "stopped");
+  assert.equal(session.dispose(), false);
+  await assert.rejects(
+    async () => session.start(),
+    /interaction session is disposed/u,
+  );
+});
+
+function assertRuntimeStreamEventTypesEqualNoDuplicates(
+  actual: readonly string[],
+  expected: readonly string[],
+): void {
+  assert.deepEqual(actual, expected);
+  assert.equal(new Set(actual).size, actual.length);
+}
 
 function createNoopSubscribe(): RuntimePreloadIpcSubscribe {
   return () => () => false;
