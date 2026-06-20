@@ -4,6 +4,20 @@ import {
   type RuntimeStreamUnsubscribe,
 } from "./runtime-stream-client.js";
 import {
+  type ArtifactEvent,
+  type ContextEvent,
+  type ErrorEvent,
+  type EvaluationEvent,
+  type HumanEvent,
+  type LifecycleEvent,
+  type MetricEvent,
+  type ModelEvent,
+  type PlanningEvent,
+  type RepairEvent,
+  type SystemEvent,
+  type ToolEvent,
+} from "@cw/schemas";
+import {
   bindRuntimeStreamEventStoreToPageLifecycle,
   createRuntimeStreamEventStore,
   type BindRuntimeStreamEventStorePageLifecycleOptions,
@@ -168,6 +182,32 @@ export const RUNTIME_STREAM_ALL_EVENT_TYPES = [
 
 export type RuntimeStreamKnownEventType =
   (typeof RUNTIME_STREAM_ALL_EVENT_TYPES)[number];
+
+export type RuntimeStreamGeneratedEventType =
+  | LifecycleEvent["type"]
+  | ModelEvent["type"]
+  | ToolEvent["type"]
+  | ContextEvent["type"]
+  | EvaluationEvent["type"]
+  | RepairEvent["type"]
+  | HumanEvent["type"]
+  | PlanningEvent["type"]
+  | ArtifactEvent["type"]
+  | MetricEvent["type"]
+  | ErrorEvent["type"]
+  | SystemEvent["type"];
+
+type RuntimeStreamExactEventTypeSet<TActual, TExpected> =
+  Exclude<TActual, TExpected> extends never
+    ? Exclude<TExpected, TActual> extends never
+      ? true
+      : never
+    : never;
+
+export const RUNTIME_STREAM_GENERATED_EVENT_TYPE_PARITY: RuntimeStreamExactEventTypeSet<
+  RuntimeStreamKnownEventType,
+  RuntimeStreamGeneratedEventType
+> = true;
 
 export interface RuntimeStreamInteractionSessionSnapshot {
   readonly store: RuntimeStreamEventStoreSnapshot;

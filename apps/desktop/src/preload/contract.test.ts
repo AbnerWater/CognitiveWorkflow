@@ -69,6 +69,7 @@ import {
   type RuntimeStreamInteractionSnapshot,
 } from "../renderer/runtime-stream-interaction.js";
 import {
+  RUNTIME_STREAM_ALL_EVENT_TYPES,
   createRuntimeStreamInteractionSession,
   defaultRuntimeStreamSessionEventTypes,
   type RuntimeStreamKnownEventType,
@@ -2078,6 +2079,10 @@ test("renderer runtime stream session composes store view model and interaction"
 });
 
 test("renderer runtime stream session uses spec channel defaults and lifecycle stop", async () => {
+  assert.equal(
+    new Set(RUNTIME_STREAM_ALL_EVENT_TYPES).size,
+    RUNTIME_STREAM_ALL_EVENT_TYPES.length,
+  );
   const runDefaults = defaultRuntimeStreamSessionEventTypes({
     kind: "run",
     runId: "run_01J",
@@ -2159,6 +2164,17 @@ test("renderer runtime stream session uses spec channel defaults and lifecycle s
     "planning.workflow_instantiated",
     "system.heartbeat",
   ]);
+  for (const eventType of [...runDefaults, ...planningDefaults]) {
+    assert.equal(RUNTIME_STREAM_ALL_EVENT_TYPES.includes(eventType), true);
+  }
+  assert.equal(
+    RUNTIME_STREAM_ALL_EVENT_TYPES.includes("system.runtime_ready"),
+    true,
+  );
+  assert.equal(
+    RUNTIME_STREAM_ALL_EVENT_TYPES.includes("system.runtime_shutting_down"),
+    true,
+  );
 
   const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
   const lifecycle = createFakeRuntimeStreamEventStorePageLifecycleTarget();
