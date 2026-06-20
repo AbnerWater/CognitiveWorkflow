@@ -8,6 +8,25 @@ export {
 } from "./security.js";
 
 export {
+  RUNTIME_IPC_CHANNELS,
+  RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
+  RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_METHODS,
+  assertRuntimeIpcChannel,
+  assertRuntimeIpcRequestPath,
+  buildRuntimeIpcFetchRequest,
+  isRuntimeIpcChannel,
+  type RuntimeIpcChannel,
+  type RuntimeIpcConnectionInfo,
+  type RuntimeIpcFetchInit,
+  type RuntimeIpcFetchRequest,
+  type RuntimeIpcMainHandlers,
+  type RuntimeIpcMethod,
+  type RuntimeIpcRequestPath,
+  type RuntimeIpcResponse,
+} from "../shared/runtime-ipc.js";
+
+export {
   RUNTIME_API_PREFIX,
   buildRuntimeConnectionInfo,
   createRuntimeBaseUrl,

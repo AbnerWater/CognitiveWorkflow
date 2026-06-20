@@ -1,6 +1,12 @@
 import type { RuntimeConnectionInfo } from "../main/runtime.js";
+import {
+  assertRuntimeIpcRequestPath,
+  type RuntimeIpcFetchInit,
+  type RuntimeIpcRequestPath,
+  type RuntimeIpcResponse,
+} from "../shared/runtime-ipc.js";
 
-export type RuntimeRequestPath = `/${string}`;
+export type RuntimeRequestPath = RuntimeIpcRequestPath;
 
 export interface RuntimeRequestHeadersInput {
   readonly token: string;
@@ -9,20 +15,11 @@ export interface RuntimeRequestHeadersInput {
   readonly extraHeaders?: Readonly<Record<string, string>>;
 }
 
-export interface RuntimeRequestInit {
-  readonly method?: "GET" | "POST" | "PATCH" | "DELETE";
-  readonly projectId?: string;
-  readonly idempotencyKey?: string;
-  readonly headers?: Readonly<Record<string, string>>;
-  readonly body?: string;
-}
+export interface RuntimeRequestInit extends RuntimeIpcFetchInit {}
 
-export interface RuntimeResponse<TBody = unknown> {
-  readonly ok: boolean;
-  readonly status: number;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly body: TBody | null;
-}
+export interface RuntimeResponse<
+  TBody = unknown,
+> extends RuntimeIpcResponse<TBody> {}
 
 export interface RuntimeBridge {
   readonly connectionInfo: () => Promise<RuntimeConnectionInfo>;
@@ -52,20 +49,7 @@ const HEADER_VALUE_PATTERN = /^[\t\u0020-\u007e]*$/u;
 export function assertRuntimeRequestPath(
   path: string,
 ): asserts path is RuntimeRequestPath {
-  if (
-    !path.startsWith("/") ||
-    path.startsWith("//") ||
-    path.includes("\\") ||
-    path.includes("..")
-  ) {
-    throw new Error(
-      `Runtime request path must be an absolute API path, received ${path}`,
-    );
-  }
-
-  if (/^https?:\/\//iu.test(path)) {
-    throw new Error("Runtime request path must not be an absolute URL");
-  }
+  assertRuntimeIpcRequestPath(path);
 }
 
 export function buildRuntimeRequestHeaders(
