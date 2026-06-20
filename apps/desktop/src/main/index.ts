@@ -19,6 +19,23 @@ export {
 } from "./runtime.js";
 
 export {
+  AGENT_WORKFLOW_DIRNAME,
+  DEFAULT_RUNTIME_LOCK_STALE_MS,
+  RUNTIME_LOCKS_DIRNAME,
+  RUNTIME_LOCK_FILENAME,
+  decideRuntimeLockAction,
+  inspectRuntimeLock,
+  parseRuntimeLockContent,
+  resolveRuntimeLockPath,
+  type InspectRuntimeLockOptions,
+  type RuntimeLockAction,
+  type RuntimeLockInspection,
+  type RuntimeLockReadText,
+  type RuntimeLockRecord,
+  type RuntimeLockStatus,
+} from "./runtime-lock.js";
+
+export {
   PACKAGED_RUNTIME_DIRNAME,
   RUNTIME_EXECUTABLE_BASENAME,
   getRuntimeExecutableName,
