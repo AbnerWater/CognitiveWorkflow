@@ -36,7 +36,10 @@ import {
 } from "../renderer/shutdown-status-client.js";
 import {
   buildRuntimeStreamConnectionRequest,
+  createRuntimeStreamReplayState,
+  isRuntimeStreamReplayNotFoundFailure,
   openRuntimeStreamClient,
+  RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
   type RuntimeStreamConnectionRequest,
   type RuntimeStreamEventSource,
   type RuntimeStreamSourceEvent,
@@ -919,6 +922,131 @@ test("renderer runtime stream client rejects unsafe event subscriptions", async 
   );
   assert.equal(client.close(), true);
   assert.equal(client.subscribe("model.text_delta", () => undefined)(), false);
+});
+
+test("renderer runtime stream replay state tracks Last-Event-ID for reconnect", () => {
+  const replayState = createRuntimeStreamReplayState({
+    defaultRetryMs: 3000,
+  });
+
+  assert.deepEqual(replayState.snapshot(), {
+    mode: "ready",
+    lastEventId: null,
+    reconnectAttempt: 0,
+  });
+  assert.deepEqual(replayState.recordEvent({ id: "evt_1" }), {
+    mode: "ready",
+    lastEventId: "evt_1",
+    reconnectAttempt: 0,
+  });
+  assert.deepEqual(replayState.recordEvent({ id: "evt_2" }), {
+    mode: "ready",
+    lastEventId: "evt_2",
+    reconnectAttempt: 0,
+  });
+  assert.deepEqual(
+    replayState.handleConnectionFailure({ reason: "network closed" }),
+    {
+      action: "reconnect",
+      lastEventId: "evt_2",
+      attempt: 1,
+      retryAfterMs: 3000,
+    },
+  );
+  assert.deepEqual(replayState.snapshot(), {
+    mode: "reconnect_pending",
+    lastEventId: "evt_2",
+    reconnectAttempt: 1,
+    retryAfterMs: 3000,
+    reason: "network closed",
+  });
+  assert.deepEqual(
+    replayState.handleConnectionFailure({ retryAfterMs: 1500 }),
+    {
+      action: "reconnect",
+      lastEventId: "evt_2",
+      attempt: 2,
+      retryAfterMs: 1500,
+    },
+  );
+  const reconnectLastEventId = replayState.snapshot().lastEventId;
+  assert.ok(reconnectLastEventId);
+  assert.equal(
+    buildRuntimeStreamConnectionRequest(
+      {
+        base_url: "http://127.0.0.1:51234/cw/v1",
+        token: "token_abc123",
+      },
+      {
+        channel: { kind: "run", runId: "run_01J" },
+        lastEventId: reconnectLastEventId,
+      },
+    ).headers["Last-Event-ID"],
+    "evt_2",
+  );
+  assert.deepEqual(replayState.recordEvent({ id: "evt_3" }), {
+    mode: "ready",
+    lastEventId: "evt_3",
+    reconnectAttempt: 0,
+  });
+});
+
+test("renderer runtime stream replay state maps replay miss to full reload", () => {
+  const replayState = createRuntimeStreamReplayState({
+    initialLastEventId: "evt_5",
+  });
+
+  assert.equal(
+    isRuntimeStreamReplayNotFoundFailure({
+      errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+    }),
+    true,
+  );
+  assert.deepEqual(
+    replayState.handleConnectionFailure({
+      status: 412,
+      errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+      reason: "Last-Event-ID was not found",
+    }),
+    {
+      action: "full_reload",
+      lastEventId: "evt_5",
+      reason: "Last-Event-ID was not found",
+      status: 412,
+      errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+    },
+  );
+  assert.deepEqual(replayState.snapshot(), {
+    mode: "full_reload_required",
+    lastEventId: "evt_5",
+    reconnectAttempt: 0,
+    reason: "Last-Event-ID was not found",
+  });
+  assert.deepEqual(replayState.reset(), {
+    mode: "ready",
+    lastEventId: null,
+    reconnectAttempt: 0,
+  });
+});
+
+test("renderer runtime stream replay state rejects unsafe replay inputs", () => {
+  assert.throws(
+    () => createRuntimeStreamReplayState({ defaultRetryMs: -1 }),
+    /defaultRetryMs/u,
+  );
+  assert.throws(
+    () =>
+      createRuntimeStreamReplayState({
+        initialLastEventId: "evt_1\ninjected",
+      }),
+    /Last-Event-ID/u,
+  );
+  const replayState = createRuntimeStreamReplayState();
+  assert.throws(() => replayState.recordEvent({ id: "" }), /Last-Event-ID/u);
+  assert.throws(
+    () => replayState.handleConnectionFailure({ retryAfterMs: 1.5 }),
+    /retryAfterMs/u,
+  );
 });
 
 function createNoopSubscribe(): RuntimePreloadIpcSubscribe {

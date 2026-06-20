@@ -6,6 +6,10 @@ import {
   type RuntimeRequestPath,
 } from "../preload/contract.js";
 
+export const RUNTIME_STREAM_DEFAULT_RETRY_MS = 3000;
+export const RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE =
+  "SE_SSE_REPLAY_NOT_FOUND" as const;
+
 export type RuntimeStreamDisplayLevel = "minimal" | "default" | "detailed";
 
 export type RuntimeStreamCategory =
@@ -107,6 +111,63 @@ export interface OpenRuntimeStreamClientOptions {
   readonly lastEventId?: string;
   readonly onEventError?: RuntimeStreamErrorHandler;
   readonly onConnectionError?: RuntimeStreamErrorHandler;
+}
+
+export type RuntimeStreamReplayMode =
+  | "ready"
+  | "reconnect_pending"
+  | "full_reload_required";
+
+export interface RuntimeStreamReplayStateSnapshot {
+  readonly mode: RuntimeStreamReplayMode;
+  readonly lastEventId: string | null;
+  readonly reconnectAttempt: number;
+  readonly retryAfterMs?: number;
+  readonly reason?: string;
+}
+
+export interface RuntimeStreamConnectionFailure {
+  readonly status?: number;
+  readonly errorCode?: string;
+  readonly retryAfterMs?: number;
+  readonly reason?: string;
+}
+
+export interface RuntimeStreamReconnectDecision {
+  readonly action: "reconnect";
+  readonly lastEventId: string | null;
+  readonly attempt: number;
+  readonly retryAfterMs: number;
+}
+
+export interface RuntimeStreamFullReloadDecision {
+  readonly action: "full_reload";
+  readonly lastEventId: string | null;
+  readonly reason: string;
+  readonly status?: number;
+  readonly errorCode?: string;
+}
+
+export type RuntimeStreamReplayDecision =
+  | RuntimeStreamReconnectDecision
+  | RuntimeStreamFullReloadDecision;
+
+export interface RuntimeStreamReplayState {
+  readonly snapshot: () => RuntimeStreamReplayStateSnapshot;
+  readonly recordEvent: (
+    event: Pick<RuntimeStreamEvent, "id">,
+  ) => RuntimeStreamReplayStateSnapshot;
+  readonly handleConnectionFailure: (
+    failure: RuntimeStreamConnectionFailure,
+  ) => RuntimeStreamReplayDecision;
+  readonly reset: (
+    lastEventId?: string | null,
+  ) => RuntimeStreamReplayStateSnapshot;
+}
+
+export interface CreateRuntimeStreamReplayStateOptions {
+  readonly initialLastEventId?: string | null;
+  readonly defaultRetryMs?: number;
 }
 
 export async function openRuntimeStreamClient(
@@ -217,6 +278,99 @@ export async function openRuntimeStreamClient(
     },
     isClosed: () => closed,
   };
+}
+
+export function createRuntimeStreamReplayState(
+  options: CreateRuntimeStreamReplayStateOptions = {},
+): RuntimeStreamReplayState {
+  const defaultRetryMs = normalizeRuntimeStreamRetryMs(
+    "defaultRetryMs",
+    options.defaultRetryMs ?? RUNTIME_STREAM_DEFAULT_RETRY_MS,
+  );
+  let mode: RuntimeStreamReplayMode = "ready";
+  let lastEventId = normalizeRuntimeStreamLastEventId(
+    options.initialLastEventId,
+  );
+  let reconnectAttempt = 0;
+  let retryAfterMs: number | undefined;
+  let reason: string | undefined;
+
+  const snapshot = (): RuntimeStreamReplayStateSnapshot => {
+    const input: {
+      mode: RuntimeStreamReplayMode;
+      lastEventId: string | null;
+      reconnectAttempt: number;
+      retryAfterMs?: number;
+      reason?: string;
+    } = {
+      mode,
+      lastEventId,
+      reconnectAttempt,
+    };
+    if (retryAfterMs !== undefined) {
+      input.retryAfterMs = retryAfterMs;
+    }
+    if (reason !== undefined) {
+      input.reason = reason;
+    }
+    return buildRuntimeStreamReplayStateSnapshot(input);
+  };
+
+  return {
+    snapshot,
+    recordEvent: (event) => {
+      if (event.id !== null) {
+        lastEventId = requireSafeRuntimeStreamLastEventId(event.id);
+      }
+      mode = "ready";
+      reconnectAttempt = 0;
+      retryAfterMs = undefined;
+      reason = undefined;
+      return snapshot();
+    },
+    handleConnectionFailure: (failure) => {
+      if (isRuntimeStreamReplayNotFoundFailure(failure)) {
+        mode = "full_reload_required";
+        retryAfterMs = undefined;
+        reason = failure.reason ?? "Runtime stream replay point was not found";
+        return buildRuntimeStreamFullReloadDecision(failure, {
+          lastEventId,
+          reason,
+        });
+      }
+
+      reconnectAttempt += 1;
+      mode = "reconnect_pending";
+      retryAfterMs =
+        failure.retryAfterMs === undefined
+          ? defaultRetryMs
+          : normalizeRuntimeStreamRetryMs("retryAfterMs", failure.retryAfterMs);
+      reason = failure.reason;
+      return {
+        action: "reconnect",
+        lastEventId,
+        attempt: reconnectAttempt,
+        retryAfterMs,
+      };
+    },
+    reset: (nextLastEventId = null) => {
+      lastEventId = normalizeRuntimeStreamLastEventId(nextLastEventId);
+      mode = "ready";
+      reconnectAttempt = 0;
+      retryAfterMs = undefined;
+      reason = undefined;
+      return snapshot();
+    },
+  };
+}
+
+export function isRuntimeStreamReplayNotFoundFailure(
+  failure: RuntimeStreamConnectionFailure,
+): boolean {
+  return (
+    failure.status === 412 ||
+    failure.errorCode === RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE
+  );
 }
 
 export function buildRuntimeStreamConnectionRequest(
@@ -344,6 +498,42 @@ function parseRuntimeStreamEventId(
   return null;
 }
 
+function buildRuntimeStreamReplayStateSnapshot(input: {
+  readonly mode: RuntimeStreamReplayMode;
+  readonly lastEventId: string | null;
+  readonly reconnectAttempt: number;
+  readonly retryAfterMs?: number;
+  readonly reason?: string;
+}): RuntimeStreamReplayStateSnapshot {
+  return {
+    mode: input.mode,
+    lastEventId: input.lastEventId,
+    reconnectAttempt: input.reconnectAttempt,
+    ...(input.retryAfterMs !== undefined
+      ? { retryAfterMs: input.retryAfterMs }
+      : {}),
+    ...(input.reason !== undefined ? { reason: input.reason } : {}),
+  };
+}
+
+function buildRuntimeStreamFullReloadDecision(
+  failure: RuntimeStreamConnectionFailure,
+  input: {
+    readonly lastEventId: string | null;
+    readonly reason: string;
+  },
+): RuntimeStreamFullReloadDecision {
+  return {
+    action: "full_reload",
+    lastEventId: input.lastEventId,
+    reason: input.reason,
+    ...(failure.status !== undefined ? { status: failure.status } : {}),
+    ...(failure.errorCode !== undefined
+      ? { errorCode: failure.errorCode }
+      : {}),
+  };
+}
+
 function parseRuntimeStreamBaseUrl(baseUrl: string): URL {
   let parsed: URL;
   try {
@@ -393,6 +583,31 @@ function assertRuntimeStreamEventType(eventType: string): void {
   if (!/^[a-z]+(?:\.[a-z0-9_]+)+$/u.test(eventType)) {
     throw new Error(`Runtime stream event type is invalid: ${eventType}`);
   }
+}
+
+function normalizeRuntimeStreamLastEventId(
+  eventId: string | null | undefined,
+): string | null {
+  if (eventId === undefined || eventId === null) {
+    return null;
+  }
+  return requireSafeRuntimeStreamLastEventId(eventId);
+}
+
+function requireSafeRuntimeStreamLastEventId(eventId: string): string {
+  if (eventId.length === 0 || /[\u0000-\u001f\u007f\s]/u.test(eventId)) {
+    throw new Error(
+      "Runtime stream Last-Event-ID must be non-empty and contain no whitespace or control characters",
+    );
+  }
+  return eventId;
+}
+
+function normalizeRuntimeStreamRetryMs(label: string, value: number): number {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Runtime stream ${label} must be a non-negative integer`);
+  }
+  return value;
 }
 
 function assertRuntimeStreamSeqRange(filters: RuntimeStreamFilters): void {
