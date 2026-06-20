@@ -28,6 +28,12 @@ import {
   type RuntimePreloadIpcPayloadListener,
   type RuntimePreloadIpcSubscribe,
 } from "./runtime-bridge.js";
+import {
+  bindRuntimeShutdownStatusStoreToPageLifecycle,
+  createRuntimeShutdownStatusStore,
+  type RuntimeShutdownStatusPageLifecycleEvent,
+  type RuntimeShutdownStatusPageLifecycleListener,
+} from "../renderer/shutdown-status-client.js";
 
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
@@ -560,8 +566,231 @@ test("installs the cw preload API through injected Electron-like bridges", async
   ]);
 });
 
+test("renderer shutdown status store refreshes and appends live updates", async () => {
+  const errors: unknown[] = [];
+  const firstObservedKinds: Array<RuntimeIpcShutdownStatus["kind"]> = [];
+  const secondObservedKinds: Array<RuntimeIpcShutdownStatus["kind"]> = [];
+  let liveListener:
+    | ((statuses: readonly RuntimeIpcShutdownStatus[]) => void)
+    | undefined;
+  let shutdownStatusSnapshot: readonly RuntimeIpcShutdownStatus[] = [
+    createShutdownStatus("registered"),
+  ];
+  const store = createRuntimeShutdownStatusStore({
+    runtime: {
+      shutdownStatus: async () => shutdownStatusSnapshot,
+      onShutdownStatus: (listener) => {
+        liveListener = listener;
+        let subscribed = true;
+        return () => {
+          if (!subscribed) {
+            return false;
+          }
+          subscribed = false;
+          liveListener = undefined;
+          return true;
+        };
+      },
+    },
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+
+  const unsubscribeFirst = store.subscribe((statuses) => {
+    const [status] = statuses;
+    assert.ok(status);
+    firstObservedKinds.push(status.kind);
+    const mutableStatuses = statuses as RuntimeIpcShutdownStatus[];
+    mutableStatuses[0] = createShutdownStatus("shutdown_failed");
+  });
+  store.subscribe(() => {
+    throw new Error("listener failed");
+  });
+  const unsubscribeSecond = store.subscribe((statuses) => {
+    const [status] = statuses;
+    assert.ok(status);
+    secondObservedKinds.push(status.kind);
+  });
+
+  assert.equal(store.isStarted(), false);
+  assert.equal(store.start(), true);
+  assert.equal(store.start(), false);
+  assert.equal(store.isStarted(), true);
+  assert.deepEqual(await store.refresh(), [createShutdownStatus("registered")]);
+  assert.deepEqual(firstObservedKinds, ["registered"]);
+  assert.deepEqual(secondObservedKinds, ["registered"]);
+  assert.equal(errors.length, 1);
+
+  liveListener?.([createShutdownStatus("shutting_down")]);
+  assert.deepEqual(store.snapshot(), [
+    createShutdownStatus("registered"),
+    createShutdownStatus("shutting_down"),
+  ]);
+  assert.deepEqual(firstObservedKinds, ["registered", "registered"]);
+  assert.deepEqual(secondObservedKinds, ["registered", "registered"]);
+  assert.equal(errors.length, 2);
+
+  shutdownStatusSnapshot = [createShutdownStatus("shutdown_complete")];
+  assert.deepEqual(await store.refresh(), [
+    createShutdownStatus("shutdown_complete"),
+  ]);
+  assert.equal(unsubscribeFirst(), true);
+  assert.equal(unsubscribeFirst(), false);
+  assert.equal(unsubscribeSecond(), true);
+  assert.equal(store.listenerCount(), 1);
+  assert.equal(store.stop(), true);
+  assert.equal(store.stop(), false);
+  assert.equal(store.isStarted(), false);
+});
+
+test("renderer shutdown status store ignores stale refresh after live update", async () => {
+  let liveListener:
+    | ((statuses: readonly RuntimeIpcShutdownStatus[]) => void)
+    | undefined;
+  let resolveShutdownStatus:
+    | ((statuses: readonly RuntimeIpcShutdownStatus[]) => void)
+    | undefined;
+  const store = createRuntimeShutdownStatusStore({
+    runtime: {
+      shutdownStatus: async () =>
+        new Promise<readonly RuntimeIpcShutdownStatus[]>((resolve) => {
+          resolveShutdownStatus = resolve;
+        }),
+      onShutdownStatus: (listener) => {
+        liveListener = listener;
+        return () => true;
+      },
+    },
+  });
+
+  assert.equal(store.start(), true);
+  const refreshPromise = store.refresh();
+  liveListener?.([createShutdownStatus("shutting_down")]);
+  resolveShutdownStatus?.([createShutdownStatus("registered")]);
+
+  assert.deepEqual(await refreshPromise, [
+    createShutdownStatus("shutting_down"),
+  ]);
+  assert.deepEqual(store.snapshot(), [createShutdownStatus("shutting_down")]);
+});
+
+test("renderer shutdown status page lifecycle binding stops and disposes once", () => {
+  const events = new Map<
+    RuntimeShutdownStatusPageLifecycleEvent,
+    RuntimeShutdownStatusPageLifecycleListener
+  >();
+  let stopCalls = 0;
+  const dispose = bindRuntimeShutdownStatusStoreToPageLifecycle(
+    {
+      stop: () => {
+        stopCalls += 1;
+        return stopCalls === 1;
+      },
+    },
+    {
+      addEventListener: (type, listener) => {
+        events.set(type, listener);
+      },
+      removeEventListener: (type, listener) => {
+        if (events.get(type) === listener) {
+          events.delete(type);
+        }
+      },
+    },
+    { eventType: "pagehide" },
+  );
+
+  events.get("pagehide")?.();
+  assert.equal(stopCalls, 1);
+  assert.equal(events.has("pagehide"), true);
+  assert.equal(dispose(), true);
+  assert.equal(stopCalls, 1);
+  assert.equal(events.has("pagehide"), false);
+  assert.equal(dispose(), false);
+  assert.equal(stopCalls, 1);
+});
+
 function createNoopSubscribe(): RuntimePreloadIpcSubscribe {
   return () => () => false;
+}
+
+function createShutdownStatus(
+  kind: RuntimeIpcShutdownStatus["kind"],
+): RuntimeIpcShutdownStatus {
+  switch (kind) {
+    case "registered":
+      return {
+        kind,
+        state: "registered",
+        severity: "info",
+        lifecycleComplete: false,
+        retryable: false,
+        appQuitRequested: false,
+        windowCloseRequested: false,
+      };
+    case "app_quit_requested":
+      return {
+        kind,
+        state: "shutting_down",
+        severity: "info",
+        lifecycleComplete: false,
+        retryable: false,
+        appQuitRequested: true,
+        windowCloseRequested: false,
+      };
+    case "window_close_requested":
+      return {
+        kind,
+        state: "shutting_down",
+        severity: "info",
+        lifecycleComplete: false,
+        retryable: false,
+        appQuitRequested: false,
+        windowCloseRequested: true,
+      };
+    case "shutting_down":
+      return {
+        kind,
+        state: "shutting_down",
+        severity: "info",
+        lifecycleComplete: false,
+        retryable: false,
+        appQuitRequested: true,
+        windowCloseRequested: false,
+      };
+    case "shutdown_complete":
+      return {
+        kind,
+        state: "shutdown_complete",
+        severity: "info",
+        lifecycleComplete: true,
+        retryable: false,
+        appQuitRequested: true,
+        windowCloseRequested: false,
+      };
+    case "shutdown_failed":
+      return {
+        kind,
+        state: "failed",
+        severity: "error",
+        lifecycleComplete: true,
+        retryable: true,
+        appQuitRequested: true,
+        windowCloseRequested: false,
+        reason: "runtime shutdown failed",
+      };
+    case "unregistered":
+      return {
+        kind,
+        state: "unregistered",
+        severity: "info",
+        lifecycleComplete: true,
+        retryable: false,
+        appQuitRequested: false,
+        windowCloseRequested: false,
+      };
+  }
 }
 
 function createFakeRuntimePreloadSubscribe(): {
