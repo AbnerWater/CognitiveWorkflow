@@ -15,8 +15,13 @@ export interface RuntimeConnectionRegistryRegisterOptions {
   readonly connection: RuntimeConnectionInfo;
 }
 
+export type RuntimeConnectionRegistryProjectRootCaseSensitivity =
+  | "case_sensitive"
+  | "case_insensitive";
+
 export interface RuntimeConnectionRegistryOptions {
   readonly nowMs?: () => number;
+  readonly projectRootCaseSensitivity?: RuntimeConnectionRegistryProjectRootCaseSensitivity;
 }
 
 export interface RuntimeConnectionRegistry {
@@ -38,9 +43,14 @@ export function createRuntimeConnectionRegistry(
 ): RuntimeConnectionRegistry {
   const entries = new Map<string, RuntimeConnectionRegistryEntry>();
   const nowMs = options.nowMs ?? Date.now;
+  const projectRootCaseSensitivity =
+    options.projectRootCaseSensitivity ??
+    (process.platform === "win32" ? "case_insensitive" : "case_sensitive");
 
   const get = (projectRoot: string): RuntimeConnectionInfo | null => {
-    const entry = entries.get(normalizeProjectRoot(projectRoot));
+    const entry = entries.get(
+      normalizeProjectRoot(projectRoot, projectRootCaseSensitivity).lookupKey,
+    );
     return entry === undefined ? null : cloneConnection(entry.connection);
   };
 
@@ -48,16 +58,19 @@ export function createRuntimeConnectionRegistry(
     register: (
       registerOptions: RuntimeConnectionRegistryRegisterOptions,
     ): RuntimeConnectionRegistryEntry => {
-      const projectRoot = normalizeProjectRoot(registerOptions.projectRoot);
+      const projectRoot = normalizeProjectRoot(
+        registerOptions.projectRoot,
+        projectRootCaseSensitivity,
+      );
       const connection = normalizeRuntimeConnectionInfo(
         registerOptions.connection,
       );
       const entry = {
-        projectRoot,
+        projectRoot: projectRoot.displayPath,
         connection,
         registeredAtMs: nowMs(),
       };
-      entries.set(projectRoot, entry);
+      entries.set(projectRoot.lookupKey, entry);
       return cloneEntry(entry);
     },
     get,
@@ -69,8 +82,11 @@ export function createRuntimeConnectionRegistry(
       projectRoot: string,
       connection?: RuntimeConnectionInfo,
     ): boolean => {
-      const normalizedProjectRoot = normalizeProjectRoot(projectRoot);
-      const current = entries.get(normalizedProjectRoot);
+      const normalizedProjectRoot = normalizeProjectRoot(
+        projectRoot,
+        projectRootCaseSensitivity,
+      );
+      const current = entries.get(normalizedProjectRoot.lookupKey);
       if (current === undefined) {
         return false;
       }
@@ -85,7 +101,7 @@ export function createRuntimeConnectionRegistry(
         return false;
       }
 
-      return entries.delete(normalizedProjectRoot);
+      return entries.delete(normalizedProjectRoot.lookupKey);
     },
     snapshot: (): readonly RuntimeConnectionRegistryEntry[] =>
       Array.from(entries.values(), cloneEntry),
@@ -95,7 +111,15 @@ export function createRuntimeConnectionRegistry(
   };
 }
 
-function normalizeProjectRoot(projectRoot: string): string {
+interface NormalizedProjectRoot {
+  readonly displayPath: string;
+  readonly lookupKey: string;
+}
+
+function normalizeProjectRoot(
+  projectRoot: string,
+  caseSensitivity: RuntimeConnectionRegistryProjectRootCaseSensitivity,
+): NormalizedProjectRoot {
   const trimmedProjectRoot = projectRoot.trim();
   if (trimmedProjectRoot.length === 0) {
     throw new Error(
@@ -103,7 +127,13 @@ function normalizeProjectRoot(projectRoot: string): string {
     );
   }
 
-  return path.resolve(trimmedProjectRoot);
+  const displayPath = path.resolve(trimmedProjectRoot);
+  const lookupKey =
+    caseSensitivity === "case_insensitive"
+      ? displayPath.toLowerCase()
+      : displayPath;
+
+  return { displayPath, lookupKey };
 }
 
 function cloneEntry(

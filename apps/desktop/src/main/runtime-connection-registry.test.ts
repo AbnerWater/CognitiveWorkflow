@@ -70,6 +70,48 @@ test("replaces a project connection and unregisters only the matching session", 
   assert.equal(registry.get(PROJECT_ROOT), null);
 });
 
+test("matches project roots case-insensitively when configured", () => {
+  const registry = createRuntimeConnectionRegistry({
+    projectRootCaseSensitivity: "case_insensitive",
+  });
+  const mixedCaseProjectRoot = path.join("C:", "CW", "Project");
+  const lowerCaseProjectRoot = mixedCaseProjectRoot.toLowerCase();
+  const upperCaseProjectRoot = mixedCaseProjectRoot.toUpperCase();
+  const connection: RuntimeConnectionInfo = {
+    base_url: createRuntimeBaseUrl(51234),
+    token: "token_abc123",
+  };
+
+  const entry = registry.register({
+    projectRoot: mixedCaseProjectRoot,
+    connection,
+  });
+
+  assert.equal(entry.projectRoot, path.resolve(mixedCaseProjectRoot));
+  assert.deepEqual(registry.get(lowerCaseProjectRoot), connection);
+  assert.deepEqual(registry.snapshot(), [entry]);
+  assert.equal(registry.unregister(upperCaseProjectRoot, connection), true);
+  assert.equal(registry.get(mixedCaseProjectRoot), null);
+});
+
+test("keeps project roots case-sensitive when configured", () => {
+  const registry = createRuntimeConnectionRegistry({
+    projectRootCaseSensitivity: "case_sensitive",
+  });
+  const mixedCaseProjectRoot = path.join("C:", "CW", "Project");
+  const lowerCaseProjectRoot = mixedCaseProjectRoot.toLowerCase();
+  const connection: RuntimeConnectionInfo = {
+    base_url: createRuntimeBaseUrl(51234),
+    token: "token_abc123",
+  };
+
+  registry.register({ projectRoot: mixedCaseProjectRoot, connection });
+
+  assert.equal(registry.get(lowerCaseProjectRoot), null);
+  assert.equal(registry.unregister(lowerCaseProjectRoot, connection), false);
+  assert.deepEqual(registry.get(mixedCaseProjectRoot), connection);
+});
+
 test("rejects unsafe project roots and connection payloads", () => {
   const registry = createRuntimeConnectionRegistry();
 
