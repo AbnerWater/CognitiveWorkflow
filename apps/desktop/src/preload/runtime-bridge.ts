@@ -15,6 +15,7 @@ import type {
   RuntimeRequestPath,
   RuntimeResponse,
   RuntimeShutdownStatus,
+  RuntimeShutdownStatusUnsubscribe,
   RuntimeStartupStatus,
 } from "./contract.js";
 
@@ -23,8 +24,16 @@ export type RuntimePreloadIpcInvoke = <TResult>(
   payload?: unknown,
 ) => Promise<TResult>;
 
+export type RuntimePreloadIpcPayloadListener = (payload: unknown) => void;
+
+export type RuntimePreloadIpcSubscribe = (
+  channel: RuntimeIpcChannel,
+  listener: RuntimePreloadIpcPayloadListener,
+) => RuntimeShutdownStatusUnsubscribe;
+
 export interface CreateRuntimePreloadBridgeOptions {
   readonly invoke: RuntimePreloadIpcInvoke;
+  readonly subscribe: RuntimePreloadIpcSubscribe;
 }
 
 export function createRuntimePreloadBridge(
@@ -47,6 +56,15 @@ export function createRuntimePreloadBridge(
         ...status,
       })) satisfies readonly RuntimeShutdownStatus[];
     },
+    onShutdownStatus: (listener) =>
+      options.subscribe(RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL, (payload) => {
+        const statuses = cloneRuntimeShutdownStatusPayload(payload);
+        try {
+          listener(statuses);
+        } catch {
+          // Renderer callbacks must not break the preload IPC listener chain.
+        }
+      }),
     connectionInfo: () =>
       options.invoke<RuntimeConnectionInfo>(
         RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
@@ -62,4 +80,19 @@ export function createRuntimePreloadBridge(
         ),
       ),
   };
+}
+
+function cloneRuntimeShutdownStatusPayload(
+  payload: unknown,
+): readonly RuntimeShutdownStatus[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  return payload
+    .filter(isRecord)
+    .map((status) => ({ ...status }) as unknown as RuntimeShutdownStatus);
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
