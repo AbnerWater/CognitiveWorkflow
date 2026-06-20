@@ -58,6 +58,12 @@ import {
   type RuntimeStreamEventStorePageLifecycleListener,
   type RuntimeStreamEventStoreSnapshot,
 } from "../renderer/runtime-stream-store.js";
+import {
+  createRuntimeStreamViewModel,
+  type RuntimeStreamViewCategory,
+  type RuntimeStreamViewDisplayLevel,
+  type RuntimeStreamViewModelSnapshot,
+} from "../renderer/runtime-stream-view-model.js";
 
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
@@ -1460,6 +1466,237 @@ test("renderer runtime stream event store rejects unsafe options", () => {
   );
 });
 
+test("renderer runtime stream view model folds children and filters spec fields", () => {
+  const store = createFakeRuntimeStreamViewModelStore({
+    status: "running",
+    events: [
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_tool_start",
+        seq: 1,
+        type: "tool.call_started",
+        category: "tool",
+        display_level: "default",
+        severity: "info",
+        title: "Calling tool",
+        summary: "evidence_lookup",
+        expandable: true,
+        payload: { tool_name: "evidence_lookup" },
+        artifact_refs: [],
+        created_at: "2026-06-21T00:00:00.001Z",
+      }),
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_tool_done",
+        seq: 2,
+        parent_event_id: "evt_tool_start",
+        type: "tool.call_completed",
+        category: "tool",
+        display_level: "detailed",
+        severity: "success",
+        title: "Tool completed",
+        expandable: true,
+        payload: { output_size: 42 },
+        created_at: "2026-06-21T00:00:00.002Z",
+      }),
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_model_delta",
+        seq: 3,
+        type: "model.text_delta",
+        category: "model",
+        display_level: "minimal",
+        severity: "info",
+        title: "Model text",
+        content: "hello",
+        expandable: false,
+        payload: { content: "hello" },
+        created_at: "2026-06-21T00:00:00.003Z",
+      }),
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_orphan_eval",
+        seq: 4,
+        parent_event_id: "evt_missing",
+        type: "evaluation.completed",
+        category: "evaluation",
+        display_level: "default",
+        severity: "success",
+        title: "Evaluation completed",
+        expandable: false,
+        payload: { passed: true },
+        created_at: "2026-06-21T00:00:00.004Z",
+      }),
+    ],
+    totalEvents: 4,
+  });
+  const viewModel = createRuntimeStreamViewModel({ store: store.store });
+
+  const initial = viewModel.snapshot();
+  assert.equal(initial.status, "running");
+  assert.equal(initial.bufferedEventCount, 4);
+  assert.equal(initial.matchingEventCount, 4);
+  assert.equal(initial.visibleEventCount, 3);
+  assert.equal(initial.foldedChildCount, 1);
+  assert.equal(initial.summaryItems.length, 1);
+  assert.equal(initial.summaryItems[0]?.id, "evt_model_delta");
+  assert.equal(initial.timelineItems.length, 2);
+  assert.equal(initial.timelineItems[0]?.id, "evt_tool_start");
+  assert.equal(initial.timelineItems[0]?.childCount, 1);
+  assert.equal(initial.timelineItems[0]?.children.length, 0);
+  assert.equal(initial.timelineItems[1]?.id, "evt_orphan_eval");
+
+  const expanded = viewModel.toggleExpanded("evt_tool_start");
+  assert.equal(expanded.timelineItems[0]?.expanded, true);
+  assert.equal(expanded.timelineItems[0]?.children.length, 1);
+  assert.equal(expanded.timelineItems[0]?.children[0]?.id, "evt_tool_done");
+  assert.equal(expanded.visibleEventCount, 4);
+  assert.equal(expanded.foldedChildCount, 0);
+
+  const filtered = viewModel.setFilters({
+    categories: ["tool"],
+    displayLevels: ["default"],
+  });
+  assert.deepEqual(filtered.filters, {
+    categories: ["tool"],
+    displayLevels: ["default"],
+  });
+  assert.equal(filtered.summaryItems.length, 0);
+  assert.equal(filtered.timelineItems.length, 1);
+  assert.equal(filtered.timelineItems[0]?.id, "evt_tool_start");
+  assert.equal(filtered.timelineItems[0]?.childCount, 0);
+  assert.equal(filtered.hiddenEventCount, 3);
+});
+
+test("renderer runtime stream view model publishes isolated snapshots and full reload state", () => {
+  const errors: unknown[] = [];
+  const published: RuntimeStreamViewModelSnapshot[] = [];
+  const store = createFakeRuntimeStreamViewModelStore({
+    status: "running",
+    events: [],
+    totalEvents: 0,
+  });
+  const viewModel = createRuntimeStreamViewModel({
+    store: store.store,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const unsubscribe = viewModel.subscribe((snapshot) => {
+    published.push(snapshot);
+    throw new Error("view listener failed");
+  });
+
+  store.emit({
+    status: "full_reload_required",
+    events: [
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_replay_miss",
+        seq: 5,
+        type: "system.runtime_ready",
+        category: "system",
+        display_level: "default",
+        severity: "warning",
+        title: "Replay point missing",
+        expandable: true,
+        payload: { reason: "Last-Event-ID was not found" },
+        created_at: "2026-06-21T00:00:00.005Z",
+      }),
+    ],
+    totalEvents: 5,
+    fullReloadDecision: {
+      action: "full_reload",
+      lastEventId: "evt_replay_miss",
+      reason: "Last-Event-ID was not found",
+      status: 412,
+      errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+    },
+  });
+
+  assert.equal(errors.length, 1);
+  assert.equal(published.length, 1);
+  const snapshot = viewModel.snapshot();
+  assert.equal(snapshot.fullReloadRequired, true);
+  assert.deepEqual(snapshot.fullReloadDecision, {
+    action: "full_reload",
+    lastEventId: "evt_replay_miss",
+    reason: "Last-Event-ID was not found",
+    status: 412,
+    errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+  });
+  const payload = snapshot.timelineItems[0]?.payload;
+  assertRecordData(payload);
+  payload.reason = "mutated snapshot";
+  assert.deepEqual(viewModel.snapshot().timelineItems[0]?.payload, {
+    reason: "Last-Event-ID was not found",
+  });
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+});
+
+test("renderer runtime stream view model disposes and rejects unsafe options", () => {
+  const store = createFakeRuntimeStreamViewModelStore({
+    status: "running",
+    events: [],
+    totalEvents: 0,
+  });
+  const viewModel = createRuntimeStreamViewModel({ store: store.store });
+  let publishCount = 0;
+  viewModel.subscribe(() => {
+    publishCount += 1;
+  });
+  assert.equal(store.listenerCount(), 1);
+  assert.equal(viewModel.dispose(), true);
+  assert.equal(viewModel.dispose(), false);
+  assert.equal(store.listenerCount(), 0);
+
+  store.emit({
+    status: "running",
+    events: [
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_after_dispose",
+        type: "model.text_delta",
+        category: "model",
+        display_level: "minimal",
+        severity: "info",
+        title: "After dispose",
+        expandable: false,
+      }),
+    ],
+    totalEvents: 1,
+  });
+  assert.equal(publishCount, 0);
+  assert.equal(viewModel.subscribe(() => undefined)(), false);
+
+  assert.throws(
+    () =>
+      createRuntimeStreamViewModel({
+        store: store.store,
+        filters: {
+          displayLevels: ["verbose" as RuntimeStreamViewDisplayLevel],
+        },
+      }),
+    /display level/u,
+  );
+  assert.throws(
+    () =>
+      createRuntimeStreamViewModel({
+        store: store.store,
+        filters: {
+          categories: ["unsafe" as RuntimeStreamViewCategory],
+        },
+      }),
+    /category/u,
+  );
+  assert.throws(
+    () =>
+      createRuntimeStreamViewModel({
+        store: store.store,
+        filters: {
+          categories: ["evidence" as RuntimeStreamViewCategory],
+        },
+      }),
+    /category/u,
+  );
+  assert.throws(() => viewModel.toggleExpanded("bad id"), /event id/u);
+});
+
 function createNoopSubscribe(): RuntimePreloadIpcSubscribe {
   return () => () => false;
 }
@@ -1819,6 +2056,95 @@ function createFakeRuntimeStreamEventStorePageLifecycleTarget(): {
     },
     listenerCount: (eventType) => listeners.get(eventType)?.size ?? 0,
   };
+}
+
+function createFakeRuntimeStreamViewModelStore(
+  initialSnapshot: RuntimeStreamEventStoreSnapshot,
+): {
+  readonly store: {
+    readonly snapshot: () => RuntimeStreamEventStoreSnapshot;
+    readonly subscribe: (
+      listener: (snapshot: RuntimeStreamEventStoreSnapshot) => void,
+    ) => () => boolean;
+  };
+  readonly emit: (snapshot: RuntimeStreamEventStoreSnapshot) => void;
+  readonly listenerCount: () => number;
+} {
+  const listeners = new Set<
+    (snapshot: RuntimeStreamEventStoreSnapshot) => void
+  >();
+  let snapshot = cloneRuntimeStreamEventStoreSnapshotForTest(initialSnapshot);
+  return {
+    store: {
+      snapshot: () => cloneRuntimeStreamEventStoreSnapshotForTest(snapshot),
+      subscribe: (listener) => {
+        listeners.add(listener);
+        let subscribed = true;
+        return () => {
+          if (!subscribed) {
+            return false;
+          }
+          subscribed = false;
+          return listeners.delete(listener);
+        };
+      },
+    },
+    emit: (nextSnapshot) => {
+      snapshot = cloneRuntimeStreamEventStoreSnapshotForTest(nextSnapshot);
+      for (const listener of [...listeners]) {
+        listener(cloneRuntimeStreamEventStoreSnapshotForTest(snapshot));
+      }
+    },
+    listenerCount: () => listeners.size,
+  };
+}
+
+function createRuntimeStreamViewModelEvent(
+  data: Readonly<Record<string, unknown>>,
+): RuntimeStreamEvent<unknown> {
+  const eventId = typeof data.event_id === "string" ? data.event_id : null;
+  const eventType =
+    typeof data.type === "string" ? data.type : "system.runtime_ready";
+  return {
+    id: eventId,
+    type: eventType,
+    data: structuredClone(data),
+    rawData: JSON.stringify(data),
+  };
+}
+
+function cloneRuntimeStreamEventStoreSnapshotForTest(
+  snapshot: RuntimeStreamEventStoreSnapshot,
+): RuntimeStreamEventStoreSnapshot {
+  const cloned: {
+    status: RuntimeStreamEventStoreSnapshot["status"];
+    events: RuntimeStreamEvent<unknown>[];
+    totalEvents: number;
+    fullReloadDecision?: RuntimeStreamFullReloadDecision;
+  } = {
+    status: snapshot.status,
+    events: snapshot.events.map((event) => ({
+      id: event.id,
+      type: event.type,
+      data: structuredClone(event.data),
+      rawData: event.rawData,
+    })),
+    totalEvents: snapshot.totalEvents,
+  };
+  if (snapshot.fullReloadDecision !== undefined) {
+    cloned.fullReloadDecision = {
+      action: "full_reload",
+      lastEventId: snapshot.fullReloadDecision.lastEventId,
+      reason: snapshot.fullReloadDecision.reason,
+      ...(snapshot.fullReloadDecision.status !== undefined
+        ? { status: snapshot.fullReloadDecision.status }
+        : {}),
+      ...(snapshot.fullReloadDecision.errorCode !== undefined
+        ? { errorCode: snapshot.fullReloadDecision.errorCode }
+        : {}),
+    };
+  }
+  return cloned;
 }
 
 function assertRecordData(
