@@ -26,7 +26,7 @@ from cw_runtime.runs import (
     read_workflow_run,
 )
 from cw_schemas.runtime import AdapterError, RunUsage
-from cw_schemas.types import AdapterErrorKind, ExecutionMode, FailureType, RunState
+from cw_schemas.types import AdapterErrorKind, ExecutionMode, FailureType, PatchScope, RiskLevel, RunState
 
 _MODEL_POLICY: dict[str, Any] = {"primary_model_profile_id": "deterministic-foundation"}
 _PROMPT: dict[str, Any] = {
@@ -315,6 +315,12 @@ def _read_run_json(project_root: Path, run_id: str) -> dict[str, Any]:
     return loaded
 
 
+def _read_project_json(project_root: Path, relative_path: str) -> dict[str, Any]:
+    loaded = json.loads((project_root / ".agent-workflow" / relative_path).read_text(encoding="utf-8"))
+    assert isinstance(loaded, dict)
+    return loaded
+
+
 def _write_run_json(project_root: Path, run_id: str, payload: dict[str, Any]) -> None:
     (project_root / ".agent-workflow" / "runs" / run_id / "run.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -497,6 +503,141 @@ def test_runner_persists_failed_evaluation_repair_patch_and_retries_target(tmp_p
     assert passed_review.next_node_ids == ["n_end"]
     run_json_after_pass = _read_run_json(project_root, run_id)
     assert "n_execute" not in run_json_after_pass["metadata"]["cw"]["active_prompt_overlays"]
+
+
+def test_runner_persistent_workflow_repair_updates_graph_version_and_prompt(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload(include_repair=True))
+    run_id = _start_run(project_root, workflow_id)
+    instruction = "Persist JSON output instructions in the workflow."
+    revision_before = _read_project_json(project_root, "manifest_revision.json")["workflow.flow.json"]["revision"]
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "bad"})),
+    )
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                passed=False,
+                score=0.2,
+                finding_message="Output is missing required structure.",
+            )
+        ),
+    )
+    repaired = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            repair=RepairAdvanceInput(
+                instruction_text=instruction,
+                expected_effect="Future attempts use workflow instructions.",
+                scope=PatchScope.PERSISTENT_FOR_WORKFLOW,
+            )
+        ),
+    )
+
+    assert repaired.next_node_ids == ["n_execute"]
+    workflow_path = project_root / ".agent-workflow" / "workflow.flow.json"
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    assert workflow["version"] == "0.1.1"
+    execute_node = next(node for node in workflow["nodes"] if node["node_id"] == "n_execute")
+    assert execute_node["contract"]["prompt"]["instructions"] == [instruction]
+    revision_after = _read_project_json(project_root, "manifest_revision.json")["workflow.flow.json"]["revision"]
+    assert revision_after == revision_before + 1
+
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["workflow_version"] == "0.1.1"
+    cw_metadata = run_json["metadata"]["cw"]
+    assert "active_prompt_overlays" not in cw_metadata
+    assert cw_metadata["workflow_patch_versions"][repaired.patch_id] == {
+        "from": "0.1.0",
+        "to": "0.1.1",
+        "target_node_id": "n_execute",
+    }
+    assert not (run_root / "run_overlay.json").exists()
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    assert repairs[-1]["scope"] == "persistent_for_workflow"
+    assert repairs[-1]["applies_to_attempts"] == []
+
+    applied_events = [
+        event for event in list_stream_events(project_root, run_id) if event.type == "repair.patch_applied"
+    ]
+    assert applied_events[-1].payload is not None
+    assert applied_events[-1].payload["side_effects"] == [
+        "workflow_prompt_persisted_for_n_execute",
+        "workflow_version_bumped_0.1.0_to_0.1.1",
+    ]
+
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "fixed"})),
+    )
+    retry_attempt = _read_jsonl(run_root / "attempts.jsonl")[-1]
+    assert retry_attempt["node_id"] == "n_execute"
+    assert retry_attempt["effective_prompt_overlay_ref"] is None
+    execution_pack = json.loads(
+        (run_root / "execution_packs" / f"{retry_attempt['execution_pack_id']}.json").read_text(encoding="utf-8")
+    )
+    assert execution_pack["node_contract_snapshot"]["prompt"]["instructions"] == [instruction]
+    assert execution_pack["effective_prompt_overlay"] is None
+
+
+def test_runner_downgrades_high_risk_workflow_repair_scope_to_run_overlay(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _runner_graph_payload(include_repair=True))
+    run_id = _start_run(project_root, workflow_id)
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "bad"})),
+    )
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                passed=False,
+                score=0.2,
+                finding_message="Output is missing required structure.",
+            )
+        ),
+    )
+    repaired = advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            repair=RepairAdvanceInput(
+                instruction_text="Keep this high-risk patch run-scoped.",
+                scope=PatchScope.PERSISTENT_FOR_WORKFLOW,
+                risk_level=RiskLevel.HIGH,
+            )
+        ),
+    )
+
+    assert repaired.next_node_ids == ["n_execute"]
+    workflow = _read_project_json(project_root, "workflow.flow.json")
+    assert workflow["version"] == "0.1.0"
+    execute_node = next(node for node in workflow["nodes"] if node["node_id"] == "n_execute")
+    assert "instructions" not in execute_node["contract"]["prompt"]
+
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    assert repairs[-1]["scope"] == "persistent_for_run"
+    assert repairs[-1]["risk_level"] == "high"
+    assert repairs[-1]["metadata"]["cw"]["scope_downgraded_from"] == "persistent_for_workflow"
+    assert repairs[-1]["metadata"]["cw"]["scope_downgrade_reason"] == "risk_level_high"
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["metadata"]["cw"]["node_states"]["n_repair"] == "passed"
+    assert run_json["metadata"]["cw"]["node_states"]["n_execute"] == "retrying"
+    run_overlay = _read_project_json(project_root, f"runs/{run_id}/run_overlay.json")
+    assert run_overlay["prompt_overlays"]["n_execute"][0]["scope"] == "persistent_for_run"
 
 
 def test_runner_ignores_this_attempt_overlay_for_non_matching_attempt_id(tmp_path: Path) -> None:

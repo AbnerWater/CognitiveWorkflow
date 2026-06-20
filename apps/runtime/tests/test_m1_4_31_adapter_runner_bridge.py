@@ -269,6 +269,12 @@ def _read_run_json(project_root: Path, run_id: str) -> dict[str, Any]:
     return loaded
 
 
+def _read_json(path: Path) -> dict[str, Any]:
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(loaded, dict)
+    return loaded
+
+
 class _FakeAdapter:
     def __init__(
         self,
@@ -876,14 +882,15 @@ async def test_adapter_repair_bridge_this_attempt_only_targets_reserved_retry(tm
 
 
 @pytest.mark.asyncio
-async def test_adapter_repair_bridge_rejects_workflow_scope_without_persisting_patch(tmp_path: Path) -> None:
+async def test_adapter_repair_bridge_persists_workflow_scope_prompt_patch(tmp_path: Path) -> None:
     project_root, workflow_id = _create_project_with_graph(tmp_path, _review_repair_graph_payload())
     run_id = _start_run(project_root, workflow_id)
+    instruction = "Persist this instruction into the workflow."
     adapter = _FakeAdapter(
         usage=RunUsage(input_tokens=300, output_tokens=400, total_tokens=700, requests=1),
         output={
             "failure_type": "format_error",
-            "instruction_text": "Persist this instruction into the workflow.",
+            "instruction_text": instruction,
             "expected_effect": "The workflow version should change.",
             "scope": "persistent_for_workflow",
             "metadata": {"source": "adapter_repair"},
@@ -910,21 +917,118 @@ async def test_adapter_repair_bridge_rejects_workflow_scope_without_persisting_p
             )
         ),
     )
-    failed = await advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
+    repaired = await advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
 
-    assert failed.run.state == RunState.FAILED
+    assert repaired.node_id == "n_repair"
+    assert repaired.next_node_ids == ["n_execute"]
+    assert repaired.patch_id is not None
+    assert repaired.run.state == RunState.RUNNING
     assert adapter.closed is True
     run_root = project_root / ".agent-workflow" / "runs" / run_id
-    assert _read_jsonl(run_root / "repairs.jsonl") == []
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    assert repairs[-1]["patch_id"] == repaired.patch_id
+    assert repairs[-1]["scope"] == "persistent_for_workflow"
+    assert repairs[-1]["applies_to_attempts"] == []
+    assert repairs[-1]["operations"][0]["text"] == instruction
+
+    workflow = _read_json(project_root / ".agent-workflow" / "workflow.flow.json")
+    assert workflow["version"] == "0.1.1"
+    execute_node = next(node for node in workflow["nodes"] if node["node_id"] == "n_execute")
+    assert execute_node["contract"]["prompt"]["instructions"] == [instruction]
+
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["workflow_version"] == "0.1.1"
+    assert "active_prompt_overlays" not in run_json["metadata"].get("cw", {})
+    assert run_json["metadata"]["cw"]["workflow_patch_versions"][repaired.patch_id] == {
+        "from": "0.1.0",
+        "to": "0.1.1",
+        "target_node_id": "n_execute",
+    }
+    assert not (run_root / "run_overlay.json").exists()
     attempts = _read_jsonl(run_root / "attempts.jsonl")
     repair_attempt = attempts[-1]
     assert repair_attempt["node_id"] == "n_repair"
-    assert repair_attempt["state"] == "failed"
-    error_payload = repair_attempt["errors"][0]["payload"]
-    assert error_payload["error_code"] == "AA_RUN_OUTPUT_VALIDATION_FAILED"
-    assert error_payload["node_kind"] == "repair"
-    assert error_payload["output_type"] == "dict"
-    assert error_payload["validation_error_count"] == 1
+    assert repair_attempt["state"] == "completed"
+    assert repair_attempt["effective_prompt_overlay_ref"] is None
+
+    applied_event = next(
+        event for event in list_stream_events(project_root, run_id) if event.type == "repair.patch_applied"
+    )
+    assert applied_event.payload is not None
+    assert applied_event.payload["side_effects"] == [
+        "workflow_prompt_persisted_for_n_execute",
+        "workflow_version_bumped_0.1.0_to_0.1.1",
+    ]
+
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "fixed"})),
+    )
+    retry_attempt = _read_jsonl(run_root / "attempts.jsonl")[-1]
+    assert retry_attempt["node_id"] == "n_execute"
+    assert retry_attempt["effective_prompt_overlay_ref"] is None
+    execution_pack = _read_json(run_root / "execution_packs" / f"{retry_attempt['execution_pack_id']}.json")
+    assert execution_pack["node_contract_snapshot"]["prompt"]["instructions"] == [instruction]
+    assert execution_pack["effective_prompt_overlay"] is None
+
+
+@pytest.mark.asyncio
+async def test_adapter_repair_bridge_downgrades_high_risk_workflow_scope(tmp_path: Path) -> None:
+    project_root, workflow_id = _create_project_with_graph(tmp_path, _review_repair_graph_payload())
+    run_id = _start_run(project_root, workflow_id)
+    adapter = _FakeAdapter(
+        usage=RunUsage(input_tokens=300, output_tokens=400, total_tokens=700, requests=1),
+        output={
+            "failure_type": "format_error",
+            "instruction_text": "Keep high-risk adapter repair run-scoped.",
+            "expected_effect": "The workflow file should not change.",
+            "scope": "persistent_for_workflow",
+            "risk_level": "high",
+            "metadata": {"source": "adapter_repair"},
+        },
+    )
+
+    advance_workflow_run(project_root, run_id)
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(execution=ExecutionAdvanceInput(output={"draft": "invalid"})),
+    )
+    advance_workflow_run(
+        project_root,
+        run_id,
+        NodeAdvanceRequest(
+            evaluation=EvaluationAdvanceInput(
+                passed=False,
+                score=0.2,
+                failure_type=FailureType.FORMAT_ERROR,
+                finding_message="Format is invalid.",
+                recommended_action="repair_with_patch",
+                target_repair_node_id="n_repair",
+            )
+        ),
+    )
+    repaired = await advance_workflow_run_with_adapters(project_root, run_id, _adapter_registry(adapter))
+
+    assert repaired.next_node_ids == ["n_execute"]
+    assert adapter.closed is True
+    workflow = _read_json(project_root / ".agent-workflow" / "workflow.flow.json")
+    assert workflow["version"] == "0.1.0"
+    execute_node = next(node for node in workflow["nodes"] if node["node_id"] == "n_execute")
+    assert "instructions" not in execute_node["contract"]["prompt"]
+
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    assert repairs[-1]["scope"] == "persistent_for_run"
+    assert repairs[-1]["risk_level"] == "high"
+    assert repairs[-1]["metadata"]["cw"]["adapter_bridge"] is True
+    assert repairs[-1]["metadata"]["cw"]["scope_downgraded_from"] == "persistent_for_workflow"
+    run_overlay = _read_json(run_root / "run_overlay.json")
+    assert run_overlay["prompt_overlays"]["n_execute"][0]["scope"] == "persistent_for_run"
+    run_json = _read_run_json(project_root, run_id)
+    assert run_json["metadata"]["cw"]["node_states"]["n_repair"] == "passed"
+    assert run_json["metadata"]["cw"]["node_states"]["n_execute"] == "retrying"
 
 
 @pytest.mark.asyncio

@@ -196,6 +196,12 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _read_json(path: Path) -> dict[str, Any]:
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(loaded, dict)
+    return loaded
+
+
 def _start_failed_run_at_repair(client: Any, workflow_id: str) -> tuple[str, str]:
     run_id = _start_run(client, workflow_id)
     start = client.post(
@@ -326,10 +332,9 @@ def test_repair_node_action_rejects_stale_evaluation_id(tmp_path: Path) -> None:
     ("payload_update", "status_code", "error_code", "detail_key"),
     [
         ({"preferred_strategy": "model_escalation"}, 422, "RP_BUILD_KIND_NOT_ALLOWED", "preferred_strategy"),
-        ({"scope": "persistent_for_workflow"}, 409, "NL_STATE_FORBIDDEN_TRANSITION", "scope"),
     ],
 )
-def test_repair_node_action_rejects_unsupported_strategy_or_scope(
+def test_repair_node_action_rejects_unsupported_strategy(
     tmp_path: Path,
     payload_update: dict[str, str],
     status_code: int,
@@ -359,12 +364,12 @@ def test_repair_node_action_rejects_unsupported_strategy_or_scope(
     assert rejected_body["details"][detail_key] == payload_update[detail_key]
 
 
-def test_run_once_rejects_unimplemented_repair_workflow_scope(tmp_path: Path) -> None:
+def test_run_once_repair_workflow_scope_persists_workflow_patch(tmp_path: Path) -> None:
     client = _test_client()
     project_root, workflow_id = _create_project_with_graph(client, tmp_path)
     run_id, _eval_id = _start_failed_run_at_repair(client, workflow_id)
 
-    rejected = client.post(
+    repaired = client.post(
         f"/cw/v1/runs/{run_id}/nodes/n_repair:run-once",
         headers=_AUTH_HEADERS,
         json={
@@ -373,13 +378,79 @@ def test_run_once_rejects_unimplemented_repair_workflow_scope(tmp_path: Path) ->
         },
     )
 
-    assert rejected.status_code == 400
-    rejected_body = rejected.json()
-    assert rejected_body["error_code"] == "SCHEMA_VERSION_NOT_SUPPORTED"
-    error_locs = [error["loc"] for error in rejected_body["details"]["errors"]]
-    assert ("repair", "scope") in [tuple(loc) for loc in error_locs]
+    assert repaired.status_code == 200
+    body = repaired.json()
+    assert body["patch_id"] is not None
+    assert body["next_node_ids"] == ["n_execute"]
     repairs_path = project_root / ".agent-workflow" / "runs" / run_id / "repairs.jsonl"
-    assert _read_jsonl(repairs_path) == []
+    repairs = _read_jsonl(repairs_path)
+    assert repairs[-1]["scope"] == "persistent_for_workflow"
+    workflow = _read_json(project_root / ".agent-workflow" / "workflow.flow.json")
+    assert workflow["version"] == "0.1.1"
+    execute_node = next(node for node in workflow["nodes"] if node["node_id"] == "n_execute")
+    assert execute_node["contract"]["prompt"]["instructions"] == ["Tighten the output format before retry."]
+
+
+def test_repair_node_action_persistent_for_workflow_updates_graph_version_and_prompt(tmp_path: Path) -> None:
+    client = _test_client()
+    project_root, workflow_id = _create_project_with_graph(client, tmp_path)
+    run_id, eval_id = _start_failed_run_at_repair(client, workflow_id)
+
+    repair = client.post(
+        f"/cw/v1/runs/{run_id}/nodes/n_repair:repair",
+        headers=_AUTH_HEADERS,
+        json={
+            "schema_version": "0.1.0",
+            "based_on_evaluation_id": eval_id,
+            "preferred_strategy": "prompt_patch",
+            "scope": "persistent_for_workflow",
+        },
+    )
+
+    assert repair.status_code == 200
+    body = repair.json()
+    assert body["repair_patch"]["scope"] == "persistent_for_workflow"
+    patch_id = str(body["patch_id"])
+    workflow = _read_json(project_root / ".agent-workflow" / "workflow.flow.json")
+    assert workflow["version"] == "0.1.1"
+    execute_node = next(node for node in workflow["nodes"] if node["node_id"] == "n_execute")
+    assert execute_node["contract"]["prompt"]["instructions"] == ["Tighten the output format before retry."]
+
+    run_root = project_root / ".agent-workflow" / "runs" / run_id
+    repairs = _read_jsonl(run_root / "repairs.jsonl")
+    assert repairs[-1]["scope"] == "persistent_for_workflow"
+    assert repairs[-1]["applies_to_attempts"] == []
+    run_json = _read_json(run_root / "run.json")
+    assert run_json["workflow_version"] == "0.1.1"
+    assert "active_prompt_overlays" not in run_json["metadata"].get("cw", {})
+    assert not (run_root / "run_overlay.json").exists()
+
+    applied_events = [
+        event for event in list_stream_events(project_root, run_id) if event.type == "repair.patch_applied"
+    ]
+    assert applied_events[-1].payload is not None
+    assert applied_events[-1].payload["side_effects"] == [
+        "workflow_prompt_persisted_for_n_execute",
+        "workflow_version_bumped_0.1.0_to_0.1.1",
+    ]
+
+    execute = client.post(
+        f"/cw/v1/runs/{run_id}/nodes/n_execute:run-once",
+        headers=_AUTH_HEADERS,
+        json={"schema_version": "0.1.0", "execution": {"output": {"draft": "uses workflow instruction"}}},
+    )
+
+    assert execute.status_code == 200
+    attempts = _read_jsonl(run_root / "attempts.jsonl")
+    retry_attempt = attempts[-1]
+    assert retry_attempt["node_id"] == "n_execute"
+    assert retry_attempt["effective_prompt_overlay_ref"] is None
+    execution_pack = _read_json(run_root / "execution_packs" / f"{retry_attempt['execution_pack_id']}.json")
+    assert execution_pack["node_contract_snapshot"]["prompt"]["instructions"] == [
+        "Tighten the output format before retry."
+    ]
+    assert execution_pack["effective_prompt_overlay"] is None
+    assert body["repair_patch"]["patch_id"] == patch_id
 
 
 def test_repair_node_action_this_attempt_only_applies_to_reserved_next_attempt(tmp_path: Path) -> None:

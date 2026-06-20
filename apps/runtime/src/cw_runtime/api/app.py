@@ -595,15 +595,18 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
                 PatchScope.THIS_ATTEMPT_ONLY,
                 PatchScope.UNTIL_PASS,
                 PatchScope.PERSISTENT_FOR_RUN,
+                PatchScope.PERSISTENT_FOR_WORKFLOW,
             ] = PatchScope.THIS_ATTEMPT_ONLY
         elif repair_request.scope == PatchScope.UNTIL_PASS:
             scope = PatchScope.UNTIL_PASS
         elif repair_request.scope == PatchScope.PERSISTENT_FOR_RUN:
             scope = PatchScope.PERSISTENT_FOR_RUN
+        elif repair_request.scope == PatchScope.PERSISTENT_FOR_WORKFLOW:
+            scope = PatchScope.PERSISTENT_FOR_WORKFLOW
         else:
             raise RunError(
                 "NL_STATE_FORBIDDEN_TRANSITION",
-                "Manual repair API foundation only supports scope=this_attempt_only, until_pass, or persistent_for_run.",
+                "Manual repair API foundation only supports spec-defined prompt_patch scopes.",
                 details={"scope": repair_request.scope.value},
             )
         return RepairAdvanceInput(

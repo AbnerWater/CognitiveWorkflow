@@ -41,7 +41,7 @@ from cw_runtime.engine import (
     load_project_workflow_validation_context,
     load_workflow_graph,
 )
-from cw_runtime.harness.project import acquire_runtime_lock
+from cw_runtime.harness.project import AGENT_WORKFLOW_DIR, acquire_runtime_lock
 from cw_runtime.model_router import (
     AdapterDescriptor,
     ModelCostProfile,
@@ -325,6 +325,12 @@ ImplementedRepairScope: TypeAlias = Literal[
     PatchScope.THIS_ATTEMPT_ONLY,
     PatchScope.UNTIL_PASS,
     PatchScope.PERSISTENT_FOR_RUN,
+    PatchScope.PERSISTENT_FOR_WORKFLOW,
+]
+PromptOverlayScope: TypeAlias = Literal[
+    PatchScope.THIS_ATTEMPT_ONLY,
+    PatchScope.UNTIL_PASS,
+    PatchScope.PERSISTENT_FOR_RUN,
 ]
 
 
@@ -337,7 +343,7 @@ class _StoredPromptOverlay(BaseModel):
     repair_attempt_id: str
     evaluation_id: str
     instruction_text: str
-    scope: ImplementedRepairScope
+    scope: PromptOverlayScope
     applies_to_attempts: list[str] = Field(default_factory=list)
     expires_at: str | None = None
     applied_at: str
@@ -1443,7 +1449,7 @@ def _complete_repair_adapter_outcome_locked(
         return _fail_attempt_and_run(
             project_root, run, node, artifacts, [repair_or_error], usage=outcome_usage, attempt=attempt
         )
-    repair = repair_or_error
+    repair = _normalize_repair_input(repair_or_error)
     if outcome_usage is not None:
         repair = repair.model_copy(update={"usage": outcome_usage})
 
@@ -1473,7 +1479,6 @@ def _complete_repair_adapter_outcome_locked(
         next_target_attempt_id=next_target_attempt_id,
         metadata_base={"cw": {"adapter_bridge": True}},
     )
-    append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
     run, side_effects = _apply_repair_prompt_overlay(
         project_root=project_root,
         run=run,
@@ -1482,6 +1487,7 @@ def _complete_repair_adapter_outcome_locked(
         patch=patch,
         instruction_text=repair.instruction_text,
     )
+    append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
 
     proposed_event = RepairEvent(
         event_id=new_runtime_id(),
@@ -1797,7 +1803,7 @@ def _advance_repair(
     node: RepairTaskNode,
     input_data: RepairAdvanceInput | None,
 ) -> NodeAdvanceResult:
-    repair = RepairAdvanceInput() if input_data is None else input_data
+    repair = _normalize_repair_input(RepairAdvanceInput() if input_data is None else input_data)
     try:
         artifacts = _prepare_attempt(project_root, graph, run, node, repair.model_profile_id)
     except PackBuildError as exc:
@@ -1859,7 +1865,6 @@ def _advance_repair(
         target_attempt_id=target_attempt_id,
         next_target_attempt_id=next_target_attempt_id,
     )
-    append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
     run, side_effects = _apply_repair_prompt_overlay(
         project_root=project_root,
         run=run,
@@ -1868,6 +1873,7 @@ def _advance_repair(
         patch=patch,
         instruction_text=repair.instruction_text,
     )
+    append_run_jsonl_locked(project_root, run.run_id, "repairs.jsonl", patch.model_dump(mode="json"))
 
     proposed_event = RepairEvent(
         event_id=new_runtime_id(),
@@ -2542,7 +2548,7 @@ def _apply_repair_prompt_overlay(
                     "applies_to_attempts": list(patch.applies_to_attempts),
                 },
             )
-        one_shot_scope: ImplementedRepairScope = PatchScope.THIS_ATTEMPT_ONLY
+        one_shot_scope: PromptOverlayScope = PatchScope.THIS_ATTEMPT_ONLY
         overlay = _stored_prompt_overlay(
             node=node,
             artifacts=artifacts,
@@ -2565,7 +2571,7 @@ def _apply_repair_prompt_overlay(
         ]
 
     if patch.scope == PatchScope.UNTIL_PASS:
-        until_pass_scope: ImplementedRepairScope = PatchScope.UNTIL_PASS
+        until_pass_scope: PromptOverlayScope = PatchScope.UNTIL_PASS
         overlay = _stored_prompt_overlay(
             node=node,
             artifacts=artifacts,
@@ -2584,7 +2590,7 @@ def _apply_repair_prompt_overlay(
         return run, [f"active_prompt_overlay_until_pass_for_{node.repair_target_node_id}"]
 
     if patch.scope == PatchScope.PERSISTENT_FOR_RUN:
-        run_scope: ImplementedRepairScope = PatchScope.PERSISTENT_FOR_RUN
+        run_scope: PromptOverlayScope = PatchScope.PERSISTENT_FOR_RUN
         overlay = _stored_prompt_overlay(
             node=node,
             artifacts=artifacts,
@@ -2594,6 +2600,14 @@ def _apply_repair_prompt_overlay(
         )
         _store_run_prompt_overlay(project_root, run.run_id, node.repair_target_node_id, overlay)
         return run, [f"run_overlay_for_{node.repair_target_node_id}"]
+
+    if patch.scope == PatchScope.PERSISTENT_FOR_WORKFLOW:
+        return _apply_persistent_workflow_prompt_patch(
+            project_root=project_root,
+            run=run,
+            node=node,
+            patch=patch,
+        )
 
     raise RunError(
         "NL_STATE_FORBIDDEN_TRANSITION",
@@ -2608,7 +2622,7 @@ def _stored_prompt_overlay(
     artifacts: _AttemptArtifacts,
     patch: RepairPatch,
     instruction_text: str,
-    scope: ImplementedRepairScope,
+    scope: PromptOverlayScope,
 ) -> _StoredPromptOverlay:
     return _StoredPromptOverlay(
         patch_id=patch.patch_id,
@@ -2622,6 +2636,198 @@ def _stored_prompt_overlay(
         expires_at=patch.expires_at,
         applied_at=utc_now_ms(),
     )
+
+
+def _apply_persistent_workflow_prompt_patch(
+    *,
+    project_root: Path,
+    run: WorkflowRunDocument,
+    node: RepairTaskNode,
+    patch: RepairPatch,
+) -> tuple[WorkflowRunDocument, list[str]]:
+    operation = _persistent_workflow_prompt_operation(run, node, patch)
+    graph = load_workflow_graph(project_root)
+    updated_graph = _workflow_graph_with_persistent_prompt_instruction(
+        graph,
+        target_node_id=node.repair_target_node_id,
+        instruction_text=operation.text,
+        now=utc_now_ms(),
+    )
+    compile_workflow_graph(updated_graph, context=load_project_workflow_validation_context(project_root))
+    _write_workflow_graph_manifest_locked(project_root, updated_graph)
+    updated_run = run.model_copy(update={"workflow_version": updated_graph.version})
+    _store_runtime_value(
+        updated_run,
+        "workflow_patch_versions",
+        patch.patch_id,
+        {
+            "from": graph.version,
+            "to": updated_graph.version,
+            "target_node_id": node.repair_target_node_id,
+        },
+    )
+    return updated_run, [
+        f"workflow_prompt_persisted_for_{node.repair_target_node_id}",
+        f"workflow_version_bumped_{graph.version}_to_{updated_graph.version}",
+    ]
+
+
+def _persistent_workflow_prompt_operation(
+    run: WorkflowRunDocument,
+    node: RepairTaskNode,
+    patch: RepairPatch,
+) -> AppendToInstructionsOp:
+    if patch.patch_kind != RepairKind.PROMPT_PATCH:
+        raise RunError(
+            "RP_BUILD_KIND_NOT_ALLOWED",
+            "persistent_for_workflow repair scope only supports prompt_patch.",
+            status_code=422,
+            details={"run_id": run.run_id, "node_id": node.node_id, "patch_kind": patch.patch_kind.value},
+        )
+    if len(patch.operations) != 1:
+        raise RunError(
+            "RP_BUILD_BAD_OPERATION_SCHEMA",
+            "persistent_for_workflow prompt_patch requires exactly one operation.",
+            status_code=422,
+            details={"run_id": run.run_id, "node_id": node.node_id, "operation_count": len(patch.operations)},
+        )
+    operation = patch.operations[0]
+    if isinstance(operation, AppendToInstructionsOp):
+        return operation
+    raise RunError(
+        "RP_BUILD_BAD_OPERATION_SCHEMA",
+        "persistent_for_workflow prompt_patch currently supports append_to_instructions only.",
+        status_code=422,
+        details={
+            "run_id": run.run_id,
+            "node_id": node.node_id,
+            "operation_type": operation.__class__.__name__,
+        },
+    )
+
+
+def _workflow_graph_with_persistent_prompt_instruction(
+    graph: WorkflowGraph,
+    *,
+    target_node_id: str,
+    instruction_text: str,
+    now: str,
+) -> WorkflowGraph:
+    updated_nodes: list[WorkflowNodeBase] = []
+    found_target = False
+    for graph_node in graph.nodes:
+        if graph_node.node_id != target_node_id:
+            updated_nodes.append(graph_node)
+            continue
+        found_target = True
+        if graph_node.contract is None or graph_node.contract.prompt is None:
+            raise RunError(
+                "NL_STATE_FORBIDDEN_TRANSITION",
+                "persistent_for_workflow prompt_patch requires a target node prompt.",
+                details={"target_node_id": target_node_id, "node_type": graph_node.type},
+            )
+        updated_prompt = graph_node.contract.prompt.model_copy(
+            update={
+                "instructions": _append_prompt_instruction(
+                    graph_node.contract.prompt.instructions,
+                    instruction_text,
+                )
+            }
+        )
+        updated_contract = graph_node.contract.model_copy(update={"prompt": updated_prompt})
+        updated_nodes.append(graph_node.model_copy(update={"contract": updated_contract}))
+
+    if not found_target:
+        raise RunError(
+            "RP_APPLY_TARGET_NOT_FOUND",
+            "RepairPatch target node was not found in workflow graph.",
+            details={"target_node_id": target_node_id},
+        )
+
+    payload = graph.model_dump(mode="json")
+    payload["version"] = _bump_workflow_patch_version(graph.version)
+    payload["last_modified_at"] = now
+    payload["nodes"] = [graph_node.model_dump(mode="json") for graph_node in updated_nodes]
+    return WorkflowGraph.model_validate(payload)
+
+
+def _append_prompt_instruction(existing: str | list[str] | None, instruction_text: str) -> list[str]:
+    if existing is None:
+        return [instruction_text]
+    if isinstance(existing, str):
+        return [existing, instruction_text]
+    return [*existing, instruction_text]
+
+
+def _bump_workflow_patch_version(version: str) -> str:
+    core_version = version.split("-", 1)[0]
+    parts = core_version.split(".")
+    if len(parts) != 3:
+        raise RunError(
+            "WG_L2_BAD_SCHEMA_VERSION",
+            "Workflow version is not valid SemVer.",
+            status_code=500,
+            details={"version": version},
+        )
+    try:
+        major, minor, patch = (int(part) for part in parts)
+    except ValueError as exc:
+        raise RunError(
+            "WG_L2_BAD_SCHEMA_VERSION",
+            "Workflow version is not valid SemVer.",
+            status_code=500,
+            details={"version": version},
+        ) from exc
+    return f"{major}.{minor}.{patch + 1}"
+
+
+def _write_workflow_graph_manifest_locked(project_root: Path, graph: WorkflowGraph) -> None:
+    agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
+    revision_path = agent_root / "manifest_revision.json"
+    try:
+        revision = json.loads(revision_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RunError(
+            "RH_MANIFEST_REVISION_MISMATCH",
+            "manifest_revision.json could not be read.",
+            status_code=409,
+            details={"path": revision_path.as_posix()},
+        ) from exc
+    if not isinstance(revision, dict):
+        raise RunError(
+            "RH_MANIFEST_REVISION_MISMATCH",
+            "manifest_revision.json top-level value must be an object.",
+            status_code=409,
+            details={"path": revision_path.as_posix()},
+        )
+    current = revision.get("workflow.flow.json")
+    if not isinstance(current, dict) or "revision" not in current:
+        raise RunError(
+            "RH_MANIFEST_REVISION_MISMATCH",
+            "manifest_revision.json does not track workflow.flow.json.",
+            status_code=409,
+            details={"path": revision_path.as_posix()},
+        )
+    try:
+        current_revision = int(current["revision"])
+    except (TypeError, ValueError) as exc:
+        raise RunError(
+            "RH_MANIFEST_REVISION_MISMATCH",
+            "manifest_revision.json entry is invalid.",
+            status_code=409,
+            details={"path": revision_path.as_posix(), "manifest_name": "workflow.flow.json"},
+        ) from exc
+    _write_project_json_atomic(agent_root / "workflow.flow.json", graph.model_dump(mode="json"))
+    revision["workflow.flow.json"] = {"revision": current_revision + 1, "modified_at": utc_now_ms()}
+    _write_project_json_atomic(revision_path, revision)
+
+
+def _write_project_json_atomic(path: Path, payload: object) -> None:
+    content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.{new_runtime_id()}.tmp")
+    tmp_path.write_text(content, encoding="utf-8", newline="\n")
+    tmp_path.replace(path)
 
 
 def _prompt_overlays_for_attempt(
@@ -3441,6 +3647,25 @@ def _build_repair_patch(
             {"cw": {"foundation_runner": True}} if metadata_base is None else metadata_base,
             input_data.metadata,
         ),
+    )
+
+
+def _normalize_repair_input(input_data: RepairAdvanceInput) -> RepairAdvanceInput:
+    if input_data.scope != PatchScope.PERSISTENT_FOR_WORKFLOW or input_data.risk_level != RiskLevel.HIGH:
+        return input_data
+    return input_data.model_copy(
+        update={
+            "scope": PatchScope.PERSISTENT_FOR_RUN,
+            "metadata": _merge_metadata(
+                input_data.metadata,
+                {
+                    "cw": {
+                        "scope_downgraded_from": PatchScope.PERSISTENT_FOR_WORKFLOW.value,
+                        "scope_downgrade_reason": "risk_level_high",
+                    }
+                },
+            ),
+        }
     )
 
 
