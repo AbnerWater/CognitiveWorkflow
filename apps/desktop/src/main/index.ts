@@ -8,6 +8,7 @@ export {
 } from "./security.js";
 
 export {
+  createRuntimeMainLifecycleShutdownStatusBroadcaster,
   installRuntimeAppLifecycleShutdown,
   installRuntimeIpcMainHandlers,
   installRuntimeMainLifecycleShutdown,
@@ -23,6 +24,7 @@ export {
   type CwMainWindow,
   type CwMainWindowCloseEvent,
   type CwMainWindowCloseListener,
+  type CreateRuntimeMainLifecycleShutdownStatusBroadcasterOptions,
   type InstalledRuntimeAppLifecycleShutdown,
   type InstalledRuntimeIpcMainHandlers,
   type InstalledRuntimeIpcMainHandlersShutdownResult,
@@ -39,6 +41,9 @@ export {
   type RuntimeMainLifecycleShutdownSnapshot,
   type RuntimeMainLifecycleShutdownState,
   type RuntimeMainLifecycleShutdownStatus,
+  type RuntimeMainLifecycleShutdownStatusBroadcaster,
+  type RuntimeMainLifecycleShutdownStatusBroadcastListener,
+  type RuntimeMainLifecycleShutdownStatusBroadcastUnsubscribe,
   type RuntimeMainLifecycleShutdownStatusKind,
   type RuntimeMainLifecycleShutdownStatusObserver,
   type RuntimeMainLifecycleShutdownStatusSeverity,

@@ -17,6 +17,7 @@ import {
   installRuntimeMainLifecycleShutdown,
   installRuntimeMainWithLifecycleShutdown,
   installRuntimeWindowLifecycleShutdown,
+  createRuntimeMainLifecycleShutdownStatusBroadcaster,
   type CwMainApp,
   type CwMainBeforeQuitEvent,
   type CwMainBeforeQuitListener,
@@ -695,6 +696,138 @@ test("shutdown after manual unregister does not remove IPC handlers twice", asyn
   ]);
   assert.equal(starterCalls, 1);
   assert.deepEqual(installed.unregister(), []);
+});
+
+test("shutdown status broadcaster fans out isolated status snapshots", () => {
+  const errors: unknown[] = [];
+  const broadcaster = createRuntimeMainLifecycleShutdownStatusBroadcaster({
+    onListenerError: (error) => {
+      errors.push(error);
+      throw new Error("diagnostic hook failed");
+    },
+  });
+  const firstStatuses: RuntimeMainLifecycleShutdownStatus[] = [];
+  const secondStatuses: RuntimeMainLifecycleShutdownStatus[] = [];
+  const unsubscribeFirst = broadcaster.subscribe((status) => {
+    firstStatuses.push(status);
+    (status as { kind: string }).kind = "shutdown_failed";
+  });
+  broadcaster.subscribe(() => {
+    throw new Error("listener failed");
+  });
+  const unsubscribeSecond = broadcaster.subscribe((status) => {
+    secondStatuses.push(status);
+  });
+
+  assert.equal(broadcaster.listenerCount(), 3);
+  broadcaster.onStatus({
+    kind: "registered",
+    state: "registered",
+    severity: "info",
+    lifecycleComplete: false,
+    retryable: false,
+    appQuitRequested: false,
+    windowCloseRequested: false,
+  });
+
+  assert.deepEqual(
+    firstStatuses.map((status) => status.kind),
+    ["shutdown_failed"],
+  );
+  assert.deepEqual(
+    secondStatuses.map((status) => status.kind),
+    ["registered"],
+  );
+  assert.equal(errors.length, 1);
+  assert.equal(messageOf(errors[0]), "listener failed");
+  assert.equal(unsubscribeFirst(), true);
+  assert.equal(unsubscribeFirst(), false);
+  assert.equal(broadcaster.listenerCount(), 2);
+  assert.equal(unsubscribeSecond(), true);
+  assert.equal(broadcaster.listenerCount(), 1);
+
+  broadcaster.onStatus({
+    kind: "unregistered",
+    state: "unregistered",
+    severity: "warning",
+    lifecycleComplete: true,
+    retryable: false,
+    appQuitRequested: false,
+    windowCloseRequested: false,
+  });
+
+  assert.deepEqual(
+    firstStatuses.map((status) => status.kind),
+    ["shutdown_failed"],
+  );
+  assert.deepEqual(
+    secondStatuses.map((status) => status.kind),
+    ["registered"],
+  );
+  assert.equal(errors.length, 2);
+  assert.equal(messageOf(errors[1]), "listener failed");
+});
+
+test("main lifecycle composition can broadcast shutdown statuses", async () => {
+  const app = createFakeMainApp();
+  const window = createFakeMainWindow();
+  const broadcaster = createRuntimeMainLifecycleShutdownStatusBroadcaster();
+  const broadcastStatuses: RuntimeMainLifecycleShutdownStatus[] = [];
+  const unsubscribe = broadcaster.subscribe((status) => {
+    broadcastStatuses.push(status);
+  });
+  let resolveStop: ((stopped: boolean) => void) | undefined;
+  const stopPromise = new Promise<boolean>((resolve) => {
+    resolveStop = resolve;
+  });
+  const installed = installRuntimeMainWithLifecycleShutdown({
+    ipcMain: createFakeMainIpcMain().ipcMain,
+    app: app.app,
+    window: window.window,
+    onShutdownStatus: broadcaster.onStatus,
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+    },
+    starter: async () =>
+      createReadyStartupResult({
+        stop: async () => stopPromise,
+      }),
+  });
+
+  assert.deepEqual(
+    broadcastStatuses.map((status) => status.kind),
+    ["registered"],
+  );
+  assert.equal(broadcaster.listenerCount(), 1);
+  assert.deepEqual(
+    await installed.ipc.startupHandlers.handlers.connectionInfo(),
+    {
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_abc123",
+    },
+  );
+
+  const appQuit = app.emitBeforeQuit();
+  assert.equal(appQuit.prevented, true);
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(
+    broadcastStatuses.map((status) => status.kind),
+    ["registered", "app_quit_requested", "shutting_down"],
+  );
+
+  resolveStop?.(true);
+  assert.deepEqual(await installed.lifecycle.shutdown(), {
+    unregisteredChannels: RUNTIME_IPC_CHANNELS,
+    runtimeStopped: true,
+  });
+  assert.deepEqual(
+    broadcastStatuses.map((status) => status.kind),
+    ["registered", "app_quit_requested", "shutting_down", "shutdown_complete"],
+  );
+  assert.equal(unsubscribe(), true);
 });
 
 test("composes main lifecycle shutdown history into IPC shutdown status", async () => {
@@ -1449,6 +1582,30 @@ function createFakeMainWindow(): {
   };
 }
 
+function createFakeMainIpcMain(): {
+  readonly ipcMain: {
+    readonly handle: (
+      channel: RuntimeIpcChannel,
+      listener: CwMainIpcInvokeHandler,
+    ) => void;
+    readonly removeHandler: (channel: RuntimeIpcChannel) => void;
+  };
+  readonly handlers: ReadonlyMap<RuntimeIpcChannel, CwMainIpcInvokeHandler>;
+} {
+  const handlers = new Map<RuntimeIpcChannel, CwMainIpcInvokeHandler>();
+  return {
+    ipcMain: {
+      handle: (channel, listener) => {
+        handlers.set(channel, listener);
+      },
+      removeHandler: (channel) => {
+        handlers.delete(channel);
+      },
+    },
+    handlers,
+  };
+}
+
 function createStartupStatus(options: {
   readonly kind: RuntimeStartupStatus["kind"];
   readonly action: RuntimeStartupStatus["action"];
@@ -1465,4 +1622,8 @@ function createStartupStatus(options: {
     userActionRequired: false,
     retryable: false,
   };
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : typeof error;
 }

@@ -156,6 +156,25 @@ export type RuntimeMainLifecycleShutdownStatusObserver = (
   status: RuntimeMainLifecycleShutdownStatus,
 ) => void;
 
+export type RuntimeMainLifecycleShutdownStatusBroadcastListener = (
+  status: RuntimeMainLifecycleShutdownStatus,
+) => void;
+
+export type RuntimeMainLifecycleShutdownStatusBroadcastUnsubscribe =
+  () => boolean;
+
+export interface CreateRuntimeMainLifecycleShutdownStatusBroadcasterOptions {
+  readonly onListenerError?: (error: unknown) => void;
+}
+
+export interface RuntimeMainLifecycleShutdownStatusBroadcaster {
+  readonly onStatus: RuntimeMainLifecycleShutdownStatusObserver;
+  readonly subscribe: (
+    listener: RuntimeMainLifecycleShutdownStatusBroadcastListener,
+  ) => RuntimeMainLifecycleShutdownStatusBroadcastUnsubscribe;
+  readonly listenerCount: () => number;
+}
+
 export interface InstallRuntimeMainLifecycleShutdownOptions {
   readonly app: CwMainApp;
   readonly window: CwMainWindow;
@@ -297,6 +316,46 @@ export function installRuntimeMainWithLifecycleShutdown(
     ipc,
     lifecycle,
     shutdownStatus,
+  };
+}
+
+export function createRuntimeMainLifecycleShutdownStatusBroadcaster(
+  options?: CreateRuntimeMainLifecycleShutdownStatusBroadcasterOptions,
+): RuntimeMainLifecycleShutdownStatusBroadcaster {
+  const listeners =
+    new Set<RuntimeMainLifecycleShutdownStatusBroadcastListener>();
+
+  const reportListenerError = (error: unknown): void => {
+    try {
+      options?.onListenerError?.(error);
+    } catch {
+      // Diagnostic hooks must not affect lifecycle status fan-out.
+    }
+  };
+
+  return {
+    onStatus: (status) => {
+      const snapshot = [...listeners];
+      for (const listener of snapshot) {
+        try {
+          listener({ ...status });
+        } catch (error) {
+          reportListenerError(error);
+        }
+      }
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      let subscribed = true;
+      return () => {
+        if (!subscribed) {
+          return false;
+        }
+        subscribed = false;
+        return listeners.delete(listener);
+      };
+    },
+    listenerCount: () => listeners.size,
   };
 }
 
