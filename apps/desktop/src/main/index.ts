@@ -86,6 +86,19 @@ export {
 } from "./runtime-startup-status.js";
 
 export {
+  startRuntimeWithLifecycle,
+  type RuntimeOrchestrationStarter,
+  type RuntimeStartupBlockedDecision,
+  type RuntimeStartupControllerLifecycleOptions,
+  type RuntimeStartupControllerResult,
+  type RuntimeStartupLifecycleResolver,
+  type RuntimeStartupReuseDecision,
+  type RuntimeStartupStartDecision,
+  type RuntimeStartupTimeoutDecision,
+  type StartRuntimeWithLifecycleOptions,
+} from "./runtime-startup-controller.js";
+
+export {
   startRuntimeOrchestration,
   type RuntimeOrchestrationLockOptions,
   type RuntimeOrchestrationSession,
