@@ -15,6 +15,7 @@ import {
 } from "./sidecar.js";
 import {
   createRuntimeIpcMainHandlers,
+  requestRuntimeShutdown,
   type RuntimeIpcMainHandlerOptions,
 } from "./runtime-ipc-handlers.js";
 import {
@@ -23,10 +24,26 @@ import {
 } from "./runtime-connection-registry.js";
 import type { RuntimeIpcMainHandlers } from "../shared/runtime-ipc.js";
 
+export const DEFAULT_RUNTIME_GRACEFUL_SHUTDOWN_TIMEOUT_MS = 2_000;
+
+export type RuntimeOrchestrationShutdownSleep = (
+  delayMs: number,
+) => Promise<void>;
+
+export type RuntimeOrchestrationShutdownRequest = (
+  handlers: Pick<RuntimeIpcMainHandlers, "fetch">,
+) => Promise<unknown>;
+
 export interface RuntimeOrchestrationLockOptions extends Omit<
   AcquireRuntimeLockOptions,
   "projectRoot"
 > {}
+
+export interface RuntimeOrchestrationShutdownOptions {
+  readonly timeoutMs?: number;
+  readonly sleep?: RuntimeOrchestrationShutdownSleep;
+  readonly request?: RuntimeOrchestrationShutdownRequest;
+}
 
 export interface StartRuntimeOrchestrationOptions {
   readonly projectRoot: string;
@@ -39,6 +56,7 @@ export interface StartRuntimeOrchestrationOptions {
   readonly fetchImpl?: RuntimeIpcMainHandlerOptions["fetchImpl"];
   readonly connectionRegistry?: RuntimeConnectionRegistry;
   readonly lock?: RuntimeOrchestrationLockOptions;
+  readonly shutdown?: RuntimeOrchestrationShutdownOptions;
 }
 
 export interface RuntimeOrchestrationSession {
@@ -158,11 +176,92 @@ export async function startRuntimeOrchestration(
         return false;
       }
       stopped = true;
+      if (
+        await requestRuntimeGracefulShutdown({
+          handlers,
+          closed: sidecar.closed,
+          ...(options.shutdown !== undefined
+            ? { shutdown: options.shutdown }
+            : {}),
+        })
+      ) {
+        await cleanupRuntimeOwnership();
+        return true;
+      }
       const sidecarStopped = sidecar.stop(signal);
       await cleanupRuntimeOwnership();
       return sidecarStopped;
     },
   };
+}
+
+async function requestRuntimeGracefulShutdown(options: {
+  readonly handlers: Pick<RuntimeIpcMainHandlers, "fetch">;
+  readonly closed: Promise<unknown>;
+  readonly shutdown?: RuntimeOrchestrationShutdownOptions;
+}): Promise<boolean> {
+  const shutdown = options.shutdown ?? {};
+  const timeoutMs =
+    shutdown.timeoutMs ?? DEFAULT_RUNTIME_GRACEFUL_SHUTDOWN_TIMEOUT_MS;
+  assertPositiveInteger(timeoutMs, "runtime graceful shutdown timeoutMs");
+  const sleep = shutdown.sleep ?? sleepMs;
+  const request = shutdown.request ?? requestRuntimeShutdown;
+  const response = await raceRuntimeShutdownTimeout(
+    Promise.resolve().then(() => request(options.handlers)),
+    timeoutMs,
+    sleep,
+  );
+  if (response.timedOut || !isAcceptedRuntimeShutdownResponse(response.value)) {
+    return false;
+  }
+
+  const closed = await raceRuntimeShutdownTimeout(
+    options.closed,
+    timeoutMs,
+    sleep,
+  );
+  return !closed.timedOut;
+}
+
+async function raceRuntimeShutdownTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  sleep: RuntimeOrchestrationShutdownSleep,
+): Promise<
+  { readonly timedOut: false; readonly value: T } | { readonly timedOut: true }
+> {
+  let settled = false;
+  const observed = promise.then(
+    (value) => {
+      settled = true;
+      return { timedOut: false, value } as const;
+    },
+    (error: unknown) => {
+      settled = true;
+      throw error;
+    },
+  );
+  const timedOut = sleep(timeoutMs).then(() => ({ timedOut: true }) as const);
+  try {
+    return await Promise.race([observed, timedOut]);
+  } catch {
+    return { timedOut: true };
+  } finally {
+    if (!settled) {
+      promise.catch(() => undefined);
+    }
+  }
+}
+
+function isAcceptedRuntimeShutdownResponse(
+  response: unknown,
+): response is { readonly status: 202 } {
+  return (
+    typeof response === "object" &&
+    response !== null &&
+    "status" in response &&
+    response.status === 202
+  );
 }
 
 async function releaseRuntimeLockAfterStartupFailure(
@@ -181,4 +280,17 @@ async function releaseRuntimeLockAfterStartupFailure(
 
 function errorName(error: unknown): string {
   return error instanceof Error ? error.message : typeof error;
+}
+
+function assertPositiveInteger(value: number, label: string): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+}
+
+async function sleepMs(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, delayMs);
+    timeout.unref();
+  });
 }

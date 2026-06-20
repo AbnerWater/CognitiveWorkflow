@@ -113,6 +113,169 @@ test("starts runtime sidecar under runtime.lock and exposes IPC handlers", async
   }
 });
 
+test("requests graceful runtime shutdown before signal fallback", async () => {
+  const projectRoot = await makeTempProject();
+  const fake = new FakeSidecarProcess();
+  const connectionRegistry = createRuntimeConnectionRegistry();
+  const capturedRequests: Array<{
+    readonly url: string;
+    readonly init: RequestInit | undefined;
+  }> = [];
+
+  try {
+    const session = await startRuntimeOrchestration({
+      projectRoot,
+      command: { devCommand: "cw-runtime" },
+      readyTimeoutMs: 100,
+      tokenFactory: () => "token_abc123",
+      connectionRegistry,
+      spawn: () => {
+        queueMicrotask(() => fake.stdout.write("READY 51234\n"));
+        return fake;
+      },
+      fetchImpl: async (input, init) => {
+        capturedRequests.push({ url: String(input), init });
+        if (String(input).endsWith("/system/shutdown")) {
+          queueMicrotask(() => fake.emit("exit", 0, null));
+          return new Response(null, { status: 202 });
+        }
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    assert.equal(await session.stop("SIGTERM"), true);
+    await session.closed;
+    assert.deepEqual(fake.killedSignals, []);
+    assert.deepEqual(capturedRequests, [
+      {
+        url: "http://127.0.0.1:51234/cw/v1/system/shutdown",
+        init: {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer token_abc123",
+            "X-Cw-Client": "electron-renderer",
+          },
+        },
+      },
+    ]);
+    assert.equal(connectionRegistry.get(projectRoot), null);
+    await assert.rejects(readFile(session.lock.lockPath, "utf8"), {
+      code: "ENOENT",
+    });
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
+test("falls back to sidecar signal when runtime shutdown is not accepted", async () => {
+  const projectRoot = await makeTempProject();
+  const fake = new FakeSidecarProcess();
+  const connectionRegistry = createRuntimeConnectionRegistry();
+
+  try {
+    const session = await startRuntimeOrchestration({
+      projectRoot,
+      command: { devCommand: "cw-runtime" },
+      readyTimeoutMs: 100,
+      tokenFactory: () => "token_abc123",
+      connectionRegistry,
+      spawn: () => {
+        queueMicrotask(() => fake.stdout.write("READY 51234\n"));
+        return fake;
+      },
+      fetchImpl: async () => new Response(null, { status: 503 }),
+    });
+
+    assert.equal(await session.stop("SIGINT"), true);
+    await session.closed;
+    assert.deepEqual(fake.killedSignals, ["SIGINT"]);
+    assert.equal(connectionRegistry.get(projectRoot), null);
+    await assert.rejects(readFile(session.lock.lockPath, "utf8"), {
+      code: "ENOENT",
+    });
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
+test("falls back to sidecar signal when runtime shutdown request fails", async () => {
+  const projectRoot = await makeTempProject();
+  const fake = new FakeSidecarProcess();
+  const connectionRegistry = createRuntimeConnectionRegistry();
+  let shutdownRequests = 0;
+
+  try {
+    const session = await startRuntimeOrchestration({
+      projectRoot,
+      command: { devCommand: "cw-runtime" },
+      readyTimeoutMs: 100,
+      tokenFactory: () => "token_abc123",
+      connectionRegistry,
+      spawn: () => {
+        queueMicrotask(() => fake.stdout.write("READY 51234\n"));
+        return fake;
+      },
+      shutdown: {
+        request: () => {
+          shutdownRequests += 1;
+          throw new Error("shutdown request failed");
+        },
+      },
+    });
+
+    assert.equal(await session.stop("SIGINT"), true);
+    await session.closed;
+    assert.equal(shutdownRequests, 1);
+    assert.deepEqual(fake.killedSignals, ["SIGINT"]);
+    assert.equal(connectionRegistry.get(projectRoot), null);
+    await assert.rejects(readFile(session.lock.lockPath, "utf8"), {
+      code: "ENOENT",
+    });
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
+test("falls back to sidecar signal when accepted shutdown does not exit before timeout", async () => {
+  const projectRoot = await makeTempProject();
+  const fake = new FakeSidecarProcess();
+  const connectionRegistry = createRuntimeConnectionRegistry();
+  let shutdownRequests = 0;
+
+  try {
+    const session = await startRuntimeOrchestration({
+      projectRoot,
+      command: { devCommand: "cw-runtime" },
+      readyTimeoutMs: 100,
+      tokenFactory: () => "token_abc123",
+      connectionRegistry,
+      spawn: () => {
+        queueMicrotask(() => fake.stdout.write("READY 51234\n"));
+        return fake;
+      },
+      shutdown: {
+        timeoutMs: 1,
+        request: async () => {
+          shutdownRequests += 1;
+          return { status: 202 };
+        },
+        sleep: async () => undefined,
+      },
+    });
+
+    assert.equal(await session.stop("SIGTERM"), true);
+    await session.closed;
+    assert.equal(shutdownRequests, 1);
+    assert.deepEqual(fake.killedSignals, ["SIGTERM"]);
+    assert.equal(connectionRegistry.get(projectRoot), null);
+    await assert.rejects(readFile(session.lock.lockPath, "utf8"), {
+      code: "ENOENT",
+    });
+  } finally {
+    await removeTempProject(projectRoot);
+  }
+});
+
 test("cleans runtime ownership when sidecar exits after READY", async () => {
   const projectRoot = await makeTempProject();
   const fake = new FakeSidecarProcess();

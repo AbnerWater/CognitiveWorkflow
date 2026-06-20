@@ -134,7 +134,11 @@ export {
 } from "./runtime-ipc-main-factory.js";
 
 export {
+  DEFAULT_RUNTIME_GRACEFUL_SHUTDOWN_TIMEOUT_MS,
   startRuntimeOrchestration,
+  type RuntimeOrchestrationShutdownOptions,
+  type RuntimeOrchestrationShutdownRequest,
+  type RuntimeOrchestrationShutdownSleep,
   type RuntimeOrchestrationLockOptions,
   type RuntimeOrchestrationSession,
   type StartRuntimeOrchestrationOptions,
