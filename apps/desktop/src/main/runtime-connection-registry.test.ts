@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -184,6 +186,51 @@ test("allows callers to disable realpath lookup explicitly", () => {
   assert.deepEqual(registry.get(symlinkProjectRoot), connection);
   assert.equal(registry.get(targetProjectRoot), null);
   assert.equal(registry.unregister(targetProjectRoot, connection), false);
+});
+
+test("matches real filesystem directory aliases with default realpath", async (t) => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "cw-runtime-registry-realpath-"),
+  );
+  const linkedProjectRoot = path.join(tempRoot, "project-link");
+  const targetProjectRoot = path.join(tempRoot, "project-target");
+  const connection: RuntimeConnectionInfo = {
+    base_url: createRuntimeBaseUrl(51234),
+    token: "token_abc123",
+  };
+
+  try {
+    await mkdir(targetProjectRoot, { recursive: true });
+
+    try {
+      await symlink(
+        targetProjectRoot,
+        linkedProjectRoot,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      t.skip(`filesystem directory alias creation unavailable: ${message}`);
+      return;
+    }
+
+    const registry = createRuntimeConnectionRegistry({
+      projectRootCaseSensitivity: "case_sensitive",
+    });
+
+    const entry = registry.register({
+      projectRoot: linkedProjectRoot,
+      connection,
+    });
+
+    assert.equal(entry.projectRoot, path.resolve(linkedProjectRoot));
+    assert.deepEqual(registry.get(targetProjectRoot), connection);
+    assert.deepEqual(registry.snapshot(), [entry]);
+    assert.equal(registry.unregister(targetProjectRoot, connection), true);
+    assert.equal(registry.get(linkedProjectRoot), null);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("rejects unsafe project roots and connection payloads", () => {
