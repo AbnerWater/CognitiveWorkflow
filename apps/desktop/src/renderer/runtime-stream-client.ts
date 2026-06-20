@@ -1,0 +1,452 @@
+import {
+  assertRuntimeRequestPath,
+  buildRuntimeRequestHeaders,
+  type RuntimeBridge,
+  type RuntimeConnectionInfo,
+  type RuntimeRequestPath,
+} from "../preload/contract.js";
+
+export type RuntimeStreamDisplayLevel = "minimal" | "default" | "detailed";
+
+export type RuntimeStreamCategory =
+  | "lifecycle"
+  | "model"
+  | "tool"
+  | "context"
+  | "evidence"
+  | "evaluation"
+  | "repair"
+  | "human"
+  | "planning"
+  | "artifact"
+  | "metric"
+  | "error"
+  | "system";
+
+export type RuntimeStreamChannel =
+  | {
+      readonly kind: "run";
+      readonly runId: string;
+    }
+  | {
+      readonly kind: "planning";
+      readonly sessionId: string;
+    };
+
+export interface RuntimeStreamFilters {
+  readonly level?:
+    | RuntimeStreamDisplayLevel
+    | readonly RuntimeStreamDisplayLevel[];
+  readonly category?: RuntimeStreamCategory | readonly RuntimeStreamCategory[];
+  readonly sinceSeq?: number;
+  readonly untilSeq?: number;
+}
+
+export interface RuntimeStreamConnectionRequest {
+  readonly url: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly withCredentials: false;
+}
+
+export interface RuntimeStreamSourceEvent {
+  readonly type: string;
+  readonly data?: unknown;
+  readonly lastEventId?: string;
+}
+
+export type RuntimeStreamSourceListener = (
+  event: RuntimeStreamSourceEvent,
+) => void;
+
+export interface RuntimeStreamEventSource {
+  readonly addEventListener: (
+    type: string,
+    listener: RuntimeStreamSourceListener,
+  ) => void;
+  readonly removeEventListener: (
+    type: string,
+    listener: RuntimeStreamSourceListener,
+  ) => void;
+  readonly close: () => void;
+}
+
+export type RuntimeStreamEventSourceFactory = (
+  request: RuntimeStreamConnectionRequest,
+) => RuntimeStreamEventSource;
+
+export interface RuntimeStreamEvent<TData = unknown> {
+  readonly id: string | null;
+  readonly type: string;
+  readonly data: TData;
+  readonly rawData: string;
+}
+
+export type RuntimeStreamEventListener<TData = unknown> = (
+  event: RuntimeStreamEvent<TData>,
+) => void;
+
+export type RuntimeStreamErrorHandler = (error: unknown) => void;
+export type RuntimeStreamUnsubscribe = () => boolean;
+
+export interface RuntimeStreamClient {
+  readonly request: RuntimeStreamConnectionRequest;
+  readonly subscribe: <TData = unknown>(
+    eventType: string,
+    listener: RuntimeStreamEventListener<TData>,
+  ) => RuntimeStreamUnsubscribe;
+  readonly close: () => boolean;
+  readonly isClosed: () => boolean;
+}
+
+export interface OpenRuntimeStreamClientOptions {
+  readonly runtime: Pick<RuntimeBridge, "connectionInfo">;
+  readonly channel: RuntimeStreamChannel;
+  readonly eventSourceFactory: RuntimeStreamEventSourceFactory;
+  readonly filters?: RuntimeStreamFilters;
+  readonly projectId?: string;
+  readonly lastEventId?: string;
+  readonly onEventError?: RuntimeStreamErrorHandler;
+  readonly onConnectionError?: RuntimeStreamErrorHandler;
+}
+
+export async function openRuntimeStreamClient(
+  options: OpenRuntimeStreamClientOptions,
+): Promise<RuntimeStreamClient> {
+  const connectionInfo = await options.runtime.connectionInfo();
+  const requestOptions: {
+    channel: RuntimeStreamChannel;
+    filters?: RuntimeStreamFilters;
+    projectId?: string;
+    lastEventId?: string;
+  } = {
+    channel: options.channel,
+  };
+  if (options.filters !== undefined) {
+    requestOptions.filters = options.filters;
+  }
+  if (options.projectId !== undefined) {
+    requestOptions.projectId = options.projectId;
+  }
+  if (options.lastEventId !== undefined) {
+    requestOptions.lastEventId = options.lastEventId;
+  }
+  const request = buildRuntimeStreamConnectionRequest(
+    connectionInfo,
+    requestOptions,
+  );
+  const eventSource = options.eventSourceFactory(request);
+  const subscriptions: Array<{
+    readonly eventType: string;
+    readonly listener: RuntimeStreamSourceListener;
+  }> = [];
+  let closed = false;
+
+  const reportEventError = (error: unknown): void => {
+    try {
+      options.onEventError?.(error);
+    } catch {
+      // Renderer diagnostics must not break stream event dispatch.
+    }
+  };
+
+  const reportConnectionError = (error: unknown): void => {
+    try {
+      options.onConnectionError?.(error);
+    } catch {
+      // Renderer diagnostics must not break EventSource lifecycle handling.
+    }
+  };
+
+  const connectionErrorListener: RuntimeStreamSourceListener | undefined =
+    options.onConnectionError === undefined
+      ? undefined
+      : (event) => {
+          reportConnectionError(event);
+        };
+
+  if (connectionErrorListener !== undefined) {
+    eventSource.addEventListener("error", connectionErrorListener);
+    subscriptions.push({
+      eventType: "error",
+      listener: connectionErrorListener,
+    });
+  }
+
+  return {
+    request,
+    subscribe: <TData>(
+      eventType: string,
+      listener: RuntimeStreamEventListener<TData>,
+    ) => {
+      assertRuntimeStreamEventType(eventType);
+      if (closed) {
+        return () => false;
+      }
+      const sourceListener: RuntimeStreamSourceListener = (event) => {
+        try {
+          listener(parseRuntimeStreamEvent<TData>(eventType, event));
+        } catch (error) {
+          reportEventError(error);
+        }
+      };
+      eventSource.addEventListener(eventType, sourceListener);
+      subscriptions.push({ eventType, listener: sourceListener });
+      let subscribed = true;
+      return () => {
+        if (!subscribed) {
+          return false;
+        }
+        subscribed = false;
+        eventSource.removeEventListener(eventType, sourceListener);
+        return true;
+      };
+    },
+    close: () => {
+      if (closed) {
+        return false;
+      }
+      closed = true;
+      for (const subscription of subscriptions.splice(0)) {
+        eventSource.removeEventListener(
+          subscription.eventType,
+          subscription.listener,
+        );
+      }
+      eventSource.close();
+      return true;
+    },
+    isClosed: () => closed,
+  };
+}
+
+export function buildRuntimeStreamConnectionRequest(
+  connectionInfo: RuntimeConnectionInfo,
+  options: {
+    readonly channel: RuntimeStreamChannel;
+    readonly filters?: RuntimeStreamFilters;
+    readonly projectId?: string;
+    readonly lastEventId?: string;
+  },
+): RuntimeStreamConnectionRequest {
+  const path = buildRuntimeStreamPath(options.channel, options.filters);
+  return {
+    url: buildRuntimeStreamUrl(connectionInfo.base_url, path),
+    headers: buildRuntimeRequestHeaders({
+      token: connectionInfo.token,
+      ...(options.projectId !== undefined
+        ? { projectId: options.projectId }
+        : {}),
+      extraHeaders: {
+        Accept: "text/event-stream",
+        ...(options.lastEventId !== undefined
+          ? { "Last-Event-ID": options.lastEventId }
+          : {}),
+      },
+    }),
+    withCredentials: false,
+  };
+}
+
+export function buildRuntimeStreamPath(
+  channel: RuntimeStreamChannel,
+  filters: RuntimeStreamFilters = {},
+): RuntimeRequestPath {
+  const path =
+    channel.kind === "run"
+      ? `/runs/${encodeRuntimeStreamPathSegment(channel.runId)}/stream`
+      : `/workflow-planning/sessions/${encodeRuntimeStreamPathSegment(
+          channel.sessionId,
+        )}/stream`;
+  const query = buildRuntimeStreamQuery(channel.kind, filters);
+  const requestPath = query.length === 0 ? path : `${path}?${query}`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
+function buildRuntimeStreamUrl(
+  baseUrl: string,
+  path: RuntimeRequestPath,
+): string {
+  const base = parseRuntimeStreamBaseUrl(baseUrl);
+  const basePath = base.pathname.endsWith("/")
+    ? base.pathname.slice(0, -1)
+    : base.pathname;
+  return new URL(`${basePath}${path}`, base.origin).toString();
+}
+
+function buildRuntimeStreamQuery(
+  channelKind: RuntimeStreamChannel["kind"],
+  filters: RuntimeStreamFilters,
+): string {
+  assertRuntimeStreamSeqRange(filters);
+  const query = new URLSearchParams();
+  const levels = normalizeFilterValues(filters.level);
+  const categories = normalizeFilterValues(filters.category);
+
+  if (levels.length > 0) {
+    query.set("level", levels.join(","));
+  }
+
+  if (categories.length > 0) {
+    for (const category of categories) {
+      assertRuntimeStreamCategory(channelKind, category);
+    }
+    query.set("category", categories.join(","));
+  }
+
+  if (filters.sinceSeq !== undefined) {
+    query.set("since_seq", String(filters.sinceSeq));
+  }
+
+  if (filters.untilSeq !== undefined) {
+    query.set("until_seq", String(filters.untilSeq));
+  }
+
+  return query.toString();
+}
+
+function parseRuntimeStreamEvent<TData>(
+  expectedEventType: string,
+  event: RuntimeStreamSourceEvent,
+): RuntimeStreamEvent<TData> {
+  if (typeof event.data !== "string") {
+    throw new Error("Runtime stream event data must be a string");
+  }
+
+  const data = JSON.parse(event.data) as unknown;
+  if (isRecord(data)) {
+    const dataType = data.type;
+    if (typeof dataType === "string" && dataType !== expectedEventType) {
+      throw new Error(
+        `Runtime stream event type mismatch: expected ${expectedEventType}, received ${dataType}`,
+      );
+    }
+  }
+
+  return {
+    id: parseRuntimeStreamEventId(data, event),
+    type: expectedEventType,
+    data: data as TData,
+    rawData: event.data,
+  };
+}
+
+function parseRuntimeStreamEventId(
+  data: unknown,
+  event: RuntimeStreamSourceEvent,
+): string | null {
+  if (isRecord(data) && typeof data.event_id === "string") {
+    return data.event_id;
+  }
+  if (typeof event.lastEventId === "string" && event.lastEventId.length > 0) {
+    return event.lastEventId;
+  }
+  return null;
+}
+
+function parseRuntimeStreamBaseUrl(baseUrl: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    throw new Error("Runtime stream base_url must be a valid URL");
+  }
+
+  const path = parsed.pathname.endsWith("/")
+    ? parsed.pathname.slice(0, -1)
+    : parsed.pathname;
+  const port = Number.parseInt(parsed.port, 10);
+  if (
+    parsed.protocol !== "http:" ||
+    parsed.hostname !== "127.0.0.1" ||
+    !Number.isSafeInteger(port) ||
+    port < 1 ||
+    port > 65535 ||
+    path !== "/cw/v1" ||
+    parsed.search.length > 0 ||
+    parsed.hash.length > 0
+  ) {
+    throw new Error(
+      "Runtime stream base_url must be http://127.0.0.1:<port>/cw/v1",
+    );
+  }
+
+  return parsed;
+}
+
+function encodeRuntimeStreamPathSegment(value: string): string {
+  if (
+    value.length === 0 ||
+    value.includes("/") ||
+    value.includes("\\") ||
+    value.includes("?") ||
+    value.includes("#") ||
+    value.includes("..") ||
+    /[\u0000-\u001f\u007f\s]/u.test(value)
+  ) {
+    throw new Error(`Runtime stream path segment is invalid: ${value}`);
+  }
+  return encodeURIComponent(value);
+}
+
+function assertRuntimeStreamEventType(eventType: string): void {
+  if (!/^[a-z]+(?:\.[a-z0-9_]+)+$/u.test(eventType)) {
+    throw new Error(`Runtime stream event type is invalid: ${eventType}`);
+  }
+}
+
+function assertRuntimeStreamSeqRange(filters: RuntimeStreamFilters): void {
+  if (filters.sinceSeq !== undefined) {
+    assertRuntimeStreamSeq("since_seq", filters.sinceSeq);
+  }
+  if (filters.untilSeq !== undefined) {
+    assertRuntimeStreamSeq("until_seq", filters.untilSeq);
+  }
+  if (
+    filters.sinceSeq !== undefined &&
+    filters.untilSeq !== undefined &&
+    filters.untilSeq < filters.sinceSeq
+  ) {
+    throw new Error("Runtime stream until_seq must be >= since_seq");
+  }
+}
+
+function assertRuntimeStreamSeq(label: string, value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Runtime stream ${label} must be a non-negative integer`);
+  }
+}
+
+function assertRuntimeStreamCategory(
+  channelKind: RuntimeStreamChannel["kind"],
+  category: RuntimeStreamCategory,
+): void {
+  if (channelKind === "run" && category === "planning") {
+    throw new Error("Runtime run stream cannot request planning category");
+  }
+  if (
+    channelKind === "planning" &&
+    category !== "planning" &&
+    category !== "system"
+  ) {
+    throw new Error(
+      `Runtime planning stream cannot request ${category} category`,
+    );
+  }
+}
+
+function normalizeFilterValues<TValue>(
+  value: TValue | readonly TValue[] | undefined,
+): TValue[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return Array.from(value as readonly TValue[]);
+  }
+  return [value as TValue];
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

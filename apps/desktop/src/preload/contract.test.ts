@@ -34,6 +34,14 @@ import {
   type RuntimeShutdownStatusPageLifecycleEvent,
   type RuntimeShutdownStatusPageLifecycleListener,
 } from "../renderer/shutdown-status-client.js";
+import {
+  buildRuntimeStreamConnectionRequest,
+  openRuntimeStreamClient,
+  type RuntimeStreamConnectionRequest,
+  type RuntimeStreamEventSource,
+  type RuntimeStreamSourceEvent,
+  type RuntimeStreamSourceListener,
+} from "../renderer/runtime-stream-client.js";
 
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
@@ -711,6 +719,208 @@ test("renderer shutdown status page lifecycle binding stops and disposes once", 
   assert.equal(stopCalls, 1);
 });
 
+test("renderer runtime stream builds spec endpoints and authenticated headers", () => {
+  assert.deepEqual(
+    buildRuntimeStreamConnectionRequest(
+      {
+        base_url: "http://127.0.0.1:51234/cw/v1",
+        token: "token_abc123",
+      },
+      {
+        channel: { kind: "run", runId: "run_01J" },
+        filters: {
+          level: ["default", "detailed"],
+          category: ["lifecycle", "model", "system"],
+          sinceSeq: 2,
+          untilSeq: 5,
+        },
+        projectId: "prj_123",
+        lastEventId: "evt_01J9N5_tool",
+      },
+    ),
+    {
+      url: "http://127.0.0.1:51234/cw/v1/runs/run_01J/stream?level=default%2Cdetailed&category=lifecycle%2Cmodel%2Csystem&since_seq=2&until_seq=5",
+      headers: {
+        Authorization: "Bearer token_abc123",
+        "X-Cw-Client": "electron-renderer",
+        "X-Project-Id": "prj_123",
+        Accept: "text/event-stream",
+        "Last-Event-ID": "evt_01J9N5_tool",
+      },
+      withCredentials: false,
+    },
+  );
+  assert.equal(
+    buildRuntimeStreamConnectionRequest(
+      {
+        base_url: "http://127.0.0.1:51234/cw/v1/",
+        token: "token_abc123",
+      },
+      {
+        channel: { kind: "planning", sessionId: "ps_01J" },
+        filters: { category: ["planning", "system"] },
+      },
+    ).url,
+    "http://127.0.0.1:51234/cw/v1/workflow-planning/sessions/ps_01J/stream?category=planning%2Csystem",
+  );
+
+  assert.throws(
+    () =>
+      buildRuntimeStreamConnectionRequest(
+        {
+          base_url: "http://localhost:51234/cw/v1",
+          token: "token_abc123",
+        },
+        { channel: { kind: "run", runId: "run_01J" } },
+      ),
+    /127\.0\.0\.1/u,
+  );
+  assert.throws(
+    () =>
+      buildRuntimeStreamConnectionRequest(
+        {
+          base_url: "http://127.0.0.1:51234/cw/v1",
+          token: "token_abc123",
+        },
+        { channel: { kind: "run", runId: "../run_01J" } },
+      ),
+    /path segment/u,
+  );
+  assert.throws(
+    () =>
+      buildRuntimeStreamConnectionRequest(
+        {
+          base_url: "http://127.0.0.1:51234/cw/v1",
+          token: "token_abc123",
+        },
+        {
+          channel: { kind: "run", runId: "run_01J" },
+          filters: { sinceSeq: 8, untilSeq: 3 },
+        },
+      ),
+    /until_seq/u,
+  );
+  assert.throws(
+    () =>
+      buildRuntimeStreamConnectionRequest(
+        {
+          base_url: "http://127.0.0.1:51234/cw/v1",
+          token: "token_abc123",
+        },
+        {
+          channel: { kind: "planning", sessionId: "ps_01J" },
+          filters: { category: "model" },
+        },
+      ),
+    /planning stream/u,
+  );
+});
+
+test("renderer runtime stream client dispatches parsed events with isolated payloads", async () => {
+  const eventSource = createFakeRuntimeStreamEventSource();
+  const requests: RuntimeStreamConnectionRequest[] = [];
+  const eventErrors: unknown[] = [];
+  const connectionErrors: unknown[] = [];
+  const firstTitles: Array<string | undefined> = [];
+  const secondTitles: Array<string | undefined> = [];
+  const client = await openRuntimeStreamClient({
+    runtime: {
+      connectionInfo: async () => ({
+        base_url: "http://127.0.0.1:51234/cw/v1",
+        token: "token_abc123",
+      }),
+    },
+    channel: { kind: "run", runId: "run_01J" },
+    filters: { category: "model" },
+    eventSourceFactory: (request) => {
+      requests.push(request);
+      return eventSource.source;
+    },
+    onEventError: (error) => {
+      eventErrors.push(error);
+    },
+    onConnectionError: (error) => {
+      connectionErrors.push(error);
+    },
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(
+    requests[0]?.url,
+    "http://127.0.0.1:51234/cw/v1/runs/run_01J/stream?category=model",
+  );
+  const unsubscribeFirst = client.subscribe<{
+    event_id: string;
+    type: string;
+    title: string;
+  }>("model.text_delta", (event) => {
+    firstTitles.push(event.data.title);
+    event.data.title = "mutated";
+  });
+  const unsubscribeSecond = client.subscribe<{
+    event_id: string;
+    type: string;
+    title: string;
+  }>("model.text_delta", (event) => {
+    secondTitles.push(event.data.title);
+    assert.equal(event.id, "evt_1");
+    assert.equal(event.type, "model.text_delta");
+  });
+  assert.equal(eventSource.listenerCount("model.text_delta"), 2);
+
+  eventSource.emit("model.text_delta", {
+    data: JSON.stringify({
+      event_id: "evt_1",
+      type: "model.text_delta",
+      title: "Original",
+    }),
+    lastEventId: "evt_fallback",
+  });
+  assert.deepEqual(firstTitles, ["Original"]);
+  assert.deepEqual(secondTitles, ["Original"]);
+
+  eventSource.emit("model.text_delta", { data: "{bad-json" });
+  eventSource.emit("model.text_delta", {
+    data: JSON.stringify({
+      event_id: "evt_2",
+      type: "tool.call_started",
+      title: "Mismatch",
+    }),
+  });
+  eventSource.emit("error", { data: "transport failed" });
+  assert.equal(eventErrors.length, 4);
+  assert.equal(connectionErrors.length, 1);
+  assert.equal(unsubscribeFirst(), true);
+  assert.equal(unsubscribeFirst(), false);
+  assert.equal(unsubscribeSecond(), true);
+  assert.equal(eventSource.listenerCount("model.text_delta"), 0);
+  assert.equal(client.close(), true);
+  assert.equal(client.close(), false);
+  assert.equal(eventSource.closeCount(), 1);
+  assert.equal(client.isClosed(), true);
+});
+
+test("renderer runtime stream client rejects unsafe event subscriptions", async () => {
+  const eventSource = createFakeRuntimeStreamEventSource();
+  const client = await openRuntimeStreamClient({
+    runtime: {
+      connectionInfo: async () => ({
+        base_url: "http://127.0.0.1:51234/cw/v1",
+        token: "token_abc123",
+      }),
+    },
+    channel: { kind: "run", runId: "run_01J" },
+    eventSourceFactory: () => eventSource.source,
+  });
+
+  assert.throws(
+    () => client.subscribe("model text delta", () => undefined),
+    /event type/u,
+  );
+  assert.equal(client.close(), true);
+  assert.equal(client.subscribe("model.text_delta", () => undefined)(), false);
+});
+
 function createNoopSubscribe(): RuntimePreloadIpcSubscribe {
   return () => () => false;
 }
@@ -827,5 +1037,41 @@ function createFakeRuntimePreloadSubscribe(): {
     },
     listenerCount: (channel) => listeners.get(channel)?.size ?? 0,
     lastPayload: (channel) => payloads.get(channel),
+  };
+}
+
+function createFakeRuntimeStreamEventSource(): {
+  readonly source: RuntimeStreamEventSource;
+  readonly emit: (
+    type: string,
+    event: Omit<RuntimeStreamSourceEvent, "type">,
+  ) => void;
+  readonly listenerCount: (type: string) => number;
+  readonly closeCount: () => number;
+} {
+  const listeners = new Map<string, Set<RuntimeStreamSourceListener>>();
+  let closed = 0;
+
+  return {
+    source: {
+      addEventListener: (type, listener) => {
+        const typeListeners = listeners.get(type) ?? new Set();
+        typeListeners.add(listener);
+        listeners.set(type, typeListeners);
+      },
+      removeEventListener: (type, listener) => {
+        listeners.get(type)?.delete(listener);
+      },
+      close: () => {
+        closed += 1;
+      },
+    },
+    emit: (type, event) => {
+      for (const listener of [...(listeners.get(type) ?? [])]) {
+        listener({ ...event, type });
+      }
+    },
+    listenerCount: (type) => listeners.get(type)?.size ?? 0,
+    closeCount: () => closed,
   };
 }
