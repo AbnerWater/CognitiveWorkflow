@@ -16,6 +16,7 @@ import {
 import {
   startRuntimeOrchestration,
   type RuntimeOrchestrationLockOptions,
+  type RuntimeOrchestrationShutdownOptions,
   type RuntimeOrchestrationSession,
   type StartRuntimeOrchestrationOptions,
 } from "./runtime-orchestration.js";
@@ -45,6 +46,7 @@ export interface StartRuntimeWithLifecycleOptions {
   readonly fetchImpl?: RuntimeIpcMainHandlerOptions["fetchImpl"];
   readonly connectionRegistry?: RuntimeConnectionRegistry;
   readonly lock?: RuntimeOrchestrationLockOptions;
+  readonly shutdown?: RuntimeOrchestrationShutdownOptions;
   readonly lifecycle?: RuntimeStartupControllerLifecycleOptions;
   readonly lifecycleResolver?: RuntimeStartupLifecycleResolver;
   readonly orchestrationStarter?: RuntimeOrchestrationStarter;
@@ -152,6 +154,7 @@ async function startOwnedRuntime(
       : {}),
     connectionRegistry,
     ...(options.lock !== undefined ? { lock: options.lock } : {}),
+    ...(options.shutdown !== undefined ? { shutdown: options.shutdown } : {}),
   });
 
   return {

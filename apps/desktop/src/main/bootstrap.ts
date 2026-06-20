@@ -32,6 +32,14 @@ export interface InstalledRuntimeIpcMainHandlers {
   readonly startupHandlers: RuntimeIpcStartupHandlers;
   readonly registeredChannels: readonly RuntimeIpcChannel[];
   readonly unregister: () => readonly RuntimeIpcChannel[];
+  readonly shutdown: (
+    signal?: NodeJS.Signals,
+  ) => Promise<InstalledRuntimeIpcMainHandlersShutdownResult>;
+}
+
+export interface InstalledRuntimeIpcMainHandlersShutdownResult {
+  readonly unregisteredChannels: readonly RuntimeIpcChannel[];
+  readonly runtimeStopped: boolean;
 }
 
 export function installRuntimeIpcMainHandlers(
@@ -47,21 +55,44 @@ export function installRuntimeIpcMainHandlers(
     startupHandlers.registrations,
   );
   let unregistered = false;
+  let shutdownPromise:
+    | Promise<InstalledRuntimeIpcMainHandlersShutdownResult>
+    | undefined;
+
+  const unregister = (): readonly RuntimeIpcChannel[] => {
+    if (unregistered) {
+      return [];
+    }
+    unregistered = true;
+    return unregisterRuntimeIpcMainChannels(
+      options.ipcMain,
+      registeredChannels,
+    );
+  };
 
   return {
     startupHandlers,
     registeredChannels,
-    unregister: () => {
-      if (unregistered) {
-        return [];
-      }
-      unregistered = true;
-      return unregisterRuntimeIpcMainChannels(
-        options.ipcMain,
-        registeredChannels,
-      );
+    unregister,
+    shutdown: (signal?: NodeJS.Signals) => {
+      shutdownPromise ??= shutdownRuntimeIpcMainHandlers({
+        unregister,
+        stop: startupHandlers.stop,
+        ...(signal !== undefined ? { signal } : {}),
+      });
+      return shutdownPromise;
     },
   };
+}
+
+async function shutdownRuntimeIpcMainHandlers(options: {
+  readonly unregister: () => readonly RuntimeIpcChannel[];
+  readonly stop: (signal?: NodeJS.Signals) => Promise<boolean>;
+  readonly signal?: NodeJS.Signals;
+}): Promise<InstalledRuntimeIpcMainHandlersShutdownResult> {
+  const unregisteredChannels = options.unregister();
+  const runtimeStopped = await options.stop(options.signal);
+  return { unregisteredChannels, runtimeStopped };
 }
 
 export function registerRuntimeIpcMainChannelRegistrations(

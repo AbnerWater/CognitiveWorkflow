@@ -43,6 +43,11 @@ test("starts an owned sidecar when lifecycle decides to start", async () => {
   let orchestrationProjectRoot: string | undefined;
   let orchestrationRegistryMatched = false;
   let stopped = false;
+  const shutdown = {
+    timeoutMs: 25,
+    sleep: async () => undefined,
+    request: async () => ({ status: 202 }),
+  };
   const lifecycleResolver: RuntimeStartupLifecycleResolver = async (
     options,
   ) => {
@@ -65,6 +70,7 @@ test("starts an owned sidecar when lifecycle decides to start", async () => {
     assert.equal(options.cwd, PROJECT_ROOT);
     assert.equal(options.readyTimeoutMs, 25);
     assert.equal(options.lock?.timeoutMs, 50);
+    assert.equal(options.shutdown, shutdown);
     return createFakeRuntimeOrchestrationSession(() => {
       stopped = true;
     });
@@ -77,6 +83,7 @@ test("starts an owned sidecar when lifecycle decides to start", async () => {
     readyTimeoutMs: 25,
     connectionRegistry,
     lock: { timeoutMs: 50 },
+    shutdown,
     lifecycleResolver,
     orchestrationStarter,
   });

@@ -14,6 +14,7 @@ export {
   type CwMainIpcInvokeHandler,
   type CwMainIpcMain,
   type InstalledRuntimeIpcMainHandlers,
+  type InstalledRuntimeIpcMainHandlersShutdownResult,
   type InstallRuntimeIpcMainHandlersOptions,
 } from "./bootstrap.js";
 

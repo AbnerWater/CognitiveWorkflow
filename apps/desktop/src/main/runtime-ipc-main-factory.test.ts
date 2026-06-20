@@ -452,8 +452,115 @@ test("unregisters installed runtime IPC handlers once without starting runtime",
   assert.deepEqual(removedChannels, RUNTIME_IPC_CHANNELS);
 });
 
+test("shuts down installed runtime IPC handlers without starting idle runtime", async () => {
+  let starterCalls = 0;
+  const registeredHandlers = new Map<
+    RuntimeIpcChannel,
+    CwMainIpcInvokeHandler
+  >();
+  const removedChannels: RuntimeIpcChannel[] = [];
+  const installed = installRuntimeIpcMainHandlers({
+    ipcMain: {
+      handle: (channel, listener) => {
+        registeredHandlers.set(channel, listener);
+      },
+      removeHandler: (channel) => {
+        assert.equal(registeredHandlers.delete(channel), true);
+        removedChannels.push(channel);
+      },
+    },
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+    },
+    starter: async () => {
+      starterCalls += 1;
+      return createReadyStartupResult();
+    },
+  });
+
+  const result = await installed.shutdown("SIGTERM");
+
+  assert.deepEqual(result, {
+    unregisteredChannels: RUNTIME_IPC_CHANNELS,
+    runtimeStopped: false,
+  });
+  assert.deepEqual(removedChannels, RUNTIME_IPC_CHANNELS);
+  assert.deepEqual([...registeredHandlers.keys()], []);
+  assert.equal(starterCalls, 0);
+  assert.equal(installed.startupHandlers.snapshot().state, "idle");
+  assert.deepEqual(await installed.shutdown("SIGINT"), result);
+  assert.deepEqual(removedChannels, RUNTIME_IPC_CHANNELS);
+  assert.equal(starterCalls, 0);
+  assert.deepEqual(installed.unregister(), []);
+});
+
+test("shutdown unregisters handlers and stops a started runtime once", async () => {
+  let starterCalls = 0;
+  const registeredHandlers = new Map<
+    RuntimeIpcChannel,
+    CwMainIpcInvokeHandler
+  >();
+  const shutdownEvents: string[] = [];
+  const stopSignals: Array<NodeJS.Signals | undefined> = [];
+  const installed = installRuntimeIpcMainHandlers({
+    ipcMain: {
+      handle: (channel, listener) => {
+        registeredHandlers.set(channel, listener);
+      },
+      removeHandler: (channel) => {
+        assert.equal(registeredHandlers.delete(channel), true);
+        shutdownEvents.push(`remove:${channel}`);
+      },
+    },
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+    },
+    starter: async () => {
+      starterCalls += 1;
+      return createReadyStartupResult({
+        stop: async (signal) => {
+          shutdownEvents.push(`stop:${signal ?? "default"}`);
+          stopSignals.push(signal);
+          return true;
+        },
+      });
+    },
+  });
+
+  const connectionInfoHandler = registeredHandlers.get(
+    RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
+  );
+  assert.ok(connectionInfoHandler);
+  assert.deepEqual(await connectionInfoHandler({ sender: "renderer" }), {
+    base_url: "http://127.0.0.1:51234/cw/v1",
+    token: "token_abc123",
+  });
+
+  const result = await installed.shutdown("SIGINT");
+
+  assert.deepEqual(result, {
+    unregisteredChannels: RUNTIME_IPC_CHANNELS,
+    runtimeStopped: true,
+  });
+  assert.deepEqual(shutdownEvents, [
+    "remove:cw:runtime:connection-info",
+    "remove:cw:runtime:fetch",
+    "remove:cw:runtime:startup-status",
+    "stop:SIGINT",
+  ]);
+  assert.deepEqual(stopSignals, ["SIGINT"]);
+  assert.deepEqual([...registeredHandlers.keys()], []);
+  assert.equal(starterCalls, 1);
+  assert.deepEqual(await installed.shutdown("SIGTERM"), result);
+  assert.deepEqual(stopSignals, ["SIGINT"]);
+  assert.deepEqual(installed.unregister(), []);
+});
+
 function createReadyStartupResult(options?: {
   readonly fetchImpl?: typeof fetch;
+  readonly stop?: (signal?: NodeJS.Signals) => Promise<boolean>;
 }): RuntimeStartupControllerResult {
   const handlers = createRuntimeIpcMainHandlers({
     connectionInfo: () => CONNECTION,
@@ -519,11 +626,11 @@ function createReadyStartupResult(options?: {
       },
       handlers,
       closed: Promise.resolve(),
-      stop: async () => true,
+      stop: options?.stop ?? (async () => true),
     },
     handlers,
     closed: Promise.resolve(),
-    stop: async () => true,
+    stop: options?.stop ?? (async () => true),
   };
 }
 
