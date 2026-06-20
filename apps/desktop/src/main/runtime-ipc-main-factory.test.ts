@@ -12,10 +12,14 @@ import {
 import {
   installRuntimeAppLifecycleShutdown,
   installRuntimeIpcMainHandlers,
+  installRuntimeWindowLifecycleShutdown,
   type CwMainApp,
   type CwMainBeforeQuitEvent,
   type CwMainBeforeQuitListener,
   type CwMainIpcInvokeHandler,
+  type CwMainWindow,
+  type CwMainWindowCloseEvent,
+  type CwMainWindowCloseListener,
 } from "./bootstrap.js";
 import { createRuntimeBaseUrl, type RuntimeConnectionInfo } from "./runtime.js";
 import { createRuntimeIpcMainHandlers } from "./runtime-ipc-handlers.js";
@@ -660,6 +664,104 @@ test("app lifecycle shutdown retries quit after runtime shutdown failure", async
   assert.equal(retryQuit.prevented, false);
 });
 
+test("window lifecycle shutdown prevents close until runtime shutdown completes", async () => {
+  const window = createFakeMainWindow();
+  const shutdownResult = {
+    unregisteredChannels: RUNTIME_IPC_CHANNELS,
+    runtimeStopped: true,
+  };
+  let resolveShutdown: ((result: typeof shutdownResult) => void) | undefined;
+  const shutdownPromise = new Promise<typeof shutdownResult>((resolve) => {
+    resolveShutdown = resolve;
+  });
+  const shutdownSignals: Array<NodeJS.Signals | undefined> = [];
+  const installed = installRuntimeWindowLifecycleShutdown({
+    window: window.window,
+    signal: "SIGTERM",
+    runtime: {
+      shutdown: async (signal) => {
+        shutdownSignals.push(signal);
+        return shutdownPromise;
+      },
+    },
+  });
+
+  assert.deepEqual(installed.snapshot(), { state: "registered" });
+  const firstClose = window.emitClose();
+
+  assert.equal(firstClose.prevented, true);
+  assert.deepEqual(installed.snapshot(), { state: "shutting_down" });
+  assert.deepEqual(shutdownSignals, ["SIGTERM"]);
+  assert.equal(window.closeCalls(), 0);
+
+  const secondClose = window.emitClose();
+  assert.equal(secondClose.prevented, true);
+  assert.deepEqual(shutdownSignals, ["SIGTERM"]);
+
+  resolveShutdown?.(shutdownResult);
+  assert.deepEqual(await installed.shutdown(), shutdownResult);
+  assert.deepEqual(installed.snapshot(), { state: "shutdown_complete" });
+  assert.equal(window.closeCalls(), 1);
+
+  const retryClose = window.emitClose();
+  assert.equal(retryClose.prevented, false);
+  assert.deepEqual(shutdownSignals, ["SIGTERM"]);
+});
+
+test("window lifecycle shutdown unregisters before close without starting runtime", async () => {
+  const window = createFakeMainWindow();
+  let shutdownCalls = 0;
+  const installed = installRuntimeWindowLifecycleShutdown({
+    window: window.window,
+    runtime: {
+      shutdown: async () => {
+        shutdownCalls += 1;
+        return {
+          unregisteredChannels: [],
+          runtimeStopped: false,
+        };
+      },
+    },
+  });
+
+  assert.equal(window.listenerCount(), 1);
+  assert.equal(installed.unregister(), true);
+  assert.deepEqual(installed.snapshot(), { state: "unregistered" });
+  assert.equal(window.listenerCount(), 0);
+  assert.equal(installed.unregister(), false);
+
+  const close = window.emitClose();
+  assert.equal(close.prevented, false);
+  assert.equal(shutdownCalls, 0);
+  assert.equal(window.closeCalls(), 0);
+  assert.equal(await installed.shutdown(), undefined);
+});
+
+test("window lifecycle shutdown retries close after runtime shutdown failure", async () => {
+  const window = createFakeMainWindow();
+  const installed = installRuntimeWindowLifecycleShutdown({
+    window: window.window,
+    runtime: {
+      shutdown: async () => {
+        throw new Error("runtime shutdown failed");
+      },
+    },
+  });
+
+  const close = window.emitClose();
+
+  assert.equal(close.prevented, true);
+  await assert.rejects(installed.shutdown(), /runtime shutdown failed/u);
+  assert.deepEqual(installed.snapshot(), {
+    state: "failed",
+    reason: "runtime shutdown failed",
+  });
+  assert.equal(window.closeCalls(), 1);
+
+  const retryClose = window.emitClose();
+  assert.equal(retryClose.prevented, false);
+});
+
 function createReadyStartupResult(options?: {
   readonly fetchImpl?: typeof fetch;
   readonly stop?: (signal?: NodeJS.Signals) => Promise<boolean>;
@@ -773,6 +875,46 @@ function createFakeMainApp(): {
     },
     listenerCount: () => listeners.size,
     quitCalls: () => quitCalls,
+  };
+}
+
+function createFakeMainWindow(): {
+  readonly window: CwMainWindow;
+  readonly emitClose: () => { readonly prevented: boolean };
+  readonly listenerCount: () => number;
+  readonly closeCalls: () => number;
+} {
+  const listeners = new Set<CwMainWindowCloseListener>();
+  let closeCalls = 0;
+
+  return {
+    window: {
+      on: (event, listener) => {
+        assert.equal(event, "close");
+        listeners.add(listener);
+      },
+      off: (event, listener) => {
+        assert.equal(event, "close");
+        listeners.delete(listener);
+      },
+      close: () => {
+        closeCalls += 1;
+      },
+    },
+    emitClose: () => {
+      let prevented = false;
+      const event: CwMainWindowCloseEvent = {
+        preventDefault: () => {
+          prevented = true;
+        },
+      };
+      for (const listener of [...listeners]) {
+        listener(event);
+      }
+      return { prevented };
+    },
+    listenerCount: () => listeners.size,
+    closeCalls: () => closeCalls,
   };
 }
 

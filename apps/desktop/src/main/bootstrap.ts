@@ -42,6 +42,18 @@ export interface CwMainApp {
   readonly quit: () => void;
 }
 
+export interface CwMainWindowCloseEvent {
+  preventDefault(): void;
+}
+
+export type CwMainWindowCloseListener = (event: CwMainWindowCloseEvent) => void;
+
+export interface CwMainWindow {
+  readonly on: (event: "close", listener: CwMainWindowCloseListener) => void;
+  readonly off: (event: "close", listener: CwMainWindowCloseListener) => void;
+  readonly close: () => void;
+}
+
 export interface InstallRuntimeIpcMainHandlersOptions extends CreateRuntimeIpcStartupHandlersOptions {
   readonly ipcMain: CwMainIpcMain;
 }
@@ -81,6 +93,26 @@ export interface InstallRuntimeAppLifecycleShutdownOptions {
 export interface InstalledRuntimeAppLifecycleShutdown {
   readonly unregister: () => boolean;
   readonly snapshot: () => RuntimeAppLifecycleShutdownSnapshot;
+  readonly shutdown: () => Promise<
+    InstalledRuntimeIpcMainHandlersShutdownResult | undefined
+  >;
+}
+
+export type RuntimeWindowLifecycleShutdownState =
+  RuntimeAppLifecycleShutdownState;
+
+export type RuntimeWindowLifecycleShutdownSnapshot =
+  RuntimeAppLifecycleShutdownSnapshot;
+
+export interface InstallRuntimeWindowLifecycleShutdownOptions {
+  readonly window: CwMainWindow;
+  readonly runtime: Pick<InstalledRuntimeIpcMainHandlers, "shutdown">;
+  readonly signal?: NodeJS.Signals;
+}
+
+export interface InstalledRuntimeWindowLifecycleShutdown {
+  readonly unregister: () => boolean;
+  readonly snapshot: () => RuntimeWindowLifecycleShutdownSnapshot;
   readonly shutdown: () => Promise<
     InstalledRuntimeIpcMainHandlersShutdownResult | undefined
   >;
@@ -201,6 +233,75 @@ async function shutdownRuntimeForAppLifecycle(
   } catch (error) {
     setState({ state: "failed", reason: errorName(error) });
     options.app.quit();
+    throw error;
+  }
+}
+
+export function installRuntimeWindowLifecycleShutdown(
+  options: InstallRuntimeWindowLifecycleShutdownOptions,
+): InstalledRuntimeWindowLifecycleShutdown {
+  let listenerRegistered = true;
+  let state: RuntimeWindowLifecycleShutdownState = "registered";
+  let failureReason: string | undefined;
+  let shutdownPromise:
+    | Promise<InstalledRuntimeIpcMainHandlersShutdownResult>
+    | undefined;
+
+  const closeListener: CwMainWindowCloseListener = (event) => {
+    if (
+      state === "shutdown_complete" ||
+      state === "failed" ||
+      state === "unregistered"
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    shutdownPromise ??= shutdownRuntimeForWindowLifecycle(
+      options,
+      (nextState) => {
+        state = nextState.state;
+        failureReason = nextState.reason;
+      },
+    );
+    shutdownPromise.catch(() => undefined);
+  };
+
+  options.window.on("close", closeListener);
+
+  return {
+    unregister: () => {
+      if (!listenerRegistered) {
+        return false;
+      }
+      listenerRegistered = false;
+      options.window.off("close", closeListener);
+      if (state === "registered") {
+        state = "unregistered";
+      }
+      return true;
+    },
+    snapshot: () =>
+      failureReason !== undefined
+        ? { state, reason: failureReason }
+        : { state },
+    shutdown: () => shutdownPromise ?? Promise.resolve(undefined),
+  };
+}
+
+async function shutdownRuntimeForWindowLifecycle(
+  options: InstallRuntimeWindowLifecycleShutdownOptions,
+  setState: (state: RuntimeWindowLifecycleShutdownSnapshot) => void,
+): Promise<InstalledRuntimeIpcMainHandlersShutdownResult> {
+  setState({ state: "shutting_down" });
+  try {
+    const result = await options.runtime.shutdown(options.signal);
+    setState({ state: "shutdown_complete" });
+    options.window.close();
+    return result;
+  } catch (error) {
+    setState({ state: "failed", reason: errorName(error) });
+    options.window.close();
     throw error;
   }
 }

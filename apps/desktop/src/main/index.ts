@@ -10,6 +10,7 @@ export {
 export {
   installRuntimeAppLifecycleShutdown,
   installRuntimeIpcMainHandlers,
+  installRuntimeWindowLifecycleShutdown,
   registerRuntimeIpcMainChannelRegistrations,
   unregisterRuntimeIpcMainChannels,
   type CwMainApp,
@@ -17,13 +18,20 @@ export {
   type CwMainBeforeQuitListener,
   type CwMainIpcInvokeHandler,
   type CwMainIpcMain,
+  type CwMainWindow,
+  type CwMainWindowCloseEvent,
+  type CwMainWindowCloseListener,
   type InstalledRuntimeAppLifecycleShutdown,
   type InstalledRuntimeIpcMainHandlers,
   type InstalledRuntimeIpcMainHandlersShutdownResult,
+  type InstalledRuntimeWindowLifecycleShutdown,
   type InstallRuntimeAppLifecycleShutdownOptions,
   type InstallRuntimeIpcMainHandlersOptions,
+  type InstallRuntimeWindowLifecycleShutdownOptions,
   type RuntimeAppLifecycleShutdownSnapshot,
   type RuntimeAppLifecycleShutdownState,
+  type RuntimeWindowLifecycleShutdownSnapshot,
+  type RuntimeWindowLifecycleShutdownState,
 } from "./bootstrap.js";
 
 export {
