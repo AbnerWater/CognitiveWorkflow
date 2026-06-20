@@ -11,6 +11,7 @@ export {
   RUNTIME_IPC_CHANNELS,
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   RUNTIME_IPC_METHODS,
   assertRuntimeIpcChannel,
   assertRuntimeIpcRequestPath,
@@ -27,6 +28,12 @@ export {
   type RuntimeIpcRequestHeadersInput,
   type RuntimeIpcRequestPath,
   type RuntimeIpcResponse,
+  type RuntimeIpcStartupLockStatus,
+  type RuntimeIpcStartupStatus,
+  type RuntimeIpcStartupStatusAction,
+  type RuntimeIpcStartupStatusKind,
+  type RuntimeIpcStartupStatusResponse,
+  type RuntimeIpcStartupStatusSeverity,
 } from "../shared/runtime-ipc.js";
 
 export {
@@ -105,6 +112,7 @@ export {
   createRuntimeIpcMainChannelRegistrations,
   createRuntimeIpcStartupHandlers,
   type CreateRuntimeIpcStartupHandlersOptions,
+  type RuntimeIpcMainChannelRegistrationOptions,
   type RuntimeIpcMainChannelRegistration,
   type RuntimeIpcStartupControllerStarter,
   type RuntimeIpcStartupHandlerSnapshot,

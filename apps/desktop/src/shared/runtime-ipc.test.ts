@@ -5,6 +5,7 @@ import {
   RUNTIME_IPC_CHANNELS,
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   assertRuntimeIpcChannel,
   assertRuntimeIpcRequestPath,
   buildRuntimeIpcFetchRequest,
@@ -18,9 +19,11 @@ test("defines stable runtime IPC channels", () => {
   assert.deepEqual(RUNTIME_IPC_CHANNELS, [
     "cw:runtime:connection-info",
     "cw:runtime:fetch",
+    "cw:runtime:startup-status",
   ]);
   assert.equal(isRuntimeIpcChannel(RUNTIME_IPC_CONNECTION_INFO_CHANNEL), true);
   assert.equal(isRuntimeIpcChannel(RUNTIME_IPC_FETCH_CHANNEL), true);
+  assert.equal(isRuntimeIpcChannel(RUNTIME_IPC_STARTUP_STATUS_CHANNEL), true);
   assert.equal(isRuntimeIpcChannel("cw:runtime:spawn"), false);
   assert.throws(
     () => assertRuntimeIpcChannel("cw:runtime:spawn"),

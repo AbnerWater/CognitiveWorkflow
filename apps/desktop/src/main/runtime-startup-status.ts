@@ -1,36 +1,20 @@
-import type { RuntimeConnectionHandoffAction } from "./runtime-handoff.js";
+import type {
+  RuntimeIpcStartupStatus,
+  RuntimeIpcStartupStatusAction,
+  RuntimeIpcStartupStatusKind,
+  RuntimeIpcStartupLockStatus,
+  RuntimeIpcStartupStatusSeverity,
+} from "../shared/runtime-ipc.js";
 import type {
   RuntimeStartupLifecycleDecision,
   RuntimeStartupLifecycleTransition,
 } from "./runtime-lifecycle.js";
-import type { RuntimeLockStatus } from "./runtime-lock.js";
 
-export type RuntimeStartupStatusKind =
-  | "starting_sidecar"
-  | "cleaning_stale_lock"
-  | "waiting_for_existing"
-  | "runtime_ready"
-  | "startup_blocked"
-  | "startup_timed_out";
-
-export type RuntimeStartupStatusSeverity = "info" | "warning" | "error";
-
-export type RuntimeStartupStatusAction =
-  | RuntimeConnectionHandoffAction
-  | RuntimeStartupLifecycleDecision["action"];
-
-export interface RuntimeStartupStatus {
-  readonly kind: RuntimeStartupStatusKind;
-  readonly action: RuntimeStartupStatusAction;
-  readonly attempt: number;
-  readonly lockStatus: RuntimeLockStatus;
-  readonly severity: RuntimeStartupStatusSeverity;
-  readonly message: string;
-  readonly lifecycleComplete: boolean;
-  readonly userActionRequired: boolean;
-  readonly retryable: boolean;
-  readonly reason?: string;
-}
+export type RuntimeStartupStatus = RuntimeIpcStartupStatus;
+export type RuntimeStartupStatusKind = RuntimeIpcStartupStatusKind;
+export type RuntimeStartupStatusSeverity = RuntimeIpcStartupStatusSeverity;
+export type RuntimeStartupStatusAction = RuntimeIpcStartupStatusAction;
+export type RuntimeStartupLockStatus = RuntimeIpcStartupLockStatus;
 
 export function mapRuntimeStartupDecisionToStatus(
   decision: RuntimeStartupLifecycleDecision,
@@ -57,7 +41,7 @@ export function mapRuntimeStartupTransitionToStatus(
 interface BuildRuntimeStartupStatusOptions {
   readonly action: RuntimeStartupStatusAction;
   readonly attempt: number;
-  readonly lockStatus: RuntimeLockStatus;
+  readonly lockStatus: RuntimeStartupLockStatus;
   readonly reason?: string;
 }
 

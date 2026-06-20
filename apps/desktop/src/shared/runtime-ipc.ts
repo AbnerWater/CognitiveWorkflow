@@ -1,9 +1,12 @@
 export const RUNTIME_IPC_CONNECTION_INFO_CHANNEL =
   "cw:runtime:connection-info" as const;
 export const RUNTIME_IPC_FETCH_CHANNEL = "cw:runtime:fetch" as const;
+export const RUNTIME_IPC_STARTUP_STATUS_CHANNEL =
+  "cw:runtime:startup-status" as const;
 export const RUNTIME_IPC_CHANNELS = [
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
 ] as const;
 export const RUNTIME_IPC_METHODS = ["GET", "POST", "PATCH", "DELETE"] as const;
 
@@ -42,6 +45,46 @@ export interface RuntimeIpcResponse<TBody = unknown> {
   readonly headers: Readonly<Record<string, string>>;
   readonly body: TBody | null;
 }
+
+export type RuntimeIpcStartupStatusKind =
+  | "starting_sidecar"
+  | "cleaning_stale_lock"
+  | "waiting_for_existing"
+  | "runtime_ready"
+  | "startup_blocked"
+  | "startup_timed_out";
+
+export type RuntimeIpcStartupStatusSeverity = "info" | "warning" | "error";
+
+export type RuntimeIpcStartupStatusAction =
+  | "start_sidecar"
+  | "cleanup_then_start"
+  | "reuse_existing"
+  | "wait_for_existing"
+  | "timeout_waiting_for_existing"
+  | "block_startup";
+
+export type RuntimeIpcStartupLockStatus =
+  | "missing"
+  | "active"
+  | "stale"
+  | "corrupt";
+
+export interface RuntimeIpcStartupStatus {
+  readonly kind: RuntimeIpcStartupStatusKind;
+  readonly action: RuntimeIpcStartupStatusAction;
+  readonly attempt: number;
+  readonly lockStatus: RuntimeIpcStartupLockStatus;
+  readonly severity: RuntimeIpcStartupStatusSeverity;
+  readonly message: string;
+  readonly lifecycleComplete: boolean;
+  readonly userActionRequired: boolean;
+  readonly retryable: boolean;
+  readonly reason?: string;
+}
+
+export type RuntimeIpcStartupStatusResponse =
+  readonly RuntimeIpcStartupStatus[];
 
 export interface RuntimeIpcMainHandlers {
   readonly connectionInfo: () => Promise<RuntimeIpcConnectionInfo>;

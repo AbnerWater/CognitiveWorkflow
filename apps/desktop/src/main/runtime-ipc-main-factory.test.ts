@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   buildRuntimeIpcFetchRequest,
 } from "../shared/runtime-ipc.js";
 import { createRuntimeBaseUrl, type RuntimeConnectionInfo } from "./runtime.js";
@@ -32,9 +33,24 @@ test("exposes stable channel registrations without importing Electron", async ()
 
   assert.deepEqual(
     handlers.registrations.map((registration) => registration.channel),
-    ["cw:runtime:connection-info", "cw:runtime:fetch"],
+    [
+      "cw:runtime:connection-info",
+      "cw:runtime:fetch",
+      "cw:runtime:startup-status",
+    ],
   );
   assert.equal(handlers.snapshot().state, "idle");
+  const startupStatusRegistration = handlers.registrations.find(
+    (registration) =>
+      registration.channel === RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+  );
+  assert.equal(
+    startupStatusRegistration?.channel,
+    RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+  );
+  assert.deepEqual(await startupStatusRegistration.handle(), []);
+  assert.equal(handlers.snapshot().state, "idle");
+
   const connectionInfoRegistration = handlers.registrations.find(
     (registration) =>
       registration.channel === RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
@@ -111,17 +127,38 @@ test("records and forwards startup lifecycle statuses", async () => {
   });
 
   assert.deepEqual(handlers.statusHistory(), []);
+  const startupStatusRegistration = handlers.registrations.find(
+    (registration) =>
+      registration.channel === RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+  );
+  assert.equal(
+    startupStatusRegistration?.channel,
+    RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+  );
+  assert.deepEqual(await startupStatusRegistration.handle(), []);
+  assert.equal(starterCalls, 0);
 
   assert.deepEqual(await handlers.handlers.connectionInfo(), CONNECTION);
   assert.equal(starterCalls, 1);
   assert.deepEqual(factoryStatuses, [waitingStatus, readyStatus]);
   assert.deepEqual(startupStatuses, [waitingStatus, readyStatus]);
   assert.deepEqual(handlers.statusHistory(), [waitingStatus, readyStatus]);
+  assert.deepEqual(await startupStatusRegistration.handle(), [
+    waitingStatus,
+    readyStatus,
+  ]);
 
   const mutableHistory = handlers.statusHistory() as RuntimeStartupStatus[];
   mutableHistory.pop();
+  const mutableStartupStatus =
+    (await startupStatusRegistration.handle()) as RuntimeStartupStatus[];
+  mutableStartupStatus.pop();
 
   assert.deepEqual(handlers.statusHistory(), [waitingStatus, readyStatus]);
+  assert.deepEqual(await startupStatusRegistration.handle(), [
+    waitingStatus,
+    readyStatus,
+  ]);
   assert.deepEqual(
     (
       await handlers.handlers.fetch<{ ok: boolean }>(
