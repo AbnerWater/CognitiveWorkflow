@@ -64,6 +64,10 @@ import {
   type RuntimeStreamViewDisplayLevel,
   type RuntimeStreamViewModelSnapshot,
 } from "../renderer/runtime-stream-view-model.js";
+import {
+  createRuntimeStreamInteraction,
+  type RuntimeStreamInteractionSnapshot,
+} from "../renderer/runtime-stream-interaction.js";
 
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
@@ -1695,6 +1699,315 @@ test("renderer runtime stream view model disposes and rejects unsafe options", (
     /category/u,
   );
   assert.throws(() => viewModel.toggleExpanded("bad id"), /event id/u);
+});
+
+test("renderer runtime stream interaction searches and selects visible events", () => {
+  const store = createFakeRuntimeStreamViewModelStore({
+    status: "running",
+    events: [
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_tool_start",
+        seq: 1,
+        type: "tool.call_started",
+        category: "tool",
+        display_level: "default",
+        severity: "info",
+        title: "Calling tool",
+        summary: "evidence_lookup",
+        expandable: true,
+        payload: { tool_name: "evidence_lookup" },
+        artifact_refs: [],
+        created_at: "2026-06-21T00:00:00.001Z",
+      }),
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_tool_done",
+        seq: 2,
+        parent_event_id: "evt_tool_start",
+        type: "tool.call_completed",
+        category: "tool",
+        display_level: "detailed",
+        severity: "success",
+        title: "Tool completed",
+        content: "Completed after approval",
+        expandable: true,
+        payload: { output_size: 42 },
+        created_at: "2026-06-21T00:00:00.002Z",
+      }),
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_system_ready",
+        seq: 3,
+        type: "system.runtime_ready",
+        category: "system",
+        display_level: "default",
+        severity: "info",
+        title: "Runtime ready",
+        content: "Tool subscriptions are ready",
+        expandable: false,
+        created_at: "2026-06-21T00:00:00.003Z",
+      }),
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_metric_snapshot",
+        seq: 4,
+        type: "metric.snapshot",
+        category: "metric",
+        display_level: "default",
+        severity: "info",
+        title: "Metrics updated",
+        expandable: false,
+        payload: { hidden_search_text: "payload-only-secret" },
+        created_at: "2026-06-21T00:00:00.004Z",
+      }),
+    ],
+    totalEvents: 4,
+  });
+  const viewModel = createRuntimeStreamViewModel({ store: store.store });
+  const interaction = createRuntimeStreamInteraction({
+    viewModel,
+  });
+
+  const searched = interaction.setSearchQuery("tool");
+  assert.equal(searched.search.query, "tool");
+  assert.deepEqual(
+    searched.search.matches.map((match) => match.eventId),
+    ["evt_tool_start", "evt_system_ready"],
+  );
+  assert.deepEqual(searched.search.matches[0]?.fields, [
+    "id",
+    "type",
+    "category",
+    "title",
+  ]);
+  assert.equal(searched.search.activeEventId, "evt_tool_start");
+
+  const selected = interaction.selectActiveSearchMatch();
+  assert.equal(selected.selectedEventId, "evt_tool_start");
+  assert.equal(
+    interaction.setSearchQuery("payload-only-secret").search.matches.length,
+    0,
+  );
+
+  const next = interaction.nextSearchMatch();
+  assert.equal(next.search.activeMatchIndex, null);
+  assert.equal(next.search.activeEventId, null);
+  interaction.setSearchQuery("tool");
+  assert.equal(
+    interaction.nextSearchMatch().search.activeEventId,
+    "evt_system_ready",
+  );
+  const previous = interaction.previousSearchMatch();
+  assert.equal(previous.search.activeMatchIndex, 0);
+  assert.equal(previous.search.activeEventId, "evt_tool_start");
+
+  assert.equal(
+    interaction.setSearchQuery("completed").search.matches.length,
+    0,
+  );
+  const expanded = interaction.toggleExpanded("evt_tool_start");
+  assert.equal(expanded.view.timelineItems[0]?.expanded, true);
+  assert.deepEqual(
+    interaction
+      .setSearchQuery("completed")
+      .search.matches.map((match) => match.eventId),
+    ["evt_tool_done"],
+  );
+});
+
+test("renderer runtime stream interaction tracks unread events and full reload acknowledgement", () => {
+  const store = createFakeRuntimeStreamViewModelStore({
+    status: "running",
+    events: [
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_run_started",
+        seq: 1,
+        type: "run.started",
+        category: "lifecycle",
+        display_level: "default",
+        severity: "info",
+        title: "Run started",
+        expandable: false,
+      }),
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_model_delta",
+        seq: 2,
+        type: "model.text_delta",
+        category: "model",
+        display_level: "minimal",
+        severity: "info",
+        title: "Model text",
+        content: "hello",
+        expandable: false,
+      }),
+    ],
+    totalEvents: 2,
+  });
+  const viewModel = createRuntimeStreamViewModel({ store: store.store });
+  const interaction = createRuntimeStreamInteraction({ viewModel });
+
+  assert.deepEqual(interaction.snapshot().read, {
+    lastSeenTotalEvents: 2,
+    unreadCount: 0,
+  });
+
+  store.emit({
+    status: "running",
+    events: [
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_run_started",
+        seq: 1,
+        type: "run.started",
+        category: "lifecycle",
+        display_level: "default",
+        severity: "info",
+        title: "Run started",
+        expandable: false,
+      }),
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_model_delta",
+        seq: 2,
+        type: "model.text_delta",
+        category: "model",
+        display_level: "minimal",
+        severity: "info",
+        title: "Model text",
+        content: "hello",
+        expandable: false,
+      }),
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_tool_start",
+        seq: 3,
+        type: "tool.call_started",
+        category: "tool",
+        display_level: "default",
+        severity: "info",
+        title: "Calling tool",
+        expandable: true,
+      }),
+    ],
+    totalEvents: 5,
+  });
+  assert.deepEqual(interaction.snapshot().read, {
+    lastSeenTotalEvents: 2,
+    unreadCount: 3,
+  });
+  assert.deepEqual(interaction.markAllRead().read, {
+    lastSeenTotalEvents: 5,
+    unreadCount: 0,
+  });
+
+  store.emit({
+    status: "full_reload_required",
+    events: [],
+    totalEvents: 5,
+    fullReloadDecision: {
+      action: "full_reload",
+      lastEventId: "evt_missing",
+      reason: "Last-Event-ID was not found",
+      status: 412,
+      errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+    },
+  });
+  assert.equal(interaction.snapshot().fullReloadAcknowledged, false);
+  assert.equal(
+    interaction.acknowledgeFullReload().fullReloadAcknowledged,
+    true,
+  );
+
+  store.emit({
+    status: "full_reload_required",
+    events: [],
+    totalEvents: 6,
+    fullReloadDecision: {
+      action: "full_reload",
+      lastEventId: "evt_new_missing",
+      reason: "Last-Event-ID was not found",
+      status: 412,
+      errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+    },
+  });
+  assert.equal(interaction.snapshot().fullReloadAcknowledged, false);
+});
+
+test("renderer runtime stream interaction isolates listener errors and rejects unsafe inputs", () => {
+  const errors: unknown[] = [];
+  const published: RuntimeStreamInteractionSnapshot[] = [];
+  const store = createFakeRuntimeStreamViewModelStore({
+    status: "running",
+    events: [
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_system_ready",
+        seq: 1,
+        type: "system.runtime_ready",
+        category: "system",
+        display_level: "default",
+        severity: "info",
+        title: "Runtime ready",
+        expandable: false,
+      }),
+    ],
+    totalEvents: 1,
+  });
+  const viewModel = createRuntimeStreamViewModel({ store: store.store });
+  const interaction = createRuntimeStreamInteraction({
+    viewModel,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  interaction.subscribe((snapshot) => {
+    published.push(snapshot);
+    throw new Error("interaction listener failed");
+  });
+
+  assert.equal(viewModel.listenerCount(), 1);
+  interaction.setSearchQuery("ready");
+  assert.equal(errors.length, 1);
+  assert.equal(published.length, 1);
+  assert.throws(() => interaction.setSearchQuery("bad\nquery"), /query/u);
+  assert.throws(
+    () => interaction.setSearchQuery("x".repeat(201)),
+    /at most 200/u,
+  );
+  assert.throws(() => interaction.selectEvent("bad id"), /event id/u);
+  assert.throws(() => interaction.selectEvent("evt_missing"), /not visible/u);
+  assert.throws(
+    () =>
+      createRuntimeStreamInteraction({
+        viewModel,
+        selectedEventId: "evt_missing",
+      }),
+    /not visible/u,
+  );
+  assert.throws(
+    () =>
+      createRuntimeStreamInteraction({
+        viewModel,
+        lastSeenTotalEvents: -1,
+      }),
+    /lastSeenTotalEvents/u,
+  );
+
+  assert.equal(interaction.dispose(), true);
+  assert.equal(interaction.dispose(), false);
+  assert.equal(viewModel.listenerCount(), 0);
+  assert.equal(interaction.subscribe(() => undefined)(), false);
+
+  store.emit({
+    status: "running",
+    events: [
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_after_dispose",
+        seq: 2,
+        type: "system.heartbeat",
+        category: "system",
+        display_level: "minimal",
+        severity: "info",
+        title: "Heartbeat",
+        expandable: false,
+      }),
+    ],
+    totalEvents: 2,
+  });
+  assert.equal(published.length, 1);
 });
 
 function createNoopSubscribe(): RuntimePreloadIpcSubscribe {
