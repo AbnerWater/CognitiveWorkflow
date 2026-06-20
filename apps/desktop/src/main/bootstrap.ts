@@ -24,6 +24,24 @@ export interface CwMainIpcMain {
   readonly removeHandler: (channel: RuntimeIpcChannel) => void;
 }
 
+export interface CwMainBeforeQuitEvent {
+  preventDefault(): void;
+}
+
+export type CwMainBeforeQuitListener = (event: CwMainBeforeQuitEvent) => void;
+
+export interface CwMainApp {
+  readonly on: (
+    event: "before-quit",
+    listener: CwMainBeforeQuitListener,
+  ) => void;
+  readonly off: (
+    event: "before-quit",
+    listener: CwMainBeforeQuitListener,
+  ) => void;
+  readonly quit: () => void;
+}
+
 export interface InstallRuntimeIpcMainHandlersOptions extends CreateRuntimeIpcStartupHandlersOptions {
   readonly ipcMain: CwMainIpcMain;
 }
@@ -40,6 +58,32 @@ export interface InstalledRuntimeIpcMainHandlers {
 export interface InstalledRuntimeIpcMainHandlersShutdownResult {
   readonly unregisteredChannels: readonly RuntimeIpcChannel[];
   readonly runtimeStopped: boolean;
+}
+
+export type RuntimeAppLifecycleShutdownState =
+  | "registered"
+  | "shutting_down"
+  | "shutdown_complete"
+  | "failed"
+  | "unregistered";
+
+export interface RuntimeAppLifecycleShutdownSnapshot {
+  readonly state: RuntimeAppLifecycleShutdownState;
+  readonly reason?: string;
+}
+
+export interface InstallRuntimeAppLifecycleShutdownOptions {
+  readonly app: CwMainApp;
+  readonly runtime: Pick<InstalledRuntimeIpcMainHandlers, "shutdown">;
+  readonly signal?: NodeJS.Signals;
+}
+
+export interface InstalledRuntimeAppLifecycleShutdown {
+  readonly unregister: () => boolean;
+  readonly snapshot: () => RuntimeAppLifecycleShutdownSnapshot;
+  readonly shutdown: () => Promise<
+    InstalledRuntimeIpcMainHandlersShutdownResult | undefined
+  >;
 }
 
 export function installRuntimeIpcMainHandlers(
@@ -95,6 +139,72 @@ async function shutdownRuntimeIpcMainHandlers(options: {
   return { unregisteredChannels, runtimeStopped };
 }
 
+export function installRuntimeAppLifecycleShutdown(
+  options: InstallRuntimeAppLifecycleShutdownOptions,
+): InstalledRuntimeAppLifecycleShutdown {
+  let listenerRegistered = true;
+  let state: RuntimeAppLifecycleShutdownState = "registered";
+  let failureReason: string | undefined;
+  let shutdownPromise:
+    | Promise<InstalledRuntimeIpcMainHandlersShutdownResult>
+    | undefined;
+
+  const beforeQuitListener: CwMainBeforeQuitListener = (event) => {
+    if (
+      state === "shutdown_complete" ||
+      state === "failed" ||
+      state === "unregistered"
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    shutdownPromise ??= shutdownRuntimeForAppLifecycle(options, (nextState) => {
+      state = nextState.state;
+      failureReason = nextState.reason;
+    });
+    shutdownPromise.catch(() => undefined);
+  };
+
+  options.app.on("before-quit", beforeQuitListener);
+
+  return {
+    unregister: () => {
+      if (!listenerRegistered) {
+        return false;
+      }
+      listenerRegistered = false;
+      options.app.off("before-quit", beforeQuitListener);
+      if (state === "registered") {
+        state = "unregistered";
+      }
+      return true;
+    },
+    snapshot: () =>
+      failureReason !== undefined
+        ? { state, reason: failureReason }
+        : { state },
+    shutdown: () => shutdownPromise ?? Promise.resolve(undefined),
+  };
+}
+
+async function shutdownRuntimeForAppLifecycle(
+  options: InstallRuntimeAppLifecycleShutdownOptions,
+  setState: (state: RuntimeAppLifecycleShutdownSnapshot) => void,
+): Promise<InstalledRuntimeIpcMainHandlersShutdownResult> {
+  setState({ state: "shutting_down" });
+  try {
+    const result = await options.runtime.shutdown(options.signal);
+    setState({ state: "shutdown_complete" });
+    options.app.quit();
+    return result;
+  } catch (error) {
+    setState({ state: "failed", reason: errorName(error) });
+    options.app.quit();
+    throw error;
+  }
+}
+
 export function registerRuntimeIpcMainChannelRegistrations(
   ipcMain: CwMainIpcMain,
   registrations: readonly RuntimeIpcMainChannelRegistration[],
@@ -133,4 +243,14 @@ function createRuntimeIpcMainInvokeHandler(
     case RUNTIME_IPC_FETCH_CHANNEL:
       return async (_event, payload) => registration.handle(payload);
   }
+}
+
+function errorName(error: unknown): string {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+  if (error instanceof Error && error.name.length > 0) {
+    return error.name;
+  }
+  return typeof error;
 }

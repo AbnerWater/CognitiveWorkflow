@@ -8,14 +8,22 @@ export {
 } from "./security.js";
 
 export {
+  installRuntimeAppLifecycleShutdown,
   installRuntimeIpcMainHandlers,
   registerRuntimeIpcMainChannelRegistrations,
   unregisterRuntimeIpcMainChannels,
+  type CwMainApp,
+  type CwMainBeforeQuitEvent,
+  type CwMainBeforeQuitListener,
   type CwMainIpcInvokeHandler,
   type CwMainIpcMain,
+  type InstalledRuntimeAppLifecycleShutdown,
   type InstalledRuntimeIpcMainHandlers,
   type InstalledRuntimeIpcMainHandlersShutdownResult,
+  type InstallRuntimeAppLifecycleShutdownOptions,
   type InstallRuntimeIpcMainHandlersOptions,
+  type RuntimeAppLifecycleShutdownSnapshot,
+  type RuntimeAppLifecycleShutdownState,
 } from "./bootstrap.js";
 
 export {

@@ -10,7 +10,11 @@ import {
   buildRuntimeIpcFetchRequest,
 } from "../shared/runtime-ipc.js";
 import {
+  installRuntimeAppLifecycleShutdown,
   installRuntimeIpcMainHandlers,
+  type CwMainApp,
+  type CwMainBeforeQuitEvent,
+  type CwMainBeforeQuitListener,
   type CwMainIpcInvokeHandler,
 } from "./bootstrap.js";
 import { createRuntimeBaseUrl, type RuntimeConnectionInfo } from "./runtime.js";
@@ -558,6 +562,104 @@ test("shutdown unregisters handlers and stops a started runtime once", async () 
   assert.deepEqual(installed.unregister(), []);
 });
 
+test("app lifecycle shutdown prevents quit until runtime shutdown completes", async () => {
+  const app = createFakeMainApp();
+  const shutdownResult = {
+    unregisteredChannels: RUNTIME_IPC_CHANNELS,
+    runtimeStopped: true,
+  };
+  let resolveShutdown: ((result: typeof shutdownResult) => void) | undefined;
+  const shutdownPromise = new Promise<typeof shutdownResult>((resolve) => {
+    resolveShutdown = resolve;
+  });
+  const shutdownSignals: Array<NodeJS.Signals | undefined> = [];
+  const installed = installRuntimeAppLifecycleShutdown({
+    app: app.app,
+    signal: "SIGTERM",
+    runtime: {
+      shutdown: async (signal) => {
+        shutdownSignals.push(signal);
+        return shutdownPromise;
+      },
+    },
+  });
+
+  assert.deepEqual(installed.snapshot(), { state: "registered" });
+  const firstQuit = app.emitBeforeQuit();
+
+  assert.equal(firstQuit.prevented, true);
+  assert.deepEqual(installed.snapshot(), { state: "shutting_down" });
+  assert.deepEqual(shutdownSignals, ["SIGTERM"]);
+  assert.equal(app.quitCalls(), 0);
+
+  const secondQuit = app.emitBeforeQuit();
+  assert.equal(secondQuit.prevented, true);
+  assert.deepEqual(shutdownSignals, ["SIGTERM"]);
+
+  resolveShutdown?.(shutdownResult);
+  assert.deepEqual(await installed.shutdown(), shutdownResult);
+  assert.deepEqual(installed.snapshot(), { state: "shutdown_complete" });
+  assert.equal(app.quitCalls(), 1);
+
+  const retryQuit = app.emitBeforeQuit();
+  assert.equal(retryQuit.prevented, false);
+  assert.deepEqual(shutdownSignals, ["SIGTERM"]);
+});
+
+test("app lifecycle shutdown unregisters before quit without starting runtime", async () => {
+  const app = createFakeMainApp();
+  let shutdownCalls = 0;
+  const installed = installRuntimeAppLifecycleShutdown({
+    app: app.app,
+    runtime: {
+      shutdown: async () => {
+        shutdownCalls += 1;
+        return {
+          unregisteredChannels: [],
+          runtimeStopped: false,
+        };
+      },
+    },
+  });
+
+  assert.equal(app.listenerCount(), 1);
+  assert.equal(installed.unregister(), true);
+  assert.deepEqual(installed.snapshot(), { state: "unregistered" });
+  assert.equal(app.listenerCount(), 0);
+  assert.equal(installed.unregister(), false);
+
+  const quit = app.emitBeforeQuit();
+  assert.equal(quit.prevented, false);
+  assert.equal(shutdownCalls, 0);
+  assert.equal(app.quitCalls(), 0);
+  assert.equal(await installed.shutdown(), undefined);
+});
+
+test("app lifecycle shutdown retries quit after runtime shutdown failure", async () => {
+  const app = createFakeMainApp();
+  const installed = installRuntimeAppLifecycleShutdown({
+    app: app.app,
+    runtime: {
+      shutdown: async () => {
+        throw new Error("runtime shutdown failed");
+      },
+    },
+  });
+
+  const quit = app.emitBeforeQuit();
+
+  assert.equal(quit.prevented, true);
+  await assert.rejects(installed.shutdown(), /runtime shutdown failed/u);
+  assert.deepEqual(installed.snapshot(), {
+    state: "failed",
+    reason: "runtime shutdown failed",
+  });
+  assert.equal(app.quitCalls(), 1);
+
+  const retryQuit = app.emitBeforeQuit();
+  assert.equal(retryQuit.prevented, false);
+});
+
 function createReadyStartupResult(options?: {
   readonly fetchImpl?: typeof fetch;
   readonly stop?: (signal?: NodeJS.Signals) => Promise<boolean>;
@@ -631,6 +733,46 @@ function createReadyStartupResult(options?: {
     handlers,
     closed: Promise.resolve(),
     stop: options?.stop ?? (async () => true),
+  };
+}
+
+function createFakeMainApp(): {
+  readonly app: CwMainApp;
+  readonly emitBeforeQuit: () => { readonly prevented: boolean };
+  readonly listenerCount: () => number;
+  readonly quitCalls: () => number;
+} {
+  const listeners = new Set<CwMainBeforeQuitListener>();
+  let quitCalls = 0;
+
+  return {
+    app: {
+      on: (event, listener) => {
+        assert.equal(event, "before-quit");
+        listeners.add(listener);
+      },
+      off: (event, listener) => {
+        assert.equal(event, "before-quit");
+        listeners.delete(listener);
+      },
+      quit: () => {
+        quitCalls += 1;
+      },
+    },
+    emitBeforeQuit: () => {
+      let prevented = false;
+      const event: CwMainBeforeQuitEvent = {
+        preventDefault: () => {
+          prevented = true;
+        },
+      };
+      for (const listener of [...listeners]) {
+        listener(event);
+      }
+      return { prevented };
+    },
+    listenerCount: () => listeners.size,
+    quitCalls: () => quitCalls,
   };
 }
 
