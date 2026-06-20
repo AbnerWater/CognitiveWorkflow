@@ -21,6 +21,7 @@ import {
   type CwMainWindow,
   type CwMainWindowCloseEvent,
   type CwMainWindowCloseListener,
+  type RuntimeMainLifecycleShutdownStatus,
 } from "./bootstrap.js";
 import { createRuntimeBaseUrl, type RuntimeConnectionInfo } from "./runtime.js";
 import { createRuntimeIpcMainHandlers } from "./runtime-ipc-handlers.js";
@@ -811,9 +812,106 @@ test("main lifecycle shutdown shares runtime shutdown across app and window even
   assert.deepEqual(shutdownSignals, ["SIGTERM"]);
 });
 
+test("main lifecycle shutdown reports status history for app and window requests", async () => {
+  const app = createFakeMainApp();
+  const window = createFakeMainWindow();
+  const statuses: RuntimeMainLifecycleShutdownStatus[] = [];
+  const shutdownResult = {
+    unregisteredChannels: RUNTIME_IPC_CHANNELS,
+    runtimeStopped: true,
+  };
+  let resolveShutdown: ((result: typeof shutdownResult) => void) | undefined;
+  const shutdownPromise = new Promise<typeof shutdownResult>((resolve) => {
+    resolveShutdown = resolve;
+  });
+  const installed = installRuntimeMainLifecycleShutdown({
+    app: app.app,
+    window: window.window,
+    runtime: {
+      shutdown: async () => shutdownPromise,
+    },
+    onStatus: (status) => {
+      statuses.push(status);
+    },
+  });
+
+  assert.deepEqual(
+    statuses.map((status) => status.kind),
+    ["registered"],
+  );
+  assert.notEqual(installed.statusHistory(), installed.statusHistory());
+  assert.deepEqual(installed.statusHistory(), statuses);
+
+  const appQuit = app.emitBeforeQuit();
+  assert.equal(appQuit.prevented, true);
+  assert.deepEqual(
+    statuses.map((status) => status.kind),
+    ["registered", "app_quit_requested", "shutting_down"],
+  );
+  assert.deepEqual(statuses.at(-1), {
+    kind: "shutting_down",
+    state: "shutting_down",
+    severity: "info",
+    lifecycleComplete: false,
+    retryable: false,
+    appQuitRequested: true,
+    windowCloseRequested: false,
+  });
+
+  const windowClose = window.emitClose();
+  assert.equal(windowClose.prevented, true);
+  assert.deepEqual(
+    statuses.map((status) => status.kind),
+    [
+      "registered",
+      "app_quit_requested",
+      "shutting_down",
+      "window_close_requested",
+    ],
+  );
+  assert.deepEqual(statuses.at(-1), {
+    kind: "window_close_requested",
+    state: "shutting_down",
+    severity: "info",
+    lifecycleComplete: false,
+    retryable: false,
+    appQuitRequested: true,
+    windowCloseRequested: true,
+  });
+
+  resolveShutdown?.(shutdownResult);
+  assert.deepEqual(await installed.shutdown(), shutdownResult);
+  assert.deepEqual(statuses.at(-1), {
+    kind: "shutdown_complete",
+    state: "shutdown_complete",
+    severity: "info",
+    lifecycleComplete: true,
+    retryable: false,
+    appQuitRequested: true,
+    windowCloseRequested: true,
+  });
+  assert.deepEqual(
+    installed.statusHistory().map((status) => status.kind),
+    [
+      "registered",
+      "app_quit_requested",
+      "shutting_down",
+      "window_close_requested",
+      "shutdown_complete",
+    ],
+  );
+
+  const retryAppQuit = app.emitBeforeQuit();
+  const retryWindowClose = window.emitClose();
+  assert.equal(retryAppQuit.prevented, false);
+  assert.equal(retryWindowClose.prevented, false);
+  assert.equal(statuses.length, 5);
+});
+
 test("main lifecycle shutdown unregisters app and window without starting runtime", async () => {
   const app = createFakeMainApp();
   const window = createFakeMainWindow();
+  const statuses: RuntimeMainLifecycleShutdownStatus[] = [];
   let shutdownCalls = 0;
   const installed = installRuntimeMainLifecycleShutdown({
     app: app.app,
@@ -827,6 +925,9 @@ test("main lifecycle shutdown unregisters app and window without starting runtim
         };
       },
     },
+    onStatus: (status) => {
+      statuses.push(status);
+    },
   });
 
   assert.equal(app.listenerCount(), 1);
@@ -836,6 +937,19 @@ test("main lifecycle shutdown unregisters app and window without starting runtim
   assert.equal(app.listenerCount(), 0);
   assert.equal(window.listenerCount(), 0);
   assert.deepEqual(installed.unregister(), { app: false, window: false });
+  assert.deepEqual(statuses.at(-1), {
+    kind: "unregistered",
+    state: "unregistered",
+    severity: "warning",
+    lifecycleComplete: true,
+    retryable: false,
+    appQuitRequested: false,
+    windowCloseRequested: false,
+  });
+  assert.deepEqual(
+    installed.statusHistory().map((status) => status.kind),
+    ["registered", "unregistered"],
+  );
 
   const appQuit = app.emitBeforeQuit();
   const windowClose = window.emitClose();
@@ -845,6 +959,40 @@ test("main lifecycle shutdown unregisters app and window without starting runtim
   assert.equal(app.quitCalls(), 0);
   assert.equal(window.closeCalls(), 0);
   assert.equal(await installed.shutdown(), undefined);
+});
+
+test("main lifecycle shutdown status observer failures do not block shutdown", async () => {
+  const app = createFakeMainApp();
+  const window = createFakeMainWindow();
+  let observerCalls = 0;
+  const installed = installRuntimeMainLifecycleShutdown({
+    app: app.app,
+    window: window.window,
+    runtime: {
+      shutdown: async () => ({
+        unregisteredChannels: RUNTIME_IPC_CHANNELS,
+        runtimeStopped: true,
+      }),
+    },
+    onStatus: () => {
+      observerCalls += 1;
+      throw new Error("status observer failed");
+    },
+  });
+
+  const appQuit = app.emitBeforeQuit();
+  assert.equal(appQuit.prevented, true);
+  assert.deepEqual(await installed.shutdown(), {
+    unregisteredChannels: RUNTIME_IPC_CHANNELS,
+    runtimeStopped: true,
+  });
+  assert.deepEqual(installed.snapshot(), { state: "shutdown_complete" });
+  assert.equal(app.quitCalls(), 1);
+  assert.deepEqual(
+    installed.statusHistory().map((status) => status.kind),
+    ["registered", "app_quit_requested", "shutting_down", "shutdown_complete"],
+  );
+  assert.equal(observerCalls, 4);
 });
 
 test("main lifecycle shutdown retries requested exits after runtime shutdown failure", async () => {
@@ -870,6 +1018,16 @@ test("main lifecycle shutdown retries requested exits after runtime shutdown fai
   await assert.rejects(installed.shutdown(), /runtime shutdown failed/u);
   assert.deepEqual(installed.snapshot(), {
     state: "failed",
+    reason: "runtime shutdown failed",
+  });
+  assert.deepEqual(installed.statusHistory().at(-1), {
+    kind: "shutdown_failed",
+    state: "failed",
+    severity: "error",
+    lifecycleComplete: true,
+    retryable: true,
+    appQuitRequested: true,
+    windowCloseRequested: true,
     reason: "runtime shutdown failed",
   });
   assert.equal(shutdownCalls, 1);

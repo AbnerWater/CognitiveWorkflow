@@ -124,11 +124,41 @@ export type RuntimeMainLifecycleShutdownState =
 export type RuntimeMainLifecycleShutdownSnapshot =
   RuntimeAppLifecycleShutdownSnapshot;
 
+export type RuntimeMainLifecycleShutdownStatusKind =
+  | "registered"
+  | "app_quit_requested"
+  | "window_close_requested"
+  | "shutting_down"
+  | "shutdown_complete"
+  | "shutdown_failed"
+  | "unregistered";
+
+export type RuntimeMainLifecycleShutdownStatusSeverity =
+  | "info"
+  | "warning"
+  | "error";
+
+export interface RuntimeMainLifecycleShutdownStatus {
+  readonly kind: RuntimeMainLifecycleShutdownStatusKind;
+  readonly state: RuntimeMainLifecycleShutdownState;
+  readonly severity: RuntimeMainLifecycleShutdownStatusSeverity;
+  readonly lifecycleComplete: boolean;
+  readonly retryable: boolean;
+  readonly appQuitRequested: boolean;
+  readonly windowCloseRequested: boolean;
+  readonly reason?: string;
+}
+
+export type RuntimeMainLifecycleShutdownStatusObserver = (
+  status: RuntimeMainLifecycleShutdownStatus,
+) => void;
+
 export interface InstallRuntimeMainLifecycleShutdownOptions {
   readonly app: CwMainApp;
   readonly window: CwMainWindow;
   readonly runtime: Pick<InstalledRuntimeIpcMainHandlers, "shutdown">;
   readonly signal?: NodeJS.Signals;
+  readonly onStatus?: RuntimeMainLifecycleShutdownStatusObserver;
 }
 
 export interface RuntimeMainLifecycleShutdownUnregisterResult {
@@ -139,6 +169,7 @@ export interface RuntimeMainLifecycleShutdownUnregisterResult {
 export interface InstalledRuntimeMainLifecycleShutdown {
   readonly unregister: () => RuntimeMainLifecycleShutdownUnregisterResult;
   readonly snapshot: () => RuntimeMainLifecycleShutdownSnapshot;
+  readonly statusHistory: () => readonly RuntimeMainLifecycleShutdownStatus[];
   readonly shutdown: () => Promise<
     InstalledRuntimeIpcMainHandlersShutdownResult | undefined
   >;
@@ -344,6 +375,23 @@ export function installRuntimeMainLifecycleShutdown(
   let shutdownPromise:
     | Promise<InstalledRuntimeIpcMainHandlersShutdownResult>
     | undefined;
+  const statusHistory: RuntimeMainLifecycleShutdownStatus[] = [];
+
+  const emitStatus = (kind: RuntimeMainLifecycleShutdownStatusKind): void => {
+    const status = buildRuntimeMainLifecycleShutdownStatus({
+      kind,
+      state,
+      appQuitRequested,
+      windowCloseRequested,
+      ...(failureReason !== undefined ? { reason: failureReason } : {}),
+    });
+    statusHistory.push(status);
+    try {
+      options.onStatus?.(status);
+    } catch {
+      // Status observers are diagnostic/broadcast hooks and must not block quit.
+    }
+  };
 
   const startShutdown = (): void => {
     shutdownPromise ??= shutdownRuntimeForMainLifecycle(
@@ -355,6 +403,7 @@ export function installRuntimeMainLifecycleShutdown(
       (nextState) => {
         state = nextState.state;
         failureReason = nextState.reason;
+        emitStatus(mapMainLifecycleShutdownStateToStatusKind(state));
       },
     );
     shutdownPromise.catch(() => undefined);
@@ -371,6 +420,7 @@ export function installRuntimeMainLifecycleShutdown(
 
     event.preventDefault();
     appQuitRequested = true;
+    emitStatus("app_quit_requested");
     startShutdown();
   };
   const closeListener: CwMainWindowCloseListener = (event) => {
@@ -384,11 +434,13 @@ export function installRuntimeMainLifecycleShutdown(
 
     event.preventDefault();
     windowCloseRequested = true;
+    emitStatus("window_close_requested");
     startShutdown();
   };
 
   options.app.on("before-quit", beforeQuitListener);
   options.window.on("close", closeListener);
+  emitStatus("registered");
 
   return {
     unregister: () => {
@@ -404,6 +456,7 @@ export function installRuntimeMainLifecycleShutdown(
       }
       if (state === "registered") {
         state = "unregistered";
+        emitStatus("unregistered");
       }
       return { app, window };
     },
@@ -411,8 +464,76 @@ export function installRuntimeMainLifecycleShutdown(
       failureReason !== undefined
         ? { state, reason: failureReason }
         : { state },
+    statusHistory: () => [...statusHistory],
     shutdown: () => shutdownPromise ?? Promise.resolve(undefined),
   };
+}
+
+interface BuildRuntimeMainLifecycleShutdownStatusOptions {
+  readonly kind: RuntimeMainLifecycleShutdownStatusKind;
+  readonly state: RuntimeMainLifecycleShutdownState;
+  readonly appQuitRequested: boolean;
+  readonly windowCloseRequested: boolean;
+  readonly reason?: string;
+}
+
+function buildRuntimeMainLifecycleShutdownStatus(
+  options: BuildRuntimeMainLifecycleShutdownStatusOptions,
+): RuntimeMainLifecycleShutdownStatus {
+  return {
+    kind: options.kind,
+    state: options.state,
+    severity: mainLifecycleShutdownStatusSeverity(options.kind),
+    lifecycleComplete: isMainLifecycleShutdownTerminalState(options.state),
+    retryable: options.state === "failed",
+    appQuitRequested: options.appQuitRequested,
+    windowCloseRequested: options.windowCloseRequested,
+    ...(options.reason !== undefined ? { reason: options.reason } : {}),
+  };
+}
+
+function mapMainLifecycleShutdownStateToStatusKind(
+  state: RuntimeMainLifecycleShutdownState,
+): RuntimeMainLifecycleShutdownStatusKind {
+  switch (state) {
+    case "registered":
+      return "registered";
+    case "shutting_down":
+      return "shutting_down";
+    case "shutdown_complete":
+      return "shutdown_complete";
+    case "failed":
+      return "shutdown_failed";
+    case "unregistered":
+      return "unregistered";
+  }
+}
+
+function mainLifecycleShutdownStatusSeverity(
+  kind: RuntimeMainLifecycleShutdownStatusKind,
+): RuntimeMainLifecycleShutdownStatusSeverity {
+  switch (kind) {
+    case "shutdown_failed":
+      return "error";
+    case "unregistered":
+      return "warning";
+    case "registered":
+    case "app_quit_requested":
+    case "window_close_requested":
+    case "shutting_down":
+    case "shutdown_complete":
+      return "info";
+  }
+}
+
+function isMainLifecycleShutdownTerminalState(
+  state: RuntimeMainLifecycleShutdownState,
+): boolean {
+  return (
+    state === "shutdown_complete" ||
+    state === "failed" ||
+    state === "unregistered"
+  );
 }
 
 async function shutdownRuntimeForMainLifecycle(
