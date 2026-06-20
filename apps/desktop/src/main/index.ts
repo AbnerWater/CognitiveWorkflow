@@ -55,6 +55,18 @@ export {
 } from "./runtime-handoff.js";
 
 export {
+  DEFAULT_RUNTIME_STARTUP_LIFECYCLE_RETRY_MS,
+  DEFAULT_RUNTIME_STARTUP_LIFECYCLE_TIMEOUT_MS,
+  resolveRuntimeStartupLifecycle,
+  type ResolveRuntimeStartupLifecycleOptions,
+  type RuntimeConnectionHandoffProvider,
+  type RuntimeStartupLifecycleAction,
+  type RuntimeStartupLifecycleDecision,
+  type RuntimeStartupLifecycleSleep,
+  type RuntimeStartupLifecycleTransition,
+} from "./runtime-lifecycle.js";
+
+export {
   startRuntimeOrchestration,
   type RuntimeOrchestrationLockOptions,
   type RuntimeOrchestrationSession,

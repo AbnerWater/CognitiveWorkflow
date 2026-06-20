@@ -1,0 +1,191 @@
+import {
+  resolveRuntimeConnectionHandoff,
+  type ResolveRuntimeConnectionHandoffOptions,
+  type RuntimeConnectionHandoffDecision,
+  type RuntimeConnectionHandoffResolver,
+} from "./runtime-handoff.js";
+import type {
+  RuntimeLockInspection,
+  RuntimeLockReadText,
+} from "./runtime-lock.js";
+
+export const DEFAULT_RUNTIME_STARTUP_LIFECYCLE_TIMEOUT_MS = 5_000;
+export const DEFAULT_RUNTIME_STARTUP_LIFECYCLE_RETRY_MS = 100;
+
+export type RuntimeStartupLifecycleAction =
+  | "start_sidecar"
+  | "cleanup_then_start"
+  | "reuse_existing"
+  | "timeout_waiting_for_existing"
+  | "block_startup";
+
+export type RuntimeStartupLifecycleSleep = (delayMs: number) => Promise<void>;
+
+export type RuntimeConnectionHandoffProvider = (
+  options: ResolveRuntimeConnectionHandoffOptions,
+) => Promise<RuntimeConnectionHandoffDecision>;
+
+export interface RuntimeStartupLifecycleTransition {
+  readonly attempt: number;
+  readonly action: RuntimeConnectionHandoffDecision["action"];
+  readonly inspection: RuntimeLockInspection;
+  readonly reason?: string;
+}
+
+export type RuntimeStartupLifecycleDecision =
+  | {
+      readonly action: "start_sidecar" | "cleanup_then_start";
+      readonly attempts: number;
+      readonly handoff: RuntimeConnectionHandoffDecision;
+    }
+  | {
+      readonly action: "reuse_existing";
+      readonly attempts: number;
+      readonly handoff: RuntimeConnectionHandoffDecision;
+    }
+  | {
+      readonly action: "block_startup";
+      readonly attempts: number;
+      readonly reason: string;
+      readonly handoff: RuntimeConnectionHandoffDecision;
+    }
+  | {
+      readonly action: "timeout_waiting_for_existing";
+      readonly attempts: number;
+      readonly reason: string;
+      readonly handoff: RuntimeConnectionHandoffDecision;
+    };
+
+export interface ResolveRuntimeStartupLifecycleOptions {
+  readonly projectRoot: string;
+  readonly staleMs?: number;
+  readonly readText?: RuntimeLockReadText;
+  readonly connectionInfo?: RuntimeConnectionHandoffResolver;
+  readonly timeoutMs?: number;
+  readonly retryMs?: number;
+  readonly nowMs?: () => number;
+  readonly sleep?: RuntimeStartupLifecycleSleep;
+  readonly handoff?: RuntimeConnectionHandoffProvider;
+  readonly onTransition?: (
+    transition: RuntimeStartupLifecycleTransition,
+  ) => void | Promise<void>;
+}
+
+export async function resolveRuntimeStartupLifecycle(
+  options: ResolveRuntimeStartupLifecycleOptions,
+): Promise<RuntimeStartupLifecycleDecision> {
+  const timeoutMs =
+    options.timeoutMs ?? DEFAULT_RUNTIME_STARTUP_LIFECYCLE_TIMEOUT_MS;
+  const retryMs = options.retryMs ?? DEFAULT_RUNTIME_STARTUP_LIFECYCLE_RETRY_MS;
+  assertPositiveInteger(timeoutMs, "Runtime startup lifecycle timeout");
+  assertPositiveInteger(retryMs, "Runtime startup lifecycle retry interval");
+
+  const handoff = options.handoff ?? resolveRuntimeConnectionHandoff;
+  const nowMs = options.nowMs ?? Date.now;
+  const sleep = options.sleep ?? sleepMs;
+  const startedAtMs = nowMs();
+  const maxWaitAttempts = Math.max(1, Math.ceil(timeoutMs / retryMs) + 1);
+  let attempts = 0;
+  let waitAttempts = 0;
+  let lastWait: RuntimeConnectionHandoffWaitDecision | undefined;
+
+  while (true) {
+    if (lastWait !== undefined) {
+      const elapsedMs = Math.max(0, nowMs() - startedAtMs);
+      if (elapsedMs >= timeoutMs) {
+        return {
+          action: "timeout_waiting_for_existing",
+          attempts,
+          reason: lastWait.reason,
+          handoff: lastWait,
+        };
+      }
+    }
+
+    attempts += 1;
+    const decision = await handoff({
+      projectRoot: options.projectRoot,
+      nowMs: nowMs(),
+      ...(options.staleMs !== undefined ? { staleMs: options.staleMs } : {}),
+      ...(options.readText !== undefined ? { readText: options.readText } : {}),
+      ...(options.connectionInfo !== undefined
+        ? { connectionInfo: options.connectionInfo }
+        : {}),
+    });
+
+    await options.onTransition?.({
+      attempt: attempts,
+      action: decision.action,
+      inspection: decision.inspection,
+      ...("reason" in decision ? { reason: decision.reason } : {}),
+    });
+
+    if (isRuntimeConnectionHandoffWaitDecision(decision)) {
+      lastWait = decision;
+      waitAttempts += 1;
+      const elapsedMs = Math.max(0, nowMs() - startedAtMs);
+      if (elapsedMs >= timeoutMs || waitAttempts >= maxWaitAttempts) {
+        return {
+          action: "timeout_waiting_for_existing",
+          attempts,
+          reason: decision.reason,
+          handoff: decision,
+        };
+      }
+      await sleep(Math.min(retryMs, timeoutMs - elapsedMs));
+      continue;
+    }
+
+    if (isRuntimeConnectionHandoffBlockDecision(decision)) {
+      return {
+        action: "block_startup",
+        attempts,
+        reason: decision.reason,
+        handoff: decision,
+      };
+    }
+
+    switch (decision.action) {
+      case "start_sidecar":
+      case "cleanup_then_start":
+        return { action: decision.action, attempts, handoff: decision };
+      case "reuse_existing":
+        return { action: "reuse_existing", attempts, handoff: decision };
+    }
+  }
+}
+
+type RuntimeConnectionHandoffWaitDecision = RuntimeConnectionHandoffDecision & {
+  readonly action: "wait_for_existing";
+  readonly reason: string;
+};
+
+type RuntimeConnectionHandoffBlockDecision =
+  RuntimeConnectionHandoffDecision & {
+    readonly action: "block_startup";
+    readonly reason: string;
+  };
+
+function isRuntimeConnectionHandoffWaitDecision(
+  decision: RuntimeConnectionHandoffDecision,
+): decision is RuntimeConnectionHandoffWaitDecision {
+  return decision.action === "wait_for_existing";
+}
+
+function isRuntimeConnectionHandoffBlockDecision(
+  decision: RuntimeConnectionHandoffDecision,
+): decision is RuntimeConnectionHandoffBlockDecision {
+  return decision.action === "block_startup";
+}
+
+function assertPositiveInteger(value: number, label: string): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new RangeError(`${label} must be a positive integer`);
+  }
+}
+
+async function sleepMs(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
