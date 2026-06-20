@@ -12,6 +12,7 @@ import {
 import {
   installRuntimeAppLifecycleShutdown,
   installRuntimeIpcMainHandlers,
+  installRuntimeMainLifecycleShutdown,
   installRuntimeWindowLifecycleShutdown,
   type CwMainApp,
   type CwMainBeforeQuitEvent,
@@ -760,6 +761,125 @@ test("window lifecycle shutdown retries close after runtime shutdown failure", a
 
   const retryClose = window.emitClose();
   assert.equal(retryClose.prevented, false);
+});
+
+test("main lifecycle shutdown shares runtime shutdown across app and window events", async () => {
+  const app = createFakeMainApp();
+  const window = createFakeMainWindow();
+  const shutdownResult = {
+    unregisteredChannels: RUNTIME_IPC_CHANNELS,
+    runtimeStopped: true,
+  };
+  let resolveShutdown: ((result: typeof shutdownResult) => void) | undefined;
+  const shutdownPromise = new Promise<typeof shutdownResult>((resolve) => {
+    resolveShutdown = resolve;
+  });
+  const shutdownSignals: Array<NodeJS.Signals | undefined> = [];
+  const installed = installRuntimeMainLifecycleShutdown({
+    app: app.app,
+    window: window.window,
+    signal: "SIGTERM",
+    runtime: {
+      shutdown: async (signal) => {
+        shutdownSignals.push(signal);
+        return shutdownPromise;
+      },
+    },
+  });
+
+  assert.deepEqual(installed.snapshot(), { state: "registered" });
+  const appQuit = app.emitBeforeQuit();
+  const windowClose = window.emitClose();
+
+  assert.equal(appQuit.prevented, true);
+  assert.equal(windowClose.prevented, true);
+  assert.deepEqual(installed.snapshot(), { state: "shutting_down" });
+  assert.deepEqual(shutdownSignals, ["SIGTERM"]);
+  assert.equal(app.quitCalls(), 0);
+  assert.equal(window.closeCalls(), 0);
+
+  resolveShutdown?.(shutdownResult);
+  assert.deepEqual(await installed.shutdown(), shutdownResult);
+  assert.deepEqual(installed.snapshot(), { state: "shutdown_complete" });
+  assert.equal(app.quitCalls(), 1);
+  assert.equal(window.closeCalls(), 1);
+
+  const retryAppQuit = app.emitBeforeQuit();
+  const retryWindowClose = window.emitClose();
+  assert.equal(retryAppQuit.prevented, false);
+  assert.equal(retryWindowClose.prevented, false);
+  assert.deepEqual(shutdownSignals, ["SIGTERM"]);
+});
+
+test("main lifecycle shutdown unregisters app and window without starting runtime", async () => {
+  const app = createFakeMainApp();
+  const window = createFakeMainWindow();
+  let shutdownCalls = 0;
+  const installed = installRuntimeMainLifecycleShutdown({
+    app: app.app,
+    window: window.window,
+    runtime: {
+      shutdown: async () => {
+        shutdownCalls += 1;
+        return {
+          unregisteredChannels: [],
+          runtimeStopped: false,
+        };
+      },
+    },
+  });
+
+  assert.equal(app.listenerCount(), 1);
+  assert.equal(window.listenerCount(), 1);
+  assert.deepEqual(installed.unregister(), { app: true, window: true });
+  assert.deepEqual(installed.snapshot(), { state: "unregistered" });
+  assert.equal(app.listenerCount(), 0);
+  assert.equal(window.listenerCount(), 0);
+  assert.deepEqual(installed.unregister(), { app: false, window: false });
+
+  const appQuit = app.emitBeforeQuit();
+  const windowClose = window.emitClose();
+  assert.equal(appQuit.prevented, false);
+  assert.equal(windowClose.prevented, false);
+  assert.equal(shutdownCalls, 0);
+  assert.equal(app.quitCalls(), 0);
+  assert.equal(window.closeCalls(), 0);
+  assert.equal(await installed.shutdown(), undefined);
+});
+
+test("main lifecycle shutdown retries requested exits after runtime shutdown failure", async () => {
+  const app = createFakeMainApp();
+  const window = createFakeMainWindow();
+  let shutdownCalls = 0;
+  const installed = installRuntimeMainLifecycleShutdown({
+    app: app.app,
+    window: window.window,
+    runtime: {
+      shutdown: async () => {
+        shutdownCalls += 1;
+        throw new Error("runtime shutdown failed");
+      },
+    },
+  });
+
+  const windowClose = window.emitClose();
+  const appQuit = app.emitBeforeQuit();
+
+  assert.equal(windowClose.prevented, true);
+  assert.equal(appQuit.prevented, true);
+  await assert.rejects(installed.shutdown(), /runtime shutdown failed/u);
+  assert.deepEqual(installed.snapshot(), {
+    state: "failed",
+    reason: "runtime shutdown failed",
+  });
+  assert.equal(shutdownCalls, 1);
+  assert.equal(app.quitCalls(), 1);
+  assert.equal(window.closeCalls(), 1);
+
+  const retryAppQuit = app.emitBeforeQuit();
+  const retryWindowClose = window.emitClose();
+  assert.equal(retryAppQuit.prevented, false);
+  assert.equal(retryWindowClose.prevented, false);
 });
 
 function createReadyStartupResult(options?: {
