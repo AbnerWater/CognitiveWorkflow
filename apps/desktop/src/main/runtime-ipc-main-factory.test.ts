@@ -3,10 +3,16 @@ import test from "node:test";
 
 import {
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
+  RUNTIME_IPC_CHANNELS,
   RUNTIME_IPC_FETCH_CHANNEL,
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+  type RuntimeIpcChannel,
   buildRuntimeIpcFetchRequest,
 } from "../shared/runtime-ipc.js";
+import {
+  installRuntimeIpcMainHandlers,
+  type CwMainIpcInvokeHandler,
+} from "./bootstrap.js";
 import { createRuntimeBaseUrl, type RuntimeConnectionInfo } from "./runtime.js";
 import { createRuntimeIpcMainHandlers } from "./runtime-ipc-handlers.js";
 import {
@@ -323,6 +329,85 @@ test("caches startup failures instead of spawning repeatedly", async () => {
   });
   assert.equal(await handlers.stop(), false);
   await handlers.closed();
+});
+
+test("installs runtime IPC handlers through an injected Electron-like ipcMain", async () => {
+  let starterCalls = 0;
+  const registeredHandlers = new Map<
+    RuntimeIpcChannel,
+    CwMainIpcInvokeHandler
+  >();
+  const installed = installRuntimeIpcMainHandlers({
+    ipcMain: {
+      handle: (channel, listener) => {
+        assert.equal(registeredHandlers.has(channel), false);
+        registeredHandlers.set(channel, listener);
+      },
+    },
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+    },
+    starter: async () => {
+      starterCalls += 1;
+      return createReadyStartupResult();
+    },
+  });
+
+  assert.deepEqual(installed.registeredChannels, RUNTIME_IPC_CHANNELS);
+  assert.deepEqual([...registeredHandlers.keys()], RUNTIME_IPC_CHANNELS);
+  assert.equal(starterCalls, 0);
+  assert.equal(installed.startupHandlers.snapshot().state, "idle");
+
+  const startupStatusHandler = registeredHandlers.get(
+    RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+  );
+  assert.ok(startupStatusHandler);
+  assert.deepEqual(await startupStatusHandler({ sender: "renderer" }), []);
+  assert.equal(starterCalls, 0);
+  assert.equal(installed.startupHandlers.snapshot().state, "idle");
+
+  const connectionInfoHandler = registeredHandlers.get(
+    RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
+  );
+  assert.ok(connectionInfoHandler);
+  assert.deepEqual(await connectionInfoHandler({ sender: "renderer" }), {
+    base_url: "http://127.0.0.1:51234/cw/v1",
+    token: "token_abc123",
+  });
+  assert.equal(starterCalls, 1);
+  assert.equal(installed.startupHandlers.snapshot().state, "ready");
+
+  const fetchHandler = registeredHandlers.get(RUNTIME_IPC_FETCH_CHANNEL);
+  assert.ok(fetchHandler);
+  assert.deepEqual(
+    await fetchHandler(
+      { sender: "renderer" },
+      {
+        path: "/system/info",
+        init: { method: "GET", headers: { Accept: "application/json" } },
+      },
+    ),
+    {
+      ok: true,
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: { ok: true },
+    },
+  );
+  assert.equal(starterCalls, 1);
+
+  await assert.rejects(
+    fetchHandler(
+      { sender: "renderer" },
+      {
+        path: "/system/info",
+        init: { headers: { Authorization: "Bearer attacker" } },
+      },
+    ),
+    /reserved/u,
+  );
+  assert.equal(starterCalls, 1);
 });
 
 function createReadyStartupResult(options?: {

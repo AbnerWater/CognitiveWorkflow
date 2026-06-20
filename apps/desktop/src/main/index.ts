@@ -8,6 +8,15 @@ export {
 } from "./security.js";
 
 export {
+  installRuntimeIpcMainHandlers,
+  registerRuntimeIpcMainChannelRegistrations,
+  type CwMainIpcInvokeHandler,
+  type CwMainIpcMain,
+  type InstalledRuntimeIpcMainHandlers,
+  type InstallRuntimeIpcMainHandlersOptions,
+} from "./bootstrap.js";
+
+export {
   RUNTIME_IPC_CHANNELS,
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
