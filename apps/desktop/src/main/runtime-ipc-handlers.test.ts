@@ -5,6 +5,7 @@ import { createRuntimeBaseUrl, type RuntimeConnectionInfo } from "./runtime.js";
 import {
   createRuntimeIpcMainHandlers,
   normalizeRuntimeConnectionInfo,
+  requestRuntimeShutdown,
 } from "./runtime-ipc-handlers.js";
 import { buildRuntimeIpcFetchRequest } from "../shared/runtime-ipc.js";
 
@@ -127,6 +128,34 @@ test("returns text and empty runtime fetch responses", async () => {
     status: 204,
     headers: {},
     body: null,
+  });
+});
+
+test("requests authenticated runtime shutdown through the shared fetch path", async () => {
+  let capturedUrl = "";
+  let capturedInit: RequestInit | undefined;
+  const handlers = createRuntimeIpcMainHandlers({
+    connectionInfo: () => CONNECTION,
+    fetchImpl: async (input, init) => {
+      capturedUrl = String(input);
+      capturedInit = init;
+      return new Response(null, { status: 202 });
+    },
+  });
+
+  assert.deepEqual(await requestRuntimeShutdown(handlers), {
+    ok: true,
+    status: 202,
+    headers: {},
+    body: null,
+  });
+  assert.equal(capturedUrl, "http://127.0.0.1:51234/cw/v1/system/shutdown");
+  assert.deepEqual(capturedInit, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer token_abc123",
+      "X-Cw-Client": "electron-renderer",
+    },
   });
 });
 

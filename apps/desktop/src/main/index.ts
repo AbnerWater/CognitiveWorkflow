@@ -58,8 +58,10 @@ export {
 } from "./runtime.js";
 
 export {
+  RUNTIME_SHUTDOWN_REQUEST_PATH,
   createRuntimeIpcMainHandlers,
   normalizeRuntimeConnectionInfo,
+  requestRuntimeShutdown,
   type RuntimeConnectionInfoProvider,
   type RuntimeIpcMainHandlerOptions,
 } from "./runtime-ipc-handlers.js";

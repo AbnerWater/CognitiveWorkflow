@@ -13,6 +13,8 @@ import {
   type RuntimeIpcResponse,
 } from "../shared/runtime-ipc.js";
 
+export const RUNTIME_SHUTDOWN_REQUEST_PATH = "/system/shutdown" as const;
+
 export type RuntimeConnectionInfoProvider = () =>
   | RuntimeConnectionInfo
   | Promise<RuntimeConnectionInfo>;
@@ -68,6 +70,16 @@ export function createRuntimeIpcMainHandlers(
       return readRuntimeIpcResponse<TBody>(response);
     },
   };
+}
+
+export function requestRuntimeShutdown(
+  handlers: Pick<RuntimeIpcMainHandlers, "fetch">,
+): Promise<RuntimeIpcResponse> {
+  return handlers.fetch(
+    buildRuntimeIpcFetchRequest(RUNTIME_SHUTDOWN_REQUEST_PATH, {
+      method: "POST",
+    }),
+  );
 }
 
 export function normalizeRuntimeConnectionInfo(
