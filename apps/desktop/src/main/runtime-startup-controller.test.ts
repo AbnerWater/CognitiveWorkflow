@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { createRuntimeBaseUrl, type RuntimeConnectionInfo } from "./runtime.js";
 import { createRuntimeIpcMainHandlers } from "./runtime-ipc-handlers.js";
 import { createRuntimeConnectionRegistry } from "./runtime-connection-registry.js";
+import {
+  buildRuntimeLockContent,
+  resolveRuntimeLockPath,
+} from "./runtime-lock.js";
 import {
   startRuntimeWithLifecycle,
   type RuntimeOrchestrationStarter,
@@ -123,6 +129,74 @@ test("reuses existing runtime connection without starting a sidecar", async () =
   assert.equal(await result.stop("SIGTERM"), false);
   await result.closed;
   assert.equal(orchestrationCalled, false);
+});
+
+test("reuses existing runtime across filesystem alias project roots", async (t) => {
+  const tempRoot = await mkdtemp(
+    path.join(tmpdir(), "cw-startup-controller-realpath-"),
+  );
+  const linkedProjectRoot = path.join(tempRoot, "project-link");
+  const targetProjectRoot = path.join(tempRoot, "project-target");
+  const nowMs = Date.UTC(2026, 5, 20, 9, 0, 0);
+  const connectionRegistry = createRuntimeConnectionRegistry({
+    projectRootCaseSensitivity: "case_sensitive",
+  });
+  let orchestrationCalled = false;
+
+  try {
+    await mkdir(targetProjectRoot, { recursive: true });
+
+    try {
+      await symlink(
+        targetProjectRoot,
+        linkedProjectRoot,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      t.skip(`filesystem directory alias creation unavailable: ${message}`);
+      return;
+    }
+
+    const linkedLockPath = resolveRuntimeLockPath(linkedProjectRoot);
+    await mkdir(path.dirname(linkedLockPath), { recursive: true });
+    await writeFile(
+      linkedLockPath,
+      buildRuntimeLockContent({
+        pid: 12_345,
+        nowMs,
+        adapterId: "desktop-main",
+      }),
+      "utf8",
+    );
+    connectionRegistry.register({
+      projectRoot: linkedProjectRoot,
+      connection: CONNECTION,
+    });
+
+    const result = await startRuntimeWithLifecycle({
+      projectRoot: targetProjectRoot,
+      command: { devCommand: "runtime-dev" },
+      connectionRegistry,
+      lifecycle: {
+        nowMs: () => nowMs,
+        timeoutMs: 25,
+        retryMs: 5,
+      },
+      orchestrationStarter: async () => {
+        orchestrationCalled = true;
+        throw new Error("unexpected orchestration start");
+      },
+    });
+
+    assert.equal(result.action, "reused_existing");
+    assert.deepEqual(await result.handlers.connectionInfo(), CONNECTION);
+    assert.equal(await result.stop("SIGTERM"), false);
+    await result.closed;
+    assert.equal(orchestrationCalled, false);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("fails closed when lifecycle blocks startup", async () => {
