@@ -17,6 +17,10 @@ import {
   createRuntimeIpcMainHandlers,
   type RuntimeIpcMainHandlerOptions,
 } from "./runtime-ipc-handlers.js";
+import {
+  DEFAULT_RUNTIME_CONNECTION_REGISTRY,
+  type RuntimeConnectionRegistry,
+} from "./runtime-connection-registry.js";
 import type { RuntimeIpcMainHandlers } from "../shared/runtime-ipc.js";
 
 export interface RuntimeOrchestrationLockOptions extends Omit<
@@ -33,6 +37,7 @@ export interface StartRuntimeOrchestrationOptions {
   readonly spawn?: RuntimeSidecarSpawn;
   readonly tokenFactory?: () => string;
   readonly fetchImpl?: RuntimeIpcMainHandlerOptions["fetchImpl"];
+  readonly connectionRegistry?: RuntimeConnectionRegistry;
   readonly lock?: RuntimeOrchestrationLockOptions;
 }
 
@@ -53,8 +58,10 @@ export async function startRuntimeOrchestration(
     projectRoot: options.projectRoot,
     ...(options.lock ?? {}),
   });
+  const connectionRegistry =
+    options.connectionRegistry ?? DEFAULT_RUNTIME_CONNECTION_REGISTRY;
 
-  let sidecar: RuntimeSidecarSession;
+  let sidecar: RuntimeSidecarSession | undefined;
   try {
     sidecar = await startRuntimeSidecar({
       command: command.command,
@@ -69,7 +76,12 @@ export async function startRuntimeOrchestration(
         ? { tokenFactory: options.tokenFactory }
         : {}),
     });
+    connectionRegistry.register({
+      projectRoot: options.projectRoot,
+      connection: sidecar.connection,
+    });
   } catch (error) {
+    sidecar?.stop("SIGTERM");
     await releaseRuntimeLockAfterStartupFailure(lock, error);
     throw error;
   }
@@ -102,6 +114,7 @@ export async function startRuntimeOrchestration(
         return false;
       }
       const sidecarStopped = sidecar.stop(signal);
+      connectionRegistry.unregister(options.projectRoot, sidecar.connection);
       await releaseLockOnce();
       stopped = true;
       return sidecarStopped;

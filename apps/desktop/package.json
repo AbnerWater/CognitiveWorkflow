@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "echo '[@cw/desktop] M1.5 milestone 内落实 Electron Forge dev pipeline'",
     "build": "tsc -p tsconfig.json",
-    "test": "pnpm run build && node --test dist/main/runtime.test.js dist/main/runtime-command.test.js dist/main/runtime-handoff.test.js dist/main/runtime-ipc-handlers.test.js dist/main/runtime-lifecycle.test.js dist/main/runtime-lock.test.js dist/main/runtime-orchestration.test.js dist/main/security.test.js dist/main/sidecar.test.js dist/preload/contract.test.js dist/shared/runtime-ipc.test.js",
+    "test": "pnpm run build && node --test dist/main/runtime.test.js dist/main/runtime-command.test.js dist/main/runtime-connection-registry.test.js dist/main/runtime-handoff.test.js dist/main/runtime-ipc-handlers.test.js dist/main/runtime-lifecycle.test.js dist/main/runtime-lock.test.js dist/main/runtime-orchestration.test.js dist/main/security.test.js dist/main/sidecar.test.js dist/preload/contract.test.js dist/shared/runtime-ipc.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },

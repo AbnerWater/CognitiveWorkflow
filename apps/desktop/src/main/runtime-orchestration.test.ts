@@ -10,8 +10,10 @@ import {
   RUNTIME_HTTP_PORT_ARG,
   type RuntimeSidecarProcess,
 } from "./sidecar.js";
+import { resolveRuntimeConnectionHandoff } from "./runtime-handoff.js";
 import { startRuntimeOrchestration } from "./runtime-orchestration.js";
 import { resolveRuntimeLockPath } from "./runtime-lock.js";
+import { createRuntimeConnectionRegistry } from "./runtime-connection-registry.js";
 
 class FakeSidecarProcess extends EventEmitter implements RuntimeSidecarProcess {
   readonly pid: number | undefined = 24_680;
@@ -28,6 +30,7 @@ class FakeSidecarProcess extends EventEmitter implements RuntimeSidecarProcess {
 test("starts runtime sidecar under runtime.lock and exposes IPC handlers", async () => {
   const projectRoot = await makeTempProject();
   const fake = new FakeSidecarProcess();
+  const connectionRegistry = createRuntimeConnectionRegistry();
   const captured: {
     command: string | undefined;
     args: readonly string[] | undefined;
@@ -51,6 +54,7 @@ test("starts runtime sidecar under runtime.lock and exposes IPC handlers", async
       env: { PATH: "C:\\runtime" },
       readyTimeoutMs: 100,
       tokenFactory: () => "token_abc123",
+      connectionRegistry,
       spawn: (command, args, options) => {
         captured.command = command;
         captured.args = args;
@@ -77,6 +81,17 @@ test("starts runtime sidecar under runtime.lock and exposes IPC handlers", async
       base_url: "http://127.0.0.1:51234/cw/v1",
       token: "token_abc123",
     });
+    assert.deepEqual(connectionRegistry.get(projectRoot), {
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_abc123",
+    });
+
+    const handoff = await resolveRuntimeConnectionHandoff({
+      projectRoot,
+      nowMs: Date.now(),
+      connectionInfo: connectionRegistry.resolver(projectRoot),
+    });
+    assert.equal(handoff.action, "reuse_existing");
     assert.deepEqual(await session.handlers.fetch({ path: "/system/info" }), {
       ok: true,
       status: 200,
@@ -86,6 +101,7 @@ test("starts runtime sidecar under runtime.lock and exposes IPC handlers", async
 
     assert.equal(await session.stop(), true);
     assert.deepEqual(fake.killedSignals, ["SIGTERM"]);
+    assert.equal(connectionRegistry.get(projectRoot), null);
     await assert.rejects(readFile(session.lock.lockPath, "utf8"), {
       code: "ENOENT",
     });

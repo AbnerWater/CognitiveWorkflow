@@ -47,6 +47,15 @@ export {
 } from "./runtime-ipc-handlers.js";
 
 export {
+  DEFAULT_RUNTIME_CONNECTION_REGISTRY,
+  createRuntimeConnectionRegistry,
+  type RuntimeConnectionRegistry,
+  type RuntimeConnectionRegistryEntry,
+  type RuntimeConnectionRegistryOptions,
+  type RuntimeConnectionRegistryRegisterOptions,
+} from "./runtime-connection-registry.js";
+
+export {
   resolveRuntimeConnectionHandoff,
   type ResolveRuntimeConnectionHandoffOptions,
   type RuntimeConnectionHandoffAction,
