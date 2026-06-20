@@ -39,9 +39,12 @@ import {
   createRuntimeStreamReplayState,
   isRuntimeStreamReplayNotFoundFailure,
   openRuntimeStreamClient,
+  openRuntimeStreamReconnectingClient,
   RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
   type RuntimeStreamConnectionRequest,
   type RuntimeStreamEventSource,
+  type RuntimeStreamFullReloadDecision,
+  type RuntimeStreamReconnectScheduler,
   type RuntimeStreamSourceEvent,
   type RuntimeStreamSourceListener,
 } from "../renderer/runtime-stream-client.js";
@@ -1049,6 +1052,196 @@ test("renderer runtime stream replay state rejects unsafe replay inputs", () => 
   );
 });
 
+test("renderer runtime stream reconnecting client replays tracked Last-Event-ID", async () => {
+  const streamFactory = createFakeRuntimeStreamEventSourceFactory();
+  const scheduler = createFakeRuntimeStreamReconnectScheduler();
+  const decisions: unknown[] = [];
+  const receivedEventIds: string[] = [];
+  const client = await openRuntimeStreamReconnectingClient({
+    runtime: {
+      connectionInfo: async () => ({
+        base_url: "http://127.0.0.1:51234/cw/v1",
+        token: "token_abc123",
+      }),
+    },
+    channel: { kind: "run", runId: "run_01J" },
+    eventSourceFactory: streamFactory.factory,
+    scheduler: scheduler.scheduler,
+    onReplayDecision: (decision) => {
+      decisions.push(decision);
+    },
+  });
+
+  client.subscribe("model.text_delta", (event) => {
+    receivedEventIds.push(event.id ?? "missing");
+  });
+
+  const source0 = streamFactory.sources.at(0);
+  assert.ok(source0);
+  source0.emit("model.text_delta", {
+    data: JSON.stringify({
+      type: "model.text_delta",
+      event_id: "evt_1",
+      content: "hello",
+    }),
+  });
+  assert.deepEqual(receivedEventIds, ["evt_1"]);
+  assert.deepEqual(client.replaySnapshot(), {
+    mode: "ready",
+    lastEventId: "evt_1",
+    reconnectAttempt: 0,
+  });
+
+  source0.emit("error", {
+    data: JSON.stringify({ reason: "network closed" }),
+  });
+
+  assert.equal(source0.closeCount(), 1);
+  assert.deepEqual(decisions, [
+    {
+      action: "reconnect",
+      lastEventId: "evt_1",
+      attempt: 1,
+      retryAfterMs: 3000,
+    },
+  ]);
+  assert.deepEqual(client.replaySnapshot(), {
+    mode: "reconnect_pending",
+    lastEventId: "evt_1",
+    reconnectAttempt: 1,
+    retryAfterMs: 3000,
+    reason: "network closed",
+  });
+  assert.equal(streamFactory.requests.length, 1);
+
+  const scheduledReconnect = scheduler.scheduled.at(0);
+  assert.ok(scheduledReconnect);
+  assert.equal(scheduledReconnect.delayMs, 3000);
+  assert.equal(scheduledReconnect.run(), true);
+  await flushRuntimeStreamReconnect();
+
+  assert.equal(streamFactory.requests.length, 2);
+  const reconnectRequest = streamFactory.requests.at(1);
+  assert.ok(reconnectRequest);
+  assert.equal(reconnectRequest.headers["Last-Event-ID"], "evt_1");
+
+  const source1 = streamFactory.sources.at(1);
+  assert.ok(source1);
+  source1.emit("model.text_delta", {
+    data: JSON.stringify({
+      type: "model.text_delta",
+      event_id: "evt_2",
+      content: "again",
+    }),
+  });
+  assert.deepEqual(receivedEventIds, ["evt_1", "evt_2"]);
+  assert.deepEqual(client.replaySnapshot(), {
+    mode: "ready",
+    lastEventId: "evt_2",
+    reconnectAttempt: 0,
+  });
+  assert.equal(client.activeRequest()?.headers["Last-Event-ID"], "evt_1");
+});
+
+test("renderer runtime stream reconnecting client closes pending reconnects", async () => {
+  const streamFactory = createFakeRuntimeStreamEventSourceFactory();
+  const scheduler = createFakeRuntimeStreamReconnectScheduler();
+  const client = await openRuntimeStreamReconnectingClient({
+    runtime: {
+      connectionInfo: async () => ({
+        base_url: "http://127.0.0.1:51234/cw/v1",
+        token: "token_abc123",
+      }),
+    },
+    channel: { kind: "run", runId: "run_01J" },
+    eventSourceFactory: streamFactory.factory,
+    scheduler: scheduler.scheduler,
+  });
+
+  const source0 = streamFactory.sources.at(0);
+  assert.ok(source0);
+  source0.emit("error", { data: "temporary disconnect" });
+
+  const scheduledReconnect = scheduler.scheduled.at(0);
+  assert.ok(scheduledReconnect);
+  assert.equal(client.close(), true);
+  assert.equal(client.isClosed(), true);
+  assert.equal(scheduledReconnect.cancelled, true);
+  assert.equal(scheduledReconnect.run(), false);
+  await flushRuntimeStreamReconnect();
+
+  assert.equal(streamFactory.requests.length, 1);
+  assert.equal(client.activeRequest(), null);
+  assert.equal(client.close(), false);
+});
+
+test("renderer runtime stream reconnecting client maps replay miss to full reload", async () => {
+  const streamFactory = createFakeRuntimeStreamEventSourceFactory();
+  const scheduler = createFakeRuntimeStreamReconnectScheduler();
+  const fullReloads: RuntimeStreamFullReloadDecision[] = [];
+  const eventErrors: unknown[] = [];
+  const client = await openRuntimeStreamReconnectingClient({
+    runtime: {
+      connectionInfo: async () => ({
+        base_url: "http://127.0.0.1:51234/cw/v1",
+        token: "token_abc123",
+      }),
+    },
+    channel: { kind: "run", runId: "run_01J" },
+    eventSourceFactory: streamFactory.factory,
+    scheduler: scheduler.scheduler,
+    onFullReloadRequired: (decision) => {
+      fullReloads.push(decision);
+      throw new Error("renderer reload hook failed");
+    },
+    onEventError: (error) => {
+      eventErrors.push(error);
+    },
+  });
+
+  const unsubscribe = client.subscribe("model.text_delta", () => undefined);
+
+  const source0 = streamFactory.sources.at(0);
+  assert.ok(source0);
+  source0.emit("model.text_delta", {
+    data: JSON.stringify({
+      type: "model.text_delta",
+      event_id: "evt_5",
+      content: "before replay miss",
+    }),
+  });
+  source0.emit("error", {
+    data: JSON.stringify({
+      status: 412,
+      error_code: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+      reason: "Last-Event-ID was not found",
+    }),
+  });
+
+  assert.equal(client.isClosed(), true);
+  assert.equal(client.activeRequest(), null);
+  assert.equal(source0.closeCount(), 1);
+  assert.deepEqual(fullReloads, [
+    {
+      action: "full_reload",
+      lastEventId: "evt_5",
+      reason: "Last-Event-ID was not found",
+      status: 412,
+      errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+    },
+  ]);
+  assert.equal(eventErrors.length, 1);
+  assert.equal(scheduler.scheduled.length, 0);
+  assert.deepEqual(client.replaySnapshot(), {
+    mode: "full_reload_required",
+    lastEventId: "evt_5",
+    reconnectAttempt: 0,
+    reason: "Last-Event-ID was not found",
+  });
+  assert.equal(unsubscribe(), false);
+  assert.equal(client.close(), false);
+});
+
 function createNoopSubscribe(): RuntimePreloadIpcSubscribe {
   return () => () => false;
 }
@@ -1202,4 +1395,71 @@ function createFakeRuntimeStreamEventSource(): {
     listenerCount: (type) => listeners.get(type)?.size ?? 0,
     closeCount: () => closed,
   };
+}
+
+function createFakeRuntimeStreamEventSourceFactory(): {
+  readonly factory: (
+    request: RuntimeStreamConnectionRequest,
+  ) => RuntimeStreamEventSource;
+  readonly requests: RuntimeStreamConnectionRequest[];
+  readonly sources: ReturnType<typeof createFakeRuntimeStreamEventSource>[];
+} {
+  const requests: RuntimeStreamConnectionRequest[] = [];
+  const sources: ReturnType<typeof createFakeRuntimeStreamEventSource>[] = [];
+  return {
+    factory: (request) => {
+      requests.push(request);
+      const source = createFakeRuntimeStreamEventSource();
+      sources.push(source);
+      return source.source;
+    },
+    requests,
+    sources,
+  };
+}
+
+interface FakeRuntimeStreamScheduledReconnect {
+  readonly delayMs: number;
+  cancelled: boolean;
+  readonly run: () => boolean;
+}
+
+function createFakeRuntimeStreamReconnectScheduler(): {
+  readonly scheduler: RuntimeStreamReconnectScheduler;
+  readonly scheduled: FakeRuntimeStreamScheduledReconnect[];
+} {
+  const scheduled: FakeRuntimeStreamScheduledReconnect[] = [];
+  return {
+    scheduler: (delayMs, reconnect) => {
+      const scheduledReconnect: FakeRuntimeStreamScheduledReconnect = {
+        delayMs,
+        cancelled: false,
+        run: () => {
+          if (scheduledReconnect.cancelled) {
+            return false;
+          }
+          scheduledReconnect.cancelled = true;
+          reconnect();
+          return true;
+        },
+      };
+      scheduled.push(scheduledReconnect);
+      return {
+        cancel: () => {
+          if (scheduledReconnect.cancelled) {
+            return false;
+          }
+          scheduledReconnect.cancelled = true;
+          return true;
+        },
+      };
+    },
+    scheduled,
+  };
+}
+
+async function flushRuntimeStreamReconnect(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }

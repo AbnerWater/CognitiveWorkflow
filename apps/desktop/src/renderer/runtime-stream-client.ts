@@ -170,6 +170,49 @@ export interface CreateRuntimeStreamReplayStateOptions {
   readonly defaultRetryMs?: number;
 }
 
+export interface RuntimeStreamReconnectTimer {
+  readonly cancel: () => boolean;
+}
+
+export type RuntimeStreamReconnectScheduler = (
+  delayMs: number,
+  reconnect: () => void,
+) => RuntimeStreamReconnectTimer;
+
+export interface RuntimeStreamReconnectingClient {
+  readonly subscribe: <TData = unknown>(
+    eventType: string,
+    listener: RuntimeStreamEventListener<TData>,
+  ) => RuntimeStreamUnsubscribe;
+  readonly close: () => boolean;
+  readonly isClosed: () => boolean;
+  readonly activeRequest: () => RuntimeStreamConnectionRequest | null;
+  readonly replaySnapshot: () => RuntimeStreamReplayStateSnapshot;
+}
+
+export interface OpenRuntimeStreamReconnectingClientOptions {
+  readonly runtime: Pick<RuntimeBridge, "connectionInfo">;
+  readonly channel: RuntimeStreamChannel;
+  readonly eventSourceFactory: RuntimeStreamEventSourceFactory;
+  readonly filters?: RuntimeStreamFilters;
+  readonly projectId?: string;
+  readonly replayState?: RuntimeStreamReplayState;
+  readonly scheduler?: RuntimeStreamReconnectScheduler;
+  readonly onEventError?: RuntimeStreamErrorHandler;
+  readonly onConnectionError?: RuntimeStreamErrorHandler;
+  readonly onReplayDecision?: (decision: RuntimeStreamReplayDecision) => void;
+  readonly onFullReloadRequired?: (
+    decision: RuntimeStreamFullReloadDecision,
+  ) => void;
+}
+
+interface RuntimeStreamManagedSubscription {
+  readonly eventType: string;
+  readonly listener: RuntimeStreamEventListener<unknown>;
+  activeUnsubscribe: RuntimeStreamUnsubscribe | null;
+  subscribed: boolean;
+}
+
 export async function openRuntimeStreamClient(
   options: OpenRuntimeStreamClientOptions,
 ): Promise<RuntimeStreamClient> {
@@ -280,6 +323,206 @@ export async function openRuntimeStreamClient(
   };
 }
 
+export async function openRuntimeStreamReconnectingClient(
+  options: OpenRuntimeStreamReconnectingClientOptions,
+): Promise<RuntimeStreamReconnectingClient> {
+  const replayState = options.replayState ?? createRuntimeStreamReplayState();
+  const scheduler = options.scheduler ?? createRuntimeStreamTimeoutScheduler();
+  const subscriptions: RuntimeStreamManagedSubscription[] = [];
+  let activeClient: RuntimeStreamClient | null = null;
+  let pendingReconnect: RuntimeStreamReconnectTimer | null = null;
+  let closed = false;
+
+  const reportEventError = (error: unknown): void => {
+    try {
+      options.onEventError?.(error);
+    } catch {
+      // Renderer diagnostics must not break managed stream dispatch.
+    }
+  };
+
+  const reportConnectionError = (error: unknown): void => {
+    try {
+      options.onConnectionError?.(error);
+    } catch {
+      // Renderer diagnostics must not break managed stream reconnect handling.
+    }
+  };
+
+  const reportReplayDecision = (
+    decision: RuntimeStreamReplayDecision,
+  ): void => {
+    try {
+      options.onReplayDecision?.(decision);
+    } catch {
+      // Renderer diagnostics must not break replay-state handling.
+    }
+  };
+
+  const reportFullReloadRequired = (
+    decision: RuntimeStreamFullReloadDecision,
+  ): void => {
+    try {
+      options.onFullReloadRequired?.(decision);
+    } catch (error) {
+      reportEventError(error);
+    }
+  };
+
+  const closeActiveClient = (): void => {
+    for (const subscription of subscriptions) {
+      subscription.activeUnsubscribe = null;
+    }
+    activeClient?.close();
+    activeClient = null;
+  };
+
+  const clearManagedSubscriptions = (): void => {
+    for (const subscription of subscriptions.splice(0)) {
+      subscription.subscribed = false;
+      subscription.activeUnsubscribe = null;
+    }
+  };
+
+  const attachSubscription = (
+    client: RuntimeStreamClient,
+    subscription: RuntimeStreamManagedSubscription,
+  ): void => {
+    if (!subscription.subscribed) {
+      return;
+    }
+    subscription.activeUnsubscribe = client.subscribe(
+      subscription.eventType,
+      (event) => {
+        replayState.recordEvent(event);
+        subscription.listener(event);
+      },
+    );
+  };
+
+  const connect = async (lastEventId: string | null): Promise<void> => {
+    if (closed) {
+      return;
+    }
+
+    closeActiveClient();
+    const clientOptions = buildRuntimeStreamClientOptions(options, {
+      lastEventId,
+      onEventError: reportEventError,
+      onConnectionError: (error) => {
+        reportConnectionError(error);
+        handleConnectionFailure(error);
+      },
+    });
+    const client = await openRuntimeStreamClient(clientOptions);
+
+    if (closed) {
+      client.close();
+      return;
+    }
+
+    activeClient = client;
+    for (const subscription of subscriptions) {
+      attachSubscription(client, subscription);
+    }
+  };
+
+  const scheduleReconnect = (
+    decision: RuntimeStreamReconnectDecision,
+  ): void => {
+    if (closed || pendingReconnect !== null) {
+      return;
+    }
+    pendingReconnect = scheduler(decision.retryAfterMs, () => {
+      pendingReconnect = null;
+      void connect(decision.lastEventId).catch((error: unknown) => {
+        if (closed) {
+          return;
+        }
+        reportConnectionError(error);
+        handleConnectionFailure(error);
+      });
+    });
+  };
+
+  const handleConnectionFailure = (error: unknown): void => {
+    if (closed) {
+      return;
+    }
+
+    closeActiveClient();
+    const decision = replayState.handleConnectionFailure(
+      normalizeRuntimeStreamConnectionFailure(error),
+    );
+    reportReplayDecision(decision);
+
+    if (decision.action === "full_reload") {
+      closed = true;
+      pendingReconnect?.cancel();
+      pendingReconnect = null;
+      clearManagedSubscriptions();
+      reportFullReloadRequired(decision);
+      return;
+    }
+
+    scheduleReconnect(decision);
+  };
+
+  await connect(replayState.snapshot().lastEventId);
+
+  return {
+    subscribe: <TData>(
+      eventType: string,
+      listener: RuntimeStreamEventListener<TData>,
+    ) => {
+      assertRuntimeStreamEventType(eventType);
+      if (closed) {
+        return () => false;
+      }
+
+      const subscription: RuntimeStreamManagedSubscription = {
+        eventType,
+        listener: listener as RuntimeStreamEventListener<unknown>,
+        activeUnsubscribe: null,
+        subscribed: true,
+      };
+      subscriptions.push(subscription);
+
+      if (activeClient !== null) {
+        attachSubscription(activeClient, subscription);
+      }
+
+      return () => {
+        if (!subscription.subscribed) {
+          return false;
+        }
+        subscription.subscribed = false;
+        subscription.activeUnsubscribe?.();
+        subscription.activeUnsubscribe = null;
+        const index = subscriptions.indexOf(subscription);
+        if (index >= 0) {
+          subscriptions.splice(index, 1);
+        }
+        return true;
+      };
+    },
+    close: () => {
+      if (closed) {
+        return false;
+      }
+      closed = true;
+      pendingReconnect?.cancel();
+      pendingReconnect = null;
+      closeActiveClient();
+      clearManagedSubscriptions();
+      return true;
+    },
+    isClosed: () => closed,
+    activeRequest: () => activeClient?.request ?? null,
+    replaySnapshot: () => replayState.snapshot(),
+  };
+}
+
 export function createRuntimeStreamReplayState(
   options: CreateRuntimeStreamReplayStateOptions = {},
 ): RuntimeStreamReplayState {
@@ -371,6 +614,30 @@ export function isRuntimeStreamReplayNotFoundFailure(
     failure.status === 412 ||
     failure.errorCode === RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE
   );
+}
+
+export function createRuntimeStreamTimeoutScheduler(): RuntimeStreamReconnectScheduler {
+  return (delayMs, reconnect) => {
+    normalizeRuntimeStreamRetryMs("retry delay", delayMs);
+    let active = true;
+    const timer = globalThis.setTimeout(() => {
+      if (!active) {
+        return;
+      }
+      active = false;
+      reconnect();
+    }, delayMs);
+    return {
+      cancel: () => {
+        if (!active) {
+          return false;
+        }
+        active = false;
+        globalThis.clearTimeout(timer);
+        return true;
+      },
+    };
+  };
 }
 
 export function buildRuntimeStreamConnectionRequest(
@@ -532,6 +799,96 @@ function buildRuntimeStreamFullReloadDecision(
       ? { errorCode: failure.errorCode }
       : {}),
   };
+}
+
+function buildRuntimeStreamClientOptions(
+  baseOptions: OpenRuntimeStreamReconnectingClientOptions,
+  input: {
+    readonly lastEventId: string | null;
+    readonly onEventError: RuntimeStreamErrorHandler;
+    readonly onConnectionError: RuntimeStreamErrorHandler;
+  },
+): OpenRuntimeStreamClientOptions {
+  return {
+    runtime: baseOptions.runtime,
+    channel: baseOptions.channel,
+    eventSourceFactory: baseOptions.eventSourceFactory,
+    ...(baseOptions.filters !== undefined
+      ? { filters: baseOptions.filters }
+      : {}),
+    ...(baseOptions.projectId !== undefined
+      ? { projectId: baseOptions.projectId }
+      : {}),
+    ...(input.lastEventId !== null ? { lastEventId: input.lastEventId } : {}),
+    onEventError: input.onEventError,
+    onConnectionError: input.onConnectionError,
+  };
+}
+
+function normalizeRuntimeStreamConnectionFailure(
+  error: unknown,
+): RuntimeStreamConnectionFailure {
+  const candidates: unknown[] = [];
+  if (isRecord(error)) {
+    candidates.push(error.data);
+  }
+  candidates.push(error);
+
+  for (const candidate of candidates) {
+    const parsed = parseRuntimeStreamConnectionFailureCandidate(candidate);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return {};
+}
+
+function parseRuntimeStreamConnectionFailureCandidate(
+  candidate: unknown,
+): RuntimeStreamConnectionFailure | null {
+  if (typeof candidate === "string") {
+    try {
+      return parseRuntimeStreamConnectionFailureCandidate(
+        JSON.parse(candidate) as unknown,
+      );
+    } catch {
+      return { reason: candidate };
+    }
+  }
+
+  if (!isRecord(candidate)) {
+    return null;
+  }
+
+  const failure: {
+    status?: number;
+    errorCode?: string;
+    retryAfterMs?: number;
+    reason?: string;
+  } = {};
+
+  const status = candidate.status;
+  if (typeof status === "number" && Number.isSafeInteger(status)) {
+    failure.status = status;
+  }
+
+  const errorCode = candidate.errorCode ?? candidate.error_code;
+  if (typeof errorCode === "string" && errorCode.length > 0) {
+    failure.errorCode = errorCode;
+  }
+
+  const retryAfterMs = candidate.retryAfterMs ?? candidate.retry_after_ms;
+  if (typeof retryAfterMs === "number") {
+    failure.retryAfterMs = retryAfterMs;
+  }
+
+  const reason = candidate.reason ?? candidate.message;
+  if (typeof reason === "string" && reason.length > 0) {
+    failure.reason = reason;
+  }
+
+  return failure;
 }
 
 function parseRuntimeStreamBaseUrl(baseUrl: string): URL {
