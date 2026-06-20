@@ -10,6 +10,7 @@ import {
   buildRuntimeIpcFetchRequest,
   buildRuntimeIpcRequestHeaders,
   isRuntimeIpcChannel,
+  parseRuntimeIpcFetchRequestPayload,
   type RuntimeIpcMethod,
 } from "./runtime-ipc.js";
 
@@ -109,6 +110,52 @@ test("rejects unsupported IPC methods and unsafe header payloads", () => {
         headers: { Accept: "text/plain\napplication/json" },
       }),
     /Accept/u,
+  );
+});
+
+test("parses unknown runtime IPC fetch payloads before main handler dispatch", () => {
+  assert.deepEqual(
+    parseRuntimeIpcFetchRequestPayload({
+      path: "/system/info",
+      init: {
+        method: "GET",
+        projectId: "prj_123",
+        headers: { Accept: "application/json" },
+      },
+    }),
+    {
+      path: "/system/info",
+      init: {
+        method: "GET",
+        projectId: "prj_123",
+        headers: { Accept: "application/json" },
+      },
+    },
+  );
+
+  assert.throws(
+    () => parseRuntimeIpcFetchRequestPayload(null),
+    /payload must be an object/u,
+  );
+  assert.throws(
+    () => parseRuntimeIpcFetchRequestPayload({ path: 42 }),
+    /path must be a string/u,
+  );
+  assert.throws(
+    () =>
+      parseRuntimeIpcFetchRequestPayload({
+        path: "/system/info",
+        init: { headers: { Accept: 42 } },
+      }),
+    /Accept value must be a string/u,
+  );
+  assert.throws(
+    () =>
+      parseRuntimeIpcFetchRequestPayload({
+        path: "/system/info",
+        init: { headers: { Authorization: "Bearer attacker" } },
+      }),
+    /reserved/u,
   );
 });
 

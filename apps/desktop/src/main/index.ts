@@ -17,6 +17,7 @@ export {
   buildRuntimeIpcFetchRequest,
   buildRuntimeIpcRequestHeaders,
   isRuntimeIpcChannel,
+  parseRuntimeIpcFetchRequestPayload,
   type RuntimeIpcChannel,
   type RuntimeIpcConnectionInfo,
   type RuntimeIpcFetchInit,
@@ -97,6 +98,18 @@ export {
   type RuntimeStartupTimeoutDecision,
   type StartRuntimeWithLifecycleOptions,
 } from "./runtime-startup-controller.js";
+
+export {
+  RuntimeStartupUnavailableError,
+  createRuntimeIpcMainChannelRegistrations,
+  createRuntimeIpcStartupHandlers,
+  type CreateRuntimeIpcStartupHandlersOptions,
+  type RuntimeIpcMainChannelRegistration,
+  type RuntimeIpcStartupControllerStarter,
+  type RuntimeIpcStartupHandlerSnapshot,
+  type RuntimeIpcStartupHandlerState,
+  type RuntimeIpcStartupHandlers,
+} from "./runtime-ipc-main-factory.js";
 
 export {
   startRuntimeOrchestration,

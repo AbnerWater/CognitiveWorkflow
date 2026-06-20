@@ -106,6 +106,30 @@ export function buildRuntimeIpcFetchRequest(
   };
 }
 
+export function parseRuntimeIpcFetchRequestPayload(
+  payload: unknown,
+): RuntimeIpcFetchRequest {
+  if (!isRecord(payload)) {
+    throw new Error("Runtime IPC fetch payload must be an object");
+  }
+
+  const path = payload.path;
+  if (typeof path !== "string") {
+    throw new Error("Runtime IPC fetch payload path must be a string");
+  }
+
+  const init = payload.init;
+  if (init === undefined) {
+    return buildRuntimeIpcFetchRequest(path);
+  }
+
+  if (!isRecord(init)) {
+    throw new Error("Runtime IPC fetch payload init must be an object");
+  }
+
+  return buildRuntimeIpcFetchRequest(path, parseRuntimeIpcFetchInit(init));
+}
+
 export function buildRuntimeIpcRequestHeaders(
   input: RuntimeIpcRequestHeadersInput,
 ): Readonly<Record<string, string>> {
@@ -144,6 +168,70 @@ export function buildRuntimeIpcRequestHeaders(
   }
 
   return headers;
+}
+
+function parseRuntimeIpcFetchInit(
+  init: Readonly<Record<string, unknown>>,
+): RuntimeIpcFetchInit {
+  const parsed: {
+    method?: RuntimeIpcMethod;
+    projectId?: string;
+    idempotencyKey?: string;
+    headers?: Readonly<Record<string, string>>;
+    body?: string;
+  } = {};
+
+  if (init.method !== undefined) {
+    if (typeof init.method !== "string") {
+      throw new Error("Runtime IPC fetch init method must be a string");
+    }
+    parsed.method = init.method as RuntimeIpcMethod;
+  }
+
+  if (init.projectId !== undefined) {
+    if (typeof init.projectId !== "string") {
+      throw new Error("Runtime IPC fetch init projectId must be a string");
+    }
+    parsed.projectId = init.projectId;
+  }
+
+  if (init.idempotencyKey !== undefined) {
+    if (typeof init.idempotencyKey !== "string") {
+      throw new Error("Runtime IPC fetch init idempotencyKey must be a string");
+    }
+    parsed.idempotencyKey = init.idempotencyKey;
+  }
+
+  if (init.headers !== undefined) {
+    parsed.headers = parseRuntimeIpcHeaders(init.headers);
+  }
+
+  if (init.body !== undefined) {
+    if (typeof init.body !== "string") {
+      throw new Error("Runtime IPC fetch init body must be a string");
+    }
+    parsed.body = init.body;
+  }
+
+  return parsed;
+}
+
+function parseRuntimeIpcHeaders(
+  headers: unknown,
+): Readonly<Record<string, string>> {
+  if (!isRecord(headers)) {
+    throw new Error("Runtime IPC fetch init headers must be an object");
+  }
+
+  const parsed: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (typeof value !== "string") {
+      throw new Error(`Runtime IPC header ${name} value must be a string`);
+    }
+    parsed[name] = value;
+  }
+
+  return parsed;
 }
 
 function normalizeRuntimeIpcFetchInit(
@@ -234,4 +322,8 @@ function requireSafeToken(value: string): string {
   }
 
   return token;
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
