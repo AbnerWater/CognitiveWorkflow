@@ -8,6 +8,10 @@ import {
   type RuntimeConnectionHandoffProvider,
   type RuntimeStartupLifecycleTransition,
 } from "./runtime-lifecycle.js";
+import {
+  mapRuntimeStartupDecisionToStatus,
+  type RuntimeStartupStatus,
+} from "./runtime-startup-status.js";
 import type { RuntimeConnectionHandoffDecision } from "./runtime-handoff.js";
 import type { RuntimeLockInspection } from "./runtime-lock.js";
 
@@ -24,6 +28,7 @@ const CONNECTION: RuntimeConnectionInfo = {
 test("starts a new sidecar immediately when runtime.lock is missing", async () => {
   let slept = false;
   const transitions: RuntimeStartupLifecycleTransition[] = [];
+  const statuses: RuntimeStartupStatus[] = [];
 
   const decision = await resolveRuntimeStartupLifecycle({
     projectRoot: PROJECT_ROOT,
@@ -36,6 +41,9 @@ test("starts a new sidecar immediately when runtime.lock is missing", async () =
     onTransition: (transition) => {
       transitions.push(transition);
     },
+    onStatus: (status) => {
+      statuses.push(status);
+    },
   });
 
   assert.equal(decision.action, "start_sidecar");
@@ -45,6 +53,11 @@ test("starts a new sidecar immediately when runtime.lock is missing", async () =
     transitions.map((transition) => transition.action),
     ["start_sidecar"],
   );
+  assert.deepEqual(
+    statuses.map((status) => status.kind),
+    ["starting_sidecar"],
+  );
+  assert.equal(statuses[0]?.lifecycleComplete, true);
 });
 
 test("reuses an existing sidecar after a wait transition", async () => {
@@ -52,6 +65,7 @@ test("reuses an existing sidecar after a wait transition", async () => {
   let calls = 0;
   const sleeps: number[] = [];
   const transitions: RuntimeStartupLifecycleTransition[] = [];
+  const statuses: RuntimeStartupStatus[] = [];
   const handoff: RuntimeConnectionHandoffProvider = async () => {
     calls += 1;
     if (calls === 1) {
@@ -77,6 +91,9 @@ test("reuses an existing sidecar after a wait transition", async () => {
     onTransition: (transition) => {
       transitions.push(transition);
     },
+    onStatus: (status) => {
+      statuses.push(status);
+    },
   });
 
   assert.equal(decision.action, "reuse_existing");
@@ -86,12 +103,19 @@ test("reuses an existing sidecar after a wait transition", async () => {
     transitions.map((transition) => transition.action),
     ["wait_for_existing", "reuse_existing"],
   );
+  assert.deepEqual(
+    statuses.map((status) => status.kind),
+    ["waiting_for_existing", "runtime_ready"],
+  );
+  assert.equal(statuses[0]?.lifecycleComplete, false);
+  assert.equal(statuses[1]?.lifecycleComplete, true);
 });
 
 test("times out while waiting for an existing sidecar", async () => {
   let nowMs = 0;
   const sleeps: number[] = [];
   const transitions: RuntimeStartupLifecycleTransition[] = [];
+  const statuses: RuntimeStartupStatus[] = [];
 
   const decision = await resolveRuntimeStartupLifecycle({
     projectRoot: PROJECT_ROOT,
@@ -106,6 +130,9 @@ test("times out while waiting for an existing sidecar", async () => {
     onTransition: (transition) => {
       transitions.push(transition);
     },
+    onStatus: (status) => {
+      statuses.push(status);
+    },
   });
 
   assert.equal(decision.action, "timeout_waiting_for_existing");
@@ -116,6 +143,17 @@ test("times out while waiting for an existing sidecar", async () => {
     transitions.map((transition) => transition.action),
     ["wait_for_existing", "wait_for_existing", "wait_for_existing"],
   );
+  assert.deepEqual(
+    statuses.map((status) => status.kind),
+    [
+      "waiting_for_existing",
+      "waiting_for_existing",
+      "waiting_for_existing",
+      "startup_timed_out",
+    ],
+  );
+  assert.equal(statuses.at(-1)?.userActionRequired, true);
+  assert.equal(statuses.at(-1)?.retryable, true);
 });
 
 test("times out when injected lifecycle clock does not advance", async () => {
@@ -140,6 +178,7 @@ test("times out when injected lifecycle clock does not advance", async () => {
 
 test("blocks startup immediately when handoff fails closed", async () => {
   let slept = false;
+  const statuses: RuntimeStartupStatus[] = [];
   const handoff: RuntimeConnectionHandoffProvider = async () => ({
     action: "block_startup",
     inspection: {
@@ -156,12 +195,20 @@ test("blocks startup immediately when handoff fails closed", async () => {
       slept = true;
     },
     handoff,
+    onStatus: (status) => {
+      statuses.push(status);
+    },
   });
 
   assert.equal(decision.action, "block_startup");
   assert.equal(decision.attempts, 1);
   assert.equal(decision.reason, "runtime.lock is corrupt");
   assert.equal(slept, false);
+  assert.deepEqual(
+    statuses.map((status) => status.kind),
+    ["startup_blocked"],
+  );
+  assert.equal(statuses[0]?.severity, "error");
 });
 
 test("rejects invalid lifecycle timeout and retry settings", async () => {
@@ -179,6 +226,33 @@ test("rejects invalid lifecycle timeout and retry settings", async () => {
     }),
     /retry interval/u,
   );
+});
+
+test("maps lifecycle decisions to startup status snapshots", () => {
+  const status = mapRuntimeStartupDecisionToStatus({
+    action: "cleanup_then_start",
+    attempts: 1,
+    handoff: {
+      action: "cleanup_then_start",
+      inspection: {
+        status: "stale",
+        lockPath: ACTIVE_INSPECTION.lockPath,
+        ageMs: 90_000,
+      },
+    },
+  });
+
+  assert.deepEqual(status, {
+    kind: "cleaning_stale_lock",
+    action: "cleanup_then_start",
+    attempt: 1,
+    lockStatus: "stale",
+    severity: "warning",
+    message: "Cleaning stale runtime lock before starting runtime sidecar.",
+    lifecycleComplete: true,
+    userActionRequired: false,
+    retryable: false,
+  });
 });
 
 function waitDecision(reason: string): RuntimeConnectionHandoffDecision {

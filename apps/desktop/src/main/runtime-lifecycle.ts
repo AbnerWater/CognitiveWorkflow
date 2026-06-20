@@ -4,6 +4,11 @@ import {
   type RuntimeConnectionHandoffDecision,
   type RuntimeConnectionHandoffResolver,
 } from "./runtime-handoff.js";
+import {
+  mapRuntimeStartupDecisionToStatus,
+  mapRuntimeStartupTransitionToStatus,
+  type RuntimeStartupStatus,
+} from "./runtime-startup-status.js";
 import type {
   RuntimeLockInspection,
   RuntimeLockReadText,
@@ -69,6 +74,7 @@ export interface ResolveRuntimeStartupLifecycleOptions {
   readonly onTransition?: (
     transition: RuntimeStartupLifecycleTransition,
   ) => void | Promise<void>;
+  readonly onStatus?: (status: RuntimeStartupStatus) => void | Promise<void>;
 }
 
 export async function resolveRuntimeStartupLifecycle(
@@ -93,12 +99,14 @@ export async function resolveRuntimeStartupLifecycle(
     if (lastWait !== undefined) {
       const elapsedMs = Math.max(0, nowMs() - startedAtMs);
       if (elapsedMs >= timeoutMs) {
-        return {
+        const decision: RuntimeStartupLifecycleDecision = {
           action: "timeout_waiting_for_existing",
           attempts,
           reason: lastWait.reason,
           handoff: lastWait,
         };
+        await options.onStatus?.(mapRuntimeStartupDecisionToStatus(decision));
+        return decision;
       }
     }
 
@@ -113,44 +121,72 @@ export async function resolveRuntimeStartupLifecycle(
         : {}),
     });
 
-    await options.onTransition?.({
+    const transition: RuntimeStartupLifecycleTransition = {
       attempt: attempts,
       action: decision.action,
       inspection: decision.inspection,
       ...("reason" in decision ? { reason: decision.reason } : {}),
-    });
+    };
+    await options.onTransition?.(transition);
 
     if (isRuntimeConnectionHandoffWaitDecision(decision)) {
+      await options.onStatus?.(mapRuntimeStartupTransitionToStatus(transition));
       lastWait = decision;
       waitAttempts += 1;
       const elapsedMs = Math.max(0, nowMs() - startedAtMs);
       if (elapsedMs >= timeoutMs || waitAttempts >= maxWaitAttempts) {
-        return {
+        const timeoutDecision: RuntimeStartupLifecycleDecision = {
           action: "timeout_waiting_for_existing",
           attempts,
           reason: decision.reason,
           handoff: decision,
         };
+        await options.onStatus?.(
+          mapRuntimeStartupDecisionToStatus(timeoutDecision),
+        );
+        return timeoutDecision;
       }
       await sleep(Math.min(retryMs, timeoutMs - elapsedMs));
       continue;
     }
 
     if (isRuntimeConnectionHandoffBlockDecision(decision)) {
-      return {
+      const blockedDecision: RuntimeStartupLifecycleDecision = {
         action: "block_startup",
         attempts,
         reason: decision.reason,
         handoff: decision,
       };
+      await options.onStatus?.(
+        mapRuntimeStartupDecisionToStatus(blockedDecision),
+      );
+      return blockedDecision;
     }
 
     switch (decision.action) {
       case "start_sidecar":
-      case "cleanup_then_start":
-        return { action: decision.action, attempts, handoff: decision };
-      case "reuse_existing":
-        return { action: "reuse_existing", attempts, handoff: decision };
+      case "cleanup_then_start": {
+        const lifecycleDecision: RuntimeStartupLifecycleDecision = {
+          action: decision.action,
+          attempts,
+          handoff: decision,
+        };
+        await options.onStatus?.(
+          mapRuntimeStartupDecisionToStatus(lifecycleDecision),
+        );
+        return lifecycleDecision;
+      }
+      case "reuse_existing": {
+        const lifecycleDecision: RuntimeStartupLifecycleDecision = {
+          action: "reuse_existing",
+          attempts,
+          handoff: decision,
+        };
+        await options.onStatus?.(
+          mapRuntimeStartupDecisionToStatus(lifecycleDecision),
+        );
+        return lifecycleDecision;
+      }
     }
   }
 }

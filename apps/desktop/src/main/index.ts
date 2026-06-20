@@ -76,6 +76,15 @@ export {
 } from "./runtime-lifecycle.js";
 
 export {
+  mapRuntimeStartupDecisionToStatus,
+  mapRuntimeStartupTransitionToStatus,
+  type RuntimeStartupStatus,
+  type RuntimeStartupStatusAction,
+  type RuntimeStartupStatusKind,
+  type RuntimeStartupStatusSeverity,
+} from "./runtime-startup-status.js";
+
+export {
   startRuntimeOrchestration,
   type RuntimeOrchestrationLockOptions,
   type RuntimeOrchestrationSession,
