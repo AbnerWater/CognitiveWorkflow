@@ -8,6 +8,7 @@ import {
   assertRuntimeIpcChannel,
   assertRuntimeIpcRequestPath,
   buildRuntimeIpcFetchRequest,
+  buildRuntimeIpcRequestHeaders,
   isRuntimeIpcChannel,
   type RuntimeIpcMethod,
 } from "./runtime-ipc.js";
@@ -108,5 +109,46 @@ test("rejects unsupported IPC methods and unsafe header payloads", () => {
         headers: { Accept: "text/plain\napplication/json" },
       }),
     /Accept/u,
+  );
+});
+
+test("builds authenticated runtime IPC request headers", () => {
+  assert.deepEqual(
+    buildRuntimeIpcRequestHeaders({
+      token: " token_abc123 ",
+      projectId: "prj_123",
+      idempotencyKey: "idem_123",
+      extraHeaders: { Accept: "application/json" },
+    }),
+    {
+      Authorization: "Bearer token_abc123",
+      "X-Cw-Client": "electron-renderer",
+      "X-Project-Id": "prj_123",
+      "Idempotency-Key": "idem_123",
+      Accept: "application/json",
+    },
+  );
+});
+
+test("rejects unsafe runtime IPC request headers", () => {
+  assert.throws(
+    () => buildRuntimeIpcRequestHeaders({ token: "token abc" }),
+    /Authorization token/u,
+  );
+  assert.throws(
+    () =>
+      buildRuntimeIpcRequestHeaders({
+        token: "token_abc123",
+        extraHeaders: { "Bad Header": "value" },
+      }),
+    /header name/u,
+  );
+  assert.throws(
+    () =>
+      buildRuntimeIpcRequestHeaders({
+        token: "token_abc123",
+        extraHeaders: { "X-Cw-Client": "spoof" },
+      }),
+    /reserved/u,
   );
 });

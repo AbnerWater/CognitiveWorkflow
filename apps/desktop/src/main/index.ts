@@ -15,6 +15,7 @@ export {
   assertRuntimeIpcChannel,
   assertRuntimeIpcRequestPath,
   buildRuntimeIpcFetchRequest,
+  buildRuntimeIpcRequestHeaders,
   isRuntimeIpcChannel,
   type RuntimeIpcChannel,
   type RuntimeIpcConnectionInfo,
@@ -22,6 +23,7 @@ export {
   type RuntimeIpcFetchRequest,
   type RuntimeIpcMainHandlers,
   type RuntimeIpcMethod,
+  type RuntimeIpcRequestHeadersInput,
   type RuntimeIpcRequestPath,
   type RuntimeIpcResponse,
 } from "../shared/runtime-ipc.js";
@@ -36,6 +38,13 @@ export {
   type RuntimeConnectionInfo,
   type RuntimeReady,
 } from "./runtime.js";
+
+export {
+  createRuntimeIpcMainHandlers,
+  normalizeRuntimeConnectionInfo,
+  type RuntimeConnectionInfoProvider,
+  type RuntimeIpcMainHandlerOptions,
+} from "./runtime-ipc-handlers.js";
 
 export {
   AGENT_WORKFLOW_DIRNAME,

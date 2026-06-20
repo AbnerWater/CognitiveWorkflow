@@ -29,6 +29,13 @@ export interface RuntimeIpcFetchRequest {
   readonly init?: RuntimeIpcFetchInit;
 }
 
+export interface RuntimeIpcRequestHeadersInput {
+  readonly token: string;
+  readonly projectId?: string;
+  readonly idempotencyKey?: string;
+  readonly extraHeaders?: Readonly<Record<string, string>>;
+}
+
 export interface RuntimeIpcResponse<TBody = unknown> {
   readonly ok: boolean;
   readonly status: number;
@@ -99,6 +106,46 @@ export function buildRuntimeIpcFetchRequest(
   };
 }
 
+export function buildRuntimeIpcRequestHeaders(
+  input: RuntimeIpcRequestHeadersInput,
+): Readonly<Record<string, string>> {
+  const token = requireSafeToken(input.token);
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    "X-Cw-Client": "electron-renderer",
+  };
+
+  if (input.projectId !== undefined) {
+    headers["X-Project-Id"] = requireSafeHeaderValue(
+      "X-Project-Id",
+      input.projectId,
+    );
+  }
+
+  if (input.idempotencyKey !== undefined) {
+    headers["Idempotency-Key"] = requireSafeHeaderValue(
+      "Idempotency-Key",
+      input.idempotencyKey,
+    );
+  }
+
+  if (input.extraHeaders !== undefined) {
+    for (const [name, value] of Object.entries(input.extraHeaders)) {
+      assertRuntimeIpcHeaderName(name);
+      const normalizedName = name.toLowerCase();
+      if (RESERVED_RUNTIME_IPC_HEADERS.has(normalizedName)) {
+        throw new Error(
+          `Runtime header ${name} is reserved for runtime injection`,
+        );
+      }
+
+      headers[name] = requireSafeHeaderValue(name, value);
+    }
+  }
+
+  return headers;
+}
+
 function normalizeRuntimeIpcFetchInit(
   init: RuntimeIpcFetchInit,
 ): RuntimeIpcFetchInit {
@@ -149,9 +196,7 @@ function normalizeRuntimeIpcHeaders(
 
   for (const [name, value] of Object.entries(headers)) {
     const lowerName = name.toLowerCase();
-    if (!HEADER_NAME_PATTERN.test(name)) {
-      throw new Error(`Runtime IPC header name is invalid: ${name}`);
-    }
+    assertRuntimeIpcHeaderName(name);
     if (RESERVED_RUNTIME_IPC_HEADERS.has(lowerName)) {
       throw new Error(`Runtime IPC header ${name} is reserved`);
     }
@@ -160,6 +205,12 @@ function normalizeRuntimeIpcHeaders(
   }
 
   return normalized;
+}
+
+function assertRuntimeIpcHeaderName(name: string): void {
+  if (!HEADER_NAME_PATTERN.test(name)) {
+    throw new Error(`Runtime IPC header name is invalid: ${name}`);
+  }
 }
 
 function requireSafeHeaderValue(label: string, value: string): string {
@@ -172,4 +223,15 @@ function requireSafeHeaderValue(label: string, value: string): string {
   }
 
   return value;
+}
+
+function requireSafeToken(value: string): string {
+  const token = value.trim();
+  if (token.length === 0 || /[\u0000-\u001f\u007f\s]/u.test(token)) {
+    throw new Error(
+      "Authorization token must be non-empty and contain no whitespace or control characters",
+    );
+  }
+
+  return token;
 }
