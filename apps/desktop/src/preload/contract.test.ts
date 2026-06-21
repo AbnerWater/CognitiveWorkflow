@@ -2208,6 +2208,280 @@ test("renderer runtime stream session factory builds runtime-backed sessions", a
   );
 });
 
+test("renderer runtime stream session factory applies default stream controls", async () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const scheduler = createFakeRuntimeStreamReconnectScheduler();
+  const eventSourceFactory = () => createFakeRuntimeStreamEventSource().source;
+  const runtime = {
+    connectionInfo: async () => ({
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_factory",
+    }),
+  };
+  const eventErrors: unknown[] = [];
+  const connectionErrors: unknown[] = [];
+  const replayDecisions: unknown[] = [];
+  const fullReloads: RuntimeStreamFullReloadDecision[] = [];
+  const sessionErrors: unknown[] = [];
+  const onEventError = (error: unknown) => {
+    eventErrors.push(error);
+  };
+  const onConnectionError = (error: unknown) => {
+    connectionErrors.push(error);
+  };
+  const onReplayDecision = (decision: unknown) => {
+    replayDecisions.push(decision);
+  };
+  const onFullReloadRequired = (decision: RuntimeStreamFullReloadDecision) => {
+    fullReloads.push(decision);
+  };
+  const sessionFactory = createRuntimeStreamInteractionSessionFactory({
+    runtime,
+    eventSourceFactory,
+    projectId: "project_default",
+    filters: { category: ["model", "tool"], level: "detailed", sinceSeq: 7 },
+    scheduler: scheduler.scheduler,
+    onEventError,
+    onConnectionError,
+    onReplayDecision,
+    onFullReloadRequired,
+    onError: (error) => {
+      sessionErrors.push(error);
+    },
+  });
+
+  const session = sessionFactory.createSession({
+    channel: { kind: "run", runId: "run_01J" },
+    clientFactory: clientFactory.factory,
+    eventTypes: ["model.text_delta"],
+  });
+
+  await session.start();
+  const clientOptions = clientFactory.options[0];
+  assert.ok(clientOptions !== undefined);
+  assert.equal(clientOptions.runtime, runtime);
+  assert.equal(clientOptions.eventSourceFactory, eventSourceFactory);
+  assert.deepEqual(clientOptions.channel, { kind: "run", runId: "run_01J" });
+  assert.equal(clientOptions.projectId, "project_default");
+  assert.deepEqual(clientOptions.filters, {
+    category: ["model", "tool"],
+    level: "detailed",
+    sinceSeq: 7,
+  });
+  assert.equal(clientOptions.scheduler, scheduler.scheduler);
+  assert.equal(clientOptions.replayState, undefined);
+  assert.equal(clientOptions.onEventError, onEventError);
+  assert.equal(clientOptions.onConnectionError, onConnectionError);
+  assert.equal(clientOptions.onReplayDecision, onReplayDecision);
+
+  clientOptions.onEventError?.(new Error("default event hook"));
+  clientOptions.onConnectionError?.(new Error("default connection hook"));
+  clientOptions.onReplayDecision?.({
+    action: "reconnect",
+    lastEventId: "evt_factory_default",
+    attempt: 1,
+    retryAfterMs: 3000,
+  });
+  assert.equal(eventErrors.length, 1);
+  assert.equal(connectionErrors.length, 1);
+  assert.deepEqual(replayDecisions, [
+    {
+      action: "reconnect",
+      lastEventId: "evt_factory_default",
+      attempt: 1,
+      retryAfterMs: 3000,
+    },
+  ]);
+
+  session.subscribe(() => {
+    throw new Error("default onError failed");
+  });
+  const client = clientFactory.clients[0];
+  assert.ok(client !== undefined);
+  client.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_factory_default_emit",
+      seq: 1,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "Factory default emit",
+      content: "default",
+      expandable: false,
+      created_at: "2026-06-21T00:00:00.004Z",
+    }),
+  );
+  assert.equal(sessionErrors.length, 1);
+
+  client.fullReload({
+    action: "full_reload",
+    lastEventId: "evt_factory_default_emit",
+    reason: "replay point missing",
+    status: 412,
+  });
+  assert.deepEqual(fullReloads, [
+    {
+      action: "full_reload",
+      lastEventId: "evt_factory_default_emit",
+      reason: "replay point missing",
+      status: 412,
+    },
+  ]);
+  assert.equal(session.snapshot().store.status, "full_reload_required");
+  assert.equal(session.dispose(), true);
+});
+
+test("renderer runtime stream session factory lets sessions override stream controls", async () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const factoryScheduler = createFakeRuntimeStreamReconnectScheduler();
+  const sessionScheduler = createFakeRuntimeStreamReconnectScheduler();
+  const sessionReplayState = createRuntimeStreamReplayState({
+    initialLastEventId: "evt_session_override",
+  });
+  const eventSourceFactory = () => createFakeRuntimeStreamEventSource().source;
+  const runtime = {
+    connectionInfo: async () => ({
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_factory",
+    }),
+  };
+  const factorySessionErrors: unknown[] = [];
+  const sessionErrors: unknown[] = [];
+  const sessionEventErrors: unknown[] = [];
+  const sessionConnectionErrors: unknown[] = [];
+  const sessionReplayDecisions: unknown[] = [];
+  const sessionFullReloads: RuntimeStreamFullReloadDecision[] = [];
+  const sessionOnEventError = (error: unknown) => {
+    sessionEventErrors.push(error);
+  };
+  const sessionOnConnectionError = (error: unknown) => {
+    sessionConnectionErrors.push(error);
+  };
+  const sessionOnReplayDecision = (decision: unknown) => {
+    sessionReplayDecisions.push(decision);
+  };
+  const sessionOnFullReloadRequired = (
+    decision: RuntimeStreamFullReloadDecision,
+  ) => {
+    sessionFullReloads.push(decision);
+  };
+  const sessionFactory = createRuntimeStreamInteractionSessionFactory({
+    runtime,
+    eventSourceFactory,
+    projectId: "project_default",
+    filters: { category: "model" },
+    scheduler: factoryScheduler.scheduler,
+    onEventError: () => {
+      throw new Error("factory event hook should be overridden");
+    },
+    onConnectionError: () => {
+      throw new Error("factory connection hook should be overridden");
+    },
+    onReplayDecision: () => {
+      throw new Error("factory replay hook should be overridden");
+    },
+    onFullReloadRequired: () => {
+      throw new Error("factory reload hook should be overridden");
+    },
+    onError: (error) => {
+      factorySessionErrors.push(error);
+    },
+  });
+
+  const session = sessionFactory.createSession({
+    channel: { kind: "planning", sessionId: "wps_override" },
+    projectId: "project_session",
+    filters: { category: "planning", untilSeq: 99 },
+    clientFactory: clientFactory.factory,
+    eventTypes: ["planning.phase_changed"],
+    replayState: sessionReplayState,
+    scheduler: sessionScheduler.scheduler,
+    onEventError: sessionOnEventError,
+    onConnectionError: sessionOnConnectionError,
+    onReplayDecision: sessionOnReplayDecision,
+    onFullReloadRequired: sessionOnFullReloadRequired,
+    onError: (error) => {
+      sessionErrors.push(error);
+    },
+  });
+
+  await session.start();
+  const clientOptions = clientFactory.options[0];
+  assert.ok(clientOptions !== undefined);
+  assert.deepEqual(clientOptions.channel, {
+    kind: "planning",
+    sessionId: "wps_override",
+  });
+  assert.equal(clientOptions.projectId, "project_session");
+  assert.deepEqual(clientOptions.filters, {
+    category: "planning",
+    untilSeq: 99,
+  });
+  assert.equal(clientOptions.scheduler, sessionScheduler.scheduler);
+  assert.equal(clientOptions.replayState, sessionReplayState);
+  assert.equal(clientOptions.onEventError, sessionOnEventError);
+  assert.equal(clientOptions.onConnectionError, sessionOnConnectionError);
+  assert.equal(clientOptions.onReplayDecision, sessionOnReplayDecision);
+
+  clientOptions.onEventError?.(new Error("session event hook"));
+  clientOptions.onConnectionError?.(new Error("session connection hook"));
+  clientOptions.onReplayDecision?.({
+    action: "reconnect",
+    lastEventId: "evt_session_override",
+    attempt: 2,
+    retryAfterMs: 1500,
+  });
+  assert.equal(sessionEventErrors.length, 1);
+  assert.equal(sessionConnectionErrors.length, 1);
+  assert.deepEqual(sessionReplayDecisions, [
+    {
+      action: "reconnect",
+      lastEventId: "evt_session_override",
+      attempt: 2,
+      retryAfterMs: 1500,
+    },
+  ]);
+
+  session.subscribe(() => {
+    throw new Error("session onError failed");
+  });
+  const client = clientFactory.clients[0];
+  assert.ok(client !== undefined);
+  client.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_session_override_emit",
+      seq: 1,
+      type: "planning.phase_changed",
+      category: "planning",
+      display_level: "default",
+      severity: "info",
+      title: "Session override emit",
+      expandable: false,
+      created_at: "2026-06-21T00:00:00.005Z",
+    }),
+  );
+  assert.equal(sessionErrors.length, 1);
+  assert.equal(factorySessionErrors.length, 0);
+
+  client.fullReload({
+    action: "full_reload",
+    lastEventId: "evt_session_override_emit",
+    reason: "session replay point missing",
+    errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+  });
+  assert.deepEqual(sessionFullReloads, [
+    {
+      action: "full_reload",
+      lastEventId: "evt_session_override_emit",
+      reason: "session replay point missing",
+      errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+    },
+  ]);
+  assert.equal(session.snapshot().store.status, "full_reload_required");
+  assert.equal(session.dispose(), true);
+});
+
 test("renderer runtime stream session uses spec channel defaults and lifecycle stop", async () => {
   assert.equal(
     new Set(RUNTIME_STREAM_ALL_EVENT_TYPES).size,
