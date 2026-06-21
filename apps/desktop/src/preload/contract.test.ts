@@ -16,6 +16,7 @@ import {
   assertRuntimeRequestPath,
   buildRuntimeRequestHeaders,
   type CwDesktopApi,
+  type RuntimeBridge,
   type RuntimeRequestInit,
 } from "./contract.js";
 import { CW_PRELOAD_API_KEY, createCwDesktopApi } from "./api.js";
@@ -39,6 +40,7 @@ import {
   createRuntimeStartupStatusViewModel,
   type RuntimeStartupStatusViewModelStore,
 } from "../renderer/startup-status-view-model.js";
+import { createRuntimeStartupStatusSession } from "../renderer/startup-status-session.js";
 import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
@@ -967,6 +969,155 @@ test("renderer startup status view model subscribes and isolates snapshots", () 
   assert.equal(viewModel.listenerCount(), 0);
   assert.equal(store.listenerCount(), 0);
   assert.equal(viewModel.subscribe(() => undefined)(), false);
+});
+
+test("renderer startup status session composes store and view model", async () => {
+  const runtime = createFakeRuntimeStartupStatusRuntime([
+    createStartupStatus("starting_sidecar"),
+  ]);
+  const session = createRuntimeStartupStatusSession({
+    runtime: runtime.runtime,
+  });
+  const published: Array<{
+    readonly phase: string;
+    readonly started: boolean;
+    readonly total: number;
+  }> = [];
+
+  assert.equal(session.store.listenerCount(), 1);
+  assert.equal(session.viewModel.listenerCount(), 0);
+  assert.equal(session.isStarted(), false);
+  assert.equal(session.snapshot().view.phase, "idle");
+
+  const unsubscribe = session.subscribe((snapshot) => {
+    published.push({
+      phase: snapshot.view.phase,
+      started: snapshot.started,
+      total: snapshot.statuses.length,
+    });
+  });
+  assert.equal(session.listenerCount(), 1);
+  assert.equal(session.viewModel.listenerCount(), 1);
+
+  const started = session.start();
+  assert.equal(started.started, true);
+  assert.equal(runtime.listenerCount(), 1);
+  assert.deepEqual(published, [{ phase: "idle", started: true, total: 0 }]);
+
+  const refreshed = await session.refresh();
+  assert.equal(refreshed.view.phase, "starting");
+  assert.equal(refreshed.statuses.length, 1);
+  assert.deepEqual(published.at(-1), {
+    phase: "starting",
+    started: true,
+    total: 1,
+  });
+
+  runtime.emit([createStartupStatus("runtime_ready")]);
+  assert.equal(session.snapshot().view.phase, "ready");
+  assert.equal(session.snapshot().statuses.length, 2);
+  assert.deepEqual(published.at(-1), {
+    phase: "ready",
+    started: true,
+    total: 2,
+  });
+
+  assert.equal(session.stop(), true);
+  assert.equal(runtime.unsubscribeCount(), 1);
+  assert.equal(session.isStarted(), false);
+  assert.deepEqual(published.at(-1), {
+    phase: "ready",
+    started: false,
+    total: 2,
+  });
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(session.viewModel.listenerCount(), 0);
+  assert.equal(session.dispose(), true);
+});
+
+test("renderer startup status session isolates listeners and cleans up", async () => {
+  const errors: unknown[] = [];
+  const runtime = createFakeRuntimeStartupStatusRuntime([
+    createStartupStatus("starting_sidecar"),
+  ]);
+  const pageLifecycle = createFakeRuntimeStartupStatusPageLifecycleTarget();
+  const session = createRuntimeStartupStatusSession({
+    runtime: runtime.runtime,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly phase: string;
+    readonly started: boolean;
+    readonly total: number;
+  }> = [];
+
+  const unsubscribeThrowing = session.subscribe((snapshot) => {
+    const mutableStatuses = snapshot.statuses as RuntimeIpcStartupStatus[];
+    mutableStatuses.push(createStartupStatus("startup_blocked"));
+    throw new Error("startup session listener failed");
+  });
+  const unsubscribeObserved = session.subscribe((snapshot) => {
+    observed.push({
+      phase: snapshot.view.phase,
+      started: snapshot.started,
+      total: snapshot.statuses.length,
+    });
+  });
+
+  assert.equal(session.listenerCount(), 2);
+  assert.equal(session.viewModel.listenerCount(), 1);
+  session.start();
+  await session.refresh();
+
+  assert.deepEqual(observed, [
+    { phase: "idle", started: true, total: 0 },
+    { phase: "starting", started: true, total: 1 },
+  ]);
+  assert.equal(errors.length, 2);
+  assert.deepEqual(session.snapshot().statuses, [
+    createStartupStatus("starting_sidecar"),
+  ]);
+
+  const unbindPageLifecycle = session.bindPageLifecycle(pageLifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 1);
+  pageLifecycle.emit("pagehide");
+  assert.equal(session.isStarted(), false);
+  assert.equal(runtime.unsubscribeCount(), 1);
+  assert.deepEqual(observed.at(-1), {
+    phase: "starting",
+    started: false,
+    total: 1,
+  });
+  assert.equal(observed.length, 3);
+  assert.equal(errors.length, 3);
+  assert.equal(unbindPageLifecycle(), true);
+  assert.equal(observed.length, 3);
+  assert.equal(errors.length, 3);
+  assert.equal(unbindPageLifecycle(), false);
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 0);
+
+  assert.equal(unsubscribeThrowing(), true);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), true);
+  assert.equal(session.listenerCount(), 0);
+  assert.equal(session.viewModel.listenerCount(), 0);
+  assert.equal(session.dispose(), true);
+  assert.equal(session.dispose(), false);
+  assert.equal(session.store.listenerCount(), 0);
+  assert.equal(session.viewModel.listenerCount(), 0);
+  assert.equal(session.isDisposed(), true);
+  assert.equal(session.subscribe(() => undefined)(), false);
+  assert.throws(() => session.start(), /startup status session is disposed/u);
+  await assert.rejects(
+    async () => session.refresh(),
+    /startup status session is disposed/u,
+  );
+  assert.equal(session.stop(), false);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
@@ -3485,6 +3636,89 @@ function createStartupStatus(
         reason: "runtime did not become ready before timeout",
       };
   }
+}
+
+function createFakeRuntimeStartupStatusRuntime(
+  initialStatuses: readonly RuntimeIpcStartupStatus[],
+): {
+  readonly runtime: Pick<RuntimeBridge, "startupStatus" | "onStartupStatus">;
+  readonly setSnapshot: (statuses: readonly RuntimeIpcStartupStatus[]) => void;
+  readonly emit: (statuses: readonly RuntimeIpcStartupStatus[]) => void;
+  readonly listenerCount: () => number;
+  readonly unsubscribeCount: () => number;
+} {
+  let statuses = cloneStartupStatuses(initialStatuses);
+  let unsubscribeCount = 0;
+  const listeners = new Set<
+    (statuses: readonly RuntimeIpcStartupStatus[]) => void
+  >();
+
+  return {
+    runtime: {
+      startupStatus: async () => cloneStartupStatuses(statuses),
+      onStartupStatus: (listener) => {
+        listeners.add(listener);
+        let subscribed = true;
+        return () => {
+          if (!subscribed) {
+            return false;
+          }
+          subscribed = false;
+          const deleted = listeners.delete(listener);
+          if (deleted) {
+            unsubscribeCount += 1;
+          }
+          return deleted;
+        };
+      },
+    },
+    setSnapshot: (nextStatuses) => {
+      statuses = cloneStartupStatuses(nextStatuses);
+    },
+    emit: (nextStatuses) => {
+      for (const listener of [...listeners]) {
+        listener(cloneStartupStatuses(nextStatuses));
+      }
+    },
+    listenerCount: () => listeners.size,
+    unsubscribeCount: () => unsubscribeCount,
+  };
+}
+
+function createFakeRuntimeStartupStatusPageLifecycleTarget(): {
+  readonly addEventListener: (
+    eventType: RuntimeStartupStatusPageLifecycleEvent,
+    listener: RuntimeStartupStatusPageLifecycleListener,
+  ) => void;
+  readonly removeEventListener: (
+    eventType: RuntimeStartupStatusPageLifecycleEvent,
+    listener: RuntimeStartupStatusPageLifecycleListener,
+  ) => void;
+  readonly emit: (eventType: RuntimeStartupStatusPageLifecycleEvent) => void;
+  readonly listenerCount: (
+    eventType: RuntimeStartupStatusPageLifecycleEvent,
+  ) => number;
+} {
+  const listeners = new Map<
+    RuntimeStartupStatusPageLifecycleEvent,
+    Set<RuntimeStartupStatusPageLifecycleListener>
+  >();
+  return {
+    addEventListener: (eventType, listener) => {
+      const eventListeners = listeners.get(eventType) ?? new Set();
+      eventListeners.add(listener);
+      listeners.set(eventType, eventListeners);
+    },
+    removeEventListener: (eventType, listener) => {
+      listeners.get(eventType)?.delete(listener);
+    },
+    emit: (eventType) => {
+      for (const listener of [...(listeners.get(eventType) ?? [])]) {
+        listener();
+      }
+    },
+    listenerCount: (eventType) => listeners.get(eventType)?.size ?? 0,
+  };
 }
 
 function createShutdownStatus(
