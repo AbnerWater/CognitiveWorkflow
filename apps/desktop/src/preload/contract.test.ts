@@ -50,6 +50,7 @@ import {
   createRuntimeLifecycleViewState,
   type RuntimeLifecycleViewStateItem,
 } from "../renderer/runtime-lifecycle-view-state.js";
+import { createRuntimeLifecycleShellSession } from "../renderer/runtime-lifecycle-shell-session.js";
 import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
@@ -1558,6 +1559,240 @@ test("renderer runtime lifecycle view state isolates listeners and disposes", as
   assert.equal(viewState.snapshot().disposed, true);
   assert.equal(viewState.snapshot().primaryAction, "none");
   assert.equal(viewState.subscribe(() => undefined)(), false);
+});
+
+test("renderer runtime lifecycle shell session composes controller and view state", async () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const session = createRuntimeLifecycleShellSession({
+    runtime: runtime.runtime,
+  });
+  const published: Array<{
+    readonly readiness: string;
+    readonly primaryAction: string;
+    readonly started: boolean;
+    readonly runtimeReady: boolean;
+    readonly itemTotal: number;
+  }> = [];
+
+  assert.equal(session.isStarted(), false);
+  assert.equal(session.snapshot().view.readiness, "idle");
+  assert.equal(session.snapshot().view.primaryAction, "start_runtime");
+  assert.equal(session.snapshot().view.runtimeReady, false);
+  assert.equal(session.snapshot().started, false);
+  assert.equal(session.snapshot().disposed, false);
+
+  const unsubscribe = session.subscribe((snapshot) => {
+    published.push({
+      readiness: snapshot.view.readiness,
+      primaryAction: snapshot.view.primaryAction,
+      started: snapshot.started,
+      runtimeReady: snapshot.view.runtimeReady,
+      itemTotal: snapshot.view.items.length,
+    });
+  });
+  assert.equal(session.listenerCount(), 1);
+  assert.equal(session.viewState.listenerCount(), 1);
+
+  const started = session.start();
+  assert.equal(started.started, true);
+  assert.equal(started.view.readiness, "idle");
+  assert.equal(session.isStarted(), true);
+  assert.equal(runtime.startupListenerCount(), 1);
+  assert.equal(runtime.shutdownListenerCount(), 1);
+  assert.deepEqual(published, [
+    {
+      readiness: "idle",
+      primaryAction: "start_runtime",
+      started: true,
+      runtimeReady: false,
+      itemTotal: 0,
+    },
+  ]);
+
+  const refreshed = await session.refresh();
+  assert.equal(refreshed.view.readiness, "busy");
+  assert.equal(refreshed.view.primaryAction, "wait");
+  assert.equal(refreshed.view.items.length, 2);
+  assert.deepEqual(published.at(-1), {
+    readiness: "busy",
+    primaryAction: "wait",
+    started: true,
+    runtimeReady: false,
+    itemTotal: 2,
+  });
+
+  runtime.emitStartup([createStartupStatus("runtime_ready")]);
+  assert.equal(session.snapshot().view.readiness, "ready");
+  assert.equal(session.snapshot().view.runtimeReady, true);
+  assert.equal(session.snapshot().view.primaryAction, "none");
+  assert.deepEqual(published.at(-1), {
+    readiness: "ready",
+    primaryAction: "none",
+    started: true,
+    runtimeReady: true,
+    itemTotal: 3,
+  });
+
+  runtime.emitShutdown([createShutdownStatus("shutting_down")]);
+  assert.equal(session.snapshot().view.readiness, "shutting_down");
+  assert.equal(session.snapshot().view.primaryAction, "wait");
+  assert.deepEqual(published.at(-1), {
+    readiness: "shutting_down",
+    primaryAction: "wait",
+    started: true,
+    runtimeReady: false,
+    itemTotal: 4,
+  });
+
+  assert.equal(session.stop(), true);
+  assert.equal(session.isStarted(), false);
+  assert.deepEqual(published.at(-1), {
+    readiness: "shutting_down",
+    primaryAction: "wait",
+    started: false,
+    runtimeReady: false,
+    itemTotal: 4,
+  });
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(session.listenerCount(), 0);
+  assert.equal(session.viewState.listenerCount(), 0);
+  assert.equal(session.dispose(), true);
+});
+
+test("renderer runtime lifecycle shell session isolates listeners and disposes", async () => {
+  const errors: unknown[] = [];
+  const sensitiveReason =
+    "token_abc base_url=http://127.0.0.1:51234/cw/v1 prompt model output";
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [{ ...createStartupStatus("startup_blocked"), reason: sensitiveReason }],
+    [{ ...createShutdownStatus("shutdown_failed"), reason: sensitiveReason }],
+  );
+  const pageLifecycle = createFakeRuntimeLifecycleStatusPageLifecycleTarget();
+  const session = createRuntimeLifecycleShellSession({
+    runtime: runtime.runtime,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly readiness: string;
+    readonly itemTotal: number;
+    readonly latestTitle: string | null;
+    readonly started: boolean;
+  }> = [];
+
+  const unsubscribeThrowing = session.subscribe((snapshot) => {
+    const mutableItems = snapshot.view.items as RuntimeLifecycleViewStateItem[];
+    mutableItems.push({
+      source: "shutdown",
+      kind: "shutdown_failed",
+      phase: "failed",
+      tone: "error",
+      title: "Mutated",
+      summary: "Mutated",
+      lifecycleComplete: true,
+      userActionRequired: true,
+      retryable: true,
+    });
+    if (snapshot.view.latestItem !== null) {
+      const mutableLatest = snapshot.view.latestItem as { title: string };
+      mutableLatest.title = "Mutated";
+    }
+    const mutableSnapshot = snapshot as { started: boolean };
+    mutableSnapshot.started = false;
+    throw new Error("lifecycle shell session listener failed");
+  });
+  const unsubscribeObserved = session.subscribe((snapshot) => {
+    observed.push({
+      readiness: snapshot.view.readiness,
+      itemTotal: snapshot.view.items.length,
+      latestTitle: snapshot.view.latestItem?.title ?? null,
+      started: snapshot.started,
+    });
+  });
+
+  session.start();
+  await session.refresh();
+  assert.deepEqual(observed, [
+    { readiness: "idle", itemTotal: 0, latestTitle: null, started: true },
+    {
+      readiness: "attention_required",
+      itemTotal: 2,
+      latestTitle: "Runtime shutdown failed",
+      started: true,
+    },
+  ]);
+  assert.equal(errors.length, 2);
+  assert.equal(
+    session.snapshot().view.latestItem?.title,
+    "Runtime shutdown failed",
+  );
+  assert.deepEqual(
+    session.snapshot().view.items.map((item) => item.title),
+    ["Startup blocked", "Runtime shutdown failed"],
+  );
+  assert.equal(
+    session.snapshot().view.items.some((item) => Object.hasOwn(item, "reason")),
+    false,
+  );
+  const visibleText = [
+    session.snapshot().view.title,
+    session.snapshot().view.summary,
+    session.snapshot().view.latestItem?.title ?? "",
+    session.snapshot().view.latestItem?.summary ?? "",
+    ...session
+      .snapshot()
+      .view.items.flatMap((item) => [item.title, item.summary]),
+  ].join("\n");
+  assert.doesNotMatch(visibleText, /token_abc/u);
+  assert.doesNotMatch(visibleText, /base_url/u);
+  assert.doesNotMatch(visibleText, /prompt/u);
+  assert.doesNotMatch(visibleText, /model output/u);
+
+  const unbindPageLifecycle = session.bindPageLifecycle(pageLifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 1);
+  pageLifecycle.emit("pagehide");
+  assert.equal(session.isStarted(), false);
+  assert.deepEqual(observed.at(-1), {
+    readiness: "attention_required",
+    itemTotal: 2,
+    latestTitle: "Runtime shutdown failed",
+    started: false,
+  });
+  assert.equal(observed.length, 3);
+  assert.equal(errors.length, 3);
+  assert.equal(unbindPageLifecycle(), true);
+  assert.equal(observed.length, 3);
+  assert.equal(errors.length, 3);
+  assert.equal(unbindPageLifecycle(), false);
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 0);
+
+  assert.equal(unsubscribeThrowing(), true);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), true);
+  assert.equal(session.listenerCount(), 0);
+  assert.equal(session.viewState.listenerCount(), 0);
+  assert.equal(session.dispose(), true);
+  assert.equal(session.dispose(), false);
+  assert.equal(session.isDisposed(), true);
+  assert.equal(session.viewState.isDisposed(), true);
+  assert.equal(session.controller.isDisposed(), true);
+  assert.equal(session.snapshot().disposed, true);
+  assert.equal(session.snapshot().view.disposed, true);
+  assert.equal(session.snapshot().view.primaryAction, "none");
+  assert.equal(session.subscribe(() => undefined)(), false);
+  assert.throws(() => session.start(), /lifecycle shell session is disposed/u);
+  await assert.rejects(
+    async () => session.refresh(),
+    /lifecycle shell session is disposed/u,
+  );
+  assert.equal(session.stop(), false);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
