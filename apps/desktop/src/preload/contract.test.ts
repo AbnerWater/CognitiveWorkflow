@@ -100,6 +100,7 @@ import {
   type RuntimeWorkbenchShellKeyboardEventListener,
 } from "../renderer/runtime-workbench-shell-keyboard-binding.js";
 import { bindRuntimeWorkbenchShellKeyboardDomTarget } from "../renderer/runtime-workbench-shell-keyboard-dom-adapter.js";
+import { createRuntimeWorkbenchShellDomSession } from "../renderer/runtime-workbench-shell-dom-session.js";
 import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
@@ -5950,6 +5951,139 @@ test("renderer runtime workbench shell keyboard DOM adapter validates lifecycle"
   );
   assert.equal(target.listenerCount("keydown"), 0);
   assert.equal(noOpUnbind(), false);
+  harness.host.dispose();
+});
+
+test("renderer runtime workbench shell DOM session manages keyboard target lifecycle", async () => {
+  const harness = createRuntimeWorkbenchShellAdapterHarness(
+    "token_workbench_shell_dom_session",
+  );
+  const firstTarget = createFakeRuntimeWorkbenchShellDomEventTarget();
+  const secondTarget = createFakeRuntimeWorkbenchShellDomEventTarget();
+  const firstListenerOptions = { capture: true };
+  const secondListenerOptions = { capture: false };
+  let preventDefaultCount = 0;
+  const session = createRuntimeWorkbenchShellDomSession({
+    adapter: harness.adapter,
+    keyboardTarget: firstTarget,
+    keyboardOptions: { listenerOptions: firstListenerOptions },
+  });
+
+  assert.equal(session.getSnapshot(), harness.adapter.getSnapshot());
+  assert.equal(session.isKeyboardTargetBound(), true);
+  assert.equal(firstTarget.listenerCount("keydown"), 1);
+  assert.deepEqual(firstTarget.listenerOptions("keydown"), [
+    firstListenerOptions,
+  ]);
+
+  firstTarget.emit(
+    "keydown",
+    createFakeRuntimeWorkbenchShellDomKeyboardEvent({
+      key: "2",
+      ctrlKey: true,
+      preventDefault: () => {
+        preventDefaultCount += 1;
+      },
+    }),
+  );
+  await flushRuntimeWorkbenchShellKeyboardDomBinding();
+  assert.equal(session.getSnapshot().activePanel, "stream");
+  assert.equal(preventDefaultCount, 1);
+
+  assert.equal(
+    session.bindKeyboardTarget(secondTarget, {
+      eventType: "keyup",
+      listenerOptions: secondListenerOptions,
+    }),
+    true,
+  );
+  assert.equal(firstTarget.listenerCount("keydown"), 0);
+  assert.strictEqual(
+    firstTarget.removedListenerOptions("keydown")[0],
+    firstListenerOptions,
+  );
+  assert.equal(secondTarget.listenerCount("keydown"), 0);
+  assert.equal(secondTarget.listenerCount("keyup"), 1);
+  assert.equal(session.isKeyboardTargetBound(), true);
+
+  secondTarget.emit(
+    "keydown",
+    createFakeRuntimeWorkbenchShellDomKeyboardEvent({
+      key: "1",
+      ctrlKey: true,
+    }),
+  );
+  await flushRuntimeWorkbenchShellKeyboardDomBinding();
+  assert.equal(session.getSnapshot().activePanel, "stream");
+
+  secondTarget.emit(
+    "keyup",
+    createFakeRuntimeWorkbenchShellDomKeyboardEvent({
+      key: "1",
+      ctrlKey: true,
+      preventDefault: () => {
+        preventDefaultCount += 1;
+      },
+    }),
+  );
+  await flushRuntimeWorkbenchShellKeyboardDomBinding();
+  assert.equal(session.getSnapshot().activePanel, "lifecycle");
+  assert.equal(preventDefaultCount, 2);
+
+  assert.equal(session.unbindKeyboardTarget(), true);
+  assert.equal(secondTarget.listenerCount("keyup"), 0);
+  assert.strictEqual(
+    secondTarget.removedListenerOptions("keyup")[0],
+    secondListenerOptions,
+  );
+  assert.equal(session.isKeyboardTargetBound(), false);
+  assert.equal(session.unbindKeyboardTarget(), false);
+
+  secondTarget.emit(
+    "keyup",
+    createFakeRuntimeWorkbenchShellDomKeyboardEvent({
+      key: "2",
+      ctrlKey: true,
+    }),
+  );
+  await flushRuntimeWorkbenchShellKeyboardDomBinding();
+  assert.equal(session.getSnapshot().activePanel, "lifecycle");
+
+  assert.equal(session.dispose(), true);
+  assert.equal(session.dispose(), false);
+  assert.equal(session.isDisposed(), true);
+  harness.host.dispose();
+});
+
+test("renderer runtime workbench shell DOM session fails closed after dispose", async () => {
+  const harness = createRuntimeWorkbenchShellAdapterHarness(
+    "token_workbench_shell_dom_session_disposed",
+  );
+  const target = createFakeRuntimeWorkbenchShellDomEventTarget();
+  const session = createRuntimeWorkbenchShellDomSession({
+    adapter: harness.adapter,
+    keyboardTarget: target,
+  });
+
+  assert.equal(target.listenerCount("keydown"), 1);
+  assert.equal(session.dispose(), true);
+  assert.equal(target.listenerCount("keydown"), 0);
+  assert.equal(harness.adapter.isDisposed(), true);
+  assert.equal(harness.host.isDisposed(), false);
+  assert.equal(session.subscribe(() => undefined)(), false);
+  assert.equal(session.bindKeyboardTarget(target), false);
+  assert.equal(target.listenerCount("keydown"), 0);
+  assert.equal(session.unbindKeyboardTarget(), false);
+  assert.throws(
+    () => session.setActivePanel("stream"),
+    /Runtime workbench shell adapter is disposed/u,
+  );
+  await assert.rejects(async () => {
+    await session.dispatch({ type: "show_stream_panel" });
+  }, /Runtime workbench shell adapter is disposed/u);
+  await assert.rejects(async () => {
+    await session.handleKeyEvent({ key: "2", ctrlKey: true });
+  }, /Runtime workbench shell adapter is disposed/u);
   harness.host.dispose();
 });
 
