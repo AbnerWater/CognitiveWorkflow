@@ -35,6 +35,11 @@ import {
   type RuntimeStartupStatusPageLifecycleListener,
 } from "../renderer/startup-status-client.js";
 import {
+  buildRuntimeStartupStatusViewModelSnapshot,
+  createRuntimeStartupStatusViewModel,
+  type RuntimeStartupStatusViewModelStore,
+} from "../renderer/startup-status-view-model.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -842,6 +847,126 @@ test("renderer startup status page lifecycle binding stops and disposes once", (
   assert.equal(events.has("pagehide"), false);
   assert.equal(dispose(), false);
   assert.equal(stopCalls, 1);
+});
+
+test("renderer startup status view model projects panel snapshots", () => {
+  assert.deepEqual(buildRuntimeStartupStatusViewModelSnapshot([]), {
+    phase: "idle",
+    tone: "info",
+    title: "Runtime startup is idle",
+    summary: "No runtime startup status has been received.",
+    latestStatus: null,
+    items: [],
+    totalStatuses: 0,
+    lifecycleComplete: false,
+    userActionRequired: false,
+    retryable: false,
+  });
+
+  const snapshot = buildRuntimeStartupStatusViewModelSnapshot([
+    createStartupStatus("starting_sidecar"),
+    createStartupStatus("runtime_ready"),
+  ]);
+
+  assert.equal(snapshot.phase, "ready");
+  assert.equal(snapshot.tone, "success");
+  assert.equal(snapshot.title, "Runtime ready");
+  assert.equal(snapshot.summary, "Runtime sidecar is ready.");
+  assert.equal(snapshot.totalStatuses, 2);
+  assert.equal(snapshot.lifecycleComplete, true);
+  assert.equal(snapshot.userActionRequired, false);
+  assert.equal(snapshot.retryable, false);
+  assert.deepEqual(
+    snapshot.items.map((item) => item.title),
+    ["Starting runtime", "Runtime ready"],
+  );
+
+  const blockedSnapshot = buildRuntimeStartupStatusViewModelSnapshot([
+    createStartupStatus("startup_blocked"),
+  ]);
+  assert.equal(blockedSnapshot.phase, "blocked");
+  assert.equal(blockedSnapshot.tone, "error");
+  assert.equal(blockedSnapshot.userActionRequired, true);
+  assert.equal(blockedSnapshot.retryable, false);
+  assert.match(blockedSnapshot.summary, /runtime lock is corrupt/u);
+
+  const timedOutSnapshot = buildRuntimeStartupStatusViewModelSnapshot([
+    createStartupStatus("startup_timed_out"),
+  ]);
+  assert.equal(timedOutSnapshot.phase, "timed_out");
+  assert.equal(timedOutSnapshot.tone, "error");
+  assert.equal(timedOutSnapshot.userActionRequired, true);
+  assert.equal(timedOutSnapshot.retryable, true);
+  assert.match(timedOutSnapshot.summary, /before timeout/u);
+});
+
+test("renderer startup status view model subscribes and isolates snapshots", () => {
+  const errors: unknown[] = [];
+  const store = createFakeRuntimeStartupStatusViewModelStore([
+    createStartupStatus("starting_sidecar"),
+  ]);
+  const viewModel = createRuntimeStartupStatusViewModel({
+    store: store.store,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const firstObservedPhases: string[] = [];
+  const secondObservedPhases: string[] = [];
+  const secondObservedTitles: string[] = [];
+
+  const unsubscribeFirst = viewModel.subscribe((snapshot) => {
+    firstObservedPhases.push(snapshot.phase);
+    const mutableItems = snapshot.items as Array<
+      (typeof snapshot.items)[number]
+    >;
+    const [item] = mutableItems;
+    assert.ok(item);
+    mutableItems[0] = {
+      ...item,
+      kind: "startup_blocked",
+      title: "Mutated",
+    };
+  });
+  viewModel.subscribe(() => {
+    throw new Error("view listener failed");
+  });
+  const unsubscribeSecond = viewModel.subscribe((snapshot) => {
+    secondObservedPhases.push(snapshot.phase);
+    const [item] = snapshot.items;
+    assert.ok(item);
+    secondObservedTitles.push(item.title);
+  });
+
+  assert.equal(viewModel.listenerCount(), 3);
+  assert.equal(store.listenerCount(), 1);
+  assert.equal(viewModel.snapshot().phase, "starting");
+
+  store.emit([createStartupStatus("waiting_for_existing")]);
+  assert.deepEqual(firstObservedPhases, ["waiting"]);
+  assert.deepEqual(secondObservedPhases, ["waiting"]);
+  assert.deepEqual(secondObservedTitles, ["Waiting for existing runtime"]);
+  assert.equal(errors.length, 1);
+  assert.equal(viewModel.snapshot().latestStatus?.kind, "waiting_for_existing");
+
+  store.emit([createStartupStatus("runtime_ready")]);
+  assert.deepEqual(firstObservedPhases, ["waiting", "ready"]);
+  assert.deepEqual(secondObservedPhases, ["waiting", "ready"]);
+  assert.deepEqual(secondObservedTitles, [
+    "Waiting for existing runtime",
+    "Runtime ready",
+  ]);
+  assert.equal(errors.length, 2);
+  assert.equal(viewModel.snapshot().latestStatus?.kind, "runtime_ready");
+  assert.equal(unsubscribeFirst(), true);
+  assert.equal(unsubscribeFirst(), false);
+  assert.equal(unsubscribeSecond(), true);
+  assert.equal(viewModel.listenerCount(), 1);
+  assert.equal(viewModel.dispose(), true);
+  assert.equal(viewModel.dispose(), false);
+  assert.equal(viewModel.listenerCount(), 0);
+  assert.equal(store.listenerCount(), 0);
+  assert.equal(viewModel.subscribe(() => undefined)(), false);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
@@ -3438,6 +3563,49 @@ function createShutdownStatus(
         windowCloseRequested: false,
       };
   }
+}
+
+function createFakeRuntimeStartupStatusViewModelStore(
+  initialStatuses: readonly RuntimeIpcStartupStatus[],
+): {
+  readonly store: RuntimeStartupStatusViewModelStore;
+  readonly emit: (statuses: readonly RuntimeIpcStartupStatus[]) => void;
+  readonly listenerCount: () => number;
+} {
+  let statuses = cloneStartupStatuses(initialStatuses);
+  const listeners = new Set<
+    (statuses: readonly RuntimeIpcStartupStatus[]) => void
+  >();
+
+  return {
+    store: {
+      snapshot: () => cloneStartupStatuses(statuses),
+      subscribe: (listener) => {
+        listeners.add(listener);
+        let subscribed = true;
+        return () => {
+          if (!subscribed) {
+            return false;
+          }
+          subscribed = false;
+          return listeners.delete(listener);
+        };
+      },
+    },
+    emit: (nextStatuses) => {
+      statuses = cloneStartupStatuses(nextStatuses);
+      for (const listener of [...listeners]) {
+        listener(cloneStartupStatuses(statuses));
+      }
+    },
+    listenerCount: () => listeners.size,
+  };
+}
+
+function cloneStartupStatuses(
+  statuses: readonly RuntimeIpcStartupStatus[],
+): RuntimeIpcStartupStatus[] {
+  return statuses.map((status) => ({ ...status }));
 }
 
 function createFakeRuntimePreloadSubscribe(): {
