@@ -1,0 +1,360 @@
+import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
+import type { RuntimeLifecyclePanelInteractionCommand } from "./runtime-lifecycle-panel-interaction.js";
+import type { CreateRuntimeLifecyclePanelSessionFactorySessionOptions } from "./runtime-lifecycle-panel-session.js";
+import type { CreateRuntimeStreamInteractionSessionFactorySessionOptions } from "./runtime-stream-session.js";
+import type {
+  RuntimeWorkbenchPanelId,
+  RuntimeWorkbenchSession,
+  RuntimeWorkbenchSessionErrorHandler,
+  RuntimeWorkbenchSessionSnapshot,
+} from "./runtime-workbench-session.js";
+
+export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
+  "show_lifecycle_panel",
+  "show_stream_panel",
+  "open_lifecycle_panel_session",
+  "dispose_lifecycle_panel_session",
+  "open_runtime_stream_session",
+  "dispose_runtime_stream_session",
+  "dispatch_lifecycle_panel",
+] as const;
+
+export type RuntimeWorkbenchInteractionCommandId =
+  (typeof RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS)[number];
+
+export type RuntimeWorkbenchInteractionCommand =
+  | {
+      readonly type: "show_lifecycle_panel";
+    }
+  | {
+      readonly type: "show_stream_panel";
+    }
+  | {
+      readonly type: "open_lifecycle_panel_session";
+      readonly options?: CreateRuntimeLifecyclePanelSessionFactorySessionOptions;
+    }
+  | {
+      readonly type: "dispose_lifecycle_panel_session";
+    }
+  | {
+      readonly type: "open_runtime_stream_session";
+      readonly options: CreateRuntimeStreamInteractionSessionFactorySessionOptions;
+    }
+  | {
+      readonly type: "dispose_runtime_stream_session";
+    }
+  | {
+      readonly type: "dispatch_lifecycle_panel";
+      readonly command: RuntimeLifecyclePanelInteractionCommand;
+    };
+
+export interface RuntimeWorkbenchInteractionSnapshot {
+  readonly workbench: RuntimeWorkbenchSessionSnapshot;
+  readonly activePanel: RuntimeWorkbenchPanelId;
+  readonly availableCommandIds: readonly RuntimeWorkbenchInteractionCommandId[];
+  readonly enabledCommandIds: readonly RuntimeWorkbenchInteractionCommandId[];
+  readonly disposed: boolean;
+}
+
+export type RuntimeWorkbenchInteractionListener = (
+  snapshot: RuntimeWorkbenchInteractionSnapshot,
+) => void;
+
+export type RuntimeWorkbenchInteractionErrorHandler =
+  RuntimeWorkbenchSessionErrorHandler;
+
+export interface RuntimeWorkbenchInteraction {
+  readonly getSnapshot: () => RuntimeWorkbenchInteractionSnapshot;
+  readonly getServerSnapshot: () => RuntimeWorkbenchInteractionSnapshot;
+  readonly snapshot: () => RuntimeWorkbenchInteractionSnapshot;
+  readonly subscribe: (
+    listener: RuntimeWorkbenchInteractionListener,
+  ) => RuntimeStatusUnsubscribe;
+  readonly dispatch: (
+    command: RuntimeWorkbenchInteractionCommand,
+  ) => Promise<RuntimeWorkbenchInteractionSnapshot>;
+  readonly setActivePanel: (
+    panel: RuntimeWorkbenchPanelId,
+  ) => RuntimeWorkbenchInteractionSnapshot;
+  readonly listenerCount: () => number;
+  readonly dispose: () => boolean;
+  readonly isDisposed: () => boolean;
+}
+
+export interface CreateRuntimeWorkbenchInteractionOptions {
+  readonly workbench: RuntimeWorkbenchSession;
+  readonly onError?: RuntimeWorkbenchInteractionErrorHandler;
+}
+
+export function createRuntimeWorkbenchInteraction(
+  options: CreateRuntimeWorkbenchInteractionOptions,
+): RuntimeWorkbenchInteraction {
+  const listeners = new Set<RuntimeWorkbenchInteractionListener>();
+  let workbenchUnsubscribe: RuntimeStatusUnsubscribe | undefined;
+  let disposed = false;
+
+  const initialSnapshot = freezeRuntimeWorkbenchInteractionSnapshot(
+    buildRuntimeWorkbenchInteractionSnapshot(
+      options.workbench.getSnapshot(),
+      disposed,
+    ),
+  );
+  let currentSignature =
+    runtimeWorkbenchInteractionSnapshotSignature(initialSnapshot);
+  let currentSnapshot = initialSnapshot;
+
+  const reportError = (error: unknown): void => {
+    try {
+      options.onError?.(error);
+    } catch {
+      // Renderer diagnostics must not break workbench command propagation.
+    }
+  };
+
+  const isDisposed = (): boolean => disposed || options.workbench.isDisposed();
+
+  const assertActive = (): void => {
+    if (isDisposed()) {
+      throw new Error("Runtime workbench interaction is disposed");
+    }
+  };
+
+  const captureSnapshot = (
+    forceRefresh = false,
+  ): RuntimeWorkbenchInteractionSnapshot => {
+    const nextSnapshot = freezeRuntimeWorkbenchInteractionSnapshot(
+      buildRuntimeWorkbenchInteractionSnapshot(
+        options.workbench.getSnapshot(),
+        isDisposed(),
+      ),
+    );
+    const nextSignature =
+      runtimeWorkbenchInteractionSnapshotSignature(nextSnapshot);
+    if (forceRefresh || nextSignature !== currentSignature) {
+      currentSignature = nextSignature;
+      currentSnapshot = nextSnapshot;
+    }
+    return currentSnapshot;
+  };
+
+  const publishIfChanged = (forceRefresh = false): void => {
+    if (disposed && !forceRefresh) {
+      return;
+    }
+    const previousSignature = currentSignature;
+    captureSnapshot(forceRefresh);
+    if (!forceRefresh && currentSignature === previousSignature) {
+      return;
+    }
+    for (const listener of [...listeners]) {
+      try {
+        listener(currentSnapshot);
+      } catch (error) {
+        reportError(error);
+      }
+    }
+  };
+
+  const ensureWorkbenchSubscription = (): void => {
+    if (
+      listeners.size === 0 ||
+      workbenchUnsubscribe !== undefined ||
+      isDisposed()
+    ) {
+      return;
+    }
+    workbenchUnsubscribe = options.workbench.subscribe(() => {
+      publishIfChanged();
+    });
+  };
+
+  const releaseWorkbenchSubscription = (): void => {
+    workbenchUnsubscribe?.();
+    workbenchUnsubscribe = undefined;
+  };
+
+  const completeAction = (): RuntimeWorkbenchInteractionSnapshot => {
+    publishIfChanged();
+    return captureSnapshot();
+  };
+
+  const setActivePanel = (
+    panel: RuntimeWorkbenchPanelId,
+  ): RuntimeWorkbenchInteractionSnapshot => {
+    assertActive();
+    options.workbench.setActivePanel(requireRuntimeWorkbenchPanelId(panel));
+    return completeAction();
+  };
+
+  const dispatch = async (
+    command: RuntimeWorkbenchInteractionCommand,
+  ): Promise<RuntimeWorkbenchInteractionSnapshot> => {
+    assertActive();
+    const safeCommand = requireRuntimeWorkbenchInteractionCommand(command);
+    switch (safeCommand.type) {
+      case "show_lifecycle_panel":
+        return setActivePanel("lifecycle");
+      case "show_stream_panel":
+        return setActivePanel("stream");
+      case "open_lifecycle_panel_session":
+        options.workbench.openLifecyclePanelSession(safeCommand.options);
+        return completeAction();
+      case "dispose_lifecycle_panel_session":
+        options.workbench.disposeLifecyclePanelSession();
+        return completeAction();
+      case "open_runtime_stream_session":
+        options.workbench.openRuntimeStreamSession(safeCommand.options);
+        return completeAction();
+      case "dispose_runtime_stream_session":
+        options.workbench.disposeRuntimeStreamSession();
+        return completeAction();
+      case "dispatch_lifecycle_panel": {
+        await options.workbench.dispatchLifecyclePanelCommand(
+          safeCommand.command,
+        );
+        return completeAction();
+      }
+    }
+  };
+
+  return {
+    getSnapshot: () => captureSnapshot(),
+    getServerSnapshot: () => captureSnapshot(),
+    snapshot: () => captureSnapshot(),
+    subscribe: (listener) => {
+      if (isDisposed()) {
+        return () => false;
+      }
+      listeners.add(listener);
+      ensureWorkbenchSubscription();
+      let subscribed = true;
+      return () => {
+        if (!subscribed) {
+          return false;
+        }
+        subscribed = false;
+        const deleted = listeners.delete(listener);
+        if (listeners.size === 0) {
+          releaseWorkbenchSubscription();
+        }
+        return deleted;
+      };
+    },
+    dispatch,
+    setActivePanel,
+    listenerCount: () => listeners.size,
+    dispose: () => {
+      if (disposed) {
+        return false;
+      }
+      disposed = true;
+      releaseWorkbenchSubscription();
+      publishIfChanged(true);
+      listeners.clear();
+      return true;
+    },
+    isDisposed,
+  };
+}
+
+export function buildRuntimeWorkbenchInteractionSnapshot(
+  workbench: RuntimeWorkbenchSessionSnapshot,
+  disposed = workbench.disposed,
+): RuntimeWorkbenchInteractionSnapshot {
+  const availableCommandIds = [...RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS];
+  const enabledCommandIds: RuntimeWorkbenchInteractionCommandId[] = [];
+  if (!disposed) {
+    if (workbench.activePanel !== "lifecycle") {
+      enabledCommandIds.push("show_lifecycle_panel");
+    }
+    if (workbench.activePanel !== "stream") {
+      enabledCommandIds.push("show_stream_panel");
+    }
+    enabledCommandIds.push(
+      "open_lifecycle_panel_session",
+      "open_runtime_stream_session",
+    );
+    if (workbench.lifecyclePanel.activeSession !== null) {
+      enabledCommandIds.push(
+        "dispose_lifecycle_panel_session",
+        "dispatch_lifecycle_panel",
+      );
+    }
+    if (workbench.runtimeStream.activeSession !== null) {
+      enabledCommandIds.push("dispose_runtime_stream_session");
+    }
+  }
+
+  return {
+    workbench,
+    activePanel: workbench.activePanel,
+    availableCommandIds: Object.freeze(availableCommandIds),
+    enabledCommandIds: Object.freeze(enabledCommandIds),
+    disposed,
+  };
+}
+
+function requireRuntimeWorkbenchInteractionCommand(
+  command: RuntimeWorkbenchInteractionCommand,
+): RuntimeWorkbenchInteractionCommand {
+  if (!isRecord(command)) {
+    throw new Error("Invalid runtime workbench interaction command");
+  }
+  const commandType = command.type;
+  switch (commandType) {
+    case "show_lifecycle_panel":
+    case "show_stream_panel":
+    case "dispose_lifecycle_panel_session":
+    case "dispose_runtime_stream_session":
+      return command;
+    case "open_lifecycle_panel_session":
+      if (
+        "options" in command &&
+        command.options !== undefined &&
+        !isRecord(command.options)
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "open_runtime_stream_session":
+      if (!isRecord(command.options)) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "dispatch_lifecycle_panel":
+      if (typeof command.command !== "string") {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    default:
+      throw new Error("Invalid runtime workbench interaction command");
+  }
+}
+
+function requireRuntimeWorkbenchPanelId(
+  panel: string,
+): RuntimeWorkbenchPanelId {
+  switch (panel) {
+    case "lifecycle":
+    case "stream":
+      return panel;
+    default:
+      throw new Error("Invalid runtime workbench panel id");
+  }
+}
+
+function freezeRuntimeWorkbenchInteractionSnapshot(
+  snapshot: RuntimeWorkbenchInteractionSnapshot,
+): RuntimeWorkbenchInteractionSnapshot {
+  return Object.freeze({ ...snapshot });
+}
+
+function runtimeWorkbenchInteractionSnapshotSignature(
+  snapshot: RuntimeWorkbenchInteractionSnapshot,
+): string {
+  return JSON.stringify(snapshot);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}

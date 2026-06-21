@@ -6,6 +6,7 @@ import type {
   RuntimeLifecyclePanelSessionControllerSnapshot,
   RuntimeLifecyclePanelSessionErrorHandler,
 } from "./runtime-lifecycle-panel-session.js";
+import type { RuntimeLifecyclePanelInteractionCommand } from "./runtime-lifecycle-panel-interaction.js";
 import type {
   CreateRuntimeStreamInteractionSessionFactorySessionOptions,
   RuntimeStreamInteractionSession,
@@ -56,6 +57,9 @@ export interface RuntimeWorkbenchSession {
     options?: CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
   ) => RuntimeLifecyclePanelSession;
   readonly disposeLifecyclePanelSession: () => boolean;
+  readonly dispatchLifecyclePanelCommand: (
+    command: RuntimeLifecyclePanelInteractionCommand,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly openRuntimeStreamSession: (
     options: CreateRuntimeStreamInteractionSessionFactorySessionOptions,
   ) => RuntimeWorkbenchStreamSession;
@@ -244,6 +248,18 @@ export function createRuntimeWorkbenchSession(
         }
         return result;
       });
+    },
+    dispatchLifecyclePanelCommand: async (command) => {
+      assertActive();
+      const lifecycleSession = options.lifecyclePanelController.activeSession();
+      if (lifecycleSession === null) {
+        throw new Error(
+          "Runtime workbench lifecycle panel session is not active",
+        );
+      }
+      await lifecycleSession.dispatch(command);
+      publishIfChanged();
+      return captureSnapshot();
     },
     openRuntimeStreamSession: (sessionOptions) => {
       assertActive();
