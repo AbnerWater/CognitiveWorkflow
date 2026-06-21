@@ -56,6 +56,7 @@ import {
   type RuntimeLifecyclePanelTimelineItem,
 } from "../renderer/runtime-lifecycle-panel-presenter.js";
 import { createRuntimeLifecyclePanelControllerFactory } from "../renderer/runtime-lifecycle-panel-controller.js";
+import { createRuntimeLifecyclePanelHookAdapterFactory } from "../renderer/runtime-lifecycle-panel-hook-adapter.js";
 import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
@@ -2235,6 +2236,207 @@ test("renderer runtime lifecycle panel controller isolates listeners and active 
   assert.equal(unsubscribeThrowing(), false);
   assert.equal(unsubscribeObserved(), false);
   assert.equal(controller.dispose(), false);
+});
+
+test("renderer runtime lifecycle panel hook adapter exposes external store contract", async () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const pageLifecycle = createFakeRuntimeLifecycleStatusPageLifecycleTarget();
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const hookFactory = createRuntimeLifecyclePanelHookAdapterFactory({
+    controllerFactory,
+  });
+  const adapter = hookFactory.createAdapter();
+  const notifications: Array<{
+    readonly readiness: string;
+    readonly started: boolean;
+    readonly disposed: boolean;
+    readonly itemTotal: number;
+  }> = [];
+
+  assert.equal(Object.hasOwn(adapter, "controller"), false);
+  assert.equal(Object.hasOwn(adapter, "session"), false);
+  assert.equal(Object.hasOwn(adapter, "presenter"), false);
+  const initialSnapshot = adapter.getSnapshot();
+  assert.strictEqual(adapter.getSnapshot(), initialSnapshot);
+  assert.strictEqual(adapter.getServerSnapshot(), initialSnapshot);
+  assert.equal(Object.isFrozen(initialSnapshot), true);
+  assert.equal(Object.isFrozen(initialSnapshot.panel), true);
+  assert.equal(Object.isFrozen(initialSnapshot.panel.primaryCommand), true);
+  assert.equal(Object.isFrozen(initialSnapshot.panel.secondaryCommands), true);
+  assert.equal(Object.isFrozen(initialSnapshot.panel.timelineItems), true);
+  assert.throws(() => {
+    const mutableCommand = initialSnapshot.panel.primaryCommand as {
+      label: string;
+    };
+    mutableCommand.label = "Mutated";
+  }, /Cannot assign|read only/u);
+  assert.equal(initialSnapshot.panel.primaryCommand?.label, "Start runtime");
+
+  const unsubscribe = adapter.subscribe(() => {
+    const snapshot = adapter.getSnapshot();
+    notifications.push({
+      readiness: snapshot.panel.readiness,
+      started: snapshot.panel.started,
+      disposed: snapshot.disposed,
+      itemTotal: snapshot.panel.timelineItems.length,
+    });
+  });
+  assert.equal(adapter.listenerCount(), 1);
+
+  const started = await adapter.invoke("start_runtime");
+  assert.notStrictEqual(started, initialSnapshot);
+  assert.strictEqual(adapter.getSnapshot(), started);
+  assert.strictEqual(adapter.getServerSnapshot(), started);
+  assert.equal(started.panel.started, true);
+  assert.deepEqual(notifications, [
+    { readiness: "idle", started: true, disposed: false, itemTotal: 0 },
+  ]);
+
+  const busy = await adapter.invoke("refresh_status");
+  assert.notStrictEqual(busy, started);
+  assert.strictEqual(adapter.getSnapshot(), busy);
+  assert.equal(busy.panel.readiness, "busy");
+  assert.deepEqual(notifications.at(-1), {
+    readiness: "busy",
+    started: true,
+    disposed: false,
+    itemTotal: 2,
+  });
+
+  const beforeReady = adapter.getSnapshot();
+  runtime.emitStartup([createStartupStatus("runtime_ready")]);
+  const ready = adapter.getSnapshot();
+  assert.notStrictEqual(ready, beforeReady);
+  assert.strictEqual(adapter.getServerSnapshot(), ready);
+  assert.equal(ready.panel.readiness, "ready");
+  assert.deepEqual(notifications.at(-1), {
+    readiness: "ready",
+    started: true,
+    disposed: false,
+    itemTotal: 3,
+  });
+
+  const unbindPageLifecycle = adapter.bindPageLifecycle(pageLifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 1);
+  const beforePagehide = adapter.getSnapshot();
+  pageLifecycle.emit("pagehide");
+  const stopped = adapter.getSnapshot();
+  assert.notStrictEqual(stopped, beforePagehide);
+  assert.equal(stopped.panel.started, false);
+  assert.deepEqual(notifications.at(-1), {
+    readiness: "ready",
+    started: false,
+    disposed: false,
+    itemTotal: 3,
+  });
+  const afterPagehideNotifications = notifications.length;
+  assert.equal(unbindPageLifecycle(), true);
+  assert.equal(unbindPageLifecycle(), false);
+  assert.equal(notifications.length, afterPagehideNotifications);
+
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(adapter.listenerCount(), 0);
+  const beforeDispose = adapter.getSnapshot();
+  assert.equal(adapter.dispose(), true);
+  const disposedSnapshot = adapter.getSnapshot();
+  assert.notStrictEqual(disposedSnapshot, beforeDispose);
+  assert.strictEqual(adapter.getServerSnapshot(), disposedSnapshot);
+  assert.equal(adapter.dispose(), false);
+  assert.equal(adapter.isDisposed(), true);
+  assert.equal(disposedSnapshot.disposed, true);
+  assert.equal(disposedSnapshot.panel.disposed, true);
+  assert.equal(adapter.subscribe(() => undefined)(), false);
+  await assert.rejects(
+    async () => adapter.invoke("refresh_status"),
+    /lifecycle panel hook adapter is disposed/u,
+  );
+});
+
+test("renderer runtime lifecycle panel hook adapter isolates listeners and active dispose", async () => {
+  const factoryErrors: unknown[] = [];
+  const overrideErrors: unknown[] = [];
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+    onError: (error) => {
+      factoryErrors.push(error);
+    },
+  });
+  const hookFactory = createRuntimeLifecyclePanelHookAdapterFactory({
+    controllerFactory,
+    onError: (error) => {
+      factoryErrors.push(error);
+    },
+  });
+  const adapter = hookFactory.createAdapter({
+    onError: (error) => {
+      overrideErrors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly readiness: string;
+    readonly primaryLabel: string | null;
+    readonly itemTotal: number;
+  }> = [];
+
+  const unsubscribeThrowing = adapter.subscribe(() => {
+    const snapshot = adapter.getSnapshot();
+    const mutableItems = snapshot.panel
+      .timelineItems as RuntimeLifecyclePanelTimelineItem[];
+    mutableItems.push({
+      id: "mutated",
+      source: "shutdown",
+      sourceLabel: "Mutated",
+      kind: "shutdown_failed",
+      phase: "failed",
+      tone: "error",
+      statusLabel: "Mutated",
+      title: "Mutated",
+      summary: "Mutated",
+      badges: ["shutdown"],
+    });
+  });
+  const unsubscribeObserved = adapter.subscribe(() => {
+    const snapshot = adapter.getSnapshot();
+    observed.push({
+      readiness: snapshot.panel.readiness,
+      primaryLabel: snapshot.panel.primaryCommand?.label ?? null,
+      itemTotal: snapshot.panel.timelineItems.length,
+    });
+  });
+
+  await adapter.invoke("start_runtime");
+  await adapter.invoke("refresh_status");
+  assert.deepEqual(observed, [
+    { readiness: "idle", primaryLabel: "Start runtime", itemTotal: 0 },
+    { readiness: "busy", primaryLabel: "Working", itemTotal: 2 },
+  ]);
+  assert.equal(factoryErrors.length, 0);
+  assert.equal(overrideErrors.length, 2);
+  assert.deepEqual(
+    adapter.getSnapshot().panel.timelineItems.map((item) => item.title),
+    ["Starting runtime", "Runtime shutdown registered"],
+  );
+  assert.equal(adapter.getSnapshot().panel.primaryCommand?.label, "Working");
+
+  assert.equal(adapter.dispose(), true);
+  assert.equal(adapter.listenerCount(), 0);
+  assert.equal(runtime.startupUnsubscribeCount(), 1);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 1);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(adapter.dispose(), false);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
