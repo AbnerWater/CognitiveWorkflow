@@ -91,6 +91,10 @@ import {
   type RuntimeWorkbenchShellShortcutHint,
 } from "../renderer/runtime-workbench-shell-presenter.js";
 import {
+  createRuntimeWorkbenchShellAdapter,
+  createRuntimeWorkbenchShellAdapterFactory,
+} from "../renderer/runtime-workbench-shell-adapter.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -5148,6 +5152,412 @@ test("renderer runtime workbench shell presenter isolates listeners and active d
   await assert.rejects(
     async () => presenter.dispatch({ type: "show_lifecycle_panel" }),
     /Runtime workbench shell presenter is disposed/u,
+  );
+  assert.equal(host.dispose(), true);
+});
+
+test("renderer runtime workbench shell adapter exposes external store contract", async () => {
+  const errors: unknown[] = [];
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const streamClientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: createRuntimeLifecyclePanelSessionFactory({
+        controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+          runtime: lifecycleRuntime.runtime,
+        }),
+      }),
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: createRuntimeStreamInteractionSessionFactory({
+        runtime: {
+          connectionInfo: async () => ({
+            base_url: "http://127.0.0.1:51234/cw/v1",
+            token: "token_workbench_shell_adapter",
+          }),
+        },
+        eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+      }),
+    });
+  const host = createRuntimeWorkbenchHostSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+  });
+  const presenter = createRuntimeWorkbenchShellPresenter({
+    host,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const adapter = createRuntimeWorkbenchShellAdapter({
+    presenter,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly activePanel: RuntimeWorkbenchPanelId;
+    readonly lifecyclePanelStatus: string;
+    readonly runtimeStreamStatus: string;
+    readonly disposed: boolean;
+  }> = [];
+  let preventDefaultCount = 0;
+  const key = (
+    event: Omit<RuntimeWorkbenchShortcutKeyEvent, "preventDefault">,
+  ): RuntimeWorkbenchShortcutKeyEvent => ({
+    ...event,
+    preventDefault: () => {
+      preventDefaultCount += 1;
+    },
+  });
+  const forbiddenShellAdapterKeys = [
+    "presenter",
+    "host",
+    "workbench",
+    "interaction",
+    "shortcuts",
+    "controller",
+    "session",
+    "factory",
+    "viewModel",
+    "store",
+    "stream",
+  ] as const;
+
+  for (const key of forbiddenShellAdapterKeys) {
+    assert.equal(Object.hasOwn(adapter, key), false);
+  }
+  const initialSnapshot = adapter.getSnapshot();
+  assert.strictEqual(adapter.getSnapshot(), initialSnapshot);
+  assert.strictEqual(adapter.getServerSnapshot(), initialSnapshot);
+  for (const key of forbiddenShellAdapterKeys) {
+    assert.equal(Object.hasOwn(initialSnapshot, key), false);
+  }
+  assert.equal(initialSnapshot.activePanel, "lifecycle");
+  assert.equal(initialSnapshot.emptyState?.title, "No active session");
+  assert.equal(Object.isFrozen(initialSnapshot), true);
+  assert.equal(Object.isFrozen(initialSnapshot.panels), true);
+  assert.equal(Object.isFrozen(initialSnapshot.panels[0]), true);
+  assert.equal(Object.isFrozen(initialSnapshot.actions), true);
+  assert.equal(Object.isFrozen(initialSnapshot.actions[0]), true);
+  assert.equal(Object.isFrozen(initialSnapshot.actions[0]?.shortcutIds), true);
+  assert.equal(Object.isFrozen(initialSnapshot.shortcutHints), true);
+  assert.equal(Object.isFrozen(initialSnapshot.shortcutHints[0]), true);
+  assert.equal(Object.isFrozen(initialSnapshot.shortcutHints[0]?.keys), true);
+  assert.equal(Object.isFrozen(initialSnapshot.statusItems), true);
+  assert.equal(Object.isFrozen(initialSnapshot.availableActionIds), true);
+  assert.equal(Object.isFrozen(initialSnapshot.enabledActionIds), true);
+  assert.throws(() => {
+    const mutableActions =
+      initialSnapshot.actions as RuntimeWorkbenchShellAction[];
+    const firstAction = initialSnapshot.actions[0];
+    assert.ok(firstAction !== undefined);
+    mutableActions.push(firstAction);
+  }, /Cannot add property|object is not extensible|read only/u);
+
+  const unsubscribe = adapter.subscribe(() => {
+    const snapshot = adapter.getSnapshot();
+    observed.push({
+      activePanel: snapshot.activePanel,
+      lifecyclePanelStatus: snapshot.lifecyclePanelStatus,
+      runtimeStreamStatus: snapshot.runtimeStreamStatus,
+      disposed: snapshot.disposed,
+    });
+  });
+  assert.equal(adapter.listenerCount(), 1);
+  assert.equal(presenter.listenerCount(), 1);
+  assert.equal(host.listenerCount(), 1);
+  assert.equal(lifecyclePanelController.listenerCount(), 1);
+  assert.equal(runtimeStreamController.listenerCount(), 1);
+
+  const streamShown = adapter.setActivePanel("stream");
+  assert.equal(streamShown.activePanel, "stream");
+  assert.strictEqual(adapter.getSnapshot(), streamShown);
+  assert.deepEqual(observed.at(-1), {
+    activePanel: "stream",
+    lifecyclePanelStatus: "empty",
+    runtimeStreamStatus: "empty",
+    disposed: false,
+  });
+  const beforeNoOpCount = observed.length;
+  const noOpStream = adapter.setActivePanel("stream");
+  assert.strictEqual(noOpStream, streamShown);
+  assert.equal(observed.length, beforeNoOpCount);
+
+  const lifecycleOpened = await adapter.dispatch({
+    type: "open_lifecycle_panel_session",
+  });
+  assert.equal(lifecycleOpened.activePanel, "lifecycle");
+  assert.equal(lifecycleOpened.lifecyclePanelStatus, "active");
+  assert.deepEqual(observed.at(-1), {
+    activePanel: "lifecycle",
+    lifecyclePanelStatus: "active",
+    runtimeStreamStatus: "empty",
+    disposed: false,
+  });
+
+  const streamByKey = await adapter.handleKeyEvent(
+    key({ key: "2", ctrlKey: true }),
+  );
+  assert.equal(streamByKey.activePanel, "stream");
+  assert.equal(streamByKey.lastHandledShortcutLabel, "Show stream");
+  assert.equal(preventDefaultCount, 1);
+
+  const streamOpened = await adapter.dispatch({
+    type: "open_runtime_stream_session",
+    options: {
+      channel: { kind: "run", runId: "run_shell_adapter" },
+      clientFactory: streamClientFactory.factory,
+      eventTypes: ["model.text_delta"],
+    },
+  });
+  assert.equal(streamOpened.runtimeStreamStatus, "active");
+  assert.equal(streamOpened.runtimeStreamChannelLabel, "Run run_shell_adapter");
+  assert.equal(
+    adapter.resolveKeyEvent(key({ key: "Escape", shiftKey: true }))?.shortcutId,
+    "dispose_runtime_stream_session",
+  );
+
+  assert.equal(errors.length, 0);
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(adapter.listenerCount(), 0);
+  assert.equal(presenter.listenerCount(), 0);
+  assert.equal(host.listenerCount(), 0);
+  assert.equal(lifecyclePanelController.listenerCount(), 0);
+  assert.equal(runtimeStreamController.listenerCount(), 0);
+  const beforeDispose = adapter.getSnapshot();
+  assert.equal(adapter.dispose(), true);
+  const disposedSnapshot = adapter.getSnapshot();
+  assert.notStrictEqual(disposedSnapshot, beforeDispose);
+  assert.strictEqual(adapter.getServerSnapshot(), disposedSnapshot);
+  assert.equal(adapter.dispose(), false);
+  assert.equal(adapter.isDisposed(), true);
+  assert.equal(presenter.isDisposed(), true);
+  assert.equal(host.isDisposed(), false);
+  assert.deepEqual(disposedSnapshot.enabledActionIds, []);
+  assert.equal(disposedSnapshot.runtimeStreamChannelLabel, null);
+  assert.equal(disposedSnapshot.lastHandledShortcutLabel, null);
+  assert.equal(disposedSnapshot.ariaLive, "assertive");
+  assert.equal(adapter.subscribe(() => undefined)(), false);
+  assert.equal(adapter.resolveKeyEvent({ key: "1", ctrlKey: true }), null);
+  assert.throws(
+    () => adapter.setActivePanel("lifecycle"),
+    /Runtime workbench shell adapter is disposed/u,
+  );
+  await assert.rejects(
+    async () => adapter.dispatch({ type: "show_lifecycle_panel" }),
+    /Runtime workbench shell adapter is disposed/u,
+  );
+  await assert.rejects(
+    async () => adapter.handleKeyEvent({ key: "1", ctrlKey: true }),
+    /Runtime workbench shell adapter is disposed/u,
+  );
+  assert.equal(host.dispose(), true);
+});
+
+test("renderer runtime workbench shell adapter factory creates isolated adapters", () => {
+  const factoryErrors: unknown[] = [];
+  const overrideErrors: unknown[] = [];
+  const hosts: ReturnType<typeof createRuntimeWorkbenchHostSession>[] = [];
+  const factory = createRuntimeWorkbenchShellAdapterFactory({
+    createPresenter: (options) => {
+      const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+        [createStartupStatus("starting_sidecar")],
+        [createShutdownStatus("registered")],
+      );
+      const lifecyclePanelController =
+        createRuntimeLifecyclePanelSessionController({
+          factory: createRuntimeLifecyclePanelSessionFactory({
+            controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+              runtime: lifecycleRuntime.runtime,
+            }),
+          }),
+        });
+      const runtimeStreamController =
+        createRuntimeStreamInteractionSessionController({
+          factory: createRuntimeStreamInteractionSessionFactory({
+            runtime: {
+              connectionInfo: async () => ({
+                base_url: "http://127.0.0.1:51234/cw/v1",
+                token: `token_workbench_shell_factory_${hosts.length}`,
+              }),
+            },
+            eventSourceFactory: () =>
+              createFakeRuntimeStreamEventSource().source,
+          }),
+        });
+      const host = createRuntimeWorkbenchHostSession({
+        lifecyclePanelController,
+        runtimeStreamController,
+      });
+      hosts.push(host);
+      return createRuntimeWorkbenchShellPresenter({ host, ...options });
+    },
+    onError: (error) => {
+      factoryErrors.push(error);
+    },
+  });
+  const firstAdapter = factory.createAdapter();
+  const secondAdapter = factory.createAdapter({
+    onError: (error) => {
+      overrideErrors.push(error);
+    },
+  });
+
+  for (const key of [
+    "presenter",
+    "host",
+    "workbench",
+    "interaction",
+    "shortcuts",
+    "controller",
+    "session",
+    "factory",
+    "viewModel",
+    "store",
+    "stream",
+  ] as const) {
+    assert.equal(Object.hasOwn(firstAdapter, key), false);
+    assert.equal(Object.hasOwn(firstAdapter.getSnapshot(), key), false);
+  }
+  assert.equal(hosts.length, 2);
+  assert.equal(firstAdapter.getSnapshot().activePanel, "lifecycle");
+  assert.equal(secondAdapter.getSnapshot().activePanel, "lifecycle");
+
+  firstAdapter.setActivePanel("stream");
+  assert.equal(firstAdapter.getSnapshot().activePanel, "stream");
+  assert.equal(secondAdapter.getSnapshot().activePanel, "lifecycle");
+
+  const firstObserved: RuntimeWorkbenchPanelId[] = [];
+  const secondObserved: RuntimeWorkbenchPanelId[] = [];
+  const unsubscribeFirst = firstAdapter.subscribe(() => {
+    firstObserved.push(firstAdapter.getSnapshot().activePanel);
+  });
+  const unsubscribeSecond = secondAdapter.subscribe(() => {
+    secondObserved.push(secondAdapter.getSnapshot().activePanel);
+  });
+
+  firstAdapter.setActivePanel("lifecycle");
+  secondAdapter.setActivePanel("stream");
+  assert.deepEqual(firstObserved, ["lifecycle"]);
+  assert.deepEqual(secondObserved, ["stream"]);
+  assert.equal(factoryErrors.length, 0);
+  assert.equal(overrideErrors.length, 0);
+
+  assert.equal(firstAdapter.dispose(), true);
+  assert.equal(firstAdapter.isDisposed(), true);
+  assert.equal(hosts[0]?.isDisposed(), false);
+  assert.equal(secondAdapter.isDisposed(), false);
+  assert.equal(
+    secondAdapter.setActivePanel("lifecycle").activePanel,
+    "lifecycle",
+  );
+  assert.equal(unsubscribeFirst(), false);
+  assert.equal(unsubscribeSecond(), true);
+  assert.equal(secondAdapter.dispose(), true);
+  assert.equal(hosts[1]?.isDisposed(), false);
+  for (const host of hosts) {
+    assert.equal(host.dispose(), true);
+  }
+});
+
+test("renderer runtime workbench shell adapter isolates listeners and active dispose", async () => {
+  const onErrorInputs: unknown[] = [];
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: createRuntimeLifecyclePanelSessionFactory({
+        controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+          runtime: lifecycleRuntime.runtime,
+        }),
+      }),
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: createRuntimeStreamInteractionSessionFactory({
+        runtime: {
+          connectionInfo: async () => ({
+            base_url: "http://127.0.0.1:51234/cw/v1",
+            token: "token_workbench_shell_adapter_isolation",
+          }),
+        },
+        eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+      }),
+    });
+  const host = createRuntimeWorkbenchHostSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+  });
+  const presenter = createRuntimeWorkbenchShellPresenter({ host });
+  const adapter = createRuntimeWorkbenchShellAdapter({
+    presenter,
+    onError: (error) => {
+      onErrorInputs.push(error);
+      throw new Error("adapter onError failed");
+    },
+  });
+  const observed: Array<{
+    readonly activePanel: RuntimeWorkbenchPanelId;
+    readonly disposed: boolean;
+  }> = [];
+
+  const unsubscribeThrowing = adapter.subscribe(() => {
+    const mutableActions = adapter.getSnapshot()
+      .actions as RuntimeWorkbenchShellAction[];
+    const firstAction = adapter.getSnapshot().actions[0];
+    assert.ok(firstAction !== undefined);
+    mutableActions.push(firstAction);
+  });
+  const unsubscribeObserved = adapter.subscribe(() => {
+    const snapshot = adapter.getSnapshot();
+    observed.push({
+      activePanel: snapshot.activePanel,
+      disposed: snapshot.disposed,
+    });
+  });
+
+  adapter.setActivePanel("stream");
+  assert.equal(onErrorInputs.length, 1);
+  assert.equal(observed.at(-1)?.activePanel, "stream");
+  assert.equal(adapter.listenerCount(), 2);
+  assert.equal(presenter.listenerCount(), 1);
+  assert.equal(host.listenerCount(), 1);
+
+  const stableSnapshot = adapter.getSnapshot();
+  await assert.rejects(
+    async () =>
+      adapter.handleKeyEvent({
+        key: "",
+      } as unknown as RuntimeWorkbenchShortcutKeyEvent),
+    /Invalid runtime workbench shortcut key event/u,
+  );
+  assert.strictEqual(adapter.getSnapshot(), stableSnapshot);
+
+  assert.equal(adapter.dispose(), true);
+  assert.equal(onErrorInputs.length, 2);
+  assert.equal(observed.at(-1)?.disposed, true);
+  assert.equal(adapter.listenerCount(), 0);
+  assert.equal(presenter.isDisposed(), true);
+  assert.equal(host.isDisposed(), false);
+  assert.equal(host.listenerCount(), 0);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(adapter.dispose(), false);
+  assert.equal(adapter.subscribe(() => undefined)(), false);
+  assert.equal(adapter.resolveKeyEvent({ key: "1", ctrlKey: true }), null);
+  await assert.rejects(
+    async () => adapter.dispatch({ type: "show_lifecycle_panel" }),
+    /Runtime workbench shell adapter is disposed/u,
   );
   assert.equal(host.dispose(), true);
 });
