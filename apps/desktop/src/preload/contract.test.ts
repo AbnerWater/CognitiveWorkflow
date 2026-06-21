@@ -79,6 +79,11 @@ import {
   type RuntimeWorkbenchInteractionCommandId,
 } from "../renderer/runtime-workbench-interaction.js";
 import {
+  createRuntimeWorkbenchShortcutController,
+  type RuntimeWorkbenchShortcutId,
+  type RuntimeWorkbenchShortcutKeyEvent,
+} from "../renderer/runtime-workbench-shortcuts.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -4013,6 +4018,326 @@ test("renderer runtime workbench interaction isolates listeners and active dispo
     /Runtime workbench interaction is disposed/u,
   );
 
+  assert.equal(workbench.dispose(), true);
+});
+
+test("renderer runtime workbench shortcuts map key events to commands", async () => {
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const streamClientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const streamRuntime = {
+    connectionInfo: async () => ({
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_workbench_shortcuts",
+    }),
+  };
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: createRuntimeLifecyclePanelSessionFactory({
+        controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+          runtime: lifecycleRuntime.runtime,
+        }),
+      }),
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: createRuntimeStreamInteractionSessionFactory({
+        runtime: streamRuntime,
+        eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+      }),
+    });
+  const workbench = createRuntimeWorkbenchSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+  });
+  const interaction = createRuntimeWorkbenchInteraction({ workbench });
+  const shortcuts = createRuntimeWorkbenchShortcutController({ interaction });
+  const observed: Array<ReturnType<typeof shortcuts.snapshot>> = [];
+  let preventDefaultCount = 0;
+  const key = (
+    event: Omit<RuntimeWorkbenchShortcutKeyEvent, "preventDefault">,
+  ): RuntimeWorkbenchShortcutKeyEvent => ({
+    ...event,
+    preventDefault: () => {
+      preventDefaultCount += 1;
+    },
+  });
+
+  assert.equal(Object.hasOwn(shortcuts, "interaction"), false);
+  assert.equal(Object.hasOwn(shortcuts, "workbench"), false);
+  const initialSnapshot = shortcuts.getSnapshot();
+  assert.equal(initialSnapshot.workbench.activePanel, "lifecycle");
+  assert.equal(
+    initialSnapshot.availableShortcutIds.includes("show_stream_panel"),
+    true,
+  );
+  assert.deepEqual(initialSnapshot.enabledShortcutIds, ["show_stream_panel"]);
+  assert.equal(Object.isFrozen(initialSnapshot), true);
+  assert.equal(Object.isFrozen(initialSnapshot.availableShortcutIds), true);
+  assert.equal(Object.isFrozen(initialSnapshot.enabledShortcutIds), true);
+  assert.strictEqual(shortcuts.getServerSnapshot(), initialSnapshot);
+  assert.strictEqual(shortcuts.snapshot(), initialSnapshot);
+  assert.equal(
+    shortcuts.resolveKeyEvent(key({ key: "2", ctrlKey: true }))?.shortcutId,
+    "show_stream_panel",
+  );
+
+  const unsubscribe = shortcuts.subscribe((snapshot) => {
+    observed.push(snapshot);
+  });
+
+  const streamShown = await shortcuts.handleKeyEvent(
+    key({ key: "2", ctrlKey: true }),
+  );
+  assert.equal(streamShown.workbench.activePanel, "stream");
+  assert.equal(streamShown.lastHandledShortcutId, "show_stream_panel");
+  assert.equal(preventDefaultCount, 1);
+  assert.equal(observed.length, 1);
+
+  const beforeIgnoredRepeatCount = observed.length;
+  const beforeIgnoredRepeatSnapshot = shortcuts.getSnapshot();
+  const ignoredRepeat = await shortcuts.handleKeyEvent(
+    key({ key: "1", ctrlKey: true, repeat: true }),
+  );
+  assert.strictEqual(ignoredRepeat, beforeIgnoredRepeatSnapshot);
+  assert.equal(observed.length, beforeIgnoredRepeatCount);
+  assert.equal(preventDefaultCount, 1);
+
+  const beforeEditableCount = observed.length;
+  const beforeEditableSnapshot = shortcuts.getSnapshot();
+  const ignoredEditable = await shortcuts.handleKeyEvent(
+    key({
+      key: "1",
+      ctrlKey: true,
+      target: { tagName: "input", type: "text" },
+    }),
+  );
+  assert.strictEqual(ignoredEditable, beforeEditableSnapshot);
+  assert.equal(observed.length, beforeEditableCount);
+  assert.equal(preventDefaultCount, 1);
+
+  const lifecycleShown = await shortcuts.handleKeyEvent(
+    key({ key: "1", ctrlKey: true }),
+  );
+  assert.equal(lifecycleShown.workbench.activePanel, "lifecycle");
+  assert.equal(lifecycleShown.lastHandledShortcutId, "show_lifecycle_panel");
+  assert.equal(preventDefaultCount, 2);
+  assert.equal(observed.length, 2);
+
+  await interaction.dispatch({
+    type: "open_lifecycle_panel_session",
+    options: { timelineFilter: "startup" },
+  });
+  assert.equal(observed.length, 3);
+  assert.equal(
+    shortcuts
+      .snapshot()
+      .enabledShortcutIds.includes("focus_lifecycle_primary_command"),
+    true,
+  );
+
+  const primaryFocused = await shortcuts.handleKeyEvent(
+    key({ key: "Home", altKey: true }),
+  );
+  assert.equal(
+    primaryFocused.workbench.workbench.lifecyclePanel.activeSession?.interaction
+      .focusedCommandId,
+    "start_runtime",
+  );
+  assert.equal(
+    primaryFocused.lastHandledShortcutId,
+    "focus_lifecycle_primary_command",
+  );
+
+  const started = await shortcuts.handleKeyEvent(key({ key: "Enter" }));
+  assert.equal(
+    started.workbench.workbench.lifecyclePanel.activeSession?.interaction.view
+      .panel.started,
+    true,
+  );
+  assert.equal(
+    started.lastHandledShortcutId,
+    "activate_lifecycle_focused_command",
+  );
+
+  const refreshed = await shortcuts.handleKeyEvent(key({ key: "F5" }));
+  assert.equal(refreshed.lastHandledShortcutId, "refresh_lifecycle_status");
+  assert.equal(
+    refreshed.workbench.workbench.lifecyclePanel.activeSession?.interaction.view
+      .visibleTimelineItemCount,
+    1,
+  );
+
+  const timelineFocused = await shortcuts.handleKeyEvent(
+    key({ key: "ArrowDown", altKey: true }),
+  );
+  assert.equal(
+    timelineFocused.workbench.workbench.lifecyclePanel.activeSession
+      ?.interaction.focusTarget,
+    "timeline_item",
+  );
+  assert.equal(
+    timelineFocused.lastHandledShortcutId,
+    "focus_next_lifecycle_timeline_item",
+  );
+
+  const timelineSelected = await shortcuts.handleKeyEvent(
+    key({ key: "Enter" }),
+  );
+  assert.equal(
+    timelineSelected.workbench.workbench.lifecyclePanel.activeSession
+      ?.interaction.view.selectedTimelineItem?.source,
+    "startup",
+  );
+  assert.equal(
+    timelineSelected.lastHandledShortcutId,
+    "select_lifecycle_timeline_item",
+  );
+
+  const selectionCleared = await shortcuts.handleKeyEvent(
+    key({ key: "Escape" }),
+  );
+  assert.equal(
+    selectionCleared.workbench.workbench.lifecyclePanel.activeSession
+      ?.interaction.view.selectedTimelineItemId,
+    null,
+  );
+  assert.equal(
+    selectionCleared.lastHandledShortcutId,
+    "clear_lifecycle_selection",
+  );
+
+  await interaction.dispatch({
+    type: "open_runtime_stream_session",
+    options: {
+      channel: { kind: "run", runId: "run_shortcuts" },
+      clientFactory: streamClientFactory.factory,
+      eventTypes: ["model.text_delta"],
+    },
+  });
+  const streamDisposed = await shortcuts.handleKeyEvent(
+    key({ key: "Escape", shiftKey: true }),
+  );
+  assert.equal(
+    streamDisposed.workbench.workbench.runtimeStream.activeSession,
+    null,
+  );
+  assert.equal(
+    streamDisposed.lastHandledShortcutId,
+    "dispose_runtime_stream_session",
+  );
+
+  const beforeDefaultPreventedCount = observed.length;
+  const beforeDefaultPreventedSnapshot = shortcuts.getSnapshot();
+  const ignoredDefaultPrevented = await shortcuts.handleKeyEvent(
+    key({ key: "1", ctrlKey: true, defaultPrevented: true }),
+  );
+  assert.strictEqual(ignoredDefaultPrevented, beforeDefaultPreventedSnapshot);
+  assert.equal(observed.length, beforeDefaultPreventedCount);
+
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(shortcuts.listenerCount(), 0);
+  assert.equal(shortcuts.dispose(), true);
+  assert.equal(interaction.dispose(), true);
+  assert.equal(workbench.dispose(), true);
+});
+
+test("renderer runtime workbench shortcuts isolate listeners and active dispose", async () => {
+  const errors: unknown[] = [];
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: createRuntimeLifecyclePanelSessionFactory({
+        controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+          runtime: lifecycleRuntime.runtime,
+        }),
+      }),
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: createRuntimeStreamInteractionSessionFactory({
+        runtime: {
+          connectionInfo: async () => ({
+            base_url: "http://127.0.0.1:51234/cw/v1",
+            token: "token_workbench_shortcuts_isolation",
+          }),
+        },
+        eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+      }),
+    });
+  const workbench = createRuntimeWorkbenchSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+  });
+  const interaction = createRuntimeWorkbenchInteraction({ workbench });
+  const shortcuts = createRuntimeWorkbenchShortcutController({
+    interaction,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly panel: string;
+    readonly lastHandledShortcutId: string | null;
+    readonly disposed: boolean;
+  }> = [];
+
+  const unsubscribeThrowing = shortcuts.subscribe((snapshot) => {
+    const mutableShortcutIds =
+      snapshot.enabledShortcutIds as RuntimeWorkbenchShortcutId[];
+    mutableShortcutIds.push("show_stream_panel");
+  });
+  const unsubscribeObserved = shortcuts.subscribe((snapshot) => {
+    observed.push({
+      panel: snapshot.workbench.activePanel,
+      lastHandledShortcutId: snapshot.lastHandledShortcutId,
+      disposed: snapshot.disposed,
+    });
+  });
+
+  await shortcuts.handleKeyEvent({
+    key: "2",
+    ctrlKey: true,
+  });
+  assert.equal(errors.length, 1);
+  assert.equal(observed.at(-1)?.panel, "stream");
+  assert.equal(observed.at(-1)?.lastHandledShortcutId, "show_stream_panel");
+  assert.equal(interaction.listenerCount(), 1);
+
+  const stableSnapshot = shortcuts.getSnapshot();
+  await assert.rejects(
+    async () =>
+      shortcuts.handleKeyEvent({
+        key: "",
+      } as unknown as RuntimeWorkbenchShortcutKeyEvent),
+    /Invalid runtime workbench shortcut key event/u,
+  );
+  assert.strictEqual(shortcuts.getSnapshot(), stableSnapshot);
+
+  assert.equal(shortcuts.dispose(), true);
+  assert.equal(observed.at(-1)?.disposed, true);
+  assert.equal(shortcuts.dispose(), false);
+  assert.equal(shortcuts.isDisposed(), true);
+  assert.equal(interaction.isDisposed(), false);
+  assert.equal(interaction.listenerCount(), 0);
+  assert.equal(workbench.isDisposed(), false);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(shortcuts.subscribe(() => undefined)(), false);
+  await assert.rejects(
+    async () => shortcuts.handleKeyEvent({ key: "1", ctrlKey: true }),
+    /Runtime workbench shortcut controller is disposed/u,
+  );
+
+  assert.equal(interaction.dispose(), true);
   assert.equal(workbench.dispose(), true);
 });
 
