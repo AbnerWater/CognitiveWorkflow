@@ -24,14 +24,23 @@ export interface RuntimeResponse<
 export type RuntimeStartupStatus = RuntimeIpcStartupStatus;
 export type RuntimeShutdownStatus = RuntimeIpcShutdownStatus;
 
+export type RuntimeStartupStatusListener = (
+  statuses: readonly RuntimeStartupStatus[],
+) => void;
+
 export type RuntimeShutdownStatusListener = (
   statuses: readonly RuntimeShutdownStatus[],
 ) => void;
 
-export type RuntimeShutdownStatusUnsubscribe = () => boolean;
+export type RuntimeStatusUnsubscribe = () => boolean;
+export type RuntimeStartupStatusUnsubscribe = RuntimeStatusUnsubscribe;
+export type RuntimeShutdownStatusUnsubscribe = RuntimeStatusUnsubscribe;
 
 export interface RuntimeBridge {
   readonly startupStatus: () => Promise<readonly RuntimeStartupStatus[]>;
+  readonly onStartupStatus: (
+    listener: RuntimeStartupStatusListener,
+  ) => RuntimeStartupStatusUnsubscribe;
   readonly shutdownStatus: () => Promise<readonly RuntimeShutdownStatus[]>;
   readonly onShutdownStatus: (
     listener: RuntimeShutdownStatusListener,

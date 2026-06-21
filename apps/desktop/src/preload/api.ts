@@ -32,6 +32,7 @@ export function freezeCwDesktopApi(api: CwDesktopApi): CwDesktopApi {
 function freezeRuntimeBridge(runtime: RuntimeBridge): RuntimeBridge {
   return Object.freeze({
     startupStatus: runtime.startupStatus,
+    onStartupStatus: runtime.onStartupStatus,
     shutdownStatus: runtime.shutdownStatus,
     onShutdownStatus: runtime.onShutdownStatus,
     connectionInfo: runtime.connectionInfo,

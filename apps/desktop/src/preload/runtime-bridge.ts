@@ -17,6 +17,7 @@ import type {
   RuntimeShutdownStatus,
   RuntimeShutdownStatusUnsubscribe,
   RuntimeStartupStatus,
+  RuntimeStartupStatusUnsubscribe,
 } from "./contract.js";
 
 export type RuntimePreloadIpcInvoke = <TResult>(
@@ -29,7 +30,7 @@ export type RuntimePreloadIpcPayloadListener = (payload: unknown) => void;
 export type RuntimePreloadIpcSubscribe = (
   channel: RuntimeIpcChannel,
   listener: RuntimePreloadIpcPayloadListener,
-) => RuntimeShutdownStatusUnsubscribe;
+) => RuntimeStartupStatusUnsubscribe;
 
 export interface CreateRuntimePreloadBridgeOptions {
   readonly invoke: RuntimePreloadIpcInvoke;
@@ -48,6 +49,15 @@ export function createRuntimePreloadBridge(
         ...status,
       })) satisfies readonly RuntimeStartupStatus[];
     },
+    onStartupStatus: (listener) =>
+      options.subscribe(RUNTIME_IPC_STARTUP_STATUS_CHANNEL, (payload) => {
+        const statuses = cloneRuntimeStartupStatusPayload(payload);
+        try {
+          listener(statuses);
+        } catch {
+          // Renderer callbacks must not break the preload IPC listener chain.
+        }
+      }),
     shutdownStatus: async () => {
       const statuses = await options.invoke<RuntimeIpcShutdownStatusResponse>(
         RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
@@ -80,6 +90,17 @@ export function createRuntimePreloadBridge(
         ),
       ),
   };
+}
+
+function cloneRuntimeStartupStatusPayload(
+  payload: unknown,
+): readonly RuntimeStartupStatus[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  return payload
+    .filter(isRecord)
+    .map((status) => ({ ...status }) as unknown as RuntimeStartupStatus);
 }
 
 function cloneRuntimeShutdownStatusPayload(

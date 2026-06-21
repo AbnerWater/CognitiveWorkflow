@@ -262,6 +262,67 @@ test("builds a preload runtime bridge over injected IPC invoke", async () => {
   ]);
 });
 
+test("preload runtime bridge subscribes to startup status events", () => {
+  const ipc = createFakeRuntimePreloadSubscribe();
+  const waitingStatus: RuntimeIpcStartupStatus = {
+    kind: "waiting_for_existing",
+    action: "wait_for_existing",
+    attempt: 1,
+    lockStatus: "active",
+    severity: "info",
+    message: "Waiting for existing runtime sidecar.",
+    lifecycleComplete: false,
+    userActionRequired: false,
+    retryable: false,
+  };
+  const bridge = createRuntimePreloadBridge({
+    invoke: async () => {
+      throw new Error("invoke should not be called");
+    },
+    subscribe: ipc.subscribe,
+  });
+  const firstKinds: Array<RuntimeIpcStartupStatus["kind"] | undefined> = [];
+  const secondKinds: Array<RuntimeIpcStartupStatus["kind"] | undefined> = [];
+  const unsubscribeFirst = bridge.onStartupStatus((statuses) => {
+    firstKinds.push(statuses[0]?.kind);
+    const mutableStatuses =
+      statuses as RuntimeIpcStartupStatusResponse extends readonly (infer TStatus)[]
+        ? TStatus[]
+        : never;
+    const [status] = mutableStatuses;
+    assert.ok(status);
+    mutableStatuses[0] = {
+      ...status,
+      kind: "startup_blocked",
+      action: "block_startup",
+    };
+  });
+  bridge.onStartupStatus(() => {
+    throw new Error("renderer listener failed");
+  });
+  const unsubscribeSecond = bridge.onStartupStatus((statuses) => {
+    secondKinds.push(statuses[0]?.kind);
+  });
+
+  assert.equal(ipc.listenerCount(RUNTIME_IPC_STARTUP_STATUS_CHANNEL), 3);
+  assert.doesNotThrow(() =>
+    ipc.emit(RUNTIME_IPC_STARTUP_STATUS_CHANNEL, [waitingStatus]),
+  );
+  assert.deepEqual(firstKinds, ["waiting_for_existing"]);
+  assert.deepEqual(secondKinds, ["waiting_for_existing"]);
+  assert.deepEqual(ipc.lastPayload(RUNTIME_IPC_STARTUP_STATUS_CHANNEL), [
+    waitingStatus,
+  ]);
+
+  ipc.emit(RUNTIME_IPC_STARTUP_STATUS_CHANNEL, { invalid: true });
+  assert.deepEqual(firstKinds, ["waiting_for_existing", undefined]);
+  assert.deepEqual(secondKinds, ["waiting_for_existing", undefined]);
+  assert.equal(unsubscribeFirst(), true);
+  assert.equal(unsubscribeFirst(), false);
+  assert.equal(unsubscribeSecond(), true);
+  assert.equal(ipc.listenerCount(RUNTIME_IPC_STARTUP_STATUS_CHANNEL), 1);
+});
+
 test("preload runtime bridge subscribes to shutdown status events", () => {
   const ipc = createFakeRuntimePreloadSubscribe();
   const shuttingDownStatus: RuntimeIpcShutdownStatus = {
@@ -413,6 +474,7 @@ test("builds a frozen cw desktop API over injected IPC invoke", async () => {
   assert.equal(CW_PRELOAD_API_KEY, "cw");
   assert.equal(Object.isFrozen(api), true);
   assert.equal(Object.isFrozen(api.runtime), true);
+  assert.equal(typeof api.runtime.onStartupStatus, "function");
   assert.equal(typeof api.runtime.onShutdownStatus, "function");
   assert.deepEqual(await api.runtime.startupStatus(), statuses);
   assert.deepEqual(await api.runtime.shutdownStatus(), shutdownStatuses);
@@ -465,6 +527,8 @@ test("installs the cw preload API through injected Electron-like bridges", async
     readonly channel: RuntimeIpcChannel;
     readonly payload?: unknown;
   }> = [];
+  const liveStartupStatusPayloads: Array<readonly RuntimeIpcStartupStatus[]> =
+    [];
   const liveStatusPayloads: Array<readonly RuntimeIpcShutdownStatus[]> = [];
   const ipcListeners = new Map<
     RuntimeIpcChannel,
@@ -552,6 +616,18 @@ test("installs the cw preload API through injected Electron-like bridges", async
   assert.equal(exposure.api, api);
   assert.equal(Object.isFrozen(api), true);
   assert.equal(Object.isFrozen(api.runtime), true);
+  const unsubscribeStartupStatus = api.runtime.onStartupStatus(
+    (liveStatuses) => {
+      liveStartupStatusPayloads.push(liveStatuses);
+    },
+  );
+  ipcListeners.get(RUNTIME_IPC_STARTUP_STATUS_CHANNEL)?.(
+    { sender: "main" },
+    statuses,
+  );
+  assert.equal(unsubscribeStartupStatus(), true);
+  assert.equal(unsubscribeStartupStatus(), false);
+  assert.equal(ipcListeners.has(RUNTIME_IPC_STARTUP_STATUS_CHANNEL), false);
   const unsubscribeShutdownStatus = api.runtime.onShutdownStatus(
     (liveStatuses) => {
       liveStatusPayloads.push(liveStatuses);
@@ -564,6 +640,7 @@ test("installs the cw preload API through injected Electron-like bridges", async
   assert.equal(unsubscribeShutdownStatus(), true);
   assert.equal(unsubscribeShutdownStatus(), false);
   assert.equal(ipcListeners.has(RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL), false);
+  assert.deepEqual(liveStartupStatusPayloads, [statuses]);
   assert.deepEqual(liveStatusPayloads, [shutdownStatuses]);
 
   assert.deepEqual(await api.runtime.startupStatus(), statuses);
