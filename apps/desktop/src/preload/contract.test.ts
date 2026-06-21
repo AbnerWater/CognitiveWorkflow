@@ -62,6 +62,10 @@ import {
   type RuntimeLifecyclePanelTimelineFilter,
 } from "../renderer/runtime-lifecycle-panel-view-model.js";
 import {
+  createRuntimeLifecyclePanelInteraction,
+  type RuntimeLifecyclePanelInteractionCommand,
+} from "../renderer/runtime-lifecycle-panel-interaction.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -2681,6 +2685,270 @@ test("renderer runtime lifecycle panel view model isolates listeners and active 
   assert.equal(unsubscribeThrowing(), false);
   assert.equal(unsubscribeObserved(), false);
   assert.equal(viewModel.dispose(), false);
+});
+
+test("renderer runtime lifecycle panel interaction dispatches keyboard commands", async () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const pageLifecycle = createFakeRuntimeLifecycleStatusPageLifecycleTarget();
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const hookFactory = createRuntimeLifecyclePanelHookAdapterFactory({
+    controllerFactory,
+  });
+  const viewModel = createRuntimeLifecyclePanelViewModel({
+    adapter: hookFactory.createAdapter(),
+  });
+  const interaction = createRuntimeLifecyclePanelInteraction({
+    viewModel,
+  });
+  const notifications: Array<{
+    readonly focusTarget: string | null;
+    readonly command: string | null;
+    readonly item: string | null;
+    readonly selected: string | null;
+    readonly started: boolean;
+  }> = [];
+
+  assert.equal(Object.hasOwn(interaction, "viewModel"), false);
+  assert.equal(Object.hasOwn(interaction, "adapter"), false);
+  assert.equal(Object.hasOwn(interaction, "controller"), false);
+  assert.equal(Object.hasOwn(interaction, "session"), false);
+  assert.equal(interaction.snapshot().focusTarget, null);
+  assert.deepEqual(interaction.snapshot().availableCommandIds, [
+    "start_runtime",
+    "refresh_status",
+  ]);
+  assert.deepEqual(interaction.snapshot().enabledCommandIds, [
+    "start_runtime",
+    "refresh_status",
+  ]);
+  assert.equal(Object.isFrozen(interaction.snapshot()), true);
+  assert.equal(
+    Object.isFrozen(interaction.snapshot().availableCommandIds),
+    true,
+  );
+  assert.equal(Object.isFrozen(interaction.snapshot().enabledCommandIds), true);
+
+  const unsubscribe = interaction.subscribe((snapshot) => {
+    notifications.push({
+      focusTarget: snapshot.focusTarget,
+      command: snapshot.focusedCommandId,
+      item: snapshot.focusedTimelineItemId,
+      selected: snapshot.view.selectedTimelineItemId,
+      started: snapshot.view.panel.started,
+    });
+  });
+
+  const focusedPrimary = await interaction.dispatch("focus_primary_command");
+  assert.equal(focusedPrimary.focusedCommandId, "start_runtime");
+  assert.equal(focusedPrimary.focusTarget, "command");
+  assert.equal(focusedPrimary.canActivateFocusedCommand, true);
+
+  const started = await interaction.dispatch("activate_focused_command");
+  assert.equal(started.view.panel.started, true);
+  assert.equal(started.availableCommandIds.includes("refresh_status"), true);
+  assert.equal(started.availableCommandIds.includes("stop_runtime"), true);
+  assert.equal(started.enabledCommandIds.includes("refresh_status"), true);
+  assert.equal(started.enabledCommandIds.includes("stop_runtime"), true);
+
+  const refreshed = await interaction.dispatch("refresh_status");
+  assert.equal(refreshed.view.visibleTimelineItemCount, 2);
+  assert.equal(refreshed.view.totalTimelineItems, 2);
+  assert.equal(refreshed.availableCommandIds.includes("wait"), true);
+  const focusedWait = interaction.focusCommand("wait");
+  assert.equal(focusedWait.canActivateFocusedCommand, false);
+  const disabledNoOp = await interaction.dispatch("activate_focused_command");
+  assert.equal(disabledNoOp.focusedCommandId, "wait");
+  assert.equal(disabledNoOp.view.panel.started, true);
+  await assert.rejects(
+    async () => interaction.invokeCommand("wait"),
+    /command is not enabled/u,
+  );
+
+  const focusedTimeline = await interaction.dispatch(
+    "focus_next_timeline_item",
+  );
+  assert.equal(focusedTimeline.focusTarget, "timeline_item");
+  assert.equal(focusedTimeline.canSelectFocusedTimelineItem, true);
+  assert.equal(
+    focusedTimeline.focusedTimelineItemId?.startsWith("startup:"),
+    true,
+  );
+
+  const selected = await interaction.dispatch("select_focused_timeline_item");
+  assert.equal(
+    selected.view.selectedTimelineItemId,
+    focusedTimeline.focusedTimelineItemId,
+  );
+  assert.equal(selected.view.selectedTimelineItem?.source, "startup");
+
+  const shutdownOnly = viewModel.setTimelineFilter("shutdown");
+  assert.equal(shutdownOnly.selectedTimelineItemId, null);
+  assert.equal(interaction.snapshot().focusedTimelineItemId, null);
+  const shutdownFocused = await interaction.dispatch(
+    "focus_previous_timeline_item",
+  );
+  assert.equal(
+    shutdownFocused.focusedTimelineItemId?.startsWith("shutdown:"),
+    true,
+  );
+  const shutdownSelected = await interaction.dispatch(
+    "select_focused_timeline_item",
+  );
+  assert.equal(shutdownSelected.view.selectedTimelineItem?.source, "shutdown");
+
+  const stopped = await interaction.dispatch("stop_runtime");
+  assert.equal(stopped.view.panel.started, false);
+  assert.equal(stopped.availableCommandIds.includes("refresh_status"), true);
+  assert.equal(stopped.availableCommandIds.includes("stop_runtime"), false);
+  assert.equal(
+    interaction.focusCommand("refresh_status").focusedCommandId,
+    "refresh_status",
+  );
+  assert.equal(
+    interaction.focusTimelineItem(
+      stopped.view.visibleTimelineItems[0]?.id ?? "",
+    ).focusedTimelineItemId,
+    stopped.view.visibleTimelineItems[0]?.id ?? null,
+  );
+  assert.equal(interaction.clearSelection().view.selectedTimelineItemId, null);
+
+  const unbindPageLifecycle = interaction.bindPageLifecycle(pageLifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 1);
+  assert.equal(unbindPageLifecycle(), true);
+  assert.equal(unbindPageLifecycle(), false);
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 0);
+  const disposePageLifecycle =
+    createFakeRuntimeLifecycleStatusPageLifecycleTarget();
+  const disposeUnbind = interaction.bindPageLifecycle(disposePageLifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(disposePageLifecycle.listenerCount("pagehide"), 1);
+
+  await assert.rejects(
+    async () =>
+      interaction.dispatch(
+        "unknown" as RuntimeLifecyclePanelInteractionCommand,
+      ),
+    /Invalid runtime lifecycle panel interaction command/u,
+  );
+  assert.throws(
+    () => interaction.focusCommand("none"),
+    /command is not available/u,
+  );
+  assert.throws(
+    () => interaction.focusTimelineItem("../unsafe item"),
+    /Invalid runtime lifecycle panel timeline item id/u,
+  );
+  assert.ok(notifications.length > 0);
+
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(interaction.listenerCount(), 0);
+  assert.equal(interaction.dispose(), true);
+  assert.equal(disposePageLifecycle.listenerCount("pagehide"), 0);
+  assert.equal(disposeUnbind(), false);
+  assert.equal(viewModel.isDisposed(), false);
+  assert.equal(interaction.dispose(), false);
+  assert.equal(interaction.isDisposed(), true);
+  assert.equal(interaction.subscribe(() => undefined)(), false);
+  await assert.rejects(
+    async () => interaction.dispatch("refresh_status"),
+    /lifecycle panel interaction is disposed/u,
+  );
+  assert.equal(viewModel.dispose(), true);
+});
+
+test("renderer runtime lifecycle panel interaction isolates listeners and active dispose", async () => {
+  const errors: unknown[] = [];
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const hookFactory = createRuntimeLifecyclePanelHookAdapterFactory({
+    controllerFactory,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const viewModel = createRuntimeLifecyclePanelViewModel({
+    adapter: hookFactory.createAdapter({
+      onError: (error) => {
+        errors.push(error);
+      },
+    }),
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const interaction = createRuntimeLifecyclePanelInteraction({
+    viewModel,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly focusTarget: string | null;
+    readonly command: string | null;
+    readonly item: string | null;
+    readonly selected: string | null;
+  }> = [];
+
+  const unsubscribeThrowing = interaction.subscribe((snapshot) => {
+    const mutableCommandIds =
+      snapshot.availableCommandIds as RuntimeLifecyclePanelInteractionCommand[];
+    mutableCommandIds.push("refresh_status");
+  });
+  const unsubscribeObserved = interaction.subscribe((snapshot) => {
+    observed.push({
+      focusTarget: snapshot.focusTarget,
+      command: snapshot.focusedCommandId,
+      item: snapshot.focusedTimelineItemId,
+      selected: snapshot.view.selectedTimelineItemId,
+    });
+  });
+
+  await interaction.dispatch("focus_primary_command");
+  await interaction.dispatch("activate_focused_command");
+  await interaction.dispatch("refresh_status");
+  await interaction.dispatch("focus_next_timeline_item");
+  await interaction.dispatch("select_focused_timeline_item");
+
+  assert.equal(errors.length, 5);
+  assert.deepEqual(interaction.snapshot().availableCommandIds, [
+    "wait",
+    "refresh_status",
+    "stop_runtime",
+  ]);
+  assert.equal(
+    observed.some(
+      (snapshot) =>
+        snapshot.focusTarget === "timeline_item" &&
+        snapshot.selected?.startsWith("startup:"),
+    ),
+    true,
+  );
+
+  assert.equal(interaction.dispose(), true);
+  assert.equal(interaction.listenerCount(), 0);
+  assert.equal(runtime.startupUnsubscribeCount(), 0);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 0);
+  assert.equal(viewModel.isDisposed(), false);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(interaction.dispose(), false);
+  assert.equal(viewModel.dispose(), true);
+  assert.equal(runtime.startupUnsubscribeCount(), 1);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 1);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
