@@ -214,12 +214,19 @@ export interface RuntimeStreamInteractionSessionSnapshot {
   readonly interaction: RuntimeStreamInteractionSnapshot;
 }
 
+export type RuntimeStreamInteractionSessionListener = (
+  snapshot: RuntimeStreamInteractionSessionSnapshot,
+) => void;
+
 export interface RuntimeStreamInteractionSession {
   readonly eventTypes: readonly RuntimeStreamKnownEventType[];
   readonly store: RuntimeStreamEventStore;
   readonly viewModel: RuntimeStreamViewModel;
   readonly interaction: RuntimeStreamInteraction;
   readonly snapshot: () => RuntimeStreamInteractionSessionSnapshot;
+  readonly subscribe: (
+    listener: RuntimeStreamInteractionSessionListener,
+  ) => RuntimeStreamUnsubscribe;
   readonly start: () => Promise<RuntimeStreamInteractionSessionSnapshot>;
   readonly stop: () => boolean;
   readonly resetFullReloadRequired: () => RuntimeStreamInteractionSessionSnapshot;
@@ -228,6 +235,7 @@ export interface RuntimeStreamInteractionSession {
     options?: BindRuntimeStreamEventStorePageLifecycleOptions,
   ) => RuntimeStreamUnsubscribe;
   readonly isStarted: () => boolean;
+  readonly listenerCount: () => number;
   readonly dispose: () => boolean;
 }
 
@@ -286,7 +294,17 @@ export function createRuntimeStreamInteractionSession(
     ...(options.onError !== undefined ? { onError: options.onError } : {}),
   });
   const lifecycleUnsubscribes = new Set<RuntimeStreamUnsubscribe>();
+  const sessionListeners = new Set<RuntimeStreamInteractionSessionListener>();
+  let upstreamInteractionUnsubscribe: RuntimeStreamUnsubscribe | null = null;
   let disposed = false;
+
+  const reportError = (error: unknown): void => {
+    try {
+      options.onError?.(error);
+    } catch {
+      // Renderer diagnostics must not break session snapshot propagation.
+    }
+  };
 
   const assertActive = (): void => {
     if (disposed) {
@@ -299,12 +317,59 @@ export function createRuntimeStreamInteractionSession(
     interaction: interaction.snapshot(),
   });
 
+  const publish = (): void => {
+    if (disposed || sessionListeners.size === 0) {
+      return;
+    }
+    const nextSnapshot = snapshot();
+    for (const listener of [...sessionListeners]) {
+      try {
+        listener(nextSnapshot);
+      } catch (error) {
+        reportError(error);
+      }
+    }
+  };
+
+  const ensureUpstreamInteractionSubscription = (): void => {
+    if (upstreamInteractionUnsubscribe !== null) {
+      return;
+    }
+    upstreamInteractionUnsubscribe = interaction.subscribe(() => {
+      publish();
+    });
+  };
+
+  const releaseUpstreamInteractionSubscription = (): void => {
+    upstreamInteractionUnsubscribe?.();
+    upstreamInteractionUnsubscribe = null;
+  };
+
   return {
     eventTypes,
     store,
     viewModel,
     interaction,
     snapshot,
+    subscribe: (listener) => {
+      if (disposed) {
+        return () => false;
+      }
+      sessionListeners.add(listener);
+      ensureUpstreamInteractionSubscription();
+      let subscribed = true;
+      return () => {
+        if (!subscribed) {
+          return false;
+        }
+        subscribed = false;
+        const deleted = sessionListeners.delete(listener);
+        if (sessionListeners.size === 0) {
+          releaseUpstreamInteractionSubscription();
+        }
+        return deleted;
+      };
+    },
     start: async () => {
       assertActive();
       await store.start();
@@ -345,11 +410,14 @@ export function createRuntimeStreamInteractionSession(
       };
     },
     isStarted: () => !disposed && store.isStarted(),
+    listenerCount: () => sessionListeners.size,
     dispose: () => {
       if (disposed) {
         return false;
       }
       disposed = true;
+      releaseUpstreamInteractionSubscription();
+      sessionListeners.clear();
       for (const unsubscribe of [...lifecycleUnsubscribes]) {
         unsubscribe();
       }

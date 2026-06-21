@@ -2098,6 +2098,62 @@ test("renderer runtime stream session composes store view model and interaction"
   assert.equal(session.dispose(), true);
 });
 
+test("renderer runtime stream session publishes unified snapshots", async () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const errors: unknown[] = [];
+  const session = createRuntimeStreamInteractionSession({
+    clientOptions: createRuntimeStreamEventStoreClientOptions(),
+    clientFactory: clientFactory.factory,
+    eventTypes: ["model.text_delta"],
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const published: number[] = [];
+
+  assert.equal(session.listenerCount(), 0);
+  assert.equal(session.interaction.listenerCount(), 0);
+  const unsubscribeThrowing = session.subscribe(() => {
+    throw new Error("session listener failed");
+  });
+  const unsubscribe = session.subscribe((snapshot) => {
+    published.push(snapshot.store.totalEvents);
+  });
+  assert.equal(session.listenerCount(), 2);
+  assert.equal(session.interaction.listenerCount(), 1);
+
+  await session.start();
+  const client = clientFactory.clients[0];
+  assert.ok(client !== undefined);
+  client.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_session_publish",
+      seq: 1,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "Session publish",
+      content: "published content",
+      expandable: false,
+      created_at: "2026-06-21T00:00:00.003Z",
+    }),
+  );
+
+  assert.ok(published.includes(1));
+  assert.equal(errors.length > 0, true);
+  assert.equal(unsubscribeThrowing(), true);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(session.listenerCount(), 1);
+  assert.equal(session.interaction.listenerCount(), 1);
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(session.listenerCount(), 0);
+  assert.equal(session.interaction.listenerCount(), 0);
+  assert.equal(session.dispose(), true);
+  assert.equal(session.subscribe(() => undefined)(), false);
+});
+
 test("renderer runtime stream session uses spec channel defaults and lifecycle stop", async () => {
   assert.equal(
     new Set(RUNTIME_STREAM_ALL_EVENT_TYPES).size,
