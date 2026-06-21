@@ -42,6 +42,11 @@ import {
 } from "../renderer/startup-status-view-model.js";
 import { createRuntimeStartupStatusSession } from "../renderer/startup-status-session.js";
 import {
+  createRuntimeLifecycleStatusController,
+  type RuntimeLifecycleStatusPageLifecycleEvent,
+  type RuntimeLifecycleStatusPageLifecycleListener,
+} from "../renderer/runtime-lifecycle-status-controller.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -1118,6 +1123,241 @@ test("renderer startup status session isolates listeners and cleans up", async (
     /startup status session is disposed/u,
   );
   assert.equal(session.stop(), false);
+});
+
+test("renderer runtime lifecycle status controller composes startup and shutdown status", async () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const controller = createRuntimeLifecycleStatusController({
+    runtime: runtime.runtime,
+  });
+  const published: Array<{
+    readonly phase: string;
+    readonly startupStarted: boolean;
+    readonly shutdownStarted: boolean;
+    readonly startupTotal: number;
+    readonly shutdownTotal: number;
+  }> = [];
+
+  assert.equal(controller.isStarted(), false);
+  assert.equal(controller.snapshot().phase, "idle");
+  assert.equal(controller.snapshot().shutdownStatuses.length, 0);
+
+  const unsubscribe = controller.subscribe((snapshot) => {
+    published.push({
+      phase: snapshot.phase,
+      startupStarted: snapshot.startupStarted,
+      shutdownStarted: snapshot.shutdownStarted,
+      startupTotal: snapshot.startup.statuses.length,
+      shutdownTotal: snapshot.shutdownStatuses.length,
+    });
+  });
+  assert.equal(controller.listenerCount(), 1);
+  assert.equal(controller.startupSession.listenerCount(), 1);
+  assert.equal(controller.shutdownStore.listenerCount(), 1);
+
+  const started = controller.start();
+  assert.equal(started.startupStarted, true);
+  assert.equal(started.shutdownStarted, true);
+  assert.equal(controller.isStarted(), true);
+  assert.equal(runtime.startupListenerCount(), 1);
+  assert.equal(runtime.shutdownListenerCount(), 1);
+  assert.deepEqual(published, [
+    {
+      phase: "idle",
+      startupStarted: true,
+      shutdownStarted: true,
+      startupTotal: 0,
+      shutdownTotal: 0,
+    },
+  ]);
+
+  const refreshed = await controller.refresh();
+  assert.equal(refreshed.phase, "starting");
+  assert.equal(refreshed.shutdownStatuses.length, 1);
+  assert.deepEqual(published.at(-1), {
+    phase: "starting",
+    startupStarted: true,
+    shutdownStarted: true,
+    startupTotal: 1,
+    shutdownTotal: 1,
+  });
+
+  runtime.emitStartup([createStartupStatus("runtime_ready")]);
+  assert.equal(controller.snapshot().phase, "ready");
+  assert.deepEqual(published.at(-1), {
+    phase: "ready",
+    startupStarted: true,
+    shutdownStarted: true,
+    startupTotal: 2,
+    shutdownTotal: 1,
+  });
+
+  runtime.emitShutdown([createShutdownStatus("shutting_down")]);
+  assert.equal(controller.snapshot().phase, "shutting_down");
+  assert.deepEqual(published.at(-1), {
+    phase: "shutting_down",
+    startupStarted: true,
+    shutdownStarted: true,
+    startupTotal: 2,
+    shutdownTotal: 2,
+  });
+
+  runtime.setStartupSnapshot([
+    createStartupStatus("starting_sidecar"),
+    createStartupStatus("runtime_ready"),
+  ]);
+  runtime.setShutdownSnapshot([createShutdownStatus("shutdown_complete")]);
+  const stoppedSnapshot = await controller.refresh();
+  assert.equal(stoppedSnapshot.phase, "stopped");
+  assert.equal(stoppedSnapshot.tone, "success");
+  assert.equal(stoppedSnapshot.lifecycleComplete, true);
+  assert.deepEqual(published.at(-1), {
+    phase: "stopped",
+    startupStarted: true,
+    shutdownStarted: true,
+    startupTotal: 2,
+    shutdownTotal: 1,
+  });
+
+  runtime.emitShutdown([createShutdownStatus("shutdown_failed")]);
+  const failedSnapshot = controller.snapshot();
+  assert.equal(failedSnapshot.phase, "failed");
+  assert.equal(failedSnapshot.tone, "error");
+  assert.equal(failedSnapshot.lifecycleComplete, true);
+  assert.equal(failedSnapshot.userActionRequired, true);
+  assert.equal(failedSnapshot.retryable, true);
+  assert.equal(failedSnapshot.latestShutdownStatus?.state, "failed");
+  assert.deepEqual(published.at(-1), {
+    phase: "failed",
+    startupStarted: true,
+    shutdownStarted: true,
+    startupTotal: 2,
+    shutdownTotal: 2,
+  });
+
+  runtime.emitShutdown([createShutdownStatus("unregistered")]);
+  const unregisteredSnapshot = controller.snapshot();
+  assert.equal(unregisteredSnapshot.phase, "stopped");
+  assert.equal(unregisteredSnapshot.tone, "success");
+  assert.equal(unregisteredSnapshot.lifecycleComplete, true);
+  assert.equal(unregisteredSnapshot.userActionRequired, false);
+  assert.equal(unregisteredSnapshot.retryable, false);
+  assert.equal(
+    unregisteredSnapshot.latestShutdownStatus?.state,
+    "unregistered",
+  );
+  assert.deepEqual(published.at(-1), {
+    phase: "stopped",
+    startupStarted: true,
+    shutdownStarted: true,
+    startupTotal: 2,
+    shutdownTotal: 3,
+  });
+
+  assert.equal(controller.stop(), true);
+  assert.equal(controller.isStarted(), false);
+  assert.equal(runtime.startupUnsubscribeCount(), 1);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 1);
+  assert.deepEqual(published.at(-1), {
+    phase: "stopped",
+    startupStarted: false,
+    shutdownStarted: false,
+    startupTotal: 2,
+    shutdownTotal: 3,
+  });
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(controller.listenerCount(), 0);
+  assert.equal(controller.startupSession.listenerCount(), 0);
+  assert.equal(controller.shutdownStore.listenerCount(), 0);
+  assert.equal(controller.dispose(), true);
+});
+
+test("renderer runtime lifecycle status controller isolates listeners and disposes", async () => {
+  const errors: unknown[] = [];
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const pageLifecycle = createFakeRuntimeLifecycleStatusPageLifecycleTarget();
+  const controller = createRuntimeLifecycleStatusController({
+    runtime: runtime.runtime,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly phase: string;
+    readonly shutdownTotal: number;
+  }> = [];
+
+  const unsubscribeThrowing = controller.subscribe((snapshot) => {
+    const mutableShutdownStatuses =
+      snapshot.shutdownStatuses as RuntimeIpcShutdownStatus[];
+    mutableShutdownStatuses.push(createShutdownStatus("shutdown_failed"));
+    throw new Error("lifecycle listener failed");
+  });
+  const unsubscribeObserved = controller.subscribe((snapshot) => {
+    observed.push({
+      phase: snapshot.phase,
+      shutdownTotal: snapshot.shutdownStatuses.length,
+    });
+  });
+
+  controller.start();
+  await controller.refresh();
+  assert.deepEqual(observed, [
+    { phase: "idle", shutdownTotal: 0 },
+    { phase: "starting", shutdownTotal: 1 },
+  ]);
+  assert.equal(errors.length, 2);
+  assert.deepEqual(controller.snapshot().shutdownStatuses, [
+    createShutdownStatus("registered"),
+  ]);
+
+  const unbindPageLifecycle = controller.bindPageLifecycle(pageLifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 1);
+  pageLifecycle.emit("pagehide");
+  assert.equal(controller.isStarted(), false);
+  assert.equal(runtime.startupUnsubscribeCount(), 1);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 1);
+  assert.deepEqual(observed.at(-1), {
+    phase: "starting",
+    shutdownTotal: 1,
+  });
+  assert.equal(observed.length, 3);
+  assert.equal(errors.length, 3);
+  assert.equal(unbindPageLifecycle(), true);
+  assert.equal(observed.length, 3);
+  assert.equal(errors.length, 3);
+  assert.equal(unbindPageLifecycle(), false);
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 0);
+
+  assert.equal(unsubscribeThrowing(), true);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), true);
+  assert.equal(controller.listenerCount(), 0);
+  assert.equal(controller.startupSession.listenerCount(), 0);
+  assert.equal(controller.shutdownStore.listenerCount(), 0);
+  assert.equal(controller.dispose(), true);
+  assert.equal(controller.dispose(), false);
+  assert.equal(controller.isDisposed(), true);
+  assert.equal(controller.startupSession.isDisposed(), true);
+  assert.equal(controller.subscribe(() => undefined)(), false);
+  assert.throws(
+    () => controller.start(),
+    /lifecycle status controller is disposed/u,
+  );
+  await assert.rejects(
+    async () => controller.refresh(),
+    /lifecycle status controller is disposed/u,
+  );
+  assert.equal(controller.stop(), false);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
@@ -3799,6 +4039,134 @@ function createShutdownStatus(
   }
 }
 
+function createFakeRuntimeLifecycleStatusRuntime(
+  initialStartupStatuses: readonly RuntimeIpcStartupStatus[],
+  initialShutdownStatuses: readonly RuntimeIpcShutdownStatus[],
+): {
+  readonly runtime: Pick<
+    RuntimeBridge,
+    "startupStatus" | "onStartupStatus" | "shutdownStatus" | "onShutdownStatus"
+  >;
+  readonly setStartupSnapshot: (
+    statuses: readonly RuntimeIpcStartupStatus[],
+  ) => void;
+  readonly setShutdownSnapshot: (
+    statuses: readonly RuntimeIpcShutdownStatus[],
+  ) => void;
+  readonly emitStartup: (statuses: readonly RuntimeIpcStartupStatus[]) => void;
+  readonly emitShutdown: (
+    statuses: readonly RuntimeIpcShutdownStatus[],
+  ) => void;
+  readonly startupListenerCount: () => number;
+  readonly shutdownListenerCount: () => number;
+  readonly startupUnsubscribeCount: () => number;
+  readonly shutdownUnsubscribeCount: () => number;
+} {
+  let startupStatuses = cloneStartupStatuses(initialStartupStatuses);
+  let shutdownStatuses = cloneShutdownStatuses(initialShutdownStatuses);
+  let startupUnsubscribeCount = 0;
+  let shutdownUnsubscribeCount = 0;
+  const startupListeners = new Set<
+    (statuses: readonly RuntimeIpcStartupStatus[]) => void
+  >();
+  const shutdownListeners = new Set<
+    (statuses: readonly RuntimeIpcShutdownStatus[]) => void
+  >();
+
+  return {
+    runtime: {
+      startupStatus: async () => cloneStartupStatuses(startupStatuses),
+      onStartupStatus: (listener) => {
+        startupListeners.add(listener);
+        let subscribed = true;
+        return () => {
+          if (!subscribed) {
+            return false;
+          }
+          subscribed = false;
+          const deleted = startupListeners.delete(listener);
+          if (deleted) {
+            startupUnsubscribeCount += 1;
+          }
+          return deleted;
+        };
+      },
+      shutdownStatus: async () => cloneShutdownStatuses(shutdownStatuses),
+      onShutdownStatus: (listener) => {
+        shutdownListeners.add(listener);
+        let subscribed = true;
+        return () => {
+          if (!subscribed) {
+            return false;
+          }
+          subscribed = false;
+          const deleted = shutdownListeners.delete(listener);
+          if (deleted) {
+            shutdownUnsubscribeCount += 1;
+          }
+          return deleted;
+        };
+      },
+    },
+    setStartupSnapshot: (nextStatuses) => {
+      startupStatuses = cloneStartupStatuses(nextStatuses);
+    },
+    setShutdownSnapshot: (nextStatuses) => {
+      shutdownStatuses = cloneShutdownStatuses(nextStatuses);
+    },
+    emitStartup: (nextStatuses) => {
+      for (const listener of [...startupListeners]) {
+        listener(cloneStartupStatuses(nextStatuses));
+      }
+    },
+    emitShutdown: (nextStatuses) => {
+      for (const listener of [...shutdownListeners]) {
+        listener(cloneShutdownStatuses(nextStatuses));
+      }
+    },
+    startupListenerCount: () => startupListeners.size,
+    shutdownListenerCount: () => shutdownListeners.size,
+    startupUnsubscribeCount: () => startupUnsubscribeCount,
+    shutdownUnsubscribeCount: () => shutdownUnsubscribeCount,
+  };
+}
+
+function createFakeRuntimeLifecycleStatusPageLifecycleTarget(): {
+  readonly addEventListener: (
+    eventType: RuntimeLifecycleStatusPageLifecycleEvent,
+    listener: RuntimeLifecycleStatusPageLifecycleListener,
+  ) => void;
+  readonly removeEventListener: (
+    eventType: RuntimeLifecycleStatusPageLifecycleEvent,
+    listener: RuntimeLifecycleStatusPageLifecycleListener,
+  ) => void;
+  readonly emit: (eventType: RuntimeLifecycleStatusPageLifecycleEvent) => void;
+  readonly listenerCount: (
+    eventType: RuntimeLifecycleStatusPageLifecycleEvent,
+  ) => number;
+} {
+  const listeners = new Map<
+    RuntimeLifecycleStatusPageLifecycleEvent,
+    Set<RuntimeLifecycleStatusPageLifecycleListener>
+  >();
+  return {
+    addEventListener: (eventType, listener) => {
+      const eventListeners = listeners.get(eventType) ?? new Set();
+      eventListeners.add(listener);
+      listeners.set(eventType, eventListeners);
+    },
+    removeEventListener: (eventType, listener) => {
+      listeners.get(eventType)?.delete(listener);
+    },
+    emit: (eventType) => {
+      for (const listener of [...(listeners.get(eventType) ?? [])]) {
+        listener();
+      }
+    },
+    listenerCount: (eventType) => listeners.get(eventType)?.size ?? 0,
+  };
+}
+
 function createFakeRuntimeStartupStatusViewModelStore(
   initialStatuses: readonly RuntimeIpcStartupStatus[],
 ): {
@@ -3839,6 +4207,12 @@ function createFakeRuntimeStartupStatusViewModelStore(
 function cloneStartupStatuses(
   statuses: readonly RuntimeIpcStartupStatus[],
 ): RuntimeIpcStartupStatus[] {
+  return statuses.map((status) => ({ ...status }));
+}
+
+function cloneShutdownStatuses(
+  statuses: readonly RuntimeIpcShutdownStatus[],
+): RuntimeIpcShutdownStatus[] {
   return statuses.map((status) => ({ ...status }));
 }
 
