@@ -85,6 +85,12 @@ import {
 } from "../renderer/runtime-workbench-shortcuts.js";
 import { createRuntimeWorkbenchHostSession } from "../renderer/runtime-workbench-host-session.js";
 import {
+  buildRuntimeWorkbenchShellSnapshot,
+  createRuntimeWorkbenchShellPresenter,
+  type RuntimeWorkbenchShellAction,
+  type RuntimeWorkbenchShellShortcutHint,
+} from "../renderer/runtime-workbench-shell-presenter.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -4679,6 +4685,471 @@ test("renderer runtime workbench host session isolates listeners and active disp
     async () => host.handleKeyEvent({ key: "1", ctrlKey: true }),
     /Runtime workbench host session is disposed/u,
   );
+});
+
+test("renderer runtime workbench shell presenter projects host snapshots", () => {
+  const availableCommandIds: RuntimeWorkbenchInteractionCommandId[] = [
+    "show_lifecycle_panel",
+    "show_stream_panel",
+    "open_lifecycle_panel_session",
+    "dispose_lifecycle_panel_session",
+    "open_runtime_stream_session",
+    "dispose_runtime_stream_session",
+    "dispatch_lifecycle_panel",
+  ];
+  const availableShortcutIds: RuntimeWorkbenchShortcutId[] = [
+    "show_lifecycle_panel",
+    "show_stream_panel",
+    "dispose_runtime_stream_session",
+  ];
+  const snapshot = buildRuntimeWorkbenchShellSnapshot({
+    activePanel: "stream",
+    lifecyclePanel: {
+      active: true,
+      disposed: false,
+    },
+    runtimeStream: {
+      active: true,
+      activeChannel: { kind: "run", runId: "run_shell" },
+      disposed: false,
+    },
+    availableCommandIds,
+    enabledCommandIds: [
+      "show_lifecycle_panel",
+      "open_lifecycle_panel_session",
+      "open_runtime_stream_session",
+      "dispose_runtime_stream_session",
+      "dispatch_lifecycle_panel",
+    ],
+    availableShortcutIds,
+    enabledShortcutIds: [
+      "show_lifecycle_panel",
+      "dispose_runtime_stream_session",
+    ],
+    lastHandledShortcutId: "show_stream_panel",
+    disposed: false,
+  });
+  const actionById = (
+    id: RuntimeWorkbenchShellAction["id"],
+  ): RuntimeWorkbenchShellAction => {
+    const action = snapshot.actions.find((candidate) => candidate.id === id);
+    assert.ok(action !== undefined);
+    return action;
+  };
+  const shortcutById = (
+    id: RuntimeWorkbenchShortcutId,
+  ): RuntimeWorkbenchShellShortcutHint => {
+    const shortcut = snapshot.shortcutHints.find(
+      (candidate) => candidate.id === id,
+    );
+    assert.ok(shortcut !== undefined);
+    return shortcut;
+  };
+
+  assert.equal(snapshot.activePanel, "stream");
+  assert.equal(snapshot.activePanelLabel, "Stream");
+  assert.equal(snapshot.lifecyclePanelStatus, "active");
+  assert.equal(snapshot.runtimeStreamStatus, "active");
+  assert.equal(snapshot.runtimeStreamChannelLabel, "Run run_shell");
+  assert.equal(snapshot.lastHandledShortcutLabel, "Show stream");
+  assert.equal(Object.hasOwn(snapshot, "host"), false);
+  assert.equal(Object.hasOwn(snapshot, "workbench"), false);
+  assert.equal(Object.hasOwn(snapshot, "interaction"), false);
+  assert.equal(Object.hasOwn(snapshot, "shortcuts"), false);
+  assert.equal(Object.hasOwn(snapshot, "delegatedCommandIds"), false);
+  assert.equal(Object.hasOwn(snapshot, "lifecyclePanel"), false);
+  assert.equal(Object.hasOwn(snapshot, "runtimeStream"), false);
+  assert.deepEqual(
+    snapshot.panels.map((panel) => ({
+      id: panel.id,
+      active: panel.active,
+      status: panel.status,
+      badgeLabel: panel.badgeLabel,
+    })),
+    [
+      {
+        id: "lifecycle",
+        active: false,
+        status: "active",
+        badgeLabel: "Active",
+      },
+      {
+        id: "stream",
+        active: true,
+        status: "active",
+        badgeLabel: "Active",
+      },
+    ],
+  );
+  assert.deepEqual(snapshot.enabledActionIds, [
+    "show_lifecycle_panel",
+    "open_lifecycle_panel_session",
+    "open_runtime_stream_session",
+    "dispose_runtime_stream_session",
+  ]);
+  assert.deepEqual(actionById("open_runtime_stream_session"), {
+    id: "open_runtime_stream_session",
+    label: "Open stream",
+    title: "Open a runtime stream session.",
+    slot: "primary",
+    tone: "accent",
+    targetPanel: "stream",
+    enabled: true,
+    requiresOptions: true,
+    shortcutIds: [],
+  });
+  assert.deepEqual(actionById("dispose_runtime_stream_session").shortcutIds, [
+    "dispose_runtime_stream_session",
+  ]);
+  assert.deepEqual(shortcutById("show_lifecycle_panel").keys, ["Ctrl", "1"]);
+  assert.equal(shortcutById("show_stream_panel").enabled, false);
+  assert.deepEqual(
+    snapshot.statusItems.map((item) => [item.id, item.value, item.tone]),
+    [
+      ["active_panel", "Stream", "neutral"],
+      ["lifecycle_panel", "Active", "success"],
+      ["runtime_stream", "Run run_shell", "success"],
+      ["last_shortcut", "Show stream", "accent"],
+    ],
+  );
+  assert.equal(snapshot.ariaLive, "polite");
+  assert.equal(snapshot.emptyState, null);
+  assert.equal(Object.isFrozen(snapshot), true);
+  assert.equal(Object.isFrozen(snapshot.panels), true);
+  assert.equal(Object.isFrozen(snapshot.panels[0]), true);
+  assert.equal(Object.isFrozen(snapshot.actions), true);
+  assert.equal(Object.isFrozen(snapshot.actions[0]), true);
+  assert.equal(Object.isFrozen(snapshot.actions[0]?.shortcutIds), true);
+  assert.equal(Object.isFrozen(snapshot.shortcutHints), true);
+  assert.equal(Object.isFrozen(snapshot.shortcutHints[0]), true);
+  assert.equal(Object.isFrozen(snapshot.shortcutHints[0]?.keys), true);
+  assert.equal(Object.isFrozen(snapshot.statusItems), true);
+  assert.equal(Object.isFrozen(snapshot.availableActionIds), true);
+  assert.equal(Object.isFrozen(snapshot.enabledActionIds), true);
+
+  const emptySnapshot = buildRuntimeWorkbenchShellSnapshot({
+    activePanel: "lifecycle",
+    lifecyclePanel: { active: false, disposed: false },
+    runtimeStream: { active: false, activeChannel: null, disposed: false },
+    availableCommandIds: ["show_stream_panel"],
+    enabledCommandIds: ["show_stream_panel"],
+    availableShortcutIds: ["show_stream_panel"],
+    enabledShortcutIds: ["show_stream_panel"],
+    lastHandledShortcutId: null,
+    disposed: false,
+  });
+  assert.equal(emptySnapshot.emptyState?.title, "No active session");
+  assert.equal(emptySnapshot.ariaLive, "off");
+
+  const disposedSnapshot = buildRuntimeWorkbenchShellSnapshot(
+    {
+      activePanel: "lifecycle",
+      lifecyclePanel: { active: false, disposed: true },
+      runtimeStream: { active: false, activeChannel: null, disposed: true },
+      availableCommandIds: ["show_stream_panel"],
+      enabledCommandIds: ["show_stream_panel"],
+      availableShortcutIds: ["show_stream_panel"],
+      enabledShortcutIds: ["show_stream_panel"],
+      lastHandledShortcutId: null,
+      disposed: true,
+    },
+    true,
+  );
+  assert.deepEqual(disposedSnapshot.enabledActionIds, []);
+  assert.deepEqual(
+    disposedSnapshot.panels.map((panel) => ({
+      id: panel.id,
+      enabled: panel.enabled,
+      status: panel.status,
+    })),
+    [
+      { id: "lifecycle", enabled: false, status: "disposed" },
+      { id: "stream", enabled: false, status: "disposed" },
+    ],
+  );
+  assert.equal(disposedSnapshot.runtimeStreamChannelLabel, null);
+  assert.equal(disposedSnapshot.lastHandledShortcutLabel, null);
+  assert.deepEqual(
+    disposedSnapshot.statusItems.map((item) => [
+      item.id,
+      item.value,
+      item.tone,
+    ]),
+    [
+      ["active_panel", "Lifecycle", "danger"],
+      ["lifecycle_panel", "Disposed", "danger"],
+      ["runtime_stream", "Disposed", "danger"],
+      ["last_shortcut", "None", "neutral"],
+    ],
+  );
+  assert.equal(disposedSnapshot.shortcutHints[0]?.enabled, false);
+  assert.equal(disposedSnapshot.ariaLive, "assertive");
+});
+
+test("renderer runtime workbench shell presenter composes host actions", async () => {
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const streamClientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: createRuntimeLifecyclePanelSessionFactory({
+        controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+          runtime: lifecycleRuntime.runtime,
+        }),
+      }),
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: createRuntimeStreamInteractionSessionFactory({
+        runtime: {
+          connectionInfo: async () => ({
+            base_url: "http://127.0.0.1:51234/cw/v1",
+            token: "token_workbench_shell",
+          }),
+        },
+        eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+      }),
+    });
+  const host = createRuntimeWorkbenchHostSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+  });
+  const presenter = createRuntimeWorkbenchShellPresenter({ host });
+  const observed: Array<ReturnType<typeof presenter.snapshot>> = [];
+  let preventDefaultCount = 0;
+  const key = (
+    event: Omit<RuntimeWorkbenchShortcutKeyEvent, "preventDefault">,
+  ): RuntimeWorkbenchShortcutKeyEvent => ({
+    ...event,
+    preventDefault: () => {
+      preventDefaultCount += 1;
+    },
+  });
+  const actionById = (
+    snapshot: ReturnType<typeof presenter.snapshot>,
+    id: RuntimeWorkbenchShellAction["id"],
+  ): RuntimeWorkbenchShellAction => {
+    const action = snapshot.actions.find((candidate) => candidate.id === id);
+    assert.ok(action !== undefined);
+    return action;
+  };
+
+  assert.equal(Object.hasOwn(presenter, "host"), false);
+  const initialSnapshot = presenter.getSnapshot();
+  assert.equal(Object.hasOwn(initialSnapshot, "host"), false);
+  assert.equal(Object.hasOwn(initialSnapshot, "workbench"), false);
+  assert.equal(Object.hasOwn(initialSnapshot, "interaction"), false);
+  assert.equal(Object.hasOwn(initialSnapshot, "shortcuts"), false);
+  assert.equal(initialSnapshot.activePanel, "lifecycle");
+  assert.equal(initialSnapshot.emptyState?.title, "No active session");
+  assert.equal(actionById(initialSnapshot, "show_stream_panel").enabled, true);
+  assert.equal(
+    initialSnapshot.shortcutHints.find(
+      (shortcut) => shortcut.id === "show_stream_panel",
+    )?.enabled,
+    true,
+  );
+  assert.strictEqual(presenter.getServerSnapshot(), initialSnapshot);
+  assert.strictEqual(presenter.snapshot(), initialSnapshot);
+
+  const unsubscribe = presenter.subscribe(() => {
+    observed.push(presenter.getSnapshot());
+  });
+  assert.equal(presenter.listenerCount(), 1);
+  assert.equal(host.listenerCount(), 1);
+  assert.equal(lifecyclePanelController.listenerCount(), 1);
+  assert.equal(runtimeStreamController.listenerCount(), 1);
+
+  const streamShown = presenter.setActivePanel("stream");
+  assert.equal(streamShown.activePanel, "stream");
+  assert.equal(actionById(streamShown, "show_lifecycle_panel").enabled, true);
+  assert.equal(observed.length, 1);
+  const noOpStream = presenter.setActivePanel("stream");
+  assert.strictEqual(noOpStream, streamShown);
+  assert.equal(observed.length, 1);
+
+  const lifecycleOpened = await presenter.dispatch({
+    type: "open_lifecycle_panel_session",
+  });
+  assert.equal(lifecycleOpened.activePanel, "lifecycle");
+  assert.equal(lifecycleOpened.lifecyclePanelStatus, "active");
+  assert.equal(
+    actionById(lifecycleOpened, "dispose_lifecycle_panel_session").enabled,
+    true,
+  );
+  assert.equal(observed.length, 2);
+
+  const streamByKey = await presenter.handleKeyEvent(
+    key({ key: "2", ctrlKey: true }),
+  );
+  assert.equal(streamByKey.activePanel, "stream");
+  assert.equal(streamByKey.lastHandledShortcutLabel, "Show stream");
+  assert.equal(preventDefaultCount, 1);
+  assert.equal(observed.length, 3);
+
+  const streamOpened = await presenter.dispatch({
+    type: "open_runtime_stream_session",
+    options: {
+      channel: { kind: "run", runId: "run_shell_presenter" },
+      clientFactory: streamClientFactory.factory,
+      eventTypes: ["model.text_delta"],
+    },
+  });
+  assert.equal(streamOpened.runtimeStreamStatus, "active");
+  assert.equal(
+    streamOpened.runtimeStreamChannelLabel,
+    "Run run_shell_presenter",
+  );
+  assert.equal(
+    actionById(streamOpened, "dispose_runtime_stream_session").enabled,
+    true,
+  );
+  assert.equal(
+    presenter.resolveKeyEvent(key({ key: "Escape", shiftKey: true }))
+      ?.shortcutId,
+    "dispose_runtime_stream_session",
+  );
+
+  const streamDisposed = await presenter.handleKeyEvent(
+    key({ key: "Escape", shiftKey: true }),
+  );
+  assert.equal(streamDisposed.runtimeStreamStatus, "empty");
+  assert.equal(streamDisposed.runtimeStreamChannelLabel, null);
+  assert.equal(runtimeStreamController.activeSession(), null);
+
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(presenter.listenerCount(), 0);
+  assert.equal(host.listenerCount(), 0);
+  assert.equal(lifecyclePanelController.listenerCount(), 0);
+  assert.equal(runtimeStreamController.listenerCount(), 0);
+  assert.equal(presenter.dispose(), true);
+  assert.equal(presenter.dispose(), false);
+  assert.equal(presenter.isDisposed(), true);
+  assert.equal(host.isDisposed(), false);
+  const disposedSnapshot = presenter.getSnapshot();
+  assert.deepEqual(
+    disposedSnapshot.panels.map((panel) => ({
+      id: panel.id,
+      enabled: panel.enabled,
+      status: panel.status,
+    })),
+    [
+      { id: "lifecycle", enabled: false, status: "disposed" },
+      { id: "stream", enabled: false, status: "disposed" },
+    ],
+  );
+  assert.deepEqual(disposedSnapshot.enabledActionIds, []);
+  assert.equal(
+    disposedSnapshot.shortcutHints.every((shortcut) => !shortcut.enabled),
+    true,
+  );
+  assert.equal(disposedSnapshot.runtimeStreamChannelLabel, null);
+  assert.equal(disposedSnapshot.lastHandledShortcutLabel, null);
+  assert.equal(disposedSnapshot.ariaLive, "assertive");
+  assert.equal(presenter.subscribe(() => undefined)(), false);
+  assert.equal(presenter.resolveKeyEvent({ key: "1", ctrlKey: true }), null);
+  assert.throws(
+    () => presenter.setActivePanel("lifecycle"),
+    /Runtime workbench shell presenter is disposed/u,
+  );
+  assert.equal(host.dispose(), true);
+  assert.equal(lifecyclePanelController.isDisposed(), true);
+  assert.equal(runtimeStreamController.isDisposed(), true);
+});
+
+test("renderer runtime workbench shell presenter isolates listeners and active dispose", async () => {
+  const errors: unknown[] = [];
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: createRuntimeLifecyclePanelSessionFactory({
+        controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+          runtime: lifecycleRuntime.runtime,
+        }),
+      }),
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: createRuntimeStreamInteractionSessionFactory({
+        runtime: {
+          connectionInfo: async () => ({
+            base_url: "http://127.0.0.1:51234/cw/v1",
+            token: "token_workbench_shell_isolation",
+          }),
+        },
+        eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+      }),
+    });
+  const host = createRuntimeWorkbenchHostSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+  });
+  const presenter = createRuntimeWorkbenchShellPresenter({
+    host,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly activePanel: RuntimeWorkbenchPanelId;
+    readonly disposed: boolean;
+  }> = [];
+
+  const unsubscribeThrowing = presenter.subscribe(() => {
+    const mutableActions = presenter.getSnapshot()
+      .actions as RuntimeWorkbenchShellAction[];
+    const firstAction = presenter.getSnapshot().actions[0];
+    assert.ok(firstAction !== undefined);
+    mutableActions.push(firstAction);
+  });
+  const unsubscribeObserved = presenter.subscribe(() => {
+    const snapshot = presenter.getSnapshot();
+    observed.push({
+      activePanel: snapshot.activePanel,
+      disposed: snapshot.disposed,
+    });
+  });
+
+  presenter.setActivePanel("stream");
+  assert.equal(errors.length, 1);
+  assert.equal(observed.at(-1)?.activePanel, "stream");
+  assert.equal(presenter.listenerCount(), 2);
+  assert.equal(host.listenerCount(), 1);
+
+  const stableSnapshot = presenter.getSnapshot();
+  await assert.rejects(
+    async () =>
+      presenter.handleKeyEvent({
+        key: "",
+      } as unknown as RuntimeWorkbenchShortcutKeyEvent),
+    /Invalid runtime workbench shortcut key event/u,
+  );
+  assert.strictEqual(presenter.getSnapshot(), stableSnapshot);
+
+  assert.equal(presenter.dispose(), true);
+  assert.equal(errors.length, 2);
+  assert.equal(observed.at(-1)?.disposed, true);
+  assert.equal(presenter.dispose(), false);
+  assert.equal(presenter.isDisposed(), true);
+  assert.equal(host.isDisposed(), false);
+  assert.equal(host.listenerCount(), 0);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(presenter.subscribe(() => undefined)(), false);
+  assert.equal(presenter.resolveKeyEvent({ key: "1", ctrlKey: true }), null);
+  await assert.rejects(
+    async () => presenter.dispatch({ type: "show_lifecycle_panel" }),
+    /Runtime workbench shell presenter is disposed/u,
+  );
+  assert.equal(host.dispose(), true);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
