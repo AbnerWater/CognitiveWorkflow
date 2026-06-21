@@ -70,6 +70,7 @@ import {
 } from "../renderer/runtime-stream-interaction.js";
 import {
   RUNTIME_STREAM_ALL_EVENT_TYPES,
+  createRuntimeStreamInteractionSessionFactory,
   createRuntimeStreamInteractionSession,
   defaultRuntimeStreamSessionEventTypes,
   type RuntimeStreamKnownEventType,
@@ -2154,6 +2155,59 @@ test("renderer runtime stream session publishes unified snapshots", async () => 
   assert.equal(session.subscribe(() => undefined)(), false);
 });
 
+test("renderer runtime stream session factory builds runtime-backed sessions", async () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const eventSourceFactory = () => createFakeRuntimeStreamEventSource().source;
+  const runtime = {
+    connectionInfo: async () => ({
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_factory",
+    }),
+  };
+  const sessionFactory = createRuntimeStreamInteractionSessionFactory({
+    runtime,
+    eventSourceFactory,
+    projectId: "project_default",
+    filters: { category: "model" },
+  });
+
+  const session = sessionFactory.createSession({
+    channel: { kind: "planning", sessionId: "wps_01J" },
+    projectId: "project_planning",
+    filters: { category: "planning", level: ["default", "detailed"] },
+    clientFactory: clientFactory.factory,
+    eventTypes: ["planning.session_started"],
+    searchQuery: "draft",
+  });
+
+  assert.deepEqual(session.eventTypes, ["planning.session_started"]);
+  await session.start();
+  const clientOptions = clientFactory.options[0];
+  assert.ok(clientOptions !== undefined);
+  assert.equal(clientOptions.runtime, runtime);
+  assert.equal(clientOptions.eventSourceFactory, eventSourceFactory);
+  assert.deepEqual(clientOptions.channel, {
+    kind: "planning",
+    sessionId: "wps_01J",
+  });
+  assert.equal(clientOptions.projectId, "project_planning");
+  assert.deepEqual(clientOptions.filters, {
+    category: "planning",
+    level: ["default", "detailed"],
+  });
+  assert.equal(session.snapshot().interaction.search.query, "draft");
+  assert.equal(session.dispose(), true);
+
+  assert.throws(
+    () =>
+      sessionFactory.createSession({
+        channel: { kind: "run", runId: "run_01J" },
+        eventTypes: ["model.fake" as RuntimeStreamKnownEventType],
+      }),
+    /StreamEvent spec/u,
+  );
+});
+
 test("renderer runtime stream session uses spec channel defaults and lifecycle stop", async () => {
   assert.equal(
     new Set(RUNTIME_STREAM_ALL_EVENT_TYPES).size,
@@ -2669,17 +2723,21 @@ function createFakeRuntimeStreamEventStoreClientFactory(): {
   readonly clients: ReturnType<
     typeof createFakeRuntimeStreamReconnectingClient
   >[];
+  readonly options: OpenRuntimeStreamReconnectingClientOptions[];
 } {
   const clients: ReturnType<
     typeof createFakeRuntimeStreamReconnectingClient
   >[] = [];
+  const capturedOptions: OpenRuntimeStreamReconnectingClientOptions[] = [];
   return {
     factory: async (options) => {
+      capturedOptions.push(options);
       const client = createFakeRuntimeStreamReconnectingClient(options);
       clients.push(client);
       return client.client;
     },
     clients,
+    options: capturedOptions,
   };
 }
 

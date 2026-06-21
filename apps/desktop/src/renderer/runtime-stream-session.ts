@@ -1,6 +1,12 @@
 import {
   type OpenRuntimeStreamReconnectingClientOptions,
   type RuntimeStreamChannel,
+  type RuntimeStreamErrorHandler,
+  type RuntimeStreamFilters,
+  type RuntimeStreamFullReloadDecision,
+  type RuntimeStreamReconnectScheduler,
+  type RuntimeStreamReplayDecision,
+  type RuntimeStreamReplayState,
   type RuntimeStreamUnsubscribe,
 } from "./runtime-stream-client.js";
 import {
@@ -252,6 +258,44 @@ export interface CreateRuntimeStreamInteractionSessionOptions {
   readonly onError?: (error: unknown) => void;
 }
 
+export interface RuntimeStreamInteractionSessionFactory {
+  readonly createSession: (
+    options: CreateRuntimeStreamInteractionSessionFactorySessionOptions,
+  ) => RuntimeStreamInteractionSession;
+}
+
+export interface CreateRuntimeStreamInteractionSessionFactoryOptions {
+  readonly runtime: OpenRuntimeStreamReconnectingClientOptions["runtime"];
+  readonly eventSourceFactory: OpenRuntimeStreamReconnectingClientOptions["eventSourceFactory"];
+  readonly projectId?: string;
+  readonly filters?: RuntimeStreamFilters;
+  readonly scheduler?: RuntimeStreamReconnectScheduler;
+  readonly onEventError?: RuntimeStreamErrorHandler;
+  readonly onConnectionError?: RuntimeStreamErrorHandler;
+  readonly onReplayDecision?: (decision: RuntimeStreamReplayDecision) => void;
+  readonly onFullReloadRequired?: (
+    decision: RuntimeStreamFullReloadDecision,
+  ) => void;
+  readonly onError?: (error: unknown) => void;
+}
+
+export interface CreateRuntimeStreamInteractionSessionFactorySessionOptions extends Omit<
+  CreateRuntimeStreamInteractionSessionOptions,
+  "clientOptions"
+> {
+  readonly channel: RuntimeStreamChannel;
+  readonly projectId?: string;
+  readonly filters?: RuntimeStreamFilters;
+  readonly replayState?: RuntimeStreamReplayState;
+  readonly scheduler?: RuntimeStreamReconnectScheduler;
+  readonly onEventError?: RuntimeStreamErrorHandler;
+  readonly onConnectionError?: RuntimeStreamErrorHandler;
+  readonly onReplayDecision?: (decision: RuntimeStreamReplayDecision) => void;
+  readonly onFullReloadRequired?: (
+    decision: RuntimeStreamFullReloadDecision,
+  ) => void;
+}
+
 export function createRuntimeStreamInteractionSession(
   options: CreateRuntimeStreamInteractionSessionOptions,
 ): RuntimeStreamInteractionSession {
@@ -430,6 +474,17 @@ export function createRuntimeStreamInteractionSession(
   };
 }
 
+export function createRuntimeStreamInteractionSessionFactory(
+  options: CreateRuntimeStreamInteractionSessionFactoryOptions,
+): RuntimeStreamInteractionSessionFactory {
+  return {
+    createSession: (sessionOptions) =>
+      createRuntimeStreamInteractionSession(
+        buildRuntimeStreamInteractionSessionOptions(options, sessionOptions),
+      ),
+  };
+}
+
 export function defaultRuntimeStreamSessionEventTypes(
   channel: RuntimeStreamChannel,
 ): readonly RuntimeStreamKnownEventType[] {
@@ -454,6 +509,117 @@ function normalizeRuntimeStreamSessionEventTypes(
     }
   }
   return uniqueEventTypes;
+}
+
+function buildRuntimeStreamInteractionSessionOptions(
+  factoryOptions: CreateRuntimeStreamInteractionSessionFactoryOptions,
+  sessionOptions: CreateRuntimeStreamInteractionSessionFactorySessionOptions,
+): CreateRuntimeStreamInteractionSessionOptions {
+  const options: {
+    clientOptions: OpenRuntimeStreamReconnectingClientOptions;
+    eventTypes?: readonly RuntimeStreamKnownEventType[];
+    maxEvents?: number;
+    clientFactory?: CreateRuntimeStreamEventStoreOptions["clientFactory"];
+    viewFilters?: RuntimeStreamViewFilters;
+    expandedEventIds?: readonly string[];
+    searchQuery?: string;
+    selectedEventId?: string | null;
+    lastSeenTotalEvents?: number;
+    onError?: (error: unknown) => void;
+  } = {
+    clientOptions: buildRuntimeStreamInteractionSessionClientOptions(
+      factoryOptions,
+      sessionOptions,
+    ),
+  };
+  if (sessionOptions.eventTypes !== undefined) {
+    options.eventTypes = sessionOptions.eventTypes;
+  }
+  if (sessionOptions.maxEvents !== undefined) {
+    options.maxEvents = sessionOptions.maxEvents;
+  }
+  if (sessionOptions.clientFactory !== undefined) {
+    options.clientFactory = sessionOptions.clientFactory;
+  }
+  if (sessionOptions.viewFilters !== undefined) {
+    options.viewFilters = sessionOptions.viewFilters;
+  }
+  if (sessionOptions.expandedEventIds !== undefined) {
+    options.expandedEventIds = sessionOptions.expandedEventIds;
+  }
+  if (sessionOptions.searchQuery !== undefined) {
+    options.searchQuery = sessionOptions.searchQuery;
+  }
+  if (sessionOptions.selectedEventId !== undefined) {
+    options.selectedEventId = sessionOptions.selectedEventId;
+  }
+  if (sessionOptions.lastSeenTotalEvents !== undefined) {
+    options.lastSeenTotalEvents = sessionOptions.lastSeenTotalEvents;
+  }
+  const onError = sessionOptions.onError ?? factoryOptions.onError;
+  if (onError !== undefined) {
+    options.onError = onError;
+  }
+  return options;
+}
+
+function buildRuntimeStreamInteractionSessionClientOptions(
+  factoryOptions: CreateRuntimeStreamInteractionSessionFactoryOptions,
+  sessionOptions: CreateRuntimeStreamInteractionSessionFactorySessionOptions,
+): OpenRuntimeStreamReconnectingClientOptions {
+  const clientOptions: {
+    runtime: OpenRuntimeStreamReconnectingClientOptions["runtime"];
+    channel: RuntimeStreamChannel;
+    eventSourceFactory: OpenRuntimeStreamReconnectingClientOptions["eventSourceFactory"];
+    projectId?: string;
+    filters?: RuntimeStreamFilters;
+    replayState?: RuntimeStreamReplayState;
+    scheduler?: RuntimeStreamReconnectScheduler;
+    onEventError?: RuntimeStreamErrorHandler;
+    onConnectionError?: RuntimeStreamErrorHandler;
+    onReplayDecision?: (decision: RuntimeStreamReplayDecision) => void;
+    onFullReloadRequired?: (decision: RuntimeStreamFullReloadDecision) => void;
+  } = {
+    runtime: factoryOptions.runtime,
+    channel: sessionOptions.channel,
+    eventSourceFactory: factoryOptions.eventSourceFactory,
+  };
+  const projectId = sessionOptions.projectId ?? factoryOptions.projectId;
+  const filters = sessionOptions.filters ?? factoryOptions.filters;
+  const scheduler = sessionOptions.scheduler ?? factoryOptions.scheduler;
+  const onEventError =
+    sessionOptions.onEventError ?? factoryOptions.onEventError;
+  const onConnectionError =
+    sessionOptions.onConnectionError ?? factoryOptions.onConnectionError;
+  const onReplayDecision =
+    sessionOptions.onReplayDecision ?? factoryOptions.onReplayDecision;
+  const onFullReloadRequired =
+    sessionOptions.onFullReloadRequired ?? factoryOptions.onFullReloadRequired;
+  if (projectId !== undefined) {
+    clientOptions.projectId = projectId;
+  }
+  if (filters !== undefined) {
+    clientOptions.filters = filters;
+  }
+  if (sessionOptions.replayState !== undefined) {
+    clientOptions.replayState = sessionOptions.replayState;
+  }
+  if (scheduler !== undefined) {
+    clientOptions.scheduler = scheduler;
+  }
+  if (onEventError !== undefined) {
+    clientOptions.onEventError = onEventError;
+  }
+  if (onConnectionError !== undefined) {
+    clientOptions.onConnectionError = onConnectionError;
+  }
+  if (onReplayDecision !== undefined) {
+    clientOptions.onReplayDecision = onReplayDecision;
+  }
+  if (onFullReloadRequired !== undefined) {
+    clientOptions.onFullReloadRequired = onFullReloadRequired;
+  }
+  return clientOptions;
 }
 
 const RUNTIME_STREAM_KNOWN_EVENT_TYPE_SET = new Set<string>(
