@@ -47,6 +47,10 @@ import {
   type RuntimeLifecycleStatusPageLifecycleListener,
 } from "../renderer/runtime-lifecycle-status-controller.js";
 import {
+  createRuntimeLifecycleViewState,
+  type RuntimeLifecycleViewStateItem,
+} from "../renderer/runtime-lifecycle-view-state.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -1358,6 +1362,202 @@ test("renderer runtime lifecycle status controller isolates listeners and dispos
     /lifecycle status controller is disposed/u,
   );
   assert.equal(controller.stop(), false);
+});
+
+test("renderer runtime lifecycle view state projects shell readiness", async () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const controller = createRuntimeLifecycleStatusController({
+    runtime: runtime.runtime,
+  });
+  const viewState = createRuntimeLifecycleViewState({ controller });
+  const observed: Array<{
+    readonly readiness: string;
+    readonly primaryAction: string;
+    readonly title: string;
+  }> = [];
+
+  assert.equal(controller.listenerCount(), 1);
+  assert.equal(viewState.snapshot().readiness, "idle");
+  assert.equal(viewState.snapshot().primaryAction, "start_runtime");
+  assert.equal(viewState.snapshot().runtimeReady, false);
+  assert.equal(viewState.snapshot().items.length, 0);
+
+  const unsubscribe = viewState.subscribe((snapshot) => {
+    observed.push({
+      readiness: snapshot.readiness,
+      primaryAction: snapshot.primaryAction,
+      title: snapshot.title,
+    });
+  });
+
+  controller.start();
+  await controller.refresh();
+  assert.equal(viewState.snapshot().phase, "starting");
+  assert.equal(viewState.snapshot().readiness, "busy");
+  assert.equal(viewState.snapshot().primaryAction, "wait");
+  assert.equal(viewState.snapshot().busy, true);
+  assert.equal(viewState.snapshot().runtimeReady, false);
+  assert.equal(viewState.snapshot().latestItem?.source, "startup");
+  assert.deepEqual(
+    viewState.snapshot().items.map((item) => item.source),
+    ["startup", "shutdown"],
+  );
+
+  runtime.emitStartup([createStartupStatus("runtime_ready")]);
+  assert.equal(viewState.snapshot().readiness, "ready");
+  assert.equal(viewState.snapshot().runtimeReady, true);
+  assert.equal(viewState.snapshot().primaryAction, "none");
+  assert.equal(viewState.snapshot().title, "Runtime ready");
+
+  runtime.emitShutdown([createShutdownStatus("shutting_down")]);
+  assert.equal(viewState.snapshot().readiness, "shutting_down");
+  assert.equal(viewState.snapshot().runtimeReady, false);
+  assert.equal(viewState.snapshot().primaryAction, "wait");
+  assert.equal(viewState.snapshot().latestItem?.source, "shutdown");
+  assert.equal(viewState.snapshot().title, "Runtime shutting down");
+
+  runtime.emitShutdown([createShutdownStatus("shutdown_failed")]);
+  assert.equal(viewState.snapshot().readiness, "attention_required");
+  assert.equal(viewState.snapshot().primaryAction, "retry_startup");
+  assert.equal(viewState.snapshot().userActionRequired, true);
+  assert.equal(viewState.snapshot().retryable, true);
+  assert.equal(viewState.snapshot().title, "Runtime shutdown failed");
+
+  runtime.emitShutdown([createShutdownStatus("unregistered")]);
+  assert.equal(viewState.snapshot().readiness, "stopped");
+  assert.equal(viewState.snapshot().primaryAction, "start_runtime");
+  assert.equal(viewState.snapshot().terminal, true);
+  assert.equal(viewState.snapshot().title, "Runtime shutdown unregistered");
+  assert.equal(viewState.snapshot().shutdownTotal, 4);
+  assert.deepEqual(
+    observed.map((snapshot) => snapshot.readiness),
+    ["idle", "busy", "ready", "shutting_down", "attention_required", "stopped"],
+  );
+
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(viewState.dispose(), true);
+  assert.equal(controller.listenerCount(), 0);
+});
+
+test("renderer runtime lifecycle view state strips raw reason details", async () => {
+  const sensitiveReason =
+    "token_abc base_url=http://127.0.0.1:51234/cw/v1 prompt model output";
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [{ ...createStartupStatus("startup_blocked"), reason: sensitiveReason }],
+    [{ ...createShutdownStatus("shutdown_failed"), reason: sensitiveReason }],
+  );
+  const controller = createRuntimeLifecycleStatusController({
+    runtime: runtime.runtime,
+  });
+  const viewState = createRuntimeLifecycleViewState({ controller });
+
+  controller.start();
+  await controller.refresh();
+
+  const snapshot = viewState.snapshot();
+  const visibleText = [
+    snapshot.title,
+    snapshot.summary,
+    snapshot.latestItem?.title ?? "",
+    snapshot.latestItem?.summary ?? "",
+    ...snapshot.items.flatMap((item) => [item.title, item.summary]),
+  ].join("\n");
+
+  assert.equal(snapshot.readiness, "attention_required");
+  assert.equal(snapshot.latestItem?.source, "shutdown");
+  assert.equal(snapshot.summary, "Runtime shutdown failed.");
+  assert.doesNotMatch(visibleText, /token_abc/u);
+  assert.doesNotMatch(visibleText, /base_url/u);
+  assert.doesNotMatch(visibleText, /prompt/u);
+  assert.doesNotMatch(visibleText, /model output/u);
+  assert.equal(
+    snapshot.items.some((item) => Object.hasOwn(item, "reason")),
+    false,
+  );
+  assert.equal(viewState.dispose(), true);
+});
+
+test("renderer runtime lifecycle view state isolates listeners and disposes", async () => {
+  const errors: unknown[] = [];
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const controller = createRuntimeLifecycleStatusController({
+    runtime: runtime.runtime,
+  });
+  const viewState = createRuntimeLifecycleViewState({
+    controller,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly readiness: string;
+    readonly itemTotal: number;
+    readonly latestTitle: string | null;
+  }> = [];
+
+  const unsubscribeThrowing = viewState.subscribe((snapshot) => {
+    const mutableItems = snapshot.items as RuntimeLifecycleViewStateItem[];
+    mutableItems.push({
+      source: "shutdown",
+      kind: "shutdown_failed",
+      phase: "failed",
+      tone: "error",
+      title: "Mutated",
+      summary: "Mutated",
+      lifecycleComplete: true,
+      userActionRequired: true,
+      retryable: true,
+    });
+    if (snapshot.latestItem !== null) {
+      const mutableLatest = snapshot.latestItem as { title: string };
+      mutableLatest.title = "Mutated";
+    }
+    throw new Error("lifecycle view listener failed");
+  });
+  const unsubscribeObserved = viewState.subscribe((snapshot) => {
+    observed.push({
+      readiness: snapshot.readiness,
+      itemTotal: snapshot.items.length,
+      latestTitle: snapshot.latestItem?.title ?? null,
+    });
+  });
+
+  controller.start();
+  await controller.refresh();
+  assert.deepEqual(observed, [
+    { readiness: "idle", itemTotal: 0, latestTitle: null },
+    {
+      readiness: "busy",
+      itemTotal: 2,
+      latestTitle: "Starting runtime",
+    },
+  ]);
+  assert.equal(errors.length, 2);
+  assert.deepEqual(
+    viewState.snapshot().items.map((item) => item.title),
+    ["Starting runtime", "Runtime shutdown registered"],
+  );
+  assert.equal(viewState.snapshot().latestItem?.title, "Starting runtime");
+
+  assert.equal(unsubscribeThrowing(), true);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), true);
+  assert.equal(viewState.listenerCount(), 0);
+  assert.equal(controller.listenerCount(), 1);
+  assert.equal(viewState.dispose(), true);
+  assert.equal(viewState.dispose(), false);
+  assert.equal(viewState.isDisposed(), true);
+  assert.equal(controller.listenerCount(), 0);
+  assert.equal(viewState.snapshot().disposed, true);
+  assert.equal(viewState.snapshot().primaryAction, "none");
+  assert.equal(viewState.subscribe(() => undefined)(), false);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
