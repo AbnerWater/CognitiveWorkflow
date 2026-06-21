@@ -52,6 +52,10 @@ import {
 } from "../renderer/runtime-lifecycle-view-state.js";
 import { createRuntimeLifecycleShellSession } from "../renderer/runtime-lifecycle-shell-session.js";
 import {
+  createRuntimeLifecyclePanelPresenter,
+  type RuntimeLifecyclePanelTimelineItem,
+} from "../renderer/runtime-lifecycle-panel-presenter.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -1793,6 +1797,250 @@ test("renderer runtime lifecycle shell session isolates listeners and disposes",
     /lifecycle shell session is disposed/u,
   );
   assert.equal(session.stop(), false);
+});
+
+test("renderer runtime lifecycle panel presenter projects shell snapshots", async () => {
+  const sensitiveReason =
+    "token_abc base_url=http://127.0.0.1:51234/cw/v1 prompt model output";
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const session = createRuntimeLifecycleShellSession({
+    runtime: runtime.runtime,
+  });
+  const presenter = createRuntimeLifecyclePanelPresenter({ session });
+
+  const idle = presenter.snapshot();
+  assert.equal(idle.statusLabel, "Idle");
+  assert.equal(idle.ariaLive, "off");
+  assert.equal(idle.emptyState?.title, "No lifecycle activity");
+  assert.equal(idle.primaryCommand?.id, "start_runtime");
+  assert.equal(idle.primaryCommand.enabled, true);
+  assert.deepEqual(
+    idle.secondaryCommands.map((command) => command.id),
+    ["refresh_status"],
+  );
+
+  const started = await presenter.invoke("start_runtime");
+  assert.equal(started.started, true);
+  assert.equal(started.primaryCommand?.id, "start_runtime");
+
+  const busy = await presenter.invoke("refresh_status");
+  assert.equal(busy.readiness, "busy");
+  assert.equal(busy.statusLabel, "Starting");
+  assert.equal(busy.primaryCommand?.id, "wait");
+  assert.equal(busy.primaryCommand.enabled, false);
+  assert.equal(busy.primaryCommand.busy, true);
+  assert.deepEqual(
+    busy.secondaryCommands.map((command) => command.id),
+    ["refresh_status", "stop_runtime"],
+  );
+  assert.deepEqual(
+    busy.timelineItems.map((item) => [
+      item.id,
+      item.sourceLabel,
+      item.statusLabel,
+    ]),
+    [
+      ["startup:0:starting_sidecar", "Startup", "Starting"],
+      ["shutdown:1:registered", "Shutdown", "Idle"],
+    ],
+  );
+
+  runtime.emitStartup([createStartupStatus("runtime_ready")]);
+  const ready = presenter.snapshot();
+  assert.equal(ready.readiness, "ready");
+  assert.equal(ready.statusLabel, "Ready");
+  assert.equal(ready.runtimeReady, true);
+  assert.equal(ready.primaryCommand, null);
+  assert.equal(ready.ariaLive, "polite");
+
+  runtime.emitShutdown([
+    { ...createShutdownStatus("shutdown_failed"), reason: sensitiveReason },
+  ]);
+  const attention = presenter.snapshot();
+  assert.equal(attention.readiness, "attention_required");
+  assert.equal(attention.statusLabel, "Needs attention");
+  assert.equal(attention.primaryCommand?.id, "retry_startup");
+  assert.equal(attention.primaryCommand.enabled, true);
+  assert.equal(attention.primaryCommand.tone, "accent");
+  assert.equal(attention.ariaLive, "assertive");
+  assert.deepEqual(attention.timelineItems.at(-1)?.badges, [
+    "shutdown",
+    "complete",
+    "action_required",
+    "retryable",
+  ]);
+
+  const visibleText = [
+    attention.title,
+    attention.summary,
+    attention.primaryCommand?.label ?? "",
+    ...attention.secondaryCommands.flatMap((command) => [
+      command.label,
+      command.title,
+    ]),
+    ...attention.timelineItems.flatMap((item) => [
+      item.title,
+      item.summary,
+      item.sourceLabel,
+      item.statusLabel,
+    ]),
+  ].join("\n");
+  assert.doesNotMatch(visibleText, /token_abc/u);
+  assert.doesNotMatch(visibleText, /base_url/u);
+  assert.doesNotMatch(visibleText, /prompt/u);
+  assert.doesNotMatch(visibleText, /model output/u);
+
+  const retried = await presenter.invoke("retry_startup");
+  assert.equal(retried.started, true);
+  assert.equal(session.isStarted(), true);
+  assert.equal(runtime.startupUnsubscribeCount(), 1);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 1);
+  assert.equal(runtime.startupListenerCount(), 1);
+  assert.equal(runtime.shutdownListenerCount(), 1);
+
+  assert.equal(presenter.dispose(), true);
+  assert.equal(session.dispose(), true);
+});
+
+test("renderer runtime lifecycle panel presenter invokes commands and isolates listeners", async () => {
+  const errors: unknown[] = [];
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const session = createRuntimeLifecycleShellSession({
+    runtime: runtime.runtime,
+  });
+  const presenter = createRuntimeLifecyclePanelPresenter({
+    session,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly readiness: string;
+    readonly primaryLabel: string | null;
+    readonly itemTotal: number;
+    readonly started: boolean;
+  }> = [];
+
+  const unsubscribeThrowing = presenter.subscribe((snapshot) => {
+    const mutableItems =
+      snapshot.timelineItems as RuntimeLifecyclePanelTimelineItem[];
+    mutableItems.push({
+      id: "mutated",
+      source: "shutdown",
+      sourceLabel: "Mutated",
+      kind: "shutdown_failed",
+      phase: "failed",
+      tone: "error",
+      statusLabel: "Mutated",
+      title: "Mutated",
+      summary: "Mutated",
+      badges: ["shutdown"],
+    });
+    if (snapshot.primaryCommand !== null) {
+      const mutableCommand = snapshot.primaryCommand as { label: string };
+      mutableCommand.label = "Mutated";
+    }
+    throw new Error("lifecycle panel presenter listener failed");
+  });
+  const unsubscribeObserved = presenter.subscribe((snapshot) => {
+    observed.push({
+      readiness: snapshot.readiness,
+      primaryLabel: snapshot.primaryCommand?.label ?? null,
+      itemTotal: snapshot.timelineItems.length,
+      started: snapshot.started,
+    });
+  });
+
+  await presenter.invoke("start_runtime");
+  await presenter.invoke("refresh_status");
+  assert.deepEqual(observed, [
+    {
+      readiness: "idle",
+      primaryLabel: "Start runtime",
+      itemTotal: 0,
+      started: true,
+    },
+    {
+      readiness: "busy",
+      primaryLabel: "Working",
+      itemTotal: 2,
+      started: true,
+    },
+  ]);
+  assert.equal(errors.length, 2);
+  assert.deepEqual(
+    presenter.snapshot().timelineItems.map((item) => item.title),
+    ["Starting runtime", "Runtime shutdown registered"],
+  );
+  assert.equal(presenter.snapshot().primaryCommand?.label, "Working");
+
+  const stopped = await presenter.invoke("stop_runtime");
+  assert.equal(stopped.started, false);
+  assert.equal(observed.at(-1)?.started, false);
+  assert.equal(errors.length, 3);
+
+  assert.equal(unsubscribeThrowing(), true);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), true);
+  assert.equal(presenter.listenerCount(), 0);
+  assert.equal(session.listenerCount(), 0);
+  assert.equal(session.viewState.listenerCount(), 0);
+  assert.equal(presenter.dispose(), true);
+  assert.equal(presenter.dispose(), false);
+  assert.equal(presenter.isDisposed(), true);
+  assert.equal(session.isDisposed(), false);
+  assert.equal(presenter.subscribe(() => undefined)(), false);
+  await assert.rejects(
+    async () => presenter.invoke("refresh_status"),
+    /lifecycle panel presenter is disposed/u,
+  );
+  assert.equal(session.dispose(), true);
+});
+
+test("renderer runtime lifecycle panel presenter isolates throwing onError and active dispose", async () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const session = createRuntimeLifecycleShellSession({
+    runtime: runtime.runtime,
+  });
+  const presenter = createRuntimeLifecyclePanelPresenter({
+    session,
+    onError: () => {
+      throw new Error("presenter onError failed");
+    },
+  });
+  const observed: string[] = [];
+
+  const unsubscribeThrowing = presenter.subscribe(() => {
+    throw new Error("lifecycle panel listener failed");
+  });
+  const unsubscribeObserved = presenter.subscribe((snapshot) => {
+    observed.push(snapshot.readiness);
+  });
+
+  await presenter.invoke("start_runtime");
+  await presenter.invoke("refresh_status");
+  assert.deepEqual(observed, ["idle", "busy"]);
+  assert.equal(presenter.listenerCount(), 2);
+  assert.equal(session.listenerCount(), 1);
+  assert.equal(session.viewState.listenerCount(), 1);
+
+  assert.equal(presenter.dispose(), true);
+  assert.equal(presenter.listenerCount(), 0);
+  assert.equal(session.listenerCount(), 0);
+  assert.equal(session.viewState.listenerCount(), 0);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(presenter.dispose(), false);
+  assert.equal(session.dispose(), true);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
