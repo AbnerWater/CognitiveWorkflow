@@ -8,6 +8,8 @@ import {
   type RuntimeIpcShutdownStatusKind,
   type RuntimeIpcShutdownStatusResponse,
   type RuntimeIpcShutdownStatusSeverity,
+  type RuntimeIpcStartupStatus,
+  type RuntimeIpcStartupStatusResponse,
 } from "../shared/runtime-ipc.js";
 import {
   createRuntimeIpcStartupHandlers,
@@ -152,6 +154,60 @@ export type RuntimeMainLifecycleShutdownStatusSeverity =
   RuntimeIpcShutdownStatusSeverity;
 
 export type RuntimeMainLifecycleShutdownStatus = RuntimeIpcShutdownStatus;
+
+export type RuntimeMainLifecycleStartupStatus = RuntimeIpcStartupStatus;
+
+export type RuntimeMainLifecycleStartupStatusObserver = (
+  status: RuntimeMainLifecycleStartupStatus,
+) => void;
+
+export type RuntimeMainLifecycleStartupStatusBroadcastListener = (
+  status: RuntimeMainLifecycleStartupStatus,
+) => void;
+
+export type RuntimeMainLifecycleStartupStatusBroadcastUnsubscribe =
+  () => boolean;
+
+export interface CreateRuntimeMainLifecycleStartupStatusBroadcasterOptions {
+  readonly onListenerError?: (error: unknown) => void;
+}
+
+export interface RuntimeMainLifecycleStartupStatusBroadcaster {
+  readonly onStatus: RuntimeMainLifecycleStartupStatusObserver;
+  readonly subscribe: (
+    listener: RuntimeMainLifecycleStartupStatusBroadcastListener,
+  ) => RuntimeMainLifecycleStartupStatusBroadcastUnsubscribe;
+  readonly listenerCount: () => number;
+}
+
+export type RuntimeMainLifecycleStartupWindowSend = (
+  channel: typeof RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+  payload: RuntimeIpcStartupStatusResponse,
+) => void;
+
+export interface CwMainStartupStatusWebContents {
+  readonly send: RuntimeMainLifecycleStartupWindowSend;
+  readonly isDestroyed?: () => boolean;
+}
+
+export interface CwMainStartupStatusWindow {
+  readonly webContents: CwMainStartupStatusWebContents;
+  readonly isDestroyed?: () => boolean;
+}
+
+export type RuntimeMainLifecycleStartupWindowUnregister = () => boolean;
+
+export interface CreateRuntimeMainLifecycleStartupWindowBroadcasterOptions {
+  readonly onSendError?: (error: unknown) => void;
+}
+
+export interface RuntimeMainLifecycleStartupWindowBroadcaster {
+  readonly onStatus: RuntimeMainLifecycleStartupStatusObserver;
+  readonly registerWindow: (
+    window: CwMainStartupStatusWindow,
+  ) => RuntimeMainLifecycleStartupWindowUnregister;
+  readonly windowCount: () => number;
+}
 
 export type RuntimeMainLifecycleShutdownStatusObserver = (
   status: RuntimeMainLifecycleShutdownStatus,
@@ -346,6 +402,95 @@ export function installRuntimeMainWithLifecycleShutdown(
     ipc,
     lifecycle,
     shutdownStatus,
+  };
+}
+
+export function createRuntimeMainLifecycleStartupStatusBroadcaster(
+  options?: CreateRuntimeMainLifecycleStartupStatusBroadcasterOptions,
+): RuntimeMainLifecycleStartupStatusBroadcaster {
+  const listeners =
+    new Set<RuntimeMainLifecycleStartupStatusBroadcastListener>();
+
+  const reportListenerError = (error: unknown): void => {
+    try {
+      options?.onListenerError?.(error);
+    } catch {
+      // Diagnostic hooks must not affect lifecycle status fan-out.
+    }
+  };
+
+  return {
+    onStatus: (status) => {
+      const snapshot = [...listeners];
+      for (const listener of snapshot) {
+        try {
+          listener({ ...status });
+        } catch (error) {
+          reportListenerError(error);
+        }
+      }
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      let subscribed = true;
+      return () => {
+        if (!subscribed) {
+          return false;
+        }
+        subscribed = false;
+        return listeners.delete(listener);
+      };
+    },
+    listenerCount: () => listeners.size,
+  };
+}
+
+export function createRuntimeMainLifecycleStartupWindowBroadcaster(
+  options?: CreateRuntimeMainLifecycleStartupWindowBroadcasterOptions,
+): RuntimeMainLifecycleStartupWindowBroadcaster {
+  const windows = new Set<CwMainStartupStatusWindow>();
+
+  const reportSendError = (error: unknown): void => {
+    try {
+      options?.onSendError?.(error);
+    } catch {
+      // Diagnostic hooks must not affect lifecycle status fan-out.
+    }
+  };
+
+  return {
+    onStatus: (status) => {
+      const snapshot = [...windows];
+      for (const window of snapshot) {
+        try {
+          if (isRuntimeMainLifecycleStartupWindowDestroyed(window)) {
+            windows.delete(window);
+            continue;
+          }
+          window.webContents.send(RUNTIME_IPC_STARTUP_STATUS_CHANNEL, [
+            { ...status },
+          ]);
+        } catch (error) {
+          windows.delete(window);
+          reportSendError(error);
+        }
+      }
+    },
+    registerWindow: (window) => {
+      if (isRuntimeMainLifecycleStartupWindowDestroyed(window)) {
+        return () => false;
+      }
+      windows.add(window);
+      let registered = true;
+      return () => {
+        if (!registered) {
+          return false;
+        }
+        registered = false;
+        return windows.delete(window);
+      };
+    },
+    windowCount: () => windows.size,
   };
 }
 
@@ -748,6 +893,15 @@ function isMainLifecycleShutdownTerminalState(
 
 function isRuntimeMainLifecycleShutdownWindowDestroyed(
   window: CwMainShutdownStatusWindow,
+): boolean {
+  return (
+    window.isDestroyed?.() === true ||
+    window.webContents.isDestroyed?.() === true
+  );
+}
+
+function isRuntimeMainLifecycleStartupWindowDestroyed(
+  window: CwMainStartupStatusWindow,
 ): boolean {
   return (
     window.isDestroyed?.() === true ||

@@ -9,9 +9,12 @@ import {
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   type RuntimeIpcChannel,
   type RuntimeIpcShutdownStatusResponse,
+  type RuntimeIpcStartupStatusResponse,
   buildRuntimeIpcFetchRequest,
 } from "../shared/runtime-ipc.js";
 import {
+  createRuntimeMainLifecycleStartupStatusBroadcaster,
+  createRuntimeMainLifecycleStartupWindowBroadcaster,
   installRuntimeAppLifecycleShutdown,
   installRuntimeIpcMainHandlers,
   installRuntimeMainLifecycleShutdown,
@@ -24,10 +27,12 @@ import {
   type CwMainBeforeQuitListener,
   type CwMainIpcInvokeHandler,
   type CwMainShutdownStatusWindow,
+  type CwMainStartupStatusWindow,
   type CwMainWindow,
   type CwMainWindowCloseEvent,
   type CwMainWindowCloseListener,
   type RuntimeMainLifecycleShutdownStatus,
+  type RuntimeMainLifecycleStartupStatus,
 } from "./bootstrap.js";
 import { createRuntimeBaseUrl, type RuntimeConnectionInfo } from "./runtime.js";
 import { createRuntimeIpcMainHandlers } from "./runtime-ipc-handlers.js";
@@ -698,6 +703,258 @@ test("shutdown after manual unregister does not remove IPC handlers twice", asyn
   ]);
   assert.equal(starterCalls, 1);
   assert.deepEqual(installed.unregister(), []);
+});
+
+test("startup status broadcaster fans out isolated status snapshots", () => {
+  const errors: unknown[] = [];
+  const broadcaster = createRuntimeMainLifecycleStartupStatusBroadcaster({
+    onListenerError: (error) => {
+      errors.push(error);
+      throw new Error("diagnostic hook failed");
+    },
+  });
+  const firstStatuses: RuntimeMainLifecycleStartupStatus[] = [];
+  const secondStatuses: RuntimeMainLifecycleStartupStatus[] = [];
+  const unsubscribeFirst = broadcaster.subscribe((status) => {
+    firstStatuses.push(status);
+    (status as { kind: string }).kind = "startup_blocked";
+  });
+  broadcaster.subscribe(() => {
+    throw new Error("listener failed");
+  });
+  const unsubscribeSecond = broadcaster.subscribe((status) => {
+    secondStatuses.push(status);
+  });
+
+  assert.equal(broadcaster.listenerCount(), 3);
+  broadcaster.onStatus(
+    createStartupStatus({
+      kind: "waiting_for_existing",
+      action: "wait_for_existing",
+      lifecycleComplete: false,
+    }),
+  );
+
+  assert.deepEqual(
+    firstStatuses.map((status) => status.kind),
+    ["startup_blocked"],
+  );
+  assert.deepEqual(
+    secondStatuses.map((status) => status.kind),
+    ["waiting_for_existing"],
+  );
+  assert.equal(errors.length, 1);
+  assert.equal(messageOf(errors[0]), "listener failed");
+  assert.equal(unsubscribeFirst(), true);
+  assert.equal(unsubscribeFirst(), false);
+  assert.equal(broadcaster.listenerCount(), 2);
+  assert.equal(unsubscribeSecond(), true);
+  assert.equal(broadcaster.listenerCount(), 1);
+
+  broadcaster.onStatus(
+    createStartupStatus({
+      kind: "runtime_ready",
+      action: "reuse_existing",
+      lifecycleComplete: true,
+    }),
+  );
+
+  assert.deepEqual(
+    firstStatuses.map((status) => status.kind),
+    ["startup_blocked"],
+  );
+  assert.deepEqual(
+    secondStatuses.map((status) => status.kind),
+    ["waiting_for_existing"],
+  );
+  assert.equal(errors.length, 2);
+  assert.equal(messageOf(errors[1]), "listener failed");
+});
+
+test("installed runtime IPC handlers can broadcast startup statuses", async () => {
+  const broadcaster = createRuntimeMainLifecycleStartupStatusBroadcaster();
+  const broadcastStatuses: RuntimeMainLifecycleStartupStatus[] = [];
+  const unsubscribe = broadcaster.subscribe((status) => {
+    broadcastStatuses.push(status);
+  });
+  const waitingStatus = createStartupStatus({
+    kind: "waiting_for_existing",
+    action: "wait_for_existing",
+    lifecycleComplete: false,
+  });
+  const readyStatus = createStartupStatus({
+    kind: "runtime_ready",
+    action: "reuse_existing",
+    lifecycleComplete: true,
+  });
+  const installed = installRuntimeIpcMainHandlers({
+    ipcMain: createFakeMainIpcMain().ipcMain,
+    onStatus: broadcaster.onStatus,
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+      lifecycle: {
+        onStatus: (status) => {
+          broadcastStatuses.push({ ...status, message: "startup option" });
+        },
+      },
+    },
+    starter: async (options) => {
+      await options.lifecycle?.onStatus?.(waitingStatus);
+      await options.lifecycle?.onStatus?.(readyStatus);
+      return createReadyStartupResult();
+    },
+  });
+
+  assert.equal(broadcastStatuses.length, 0);
+  assert.deepEqual(
+    await installed.startupHandlers.handlers.connectionInfo(),
+    CONNECTION,
+  );
+  const observedBroadcastStatuses: readonly RuntimeMainLifecycleStartupStatus[] =
+    broadcastStatuses;
+  assert.deepEqual(
+    observedBroadcastStatuses.map((status) => status.kind),
+    [
+      "waiting_for_existing",
+      "waiting_for_existing",
+      "runtime_ready",
+      "runtime_ready",
+    ],
+  );
+  assert.deepEqual(
+    observedBroadcastStatuses.map((status) => status.message),
+    [
+      "Runtime startup status.",
+      "startup option",
+      "Runtime startup status.",
+      "startup option",
+    ],
+  );
+  assert.deepEqual(
+    installed.startupHandlers.statusHistory().map((status) => status.kind),
+    ["waiting_for_existing", "runtime_ready"],
+  );
+  assert.equal(unsubscribe(), true);
+});
+
+test("installed runtime IPC handlers can broadcast startup statuses to windows", async () => {
+  const statusBroadcaster =
+    createRuntimeMainLifecycleStartupStatusBroadcaster();
+  const windowBroadcaster =
+    createRuntimeMainLifecycleStartupWindowBroadcaster();
+  const unsubscribeStatus = statusBroadcaster.subscribe(
+    windowBroadcaster.onStatus,
+  );
+  const targetWindow = createFakeStartupStatusWindow();
+  const unregisterWindow = windowBroadcaster.registerWindow(
+    targetWindow.window,
+  );
+  const waitingStatus = createStartupStatus({
+    kind: "waiting_for_existing",
+    action: "wait_for_existing",
+    lifecycleComplete: false,
+  });
+  const readyStatus = createStartupStatus({
+    kind: "runtime_ready",
+    action: "reuse_existing",
+    lifecycleComplete: true,
+  });
+  const installed = installRuntimeIpcMainHandlers({
+    ipcMain: createFakeMainIpcMain().ipcMain,
+    onStatus: statusBroadcaster.onStatus,
+    startup: {
+      projectRoot: "C:/CW/project",
+      command: { devCommand: "runtime" },
+    },
+    starter: async (options) => {
+      await options.lifecycle?.onStatus?.(waitingStatus);
+      await options.lifecycle?.onStatus?.(readyStatus);
+      return createReadyStartupResult();
+    },
+  });
+
+  assert.deepEqual(sentStartupStatusKinds(targetWindow), []);
+  assert.deepEqual(
+    await installed.startupHandlers.handlers.connectionInfo(),
+    CONNECTION,
+  );
+  assert.deepEqual(sentStartupStatusKinds(targetWindow), [
+    "waiting_for_existing",
+    "runtime_ready",
+  ]);
+  assert.equal(unregisterWindow(), true);
+  assert.equal(unsubscribeStatus(), true);
+});
+
+test("startup window broadcaster sends isolated status responses", () => {
+  const errors: unknown[] = [];
+  const broadcaster = createRuntimeMainLifecycleStartupWindowBroadcaster({
+    onSendError: (error) => {
+      errors.push(error);
+      throw new Error("diagnostic hook failed");
+    },
+  });
+  const firstWindow = createFakeStartupStatusWindow({
+    onSend: (_channel, payload) => {
+      const mutablePayload =
+        payload as RuntimeIpcStartupStatusResponse extends readonly (infer TStatus)[]
+          ? TStatus[]
+          : never;
+      const [status] = mutablePayload;
+      assert.ok(status);
+      mutablePayload[0] = {
+        ...status,
+        kind: "startup_blocked",
+        action: "block_startup",
+      };
+    },
+  });
+  const failingWindow = createFakeStartupStatusWindow({
+    throwMessage: "webContents send failed",
+  });
+  const destroyedWindow = createFakeStartupStatusWindow();
+  const secondWindow = createFakeStartupStatusWindow();
+
+  const unregisterFirst = broadcaster.registerWindow(firstWindow.window);
+  broadcaster.registerWindow(failingWindow.window);
+  const unregisterDestroyed = broadcaster.registerWindow(
+    destroyedWindow.window,
+  );
+  const unregisterSecond = broadcaster.registerWindow(secondWindow.window);
+  destroyedWindow.destroyWebContents();
+
+  assert.equal(broadcaster.windowCount(), 4);
+  broadcaster.onStatus(
+    createStartupStatus({
+      kind: "waiting_for_existing",
+      action: "wait_for_existing",
+      lifecycleComplete: false,
+    }),
+  );
+
+  assert.equal(broadcaster.windowCount(), 2);
+  assert.deepEqual(sentStartupStatusKinds(firstWindow), ["startup_blocked"]);
+  assert.deepEqual(sentStartupStatusKinds(secondWindow), [
+    "waiting_for_existing",
+  ]);
+  assert.deepEqual(sentStartupStatusKinds(failingWindow), []);
+  assert.deepEqual(sentStartupStatusKinds(destroyedWindow), []);
+  assert.deepEqual(
+    firstWindow.sends.map((send) => send.channel),
+    [RUNTIME_IPC_STARTUP_STATUS_CHANNEL],
+  );
+  assert.deepEqual(
+    secondWindow.sends.map((send) => send.channel),
+    [RUNTIME_IPC_STARTUP_STATUS_CHANNEL],
+  );
+  assert.equal(errors.length, 1);
+  assert.equal(messageOf(errors[0]), "webContents send failed");
+  assert.equal(unregisterDestroyed(), false);
+  assert.equal(unregisterFirst(), true);
+  assert.equal(unregisterFirst(), false);
+  assert.equal(unregisterSecond(), true);
+  assert.equal(broadcaster.windowCount(), 0);
 });
 
 test("shutdown status broadcaster fans out isolated status snapshots", () => {
@@ -1757,6 +2014,52 @@ interface FakeShutdownStatusWindow {
   readonly destroyWebContents: () => void;
 }
 
+interface FakeStartupStatusWindow {
+  readonly window: CwMainStartupStatusWindow;
+  readonly sends: Array<{
+    readonly channel: typeof RUNTIME_IPC_STARTUP_STATUS_CHANNEL;
+    readonly payload: RuntimeIpcStartupStatusResponse;
+  }>;
+  readonly destroy: () => void;
+  readonly destroyWebContents: () => void;
+}
+
+function createFakeStartupStatusWindow(options?: {
+  readonly destroyed?: boolean;
+  readonly webContentsDestroyed?: boolean;
+  readonly throwMessage?: string;
+  readonly onSend?: (
+    channel: typeof RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+    payload: RuntimeIpcStartupStatusResponse,
+  ) => void;
+}): FakeStartupStatusWindow {
+  const sends: FakeStartupStatusWindow["sends"] = [];
+  let destroyed = options?.destroyed ?? false;
+  let webContentsDestroyed = options?.webContentsDestroyed ?? false;
+  return {
+    window: {
+      isDestroyed: () => destroyed,
+      webContents: {
+        isDestroyed: () => webContentsDestroyed,
+        send: (channel, payload) => {
+          if (options?.throwMessage !== undefined) {
+            throw new Error(options.throwMessage);
+          }
+          sends.push({ channel, payload });
+          options?.onSend?.(channel, payload);
+        },
+      },
+    },
+    sends,
+    destroy: () => {
+      destroyed = true;
+    },
+    destroyWebContents: () => {
+      webContentsDestroyed = true;
+    },
+  };
+}
+
 function createFakeShutdownStatusWindow(options?: {
   readonly destroyed?: boolean;
   readonly webContentsDestroyed?: boolean;
@@ -1796,6 +2099,12 @@ function createFakeShutdownStatusWindow(options?: {
 function sentShutdownStatusKinds(
   window: FakeShutdownStatusWindow,
 ): Array<RuntimeMainLifecycleShutdownStatus["kind"] | undefined> {
+  return window.sends.map((send) => send.payload[0]?.kind);
+}
+
+function sentStartupStatusKinds(
+  window: FakeStartupStatusWindow,
+): Array<RuntimeMainLifecycleStartupStatus["kind"] | undefined> {
   return window.sends.map((send) => send.payload[0]?.kind);
 }
 
