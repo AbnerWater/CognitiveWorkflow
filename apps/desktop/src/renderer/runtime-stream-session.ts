@@ -264,6 +264,17 @@ export interface RuntimeStreamInteractionSessionFactory {
   ) => RuntimeStreamInteractionSession;
 }
 
+export interface RuntimeStreamInteractionSessionController {
+  readonly activeSession: () => RuntimeStreamInteractionSession | null;
+  readonly activeChannel: () => RuntimeStreamChannel | null;
+  readonly openSession: (
+    options: CreateRuntimeStreamInteractionSessionFactorySessionOptions,
+  ) => RuntimeStreamInteractionSession;
+  readonly disposeActiveSession: () => boolean;
+  readonly dispose: () => boolean;
+  readonly isDisposed: () => boolean;
+}
+
 export interface CreateRuntimeStreamInteractionSessionFactoryOptions {
   readonly runtime: OpenRuntimeStreamReconnectingClientOptions["runtime"];
   readonly eventSourceFactory: OpenRuntimeStreamReconnectingClientOptions["eventSourceFactory"];
@@ -277,6 +288,10 @@ export interface CreateRuntimeStreamInteractionSessionFactoryOptions {
     decision: RuntimeStreamFullReloadDecision,
   ) => void;
   readonly onError?: (error: unknown) => void;
+}
+
+export interface CreateRuntimeStreamInteractionSessionControllerOptions {
+  readonly factory: RuntimeStreamInteractionSessionFactory;
 }
 
 export interface CreateRuntimeStreamInteractionSessionFactorySessionOptions extends Omit<
@@ -485,6 +500,58 @@ export function createRuntimeStreamInteractionSessionFactory(
   };
 }
 
+export function createRuntimeStreamInteractionSessionController(
+  options: CreateRuntimeStreamInteractionSessionControllerOptions,
+): RuntimeStreamInteractionSessionController {
+  let activeSession: RuntimeStreamInteractionSession | null = null;
+  let activeChannel: RuntimeStreamChannel | null = null;
+  let disposed = false;
+
+  const assertActive = (): void => {
+    if (disposed) {
+      throw new Error(
+        "Runtime stream interaction session controller is disposed",
+      );
+    }
+  };
+
+  const clearActiveSession = (): boolean => {
+    const session = activeSession;
+    activeSession = null;
+    activeChannel = null;
+    return session?.dispose() ?? false;
+  };
+
+  return {
+    activeSession: () => activeSession,
+    activeChannel: () =>
+      activeChannel === null ? null : cloneRuntimeStreamChannel(activeChannel),
+    openSession: (sessionOptions) => {
+      assertActive();
+      const channel = cloneRuntimeStreamChannel(sessionOptions.channel);
+      const nextSession = options.factory.createSession({
+        ...sessionOptions,
+        channel,
+      });
+      const previousSession = activeSession;
+      activeSession = nextSession;
+      activeChannel = cloneRuntimeStreamChannel(channel);
+      previousSession?.dispose();
+      return nextSession;
+    },
+    disposeActiveSession: () => clearActiveSession(),
+    dispose: () => {
+      if (disposed) {
+        return false;
+      }
+      disposed = true;
+      clearActiveSession();
+      return true;
+    },
+    isDisposed: () => disposed,
+  };
+}
+
 export function defaultRuntimeStreamSessionEventTypes(
   channel: RuntimeStreamChannel,
 ): readonly RuntimeStreamKnownEventType[] {
@@ -620,6 +687,14 @@ function buildRuntimeStreamInteractionSessionClientOptions(
     clientOptions.onFullReloadRequired = onFullReloadRequired;
   }
   return clientOptions;
+}
+
+function cloneRuntimeStreamChannel(
+  channel: RuntimeStreamChannel,
+): RuntimeStreamChannel {
+  return channel.kind === "planning"
+    ? { kind: "planning", sessionId: channel.sessionId }
+    : { kind: "run", runId: channel.runId };
 }
 
 const RUNTIME_STREAM_KNOWN_EVENT_TYPE_SET = new Set<string>(

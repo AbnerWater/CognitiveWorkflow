@@ -70,6 +70,7 @@ import {
 } from "../renderer/runtime-stream-interaction.js";
 import {
   RUNTIME_STREAM_ALL_EVENT_TYPES,
+  createRuntimeStreamInteractionSessionController,
   createRuntimeStreamInteractionSessionFactory,
   createRuntimeStreamInteractionSession,
   defaultRuntimeStreamSessionEventTypes,
@@ -2480,6 +2481,138 @@ test("renderer runtime stream session factory lets sessions override stream cont
   ]);
   assert.equal(session.snapshot().store.status, "full_reload_required");
   assert.equal(session.dispose(), true);
+});
+
+test("renderer runtime stream session controller replaces active sessions", async () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const eventSourceFactory = () => createFakeRuntimeStreamEventSource().source;
+  const runtime = {
+    connectionInfo: async () => ({
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_controller",
+    }),
+  };
+  const sessionFactory = createRuntimeStreamInteractionSessionFactory({
+    runtime,
+    eventSourceFactory,
+    projectId: "project_controller",
+  });
+  const controller = createRuntimeStreamInteractionSessionController({
+    factory: sessionFactory,
+  });
+  const runChannel: { kind: "run"; runId: string } = {
+    kind: "run",
+    runId: "run_controller",
+  };
+  const runSession = controller.openSession({
+    channel: runChannel,
+    clientFactory: clientFactory.factory,
+    eventTypes: ["model.text_delta"],
+  });
+
+  assert.equal(controller.activeSession(), runSession);
+  assert.deepEqual(controller.activeChannel(), {
+    kind: "run",
+    runId: "run_controller",
+  });
+  runChannel.runId = "run_mutated";
+  assert.deepEqual(controller.activeChannel(), {
+    kind: "run",
+    runId: "run_controller",
+  });
+  await runSession.start();
+  const runClient = clientFactory.clients[0];
+  assert.ok(runClient !== undefined);
+  assert.equal(runClient.listenerCount("model.text_delta"), 1);
+  assert.equal(runClient.closeCount(), 0);
+
+  const planningChannel: { kind: "planning"; sessionId: string } = {
+    kind: "planning",
+    sessionId: "wps_controller",
+  };
+  const planningSession = controller.openSession({
+    channel: planningChannel,
+    clientFactory: clientFactory.factory,
+    eventTypes: ["planning.session_started"],
+    searchQuery: "draft",
+  });
+
+  assert.equal(controller.activeSession(), planningSession);
+  assert.deepEqual(controller.activeChannel(), {
+    kind: "planning",
+    sessionId: "wps_controller",
+  });
+  planningChannel.sessionId = "wps_mutated";
+  assert.deepEqual(controller.activeChannel(), {
+    kind: "planning",
+    sessionId: "wps_controller",
+  });
+  assert.equal(runSession.dispose(), false);
+  assert.equal(runClient.closeCount(), 1);
+
+  await planningSession.start();
+  const planningClientOptions = clientFactory.options[1];
+  assert.ok(planningClientOptions !== undefined);
+  assert.deepEqual(planningClientOptions.channel, {
+    kind: "planning",
+    sessionId: "wps_controller",
+  });
+  assert.equal(planningSession.snapshot().interaction.search.query, "draft");
+
+  assert.equal(controller.disposeActiveSession(), true);
+  assert.equal(planningSession.dispose(), false);
+  assert.equal(controller.activeSession(), null);
+  assert.equal(controller.activeChannel(), null);
+  assert.equal(controller.disposeActiveSession(), false);
+  assert.equal(controller.dispose(), true);
+  assert.equal(controller.dispose(), false);
+  assert.equal(controller.isDisposed(), true);
+  assert.throws(
+    () =>
+      controller.openSession({
+        channel: { kind: "run", runId: "run_after_dispose" },
+      }),
+    /controller is disposed/u,
+  );
+});
+
+test("renderer runtime stream session controller keeps active session on create failure", () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const eventSourceFactory = () => createFakeRuntimeStreamEventSource().source;
+  const runtime = {
+    connectionInfo: async () => ({
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_controller",
+    }),
+  };
+  const sessionFactory = createRuntimeStreamInteractionSessionFactory({
+    runtime,
+    eventSourceFactory,
+  });
+  const controller = createRuntimeStreamInteractionSessionController({
+    factory: sessionFactory,
+  });
+  const runSession = controller.openSession({
+    channel: { kind: "run", runId: "run_stable" },
+    clientFactory: clientFactory.factory,
+    eventTypes: ["model.text_delta"],
+  });
+
+  assert.throws(
+    () =>
+      controller.openSession({
+        channel: { kind: "run", runId: "run_invalid" },
+        eventTypes: ["model.fake" as RuntimeStreamKnownEventType],
+      }),
+    /StreamEvent spec/u,
+  );
+  assert.equal(controller.activeSession(), runSession);
+  assert.deepEqual(controller.activeChannel(), {
+    kind: "run",
+    runId: "run_stable",
+  });
+  assert.equal(controller.disposeActiveSession(), true);
+  assert.equal(runSession.dispose(), false);
 });
 
 test("renderer runtime stream session uses spec channel defaults and lifecycle stop", async () => {
