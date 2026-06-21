@@ -70,6 +70,10 @@ import {
   createRuntimeLifecyclePanelSessionFactory,
 } from "../renderer/runtime-lifecycle-panel-session.js";
 import {
+  createRuntimeWorkbenchSession,
+  type RuntimeWorkbenchPanelId,
+} from "../renderer/runtime-workbench-session.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -3394,6 +3398,296 @@ test("renderer runtime lifecycle panel session controller publishes active dispo
   assert.equal(controller.snapshot().disposed, true);
   assert.equal(published.at(-1)?.disposed, true);
   assert.equal(controller.subscribe(() => undefined)(), false);
+});
+
+test("renderer runtime workbench session composes lifecycle and stream stores", async () => {
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const streamClientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const streamRuntime = {
+    connectionInfo: async () => ({
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_workbench",
+    }),
+  };
+  const lifecycleSessionFactory = createRuntimeLifecyclePanelSessionFactory({
+    controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+      runtime: lifecycleRuntime.runtime,
+    }),
+  });
+  const streamSessionFactory = createRuntimeStreamInteractionSessionFactory({
+    runtime: streamRuntime,
+    eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+  });
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: lifecycleSessionFactory,
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: streamSessionFactory,
+    });
+  const workbench = createRuntimeWorkbenchSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+  });
+  const published: Array<ReturnType<typeof workbench.snapshot>> = [];
+
+  assert.equal(Object.hasOwn(workbench, "lifecyclePanelController"), false);
+  assert.equal(Object.hasOwn(workbench, "runtimeStreamController"), false);
+  assert.equal(Object.hasOwn(workbench, "factory"), false);
+  const initialSnapshot = workbench.getSnapshot();
+  assert.deepEqual(initialSnapshot, {
+    activePanel: "lifecycle",
+    lifecyclePanel: {
+      activeSession: null,
+      disposed: false,
+    },
+    runtimeStream: {
+      activeChannel: null,
+      activeSession: null,
+      disposed: false,
+    },
+    disposed: false,
+  });
+  assert.strictEqual(workbench.getServerSnapshot(), initialSnapshot);
+  assert.strictEqual(workbench.snapshot(), initialSnapshot);
+  assert.equal(Object.isFrozen(initialSnapshot), true);
+
+  const unsubscribe = workbench.subscribe(() => {
+    published.push(workbench.getSnapshot());
+  });
+  const lifecycleSession = workbench.openLifecyclePanelSession({
+    timelineFilter: "startup",
+  });
+  assert.equal(workbench.activePanel(), "lifecycle");
+  assert.equal(lifecyclePanelController.activeSession(), lifecycleSession);
+  assert.equal(lifecycleSession.listenerCount(), 1);
+  assert.equal(runtimeStreamController.listenerCount(), 1);
+  assert.equal(
+    workbench.snapshot().lifecyclePanel.activeSession?.interaction.view
+      .timelineFilter,
+    "startup",
+  );
+
+  await lifecycleSession.dispatch("focus_primary_command");
+  await lifecycleSession.dispatch("activate_focused_command");
+  await lifecycleSession.dispatch("refresh_status");
+  assert.equal(
+    published.at(-1)?.lifecyclePanel.activeSession?.interaction.view
+      .visibleTimelineItemCount,
+    1,
+  );
+
+  const streamSession = workbench.openRuntimeStreamSession({
+    channel: { kind: "run", runId: "run_workbench" },
+    clientFactory: streamClientFactory.factory,
+    eventTypes: ["model.text_delta"],
+  });
+  assert.equal(workbench.activePanel(), "stream");
+  assert.notEqual(runtimeStreamController.activeSession(), streamSession);
+  assert.equal(Object.hasOwn(streamSession, "store"), false);
+  assert.equal(Object.hasOwn(streamSession, "viewModel"), false);
+  assert.equal(Object.hasOwn(streamSession, "interaction"), false);
+  assert.deepEqual(streamSession.eventTypes, ["model.text_delta"]);
+  assert.equal(Object.isFrozen(streamSession), true);
+  assert.equal(Object.isFrozen(streamSession.eventTypes), true);
+  assert.deepEqual(workbench.snapshot().runtimeStream.activeChannel, {
+    kind: "run",
+    runId: "run_workbench",
+  });
+  assert.equal(streamSession.listenerCount(), 1);
+
+  await streamSession.start();
+  const streamClient = streamClientFactory.clients[0];
+  assert.ok(streamClient !== undefined);
+  streamClient.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_workbench_stream",
+      seq: 1,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "Workbench stream",
+      content: "stream content",
+      expandable: false,
+      created_at: "2026-06-21T00:00:00.008Z",
+    }),
+  );
+  assert.equal(
+    workbench.snapshot().runtimeStream.activeSession?.store.totalEvents,
+    1,
+  );
+
+  const beforeNoOpPanel = workbench.getSnapshot();
+  const noOpPanel = workbench.setActivePanel("stream");
+  assert.strictEqual(noOpPanel, beforeNoOpPanel);
+  const lifecycleActive = workbench.setActivePanel("lifecycle");
+  assert.equal(lifecycleActive.activePanel, "lifecycle");
+  assert.throws(
+    () => workbench.setActivePanel("invalid" as RuntimeWorkbenchPanelId),
+    /Invalid runtime workbench panel id/u,
+  );
+  assert.equal(workbench.activePanel(), "lifecycle");
+
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(workbench.listenerCount(), 0);
+  assert.equal(lifecyclePanelController.listenerCount(), 0);
+  assert.equal(runtimeStreamController.listenerCount(), 0);
+  assert.equal(workbench.dispose(), true);
+  assert.equal(workbench.dispose(), false);
+  assert.equal(workbench.isDisposed(), true);
+  assert.equal(lifecycleSession.dispose(), false);
+  assert.equal(streamSession.dispose(), false);
+  assert.equal(lifecyclePanelController.isDisposed(), true);
+  assert.equal(runtimeStreamController.isDisposed(), true);
+  assert.equal(workbench.subscribe(() => undefined)(), false);
+  assert.throws(
+    () => workbench.openLifecyclePanelSession(),
+    /Runtime workbench session is disposed/u,
+  );
+  assert.throws(
+    () => workbench.setActivePanel("stream"),
+    /Runtime workbench session is disposed/u,
+  );
+});
+
+test("renderer runtime workbench session keeps state on open failure and isolates listeners", async () => {
+  const errors: unknown[] = [];
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const streamClientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const streamRuntime = {
+    connectionInfo: async () => ({
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_workbench",
+    }),
+  };
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: createRuntimeLifecyclePanelSessionFactory({
+        controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+          runtime: lifecycleRuntime.runtime,
+        }),
+      }),
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: createRuntimeStreamInteractionSessionFactory({
+        runtime: streamRuntime,
+        eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+      }),
+    });
+  const workbench = createRuntimeWorkbenchSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+    activePanel: "stream",
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly activePanel: string;
+    readonly hasLifecycle: boolean;
+    readonly streamTotal: number;
+    readonly disposed: boolean;
+  }> = [];
+  const unsubscribeThrowing = workbench.subscribe(() => {
+    throw new Error("workbench listener failed");
+  });
+  const unsubscribeObserved = workbench.subscribe(() => {
+    const snapshot = workbench.getSnapshot();
+    observed.push({
+      activePanel: snapshot.activePanel,
+      hasLifecycle: snapshot.lifecyclePanel.activeSession !== null,
+      streamTotal: snapshot.runtimeStream.activeSession?.store.totalEvents ?? 0,
+      disposed: snapshot.disposed,
+    });
+  });
+
+  const lifecycleSession = workbench.openLifecyclePanelSession();
+  assert.equal(errors.length, 1);
+  assert.equal(workbench.activePanel(), "lifecycle");
+  assert.equal(lifecyclePanelController.activeSession(), lifecycleSession);
+
+  assert.throws(
+    () =>
+      workbench.openRuntimeStreamSession({
+        channel: { kind: "run", runId: "run_invalid_workbench" },
+        eventTypes: ["model.fake" as RuntimeStreamKnownEventType],
+      }),
+    /StreamEvent spec/u,
+  );
+  assert.equal(workbench.activePanel(), "lifecycle");
+  assert.equal(lifecyclePanelController.activeSession(), lifecycleSession);
+  assert.equal(runtimeStreamController.activeSession(), null);
+
+  const streamSession = workbench.openRuntimeStreamSession({
+    channel: { kind: "run", runId: "run_observed_workbench" },
+    clientFactory: streamClientFactory.factory,
+    eventTypes: ["model.text_delta"],
+  });
+  await streamSession.start();
+  const streamClient = streamClientFactory.clients[0];
+  assert.ok(streamClient !== undefined);
+  streamClient.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_workbench_observed",
+      seq: 2,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "Workbench observed",
+      content: "observed content",
+      expandable: false,
+      created_at: "2026-06-21T00:00:00.009Z",
+    }),
+  );
+  assert.equal(
+    observed.some(
+      (snapshot) =>
+        snapshot.activePanel === "stream" &&
+        snapshot.hasLifecycle &&
+        snapshot.streamTotal === 1,
+    ),
+    true,
+  );
+  assert.equal(errors.length >= observed.length, true);
+
+  assert.equal(workbench.disposeRuntimeStreamSession(), true);
+  assert.equal(streamSession.dispose(), false);
+  assert.equal(workbench.snapshot().runtimeStream.activeSession, null);
+  const beforeNoOpStreamDisposeCount = observed.length;
+  const beforeNoOpStreamDisposeSnapshot = workbench.getSnapshot();
+  assert.equal(workbench.disposeRuntimeStreamSession(), false);
+  assert.equal(observed.length, beforeNoOpStreamDisposeCount);
+  assert.strictEqual(workbench.getSnapshot(), beforeNoOpStreamDisposeSnapshot);
+  assert.equal(workbench.disposeLifecyclePanelSession(), true);
+  assert.equal(lifecycleSession.dispose(), false);
+  assert.equal(workbench.snapshot().lifecyclePanel.activeSession, null);
+  const beforeNoOpLifecycleDisposeCount = observed.length;
+  const beforeNoOpLifecycleDisposeSnapshot = workbench.getSnapshot();
+  assert.equal(workbench.disposeLifecyclePanelSession(), false);
+  assert.equal(observed.length, beforeNoOpLifecycleDisposeCount);
+  assert.strictEqual(
+    workbench.getSnapshot(),
+    beforeNoOpLifecycleDisposeSnapshot,
+  );
+
+  assert.equal(workbench.dispose(), true);
+  assert.equal(observed.at(-1)?.disposed, true);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(workbench.listenerCount(), 0);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
