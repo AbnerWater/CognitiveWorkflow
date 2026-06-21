@@ -267,13 +267,28 @@ export interface RuntimeStreamInteractionSessionFactory {
 export interface RuntimeStreamInteractionSessionController {
   readonly activeSession: () => RuntimeStreamInteractionSession | null;
   readonly activeChannel: () => RuntimeStreamChannel | null;
+  readonly snapshot: () => RuntimeStreamInteractionSessionControllerSnapshot;
+  readonly subscribe: (
+    listener: RuntimeStreamInteractionSessionControllerListener,
+  ) => RuntimeStreamUnsubscribe;
   readonly openSession: (
     options: CreateRuntimeStreamInteractionSessionFactorySessionOptions,
   ) => RuntimeStreamInteractionSession;
   readonly disposeActiveSession: () => boolean;
+  readonly listenerCount: () => number;
   readonly dispose: () => boolean;
   readonly isDisposed: () => boolean;
 }
+
+export interface RuntimeStreamInteractionSessionControllerSnapshot {
+  readonly activeChannel: RuntimeStreamChannel | null;
+  readonly activeSession: RuntimeStreamInteractionSessionSnapshot | null;
+  readonly disposed: boolean;
+}
+
+export type RuntimeStreamInteractionSessionControllerListener = (
+  snapshot: RuntimeStreamInteractionSessionControllerSnapshot,
+) => void;
 
 export interface CreateRuntimeStreamInteractionSessionFactoryOptions {
   readonly runtime: OpenRuntimeStreamReconnectingClientOptions["runtime"];
@@ -292,6 +307,7 @@ export interface CreateRuntimeStreamInteractionSessionFactoryOptions {
 
 export interface CreateRuntimeStreamInteractionSessionControllerOptions {
   readonly factory: RuntimeStreamInteractionSessionFactory;
+  readonly onError?: (error: unknown) => void;
 }
 
 export interface CreateRuntimeStreamInteractionSessionFactorySessionOptions extends Omit<
@@ -505,7 +521,18 @@ export function createRuntimeStreamInteractionSessionController(
 ): RuntimeStreamInteractionSessionController {
   let activeSession: RuntimeStreamInteractionSession | null = null;
   let activeChannel: RuntimeStreamChannel | null = null;
+  const controllerListeners =
+    new Set<RuntimeStreamInteractionSessionControllerListener>();
+  let activeSessionUnsubscribe: RuntimeStreamUnsubscribe | null = null;
   let disposed = false;
+
+  const reportError = (error: unknown): void => {
+    try {
+      options.onError?.(error);
+    } catch {
+      // Renderer diagnostics must not break controller snapshot propagation.
+    }
+  };
 
   const assertActive = (): void => {
     if (disposed) {
@@ -515,17 +542,81 @@ export function createRuntimeStreamInteractionSessionController(
     }
   };
 
+  const snapshot = (): RuntimeStreamInteractionSessionControllerSnapshot => ({
+    activeChannel:
+      activeChannel === null ? null : cloneRuntimeStreamChannel(activeChannel),
+    activeSession: activeSession?.snapshot() ?? null,
+    disposed,
+  });
+
+  const publish = (): void => {
+    if (controllerListeners.size === 0) {
+      return;
+    }
+    const nextSnapshot = snapshot();
+    for (const listener of [...controllerListeners]) {
+      try {
+        listener(nextSnapshot);
+      } catch (error) {
+        reportError(error);
+      }
+    }
+  };
+
+  const releaseActiveSessionSubscription = (): void => {
+    activeSessionUnsubscribe?.();
+    activeSessionUnsubscribe = null;
+  };
+
+  const ensureActiveSessionSubscription = (): void => {
+    if (
+      activeSessionUnsubscribe !== null ||
+      activeSession === null ||
+      controllerListeners.size === 0
+    ) {
+      return;
+    }
+    activeSessionUnsubscribe = activeSession.subscribe(() => {
+      publish();
+    });
+  };
+
   const clearActiveSession = (): boolean => {
     const session = activeSession;
+    releaseActiveSessionSubscription();
     activeSession = null;
     activeChannel = null;
-    return session?.dispose() ?? false;
+    const disposedSession = session?.dispose() ?? false;
+    if (session !== null) {
+      publish();
+    }
+    return disposedSession;
   };
 
   return {
     activeSession: () => activeSession,
     activeChannel: () =>
       activeChannel === null ? null : cloneRuntimeStreamChannel(activeChannel),
+    snapshot,
+    subscribe: (listener) => {
+      if (disposed) {
+        return () => false;
+      }
+      controllerListeners.add(listener);
+      ensureActiveSessionSubscription();
+      let subscribed = true;
+      return () => {
+        if (!subscribed) {
+          return false;
+        }
+        subscribed = false;
+        const deleted = controllerListeners.delete(listener);
+        if (controllerListeners.size === 0) {
+          releaseActiveSessionSubscription();
+        }
+        return deleted;
+      };
+    },
     openSession: (sessionOptions) => {
       assertActive();
       const channel = cloneRuntimeStreamChannel(sessionOptions.channel);
@@ -534,18 +625,24 @@ export function createRuntimeStreamInteractionSessionController(
         channel,
       });
       const previousSession = activeSession;
+      releaseActiveSessionSubscription();
       activeSession = nextSession;
       activeChannel = cloneRuntimeStreamChannel(channel);
+      ensureActiveSessionSubscription();
       previousSession?.dispose();
+      publish();
       return nextSession;
     },
     disposeActiveSession: () => clearActiveSession(),
+    listenerCount: () => controllerListeners.size,
     dispose: () => {
       if (disposed) {
         return false;
       }
       disposed = true;
       clearActiveSession();
+      releaseActiveSessionSubscription();
+      controllerListeners.clear();
       return true;
     },
     isDisposed: () => disposed,
