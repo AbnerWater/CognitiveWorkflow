@@ -83,6 +83,7 @@ import {
   type RuntimeWorkbenchShortcutId,
   type RuntimeWorkbenchShortcutKeyEvent,
 } from "../renderer/runtime-workbench-shortcuts.js";
+import { createRuntimeWorkbenchHostSession } from "../renderer/runtime-workbench-host-session.js";
 import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
@@ -4339,6 +4340,345 @@ test("renderer runtime workbench shortcuts isolate listeners and active dispose"
 
   assert.equal(interaction.dispose(), true);
   assert.equal(workbench.dispose(), true);
+});
+
+test("renderer runtime workbench host session composes interaction and shortcuts", async () => {
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const streamClientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const streamRuntime = {
+    connectionInfo: async () => ({
+      base_url: "http://127.0.0.1:51234/cw/v1",
+      token: "token_workbench_host",
+    }),
+  };
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: createRuntimeLifecyclePanelSessionFactory({
+        controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+          runtime: lifecycleRuntime.runtime,
+        }),
+      }),
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: createRuntimeStreamInteractionSessionFactory({
+        runtime: streamRuntime,
+        eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+      }),
+    });
+  const host = createRuntimeWorkbenchHostSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+  });
+  const observed: Array<ReturnType<typeof host.snapshot>> = [];
+  let preventDefaultCount = 0;
+  const key = (
+    event: Omit<RuntimeWorkbenchShortcutKeyEvent, "preventDefault">,
+  ): RuntimeWorkbenchShortcutKeyEvent => ({
+    ...event,
+    preventDefault: () => {
+      preventDefaultCount += 1;
+    },
+  });
+
+  assert.equal(Object.hasOwn(host, "workbench"), false);
+  assert.equal(Object.hasOwn(host, "interaction"), false);
+  assert.equal(Object.hasOwn(host, "shortcuts"), false);
+  assert.equal(Object.hasOwn(host, "lifecyclePanelController"), false);
+  assert.equal(Object.hasOwn(host, "runtimeStreamController"), false);
+  const initialSnapshot = host.getSnapshot();
+  assert.equal(initialSnapshot.activePanel, "lifecycle");
+  assert.equal(Object.hasOwn(initialSnapshot, "workbench"), false);
+  assert.equal(Object.hasOwn(initialSnapshot, "interaction"), false);
+  assert.equal(Object.hasOwn(initialSnapshot, "shortcuts"), false);
+  assert.deepEqual(initialSnapshot.lifecyclePanel, {
+    active: false,
+    disposed: false,
+  });
+  assert.deepEqual(initialSnapshot.runtimeStream, {
+    active: false,
+    activeChannel: null,
+    disposed: false,
+  });
+  assert.deepEqual(initialSnapshot.enabledCommandIds, [
+    "show_stream_panel",
+    "open_lifecycle_panel_session",
+    "open_runtime_stream_session",
+  ]);
+  assert.deepEqual(initialSnapshot.enabledShortcutIds, ["show_stream_panel"]);
+  assert.equal(Object.isFrozen(initialSnapshot), true);
+  assert.equal(Object.isFrozen(initialSnapshot.lifecyclePanel), true);
+  assert.equal(Object.isFrozen(initialSnapshot.runtimeStream), true);
+  assert.equal(Object.isFrozen(initialSnapshot.enabledCommandIds), true);
+  assert.equal(Object.isFrozen(initialSnapshot.enabledShortcutIds), true);
+  assert.strictEqual(host.getServerSnapshot(), initialSnapshot);
+  assert.strictEqual(host.snapshot(), initialSnapshot);
+  assert.equal(
+    host.resolveKeyEvent(key({ key: "2", ctrlKey: true }))?.shortcutId,
+    "show_stream_panel",
+  );
+
+  const unsubscribe = host.subscribe(() => {
+    observed.push(host.getSnapshot());
+  });
+  assert.equal(lifecyclePanelController.listenerCount(), 1);
+  assert.equal(runtimeStreamController.listenerCount(), 1);
+
+  const streamShown = await host.handleKeyEvent(
+    key({ key: "2", ctrlKey: true }),
+  );
+  assert.equal(streamShown.activePanel, "stream");
+  assert.equal(streamShown.lastHandledShortcutId, "show_stream_panel");
+  assert.equal(preventDefaultCount, 1);
+  assert.equal(observed.length, 1);
+
+  const beforeIgnoredRepeatCount = observed.length;
+  const beforeIgnoredRepeatSnapshot = host.getSnapshot();
+  const ignoredRepeat = await host.handleKeyEvent(
+    key({ key: "1", ctrlKey: true, repeat: true }),
+  );
+  assert.strictEqual(ignoredRepeat, beforeIgnoredRepeatSnapshot);
+  assert.equal(observed.length, beforeIgnoredRepeatCount);
+  assert.equal(preventDefaultCount, 1);
+
+  const beforeEditableCount = observed.length;
+  const beforeEditableSnapshot = host.getSnapshot();
+  const ignoredEditable = await host.handleKeyEvent(
+    key({
+      key: "1",
+      ctrlKey: true,
+      target: { tagName: "input", type: "text" },
+    }),
+  );
+  assert.strictEqual(ignoredEditable, beforeEditableSnapshot);
+  assert.equal(observed.length, beforeEditableCount);
+  assert.equal(preventDefaultCount, 1);
+
+  const lifecycleShown = await host.handleKeyEvent(
+    key({ key: "1", ctrlKey: true }),
+  );
+  assert.equal(lifecycleShown.activePanel, "lifecycle");
+  assert.equal(lifecycleShown.lastHandledShortcutId, "show_lifecycle_panel");
+  assert.equal(preventDefaultCount, 2);
+  assert.equal(observed.length, 2);
+
+  const lifecycleOpened = await host.dispatch({
+    type: "open_lifecycle_panel_session",
+    options: { timelineFilter: "startup" },
+  });
+  assert.deepEqual(lifecycleOpened.lifecyclePanel, {
+    active: true,
+    disposed: false,
+  });
+  assert.equal(
+    lifecycleOpened.enabledShortcutIds.includes(
+      "focus_lifecycle_primary_command",
+    ),
+    true,
+  );
+  assert.equal(observed.length, 3);
+
+  const primaryFocused = await host.handleKeyEvent(
+    key({ key: "Home", altKey: true }),
+  );
+  assert.equal(
+    lifecyclePanelController.activeSession()?.snapshot().interaction
+      .focusedCommandId,
+    "start_runtime",
+  );
+  assert.equal(
+    primaryFocused.lastHandledShortcutId,
+    "focus_lifecycle_primary_command",
+  );
+
+  const started = await host.handleKeyEvent(key({ key: "Enter" }));
+  assert.equal(
+    lifecyclePanelController.activeSession()?.snapshot().interaction.view.panel
+      .started,
+    true,
+  );
+  assert.equal(
+    started.lastHandledShortcutId,
+    "activate_lifecycle_focused_command",
+  );
+
+  const streamOpened = await host.dispatch({
+    type: "open_runtime_stream_session",
+    options: {
+      channel: { kind: "run", runId: "run_workbench_host" },
+      clientFactory: streamClientFactory.factory,
+      eventTypes: ["model.text_delta"],
+    },
+  });
+  assert.equal(streamOpened.activePanel, "stream");
+  assert.deepEqual(streamOpened.runtimeStream, {
+    active: true,
+    activeChannel: { kind: "run", runId: "run_workbench_host" },
+    disposed: false,
+  });
+  assert.equal(
+    streamOpened.enabledShortcutIds.includes("dispose_runtime_stream_session"),
+    true,
+  );
+
+  const activeStreamSession = runtimeStreamController.activeSession();
+  assert.ok(activeStreamSession !== null);
+  await activeStreamSession.start();
+  const streamClient = streamClientFactory.clients[0];
+  assert.ok(streamClient !== undefined);
+  streamClient.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_workbench_host_stream",
+      seq: 1,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "Workbench host stream",
+      content: "host stream content",
+      expandable: false,
+      created_at: "2026-06-21T00:00:00.011Z",
+    }),
+  );
+  assert.equal(
+    runtimeStreamController.activeSession()?.snapshot().store.totalEvents,
+    1,
+  );
+
+  const streamDisposed = await host.handleKeyEvent(
+    key({ key: "Escape", shiftKey: true }),
+  );
+  assert.deepEqual(streamDisposed.runtimeStream, {
+    active: false,
+    activeChannel: null,
+    disposed: false,
+  });
+  assert.equal(runtimeStreamController.activeSession(), null);
+  assert.equal(
+    streamDisposed.lastHandledShortcutId,
+    "dispose_runtime_stream_session",
+  );
+
+  const beforeDefaultPreventedCount = observed.length;
+  const beforeDefaultPreventedSnapshot = host.getSnapshot();
+  const ignoredDefaultPrevented = await host.handleKeyEvent(
+    key({ key: "1", ctrlKey: true, defaultPrevented: true }),
+  );
+  assert.strictEqual(ignoredDefaultPrevented, beforeDefaultPreventedSnapshot);
+  assert.equal(observed.length, beforeDefaultPreventedCount);
+
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(host.listenerCount(), 0);
+  assert.equal(lifecyclePanelController.listenerCount(), 0);
+  assert.equal(runtimeStreamController.listenerCount(), 0);
+  assert.equal(host.dispose(), true);
+  assert.equal(host.dispose(), false);
+  assert.equal(host.isDisposed(), true);
+  assert.equal(lifecyclePanelController.isDisposed(), true);
+  assert.equal(runtimeStreamController.isDisposed(), true);
+  assert.equal(host.subscribe(() => undefined)(), false);
+  await assert.rejects(
+    async () => host.dispatch({ type: "show_lifecycle_panel" }),
+    /Runtime workbench host session is disposed/u,
+  );
+});
+
+test("renderer runtime workbench host session isolates listeners and active dispose", async () => {
+  const errors: unknown[] = [];
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: createRuntimeLifecyclePanelSessionFactory({
+        controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+          runtime: lifecycleRuntime.runtime,
+        }),
+      }),
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: createRuntimeStreamInteractionSessionFactory({
+        runtime: {
+          connectionInfo: async () => ({
+            base_url: "http://127.0.0.1:51234/cw/v1",
+            token: "token_workbench_host_isolation",
+          }),
+        },
+        eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+      }),
+    });
+  const host = createRuntimeWorkbenchHostSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly panel: string;
+    readonly lastHandledShortcutId: string | null;
+    readonly disposed: boolean;
+  }> = [];
+
+  const unsubscribeThrowing = host.subscribe(() => {
+    const mutableShortcutIds = host.getSnapshot()
+      .enabledShortcutIds as RuntimeWorkbenchShortcutId[];
+    mutableShortcutIds.push("show_stream_panel");
+  });
+  const unsubscribeObserved = host.subscribe(() => {
+    const snapshot = host.getSnapshot();
+    observed.push({
+      panel: snapshot.activePanel,
+      lastHandledShortcutId: snapshot.lastHandledShortcutId,
+      disposed: snapshot.disposed,
+    });
+  });
+
+  await host.handleKeyEvent({
+    key: "2",
+    ctrlKey: true,
+  });
+  assert.equal(errors.length, 1);
+  assert.equal(observed.at(-1)?.panel, "stream");
+  assert.equal(observed.at(-1)?.lastHandledShortcutId, "show_stream_panel");
+  assert.equal(lifecyclePanelController.listenerCount(), 1);
+  assert.equal(runtimeStreamController.listenerCount(), 1);
+
+  const stableSnapshot = host.getSnapshot();
+  await assert.rejects(
+    async () =>
+      host.handleKeyEvent({
+        key: "",
+      } as unknown as RuntimeWorkbenchShortcutKeyEvent),
+    /Invalid runtime workbench shortcut key event/u,
+  );
+  assert.strictEqual(host.getSnapshot(), stableSnapshot);
+
+  assert.equal(host.dispose(), true);
+  assert.equal(errors.length, 2);
+  assert.equal(observed.at(-1)?.disposed, true);
+  assert.equal(host.dispose(), false);
+  assert.equal(host.isDisposed(), true);
+  assert.equal(lifecyclePanelController.isDisposed(), true);
+  assert.equal(runtimeStreamController.isDisposed(), true);
+  assert.equal(lifecyclePanelController.listenerCount(), 0);
+  assert.equal(runtimeStreamController.listenerCount(), 0);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(host.subscribe(() => undefined)(), false);
+  assert.equal(host.resolveKeyEvent({ key: "1", ctrlKey: true }), null);
+  await assert.rejects(
+    async () => host.handleKeyEvent({ key: "1", ctrlKey: true }),
+    /Runtime workbench host session is disposed/u,
+  );
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
