@@ -58,6 +58,10 @@ import {
 import { createRuntimeLifecyclePanelControllerFactory } from "../renderer/runtime-lifecycle-panel-controller.js";
 import { createRuntimeLifecyclePanelHookAdapterFactory } from "../renderer/runtime-lifecycle-panel-hook-adapter.js";
 import {
+  createRuntimeLifecyclePanelViewModel,
+  type RuntimeLifecyclePanelTimelineFilter,
+} from "../renderer/runtime-lifecycle-panel-view-model.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -2437,6 +2441,246 @@ test("renderer runtime lifecycle panel hook adapter isolates listeners and activ
   assert.equal(unsubscribeThrowing(), false);
   assert.equal(unsubscribeObserved(), false);
   assert.equal(adapter.dispose(), false);
+});
+
+test("renderer runtime lifecycle panel view model filters and selects timeline", async () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const pageLifecycle = createFakeRuntimeLifecycleStatusPageLifecycleTarget();
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const hookFactory = createRuntimeLifecyclePanelHookAdapterFactory({
+    controllerFactory,
+  });
+  const viewModel = createRuntimeLifecyclePanelViewModel({
+    adapter: hookFactory.createAdapter(),
+  });
+  const notifications: Array<{
+    readonly filter: string;
+    readonly visible: number;
+    readonly selected: string | null;
+    readonly started: boolean;
+  }> = [];
+
+  assert.equal(Object.hasOwn(viewModel, "adapter"), false);
+  assert.equal(Object.hasOwn(viewModel, "controller"), false);
+  assert.equal(Object.hasOwn(viewModel, "session"), false);
+  assert.equal(viewModel.snapshot().timelineFilter, "all");
+  assert.equal(viewModel.snapshot().visibleTimelineItemCount, 0);
+  assert.equal(Object.isFrozen(viewModel.snapshot()), true);
+  assert.equal(
+    Object.isFrozen(viewModel.snapshot().timelineFilterOptions),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(viewModel.snapshot().visibleTimelineItems),
+    true,
+  );
+
+  const unsubscribe = viewModel.subscribe((snapshot) => {
+    notifications.push({
+      filter: snapshot.timelineFilter,
+      visible: snapshot.visibleTimelineItemCount,
+      selected: snapshot.selectedTimelineItemId,
+      started: snapshot.panel.started,
+    });
+  });
+
+  await viewModel.invoke("start_runtime");
+  const busy = await viewModel.invoke("refresh_status");
+  assert.equal(busy.totalTimelineItems, 2);
+  assert.equal(busy.visibleTimelineItemCount, 2);
+  assert.equal(busy.hiddenTimelineItemCount, 0);
+  assert.deepEqual(
+    busy.timelineFilterOptions.map((option) => [
+      option.id,
+      option.count,
+      option.active,
+    ]),
+    [
+      ["all", 2, true],
+      ["startup", 1, false],
+      ["shutdown", 1, false],
+      ["action_required", 0, false],
+      ["retryable", 0, false],
+      ["error", 0, false],
+    ],
+  );
+  assert.deepEqual(notifications.at(-1), {
+    filter: "all",
+    visible: 2,
+    selected: null,
+    started: true,
+  });
+
+  const shutdownOnly = viewModel.setTimelineFilter("shutdown");
+  assert.equal(shutdownOnly.timelineFilter, "shutdown");
+  assert.equal(shutdownOnly.visibleTimelineItemCount, 1);
+  assert.equal(shutdownOnly.hiddenTimelineItemCount, 1);
+  assert.equal(shutdownOnly.visibleTimelineItems[0]?.source, "shutdown");
+  assert.equal(
+    shutdownOnly.timelineFilterOptions.find(
+      (option) => option.id === "shutdown",
+    )?.active,
+    true,
+  );
+
+  const selected = viewModel.selectTimelineItem(
+    shutdownOnly.visibleTimelineItems[0]?.id ?? "",
+  );
+  assert.equal(selected.selectedTimelineItem?.source, "shutdown");
+  assert.equal(
+    selected.selectedTimelineItemId,
+    selected.selectedTimelineItem?.id,
+  );
+  assert.equal(Object.isFrozen(selected.selectedTimelineItem), true);
+  assert.equal(Object.isFrozen(selected.selectedTimelineItem?.badges), true);
+  assert.throws(() => {
+    const mutableItems =
+      selected.visibleTimelineItems as RuntimeLifecyclePanelTimelineItem[];
+    mutableItems.push({
+      id: "mutated",
+      source: "startup",
+      sourceLabel: "Mutated",
+      kind: "starting_sidecar",
+      phase: "starting",
+      tone: "info",
+      statusLabel: "Mutated",
+      title: "Mutated",
+      summary: "Mutated",
+      badges: ["startup"],
+    });
+  }, /Cannot add|object is not extensible|read only/u);
+
+  const startupOnly = viewModel.setTimelineFilter("startup");
+  assert.equal(startupOnly.timelineFilter, "startup");
+  assert.equal(startupOnly.visibleTimelineItemCount, 1);
+  assert.equal(startupOnly.selectedTimelineItemId, null);
+  assert.equal(startupOnly.selectedTimelineItem, null);
+  assert.throws(
+    () => viewModel.selectTimelineItem(selected.selectedTimelineItemId ?? ""),
+    /timeline item is not visible/u,
+  );
+  assert.throws(
+    () =>
+      viewModel.setTimelineFilter(
+        "unknown" as RuntimeLifecyclePanelTimelineFilter,
+      ),
+    /unexpected|Invalid|undefined/u,
+  );
+  assert.throws(
+    () => viewModel.selectTimelineItem("../unsafe item"),
+    /Invalid runtime lifecycle panel timeline item id/u,
+  );
+
+  const allAgain = viewModel.setTimelineFilter("all");
+  assert.equal(allAgain.visibleTimelineItemCount, 2);
+  const unbindPageLifecycle = viewModel.bindPageLifecycle(pageLifecycle, {
+    eventType: "pagehide",
+  });
+  pageLifecycle.emit("pagehide");
+  assert.equal(viewModel.snapshot().panel.started, false);
+  assert.equal(unbindPageLifecycle(), true);
+  assert.equal(unbindPageLifecycle(), false);
+
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(viewModel.listenerCount(), 0);
+  assert.equal(viewModel.dispose(), true);
+  assert.equal(viewModel.dispose(), false);
+  assert.equal(viewModel.isDisposed(), true);
+  assert.equal(viewModel.subscribe(() => undefined)(), false);
+  await assert.rejects(
+    async () => viewModel.invoke("refresh_status"),
+    /lifecycle panel view model is disposed/u,
+  );
+});
+
+test("renderer runtime lifecycle panel view model isolates listeners and active dispose", async () => {
+  const errors: unknown[] = [];
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const hookFactory = createRuntimeLifecyclePanelHookAdapterFactory({
+    controllerFactory,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const viewModel = createRuntimeLifecyclePanelViewModel({
+    adapter: hookFactory.createAdapter({
+      onError: (error) => {
+        errors.push(error);
+      },
+    }),
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly filter: string;
+    readonly visible: number;
+    readonly selected: string | null;
+  }> = [];
+
+  const unsubscribeThrowing = viewModel.subscribe((snapshot) => {
+    const mutableItems =
+      snapshot.visibleTimelineItems as RuntimeLifecyclePanelTimelineItem[];
+    mutableItems.push({
+      id: "mutated",
+      source: "shutdown",
+      sourceLabel: "Mutated",
+      kind: "shutdown_failed",
+      phase: "failed",
+      tone: "error",
+      statusLabel: "Mutated",
+      title: "Mutated",
+      summary: "Mutated",
+      badges: ["shutdown"],
+    });
+  });
+  const unsubscribeObserved = viewModel.subscribe((snapshot) => {
+    observed.push({
+      filter: snapshot.timelineFilter,
+      visible: snapshot.visibleTimelineItemCount,
+      selected: snapshot.selectedTimelineItemId,
+    });
+  });
+
+  await viewModel.invoke("start_runtime");
+  await viewModel.invoke("refresh_status");
+  const shutdownOnly = viewModel.setTimelineFilter("shutdown");
+  viewModel.selectTimelineItem(shutdownOnly.visibleTimelineItems[0]?.id ?? "");
+  assert.deepEqual(observed, [
+    { filter: "all", visible: 0, selected: null },
+    { filter: "all", visible: 2, selected: null },
+    { filter: "shutdown", visible: 1, selected: null },
+    {
+      filter: "shutdown",
+      visible: 1,
+      selected: shutdownOnly.visibleTimelineItems[0]?.id ?? null,
+    },
+  ]);
+  assert.equal(errors.length, 4);
+  assert.deepEqual(
+    viewModel.snapshot().visibleTimelineItems.map((item) => item.title),
+    ["Runtime shutdown registered"],
+  );
+
+  assert.equal(viewModel.dispose(), true);
+  assert.equal(viewModel.listenerCount(), 0);
+  assert.equal(runtime.startupUnsubscribeCount(), 1);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 1);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(viewModel.dispose(), false);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
