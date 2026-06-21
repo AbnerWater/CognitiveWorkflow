@@ -70,6 +70,28 @@ export interface RuntimeLifecyclePanelSessionFactory {
   ) => RuntimeLifecyclePanelSession;
 }
 
+export interface RuntimeLifecyclePanelSessionController {
+  readonly activeSession: () => RuntimeLifecyclePanelSession | null;
+  readonly getSnapshot: () => RuntimeLifecyclePanelSessionControllerSnapshot;
+  readonly getServerSnapshot: () => RuntimeLifecyclePanelSessionControllerSnapshot;
+  readonly snapshot: () => RuntimeLifecyclePanelSessionControllerSnapshot;
+  readonly subscribe: (
+    listener: RuntimeLifecyclePanelSessionStoreChangeListener,
+  ) => RuntimeStatusUnsubscribe;
+  readonly openSession: (
+    options?: CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
+  ) => RuntimeLifecyclePanelSession;
+  readonly disposeActiveSession: () => boolean;
+  readonly listenerCount: () => number;
+  readonly dispose: () => boolean;
+  readonly isDisposed: () => boolean;
+}
+
+export interface RuntimeLifecyclePanelSessionControllerSnapshot {
+  readonly activeSession: RuntimeLifecyclePanelSessionSnapshot | null;
+  readonly disposed: boolean;
+}
+
 export interface CreateRuntimeLifecyclePanelSessionOptions {
   readonly adapter: RuntimeLifecyclePanelHookAdapter;
   readonly timelineFilter?: RuntimeLifecyclePanelTimelineFilter;
@@ -81,6 +103,11 @@ export interface CreateRuntimeLifecyclePanelSessionOptions {
 
 export interface CreateRuntimeLifecyclePanelSessionFactoryOptions {
   readonly controllerFactory: RuntimeLifecyclePanelControllerFactory;
+  readonly onError?: RuntimeLifecyclePanelSessionErrorHandler;
+}
+
+export interface CreateRuntimeLifecyclePanelSessionControllerOptions {
+  readonly factory: RuntimeLifecyclePanelSessionFactory;
   readonly onError?: RuntimeLifecyclePanelSessionErrorHandler;
 }
 
@@ -312,6 +339,152 @@ export function createRuntimeLifecyclePanelSessionFactory(
   };
 }
 
+export function createRuntimeLifecyclePanelSessionController(
+  options: CreateRuntimeLifecyclePanelSessionControllerOptions,
+): RuntimeLifecyclePanelSessionController {
+  let activeSession: RuntimeLifecyclePanelSession | null = null;
+  let activeSessionUnsubscribe: RuntimeStatusUnsubscribe | undefined;
+  const listeners = new Set<RuntimeLifecyclePanelSessionStoreChangeListener>();
+  let disposed = false;
+
+  const initialSnapshot = freezeRuntimeLifecyclePanelSessionControllerSnapshot({
+    activeSession: null,
+    disposed,
+  });
+  let currentSignature = sessionControllerSnapshotSignature(initialSnapshot);
+  let currentSnapshot = initialSnapshot;
+
+  const reportError = (error: unknown): void => {
+    try {
+      options.onError?.(error);
+    } catch {
+      // Renderer diagnostics must not break lifecycle panel controller updates.
+    }
+  };
+
+  const assertActive = (): void => {
+    if (disposed) {
+      throw new Error("Runtime lifecycle panel session controller is disposed");
+    }
+  };
+
+  const captureSnapshot = (
+    forceRefresh = false,
+  ): RuntimeLifecyclePanelSessionControllerSnapshot => {
+    const nextSnapshot = freezeRuntimeLifecyclePanelSessionControllerSnapshot({
+      activeSession: activeSession?.getSnapshot() ?? null,
+      disposed,
+    });
+    const nextSignature = sessionControllerSnapshotSignature(nextSnapshot);
+    if (forceRefresh || nextSignature !== currentSignature) {
+      currentSignature = nextSignature;
+      currentSnapshot = nextSnapshot;
+    }
+    return currentSnapshot;
+  };
+
+  const publish = (forceRefresh = false): void => {
+    if (disposed && !forceRefresh) {
+      return;
+    }
+    const previousSignature = currentSignature;
+    captureSnapshot(forceRefresh);
+    if (!forceRefresh && currentSignature === previousSignature) {
+      return;
+    }
+    for (const listener of [...listeners]) {
+      try {
+        listener();
+      } catch (error) {
+        reportError(error);
+      }
+    }
+  };
+
+  const releaseActiveSessionSubscription = (): void => {
+    activeSessionUnsubscribe?.();
+    activeSessionUnsubscribe = undefined;
+  };
+
+  const ensureActiveSessionSubscription = (): void => {
+    if (
+      activeSessionUnsubscribe !== undefined ||
+      activeSession === null ||
+      listeners.size === 0
+    ) {
+      return;
+    }
+    activeSessionUnsubscribe = activeSession.subscribe(() => {
+      publish();
+    });
+  };
+
+  const clearActiveSession = (): boolean => {
+    const session = activeSession;
+    releaseActiveSessionSubscription();
+    activeSession = null;
+    const disposedSession = session?.dispose() ?? false;
+    if (session !== null) {
+      publish(true);
+    }
+    return disposedSession;
+  };
+
+  return {
+    activeSession: () => activeSession,
+    getSnapshot: () => captureSnapshot(),
+    getServerSnapshot: () => captureSnapshot(),
+    snapshot: () => captureSnapshot(),
+    subscribe: (listener) => {
+      if (disposed) {
+        return () => false;
+      }
+      listeners.add(listener);
+      ensureActiveSessionSubscription();
+      let subscribed = true;
+      return () => {
+        if (!subscribed) {
+          return false;
+        }
+        subscribed = false;
+        const deleted = listeners.delete(listener);
+        if (listeners.size === 0) {
+          releaseActiveSessionSubscription();
+        }
+        return deleted;
+      };
+    },
+    openSession: (sessionOptions) => {
+      assertActive();
+      const nextSession = options.factory.createSession(sessionOptions);
+      const previousSession = activeSession;
+      releaseActiveSessionSubscription();
+      activeSession = nextSession;
+      ensureActiveSessionSubscription();
+      previousSession?.dispose();
+      publish(true);
+      return nextSession;
+    },
+    disposeActiveSession: () => clearActiveSession(),
+    listenerCount: () => listeners.size,
+    dispose: () => {
+      if (disposed) {
+        return false;
+      }
+      disposed = true;
+      const hadActiveSession = activeSession !== null;
+      clearActiveSession();
+      if (!hadActiveSession) {
+        publish(true);
+      }
+      releaseActiveSessionSubscription();
+      listeners.clear();
+      return true;
+    },
+    isDisposed: () => disposed,
+  };
+}
+
 function freezeRuntimeLifecyclePanelSessionSnapshot(
   snapshot: RuntimeLifecyclePanelSessionSnapshot,
 ): RuntimeLifecyclePanelSessionSnapshot {
@@ -320,6 +493,18 @@ function freezeRuntimeLifecyclePanelSessionSnapshot(
 
 function sessionSnapshotSignature(
   snapshot: RuntimeLifecyclePanelSessionSnapshot,
+): string {
+  return JSON.stringify(snapshot);
+}
+
+function freezeRuntimeLifecyclePanelSessionControllerSnapshot(
+  snapshot: RuntimeLifecyclePanelSessionControllerSnapshot,
+): RuntimeLifecyclePanelSessionControllerSnapshot {
+  return Object.freeze({ ...snapshot });
+}
+
+function sessionControllerSnapshotSignature(
+  snapshot: RuntimeLifecyclePanelSessionControllerSnapshot,
 ): string {
   return JSON.stringify(snapshot);
 }

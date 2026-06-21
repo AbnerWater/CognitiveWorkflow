@@ -65,7 +65,10 @@ import {
   createRuntimeLifecyclePanelInteraction,
   type RuntimeLifecyclePanelInteractionCommand,
 } from "../renderer/runtime-lifecycle-panel-interaction.js";
-import { createRuntimeLifecyclePanelSessionFactory } from "../renderer/runtime-lifecycle-panel-session.js";
+import {
+  createRuntimeLifecyclePanelSessionController,
+  createRuntimeLifecyclePanelSessionFactory,
+} from "../renderer/runtime-lifecycle-panel-session.js";
 import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
@@ -3151,6 +3154,246 @@ test("renderer runtime lifecycle panel session isolates listeners and active dis
   assert.equal(unsubscribeThrowing(), false);
   assert.equal(unsubscribeObserved(), false);
   assert.equal(session.dispose(), false);
+});
+
+test("renderer runtime lifecycle panel session controller replaces active sessions", async () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const sessionFactory = createRuntimeLifecyclePanelSessionFactory({
+    controllerFactory,
+  });
+  const controller = createRuntimeLifecyclePanelSessionController({
+    factory: sessionFactory,
+  });
+
+  assert.equal(Object.hasOwn(controller, "factory"), false);
+  assert.equal(Object.hasOwn(controller, "session"), false);
+  assert.deepEqual(controller.getSnapshot(), {
+    activeSession: null,
+    disposed: false,
+  });
+  assert.strictEqual(controller.getServerSnapshot(), controller.getSnapshot());
+
+  const startupSession = controller.openSession({
+    timelineFilter: "startup",
+  });
+  assert.equal(controller.activeSession(), startupSession);
+  assert.equal(
+    controller.getSnapshot().activeSession?.interaction.view.timelineFilter,
+    "startup",
+  );
+  await startupSession.dispatch("focus_primary_command");
+  await startupSession.dispatch("activate_focused_command");
+  await startupSession.dispatch("refresh_status");
+  assert.equal(
+    controller.getSnapshot().activeSession?.interaction.view
+      .visibleTimelineItemCount,
+    1,
+  );
+
+  const shutdownSession = controller.openSession({
+    timelineFilter: "shutdown",
+    focusedCommandId: "refresh_status",
+  });
+  assert.equal(controller.activeSession(), shutdownSession);
+  assert.equal(startupSession.dispose(), false);
+  assert.equal(startupSession.isDisposed(), true);
+  assert.equal(
+    controller.snapshot().activeSession?.interaction.view.timelineFilter,
+    "shutdown",
+  );
+  assert.equal(
+    controller.snapshot().activeSession?.interaction.focusedCommandId,
+    "refresh_status",
+  );
+  assert.equal(runtime.startupUnsubscribeCount(), 1);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 1);
+
+  assert.equal(controller.disposeActiveSession(), true);
+  assert.equal(shutdownSession.dispose(), false);
+  assert.equal(controller.activeSession(), null);
+  assert.deepEqual(controller.snapshot(), {
+    activeSession: null,
+    disposed: false,
+  });
+  assert.equal(controller.disposeActiveSession(), false);
+  assert.equal(controller.dispose(), true);
+  assert.equal(controller.dispose(), false);
+  assert.equal(controller.isDisposed(), true);
+  assert.throws(
+    () => controller.openSession(),
+    /lifecycle panel session controller is disposed/u,
+  );
+});
+
+test("renderer runtime lifecycle panel session controller keeps active session on create failure", () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const sessionFactory = createRuntimeLifecyclePanelSessionFactory({
+    controllerFactory,
+  });
+  const controller = createRuntimeLifecyclePanelSessionController({
+    factory: sessionFactory,
+  });
+  const session = controller.openSession({
+    timelineFilter: "startup",
+  });
+
+  assert.throws(
+    () =>
+      controller.openSession({
+        timelineFilter: "not_a_filter" as RuntimeLifecyclePanelTimelineFilter,
+      }),
+    /Invalid runtime lifecycle panel timeline filter/u,
+  );
+  assert.equal(controller.activeSession(), session);
+  assert.equal(
+    controller.snapshot().activeSession?.interaction.view.timelineFilter,
+    "startup",
+  );
+  assert.equal(controller.disposeActiveSession(), true);
+  assert.equal(session.dispose(), false);
+});
+
+test("renderer runtime lifecycle panel session controller publishes active session snapshots", async () => {
+  const errors: unknown[] = [];
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const sessionFactory = createRuntimeLifecyclePanelSessionFactory({
+    controllerFactory,
+  });
+  const controller = createRuntimeLifecyclePanelSessionController({
+    factory: sessionFactory,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const published: Array<ReturnType<typeof controller.snapshot>> = [];
+  const unsubscribeThrowing = controller.subscribe(() => {
+    const mutableCommandIds = controller.getSnapshot().activeSession
+      ?.interaction.availableCommandIds as
+      | RuntimeLifecyclePanelInteractionCommand[]
+      | undefined;
+    mutableCommandIds?.push("refresh_status");
+  });
+  const unsubscribeObserved = controller.subscribe(() => {
+    published.push(controller.getSnapshot());
+  });
+
+  assert.equal(controller.listenerCount(), 2);
+  const initialSnapshot = controller.getSnapshot();
+  assert.strictEqual(controller.getServerSnapshot(), initialSnapshot);
+  assert.equal(Object.isFrozen(initialSnapshot), true);
+
+  const startupSession = controller.openSession({
+    timelineFilter: "startup",
+  });
+  assert.equal(errors.length, 1);
+  assert.equal(published.length, 1);
+  assert.equal(startupSession.listenerCount(), 1);
+  assert.equal(
+    published[0]?.activeSession?.interaction.view.timelineFilter,
+    "startup",
+  );
+  assert.deepEqual(
+    controller.getSnapshot().activeSession?.interaction.availableCommandIds,
+    ["start_runtime", "refresh_status"],
+  );
+
+  await startupSession.dispatch("focus_primary_command");
+  await startupSession.dispatch("activate_focused_command");
+  await startupSession.dispatch("refresh_status");
+  assert.equal(
+    published.at(-1)?.activeSession?.interaction.view.visibleTimelineItemCount,
+    1,
+  );
+  assert.equal(
+    published.some(
+      (snapshot) =>
+        snapshot.activeSession?.interaction.view.panel.started === true,
+    ),
+    true,
+  );
+  assert.equal(errors.length >= 3, true);
+
+  const shutdownSession = controller.openSession({
+    timelineFilter: "shutdown",
+  });
+  assert.equal(startupSession.listenerCount(), 0);
+  assert.equal(shutdownSession.listenerCount(), 1);
+  assert.equal(startupSession.dispose(), false);
+  assert.equal(
+    published.at(-1)?.activeSession?.interaction.view.timelineFilter,
+    "shutdown",
+  );
+
+  const afterReplacePublishCount = published.length;
+  await assert.rejects(
+    async () => startupSession.dispatch("refresh_status"),
+    /lifecycle panel session is disposed/u,
+  );
+  assert.equal(published.length, afterReplacePublishCount);
+
+  assert.equal(unsubscribeObserved(), true);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(controller.listenerCount(), 1);
+  assert.equal(shutdownSession.listenerCount(), 1);
+  assert.equal(unsubscribeThrowing(), true);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(controller.listenerCount(), 0);
+  assert.equal(shutdownSession.listenerCount(), 0);
+  assert.equal(controller.dispose(), true);
+});
+
+test("renderer runtime lifecycle panel session controller publishes active disposal", () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const sessionFactory = createRuntimeLifecyclePanelSessionFactory({
+    controllerFactory,
+  });
+  const controller = createRuntimeLifecyclePanelSessionController({
+    factory: sessionFactory,
+  });
+  const published: Array<ReturnType<typeof controller.snapshot>> = [];
+  controller.subscribe(() => {
+    published.push(controller.getSnapshot());
+  });
+  const session = controller.openSession();
+
+  assert.equal(session.listenerCount(), 1);
+  assert.equal(controller.disposeActiveSession(), true);
+  assert.equal(session.listenerCount(), 0);
+  assert.equal(session.dispose(), false);
+  assert.deepEqual(published.at(-1), {
+    activeSession: null,
+    disposed: false,
+  });
+
+  assert.equal(controller.dispose(), true);
+  assert.equal(controller.listenerCount(), 0);
+  assert.equal(controller.snapshot().disposed, true);
+  assert.equal(published.at(-1)?.disposed, true);
+  assert.equal(controller.subscribe(() => undefined)(), false);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
