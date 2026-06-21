@@ -95,6 +95,11 @@ import {
   createRuntimeWorkbenchShellAdapterFactory,
 } from "../renderer/runtime-workbench-shell-adapter.js";
 import {
+  bindRuntimeWorkbenchShellKeyboardTarget,
+  type RuntimeWorkbenchShellKeyboardEvent,
+  type RuntimeWorkbenchShellKeyboardEventListener,
+} from "../renderer/runtime-workbench-shell-keyboard-binding.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -5562,6 +5567,201 @@ test("renderer runtime workbench shell adapter isolates listeners and active dis
   assert.equal(host.dispose(), true);
 });
 
+test("renderer runtime workbench shell keyboard binding routes target events", async () => {
+  const harness = createRuntimeWorkbenchShellAdapterHarness(
+    "token_workbench_shell_keyboard_binding",
+  );
+  const target = createFakeRuntimeWorkbenchShellKeyboardTarget();
+  const observed: RuntimeWorkbenchPanelId[] = [];
+  let preventDefaultCount = 0;
+  const unsubscribeAdapter = harness.adapter.subscribe(() => {
+    observed.push(harness.adapter.getSnapshot().activePanel);
+  });
+  const unbind = bindRuntimeWorkbenchShellKeyboardTarget(
+    harness.adapter,
+    target,
+  );
+
+  assert.equal(target.listenerCount("keydown"), 1);
+  await target.emit("keydown", {
+    key: "2",
+    ctrlKey: true,
+    preventDefault: () => {
+      preventDefaultCount += 1;
+    },
+  });
+  assert.equal(harness.adapter.getSnapshot().activePanel, "stream");
+  assert.deepEqual(observed, ["stream"]);
+  assert.equal(preventDefaultCount, 1);
+
+  await target.emit("keydown", {
+    key: "1",
+    ctrlKey: true,
+    target: { tagName: "input" },
+    preventDefault: () => {
+      preventDefaultCount += 1;
+    },
+  });
+  assert.equal(harness.adapter.getSnapshot().activePanel, "stream");
+  assert.deepEqual(observed, ["stream"]);
+  assert.equal(preventDefaultCount, 1);
+
+  assert.equal(unbind(), true);
+  assert.equal(target.listenerCount("keydown"), 0);
+  await target.emit("keydown", { key: "1", ctrlKey: true });
+  assert.equal(harness.adapter.getSnapshot().activePanel, "stream");
+  assert.equal(unbind(), false);
+
+  assert.equal(unsubscribeAdapter(), true);
+  harness.dispose();
+});
+
+test("renderer runtime workbench shell keyboard binding sanitizes target snapshots", async () => {
+  const harness = createRuntimeWorkbenchShellAdapterHarness(
+    "token_workbench_shell_keyboard_target_snapshot",
+  );
+  const target = createFakeRuntimeWorkbenchShellKeyboardTarget();
+  const handledEvents: RuntimeWorkbenchShortcutKeyEvent[] = [];
+  let preventDefaultCount = 0;
+  const originalTarget: {
+    tagName?: string | null;
+    role?: string | null;
+    type?: string | null;
+    isContentEditable?: boolean | null;
+  } = {
+    tagName: "DIV",
+    role: null,
+    type: null,
+    isContentEditable: null,
+  };
+  const adapter = {
+    handleKeyEvent: async (event: RuntimeWorkbenchShortcutKeyEvent) => {
+      handledEvents.push(event);
+      return await harness.adapter.handleKeyEvent(event);
+    },
+    isDisposed: () => harness.adapter.isDisposed(),
+  };
+  const unbind = bindRuntimeWorkbenchShellKeyboardTarget(adapter, target);
+
+  await target.emit("keydown", {
+    key: "2",
+    ctrlKey: true,
+    target: originalTarget,
+    preventDefault: () => {
+      preventDefaultCount += 1;
+    },
+  });
+  assert.equal(harness.adapter.getSnapshot().activePanel, "stream");
+  assert.equal(preventDefaultCount, 1);
+  assert.equal(handledEvents.length, 1);
+  assert.notStrictEqual(handledEvents[0]?.target, originalTarget);
+  assert.deepEqual(handledEvents[0]?.target, { tagName: "DIV" });
+
+  originalTarget.tagName = "INPUT";
+  originalTarget.role = "textbox";
+  originalTarget.type = "text";
+  originalTarget.isContentEditable = true;
+  assert.deepEqual(handledEvents[0]?.target, { tagName: "DIV" });
+
+  await target.emit("keydown", {
+    key: "1",
+    ctrlKey: true,
+    target: {
+      tagName: "INPUT",
+      role: null,
+      type: "text",
+      isContentEditable: null,
+    },
+    preventDefault: () => {
+      preventDefaultCount += 1;
+    },
+  });
+  assert.equal(harness.adapter.getSnapshot().activePanel, "stream");
+  assert.equal(preventDefaultCount, 1);
+  assert.equal(handledEvents.length, 2);
+  assert.deepEqual(handledEvents[1]?.target, {
+    tagName: "INPUT",
+    type: "text",
+  });
+
+  assert.equal(unbind(), true);
+  harness.dispose();
+});
+
+test("renderer runtime workbench shell keyboard binding isolates handler errors", async () => {
+  const handlerErrors: unknown[] = [];
+  const harness = createRuntimeWorkbenchShellAdapterHarness(
+    "token_workbench_shell_keyboard_errors",
+  );
+  const target = createFakeRuntimeWorkbenchShellKeyboardTarget();
+  const observed: RuntimeWorkbenchPanelId[] = [];
+  harness.adapter.subscribe(() => {
+    observed.push(harness.adapter.getSnapshot().activePanel);
+  });
+  const unbind = bindRuntimeWorkbenchShellKeyboardTarget(
+    harness.adapter,
+    target,
+    {
+      onError: (error) => {
+        handlerErrors.push(error);
+        throw new Error("keyboard binding onError failed");
+      },
+    },
+  );
+
+  const stableSnapshot = harness.adapter.getSnapshot();
+  await target.emit("keydown", {
+    key: "",
+  } as unknown as RuntimeWorkbenchShellKeyboardEvent);
+  assert.equal(handlerErrors.length, 1);
+  assert.strictEqual(harness.adapter.getSnapshot(), stableSnapshot);
+
+  await target.emit("keydown", {
+    key: "2",
+    ctrlKey: true,
+  });
+  assert.equal(harness.adapter.getSnapshot().activePanel, "stream");
+  assert.deepEqual(observed, ["stream"]);
+  assert.equal(handlerErrors.length, 1);
+
+  assert.equal(harness.adapter.dispose(), true);
+  const afterDisposeObservedCount = observed.length;
+  await target.emit("keydown", {
+    key: "1",
+    ctrlKey: true,
+  });
+  assert.deepEqual(observed, ["stream", "stream"]);
+  assert.equal(observed.length, afterDisposeObservedCount);
+  assert.equal(handlerErrors.length, 1);
+  assert.equal(unbind(), true);
+  harness.host.dispose();
+});
+
+test("renderer runtime workbench shell keyboard binding validates target lifecycle", () => {
+  const harness = createRuntimeWorkbenchShellAdapterHarness(
+    "token_workbench_shell_keyboard_lifecycle",
+  );
+  const target = createFakeRuntimeWorkbenchShellKeyboardTarget();
+
+  assert.throws(
+    () =>
+      bindRuntimeWorkbenchShellKeyboardTarget(harness.adapter, target, {
+        eventType: "bad\nevent",
+      }),
+    /Invalid runtime workbench shell keyboard event type/u,
+  );
+  assert.equal(target.listenerCount("bad\nevent"), 0);
+
+  assert.equal(harness.adapter.dispose(), true);
+  const noOpUnbind = bindRuntimeWorkbenchShellKeyboardTarget(
+    harness.adapter,
+    target,
+  );
+  assert.equal(target.listenerCount("keydown"), 0);
+  assert.equal(noOpUnbind(), false);
+  harness.host.dispose();
+});
+
 test("renderer shutdown status store refreshes and appends live updates", async () => {
   const errors: unknown[] = [];
   const firstObservedKinds: Array<RuntimeIpcShutdownStatus["kind"]> = [];
@@ -8363,6 +8563,89 @@ function createFakeRuntimeLifecycleStatusPageLifecycleTarget(): {
     emit: (eventType) => {
       for (const listener of [...(listeners.get(eventType) ?? [])]) {
         listener();
+      }
+    },
+    listenerCount: (eventType) => listeners.get(eventType)?.size ?? 0,
+  };
+}
+
+function createRuntimeWorkbenchShellAdapterHarness(token: string): {
+  readonly adapter: ReturnType<typeof createRuntimeWorkbenchShellAdapter>;
+  readonly host: ReturnType<typeof createRuntimeWorkbenchHostSession>;
+  readonly dispose: () => void;
+} {
+  const lifecycleRuntime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
+    {
+      factory: createRuntimeLifecyclePanelSessionFactory({
+        controllerFactory: createRuntimeLifecyclePanelControllerFactory({
+          runtime: lifecycleRuntime.runtime,
+        }),
+      }),
+    },
+  );
+  const runtimeStreamController =
+    createRuntimeStreamInteractionSessionController({
+      factory: createRuntimeStreamInteractionSessionFactory({
+        runtime: {
+          connectionInfo: async () => ({
+            base_url: "http://127.0.0.1:51234/cw/v1",
+            token,
+          }),
+        },
+        eventSourceFactory: () => createFakeRuntimeStreamEventSource().source,
+      }),
+    });
+  const host = createRuntimeWorkbenchHostSession({
+    lifecyclePanelController,
+    runtimeStreamController,
+  });
+  const presenter = createRuntimeWorkbenchShellPresenter({ host });
+  const adapter = createRuntimeWorkbenchShellAdapter({ presenter });
+  return {
+    adapter,
+    host,
+    dispose: () => {
+      adapter.dispose();
+      host.dispose();
+    },
+  };
+}
+
+function createFakeRuntimeWorkbenchShellKeyboardTarget(): {
+  readonly addEventListener: (
+    eventType: string,
+    listener: RuntimeWorkbenchShellKeyboardEventListener,
+  ) => void;
+  readonly removeEventListener: (
+    eventType: string,
+    listener: RuntimeWorkbenchShellKeyboardEventListener,
+  ) => void;
+  readonly emit: (
+    eventType: string,
+    event: RuntimeWorkbenchShellKeyboardEvent,
+  ) => Promise<void>;
+  readonly listenerCount: (eventType: string) => number;
+} {
+  const listeners = new Map<
+    string,
+    Set<RuntimeWorkbenchShellKeyboardEventListener>
+  >();
+  return {
+    addEventListener: (eventType, listener) => {
+      const eventListeners = listeners.get(eventType) ?? new Set();
+      eventListeners.add(listener);
+      listeners.set(eventType, eventListeners);
+    },
+    removeEventListener: (eventType, listener) => {
+      listeners.get(eventType)?.delete(listener);
+    },
+    emit: async (eventType, event) => {
+      for (const listener of [...(listeners.get(eventType) ?? [])]) {
+        await listener(event);
       }
     },
     listenerCount: (eventType) => listeners.get(eventType)?.size ?? 0,
