@@ -55,6 +55,7 @@ import {
   createRuntimeLifecyclePanelPresenter,
   type RuntimeLifecyclePanelTimelineItem,
 } from "../renderer/runtime-lifecycle-panel-presenter.js";
+import { createRuntimeLifecyclePanelControllerFactory } from "../renderer/runtime-lifecycle-panel-controller.js";
 import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
@@ -2041,6 +2042,199 @@ test("renderer runtime lifecycle panel presenter isolates throwing onError and a
   assert.equal(unsubscribeObserved(), false);
   assert.equal(presenter.dispose(), false);
   assert.equal(session.dispose(), true);
+});
+
+test("renderer runtime lifecycle panel controller factory owns hook state", async () => {
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const pageLifecycle = createFakeRuntimeLifecycleStatusPageLifecycleTarget();
+  const factory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const controller = factory.createController();
+  const observed: Array<{
+    readonly readiness: string;
+    readonly started: boolean;
+    readonly disposed: boolean;
+    readonly itemTotal: number;
+  }> = [];
+
+  assert.equal(Object.hasOwn(controller, "session"), false);
+  assert.equal(Object.hasOwn(controller, "presenter"), false);
+  const initialSnapshot = controller.getSnapshot();
+  assert.strictEqual(controller.snapshot(), initialSnapshot);
+  assert.strictEqual(controller.getSnapshot(), initialSnapshot);
+  assert.equal(initialSnapshot.panel.readiness, "idle");
+  assert.equal(initialSnapshot.panel.primaryCommand?.id, "start_runtime");
+  assert.equal(initialSnapshot.disposed, false);
+
+  const unsubscribe = controller.subscribe((snapshot) => {
+    observed.push({
+      readiness: snapshot.panel.readiness,
+      started: snapshot.panel.started,
+      disposed: snapshot.disposed,
+      itemTotal: snapshot.panel.timelineItems.length,
+    });
+  });
+  assert.equal(controller.listenerCount(), 1);
+
+  const started = await controller.invoke("start_runtime");
+  assert.notStrictEqual(started, initialSnapshot);
+  assert.strictEqual(controller.getSnapshot(), started);
+  assert.strictEqual(controller.snapshot(), started);
+  assert.equal(started.panel.started, true);
+  assert.equal(runtime.startupListenerCount(), 1);
+  assert.equal(runtime.shutdownListenerCount(), 1);
+  assert.deepEqual(observed, [
+    { readiness: "idle", started: true, disposed: false, itemTotal: 0 },
+  ]);
+
+  const busy = await controller.invoke("refresh_status");
+  assert.notStrictEqual(busy, started);
+  assert.strictEqual(controller.getSnapshot(), busy);
+  assert.strictEqual(controller.snapshot(), busy);
+  assert.equal(busy.panel.readiness, "busy");
+  assert.equal(busy.panel.primaryCommand?.id, "wait");
+  assert.deepEqual(observed.at(-1), {
+    readiness: "busy",
+    started: true,
+    disposed: false,
+    itemTotal: 2,
+  });
+
+  const beforeReady = controller.getSnapshot();
+  runtime.emitStartup([createStartupStatus("runtime_ready")]);
+  const ready = controller.getSnapshot();
+  assert.notStrictEqual(ready, beforeReady);
+  assert.strictEqual(controller.snapshot(), ready);
+  assert.equal(ready.panel.readiness, "ready");
+  assert.deepEqual(observed.at(-1), {
+    readiness: "ready",
+    started: true,
+    disposed: false,
+    itemTotal: 3,
+  });
+
+  const unbindPageLifecycle = controller.bindPageLifecycle(pageLifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 1);
+  const beforePagehide = controller.getSnapshot();
+  pageLifecycle.emit("pagehide");
+  const stopped = controller.getSnapshot();
+  assert.notStrictEqual(stopped, beforePagehide);
+  assert.strictEqual(controller.snapshot(), stopped);
+  assert.equal(stopped.panel.started, false);
+  assert.deepEqual(observed.at(-1), {
+    readiness: "ready",
+    started: false,
+    disposed: false,
+    itemTotal: 3,
+  });
+  const afterPagehideObservedCount = observed.length;
+  assert.equal(unbindPageLifecycle(), true);
+  assert.equal(observed.length, afterPagehideObservedCount);
+  assert.equal(unbindPageLifecycle(), false);
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 0);
+
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(controller.listenerCount(), 0);
+  const beforeDispose = controller.getSnapshot();
+  assert.equal(controller.dispose(), true);
+  const disposedSnapshot = controller.getSnapshot();
+  assert.notStrictEqual(disposedSnapshot, beforeDispose);
+  assert.strictEqual(controller.snapshot(), disposedSnapshot);
+  assert.equal(controller.dispose(), false);
+  assert.equal(controller.isDisposed(), true);
+  assert.strictEqual(controller.getSnapshot(), disposedSnapshot);
+  assert.equal(disposedSnapshot.disposed, true);
+  assert.equal(disposedSnapshot.panel.disposed, true);
+  assert.equal(controller.subscribe(() => undefined)(), false);
+  await assert.rejects(
+    async () => controller.invoke("refresh_status"),
+    /lifecycle panel controller is disposed/u,
+  );
+});
+
+test("renderer runtime lifecycle panel controller isolates listeners and active dispose", async () => {
+  const factoryErrors: unknown[] = [];
+  const overrideErrors: unknown[] = [];
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const factory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+    onError: (error) => {
+      factoryErrors.push(error);
+    },
+  });
+  const controller = factory.createController({
+    onError: (error) => {
+      overrideErrors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly readiness: string;
+    readonly primaryLabel: string | null;
+    readonly itemTotal: number;
+  }> = [];
+
+  const unsubscribeThrowing = controller.subscribe((snapshot) => {
+    const mutableItems = snapshot.panel
+      .timelineItems as RuntimeLifecyclePanelTimelineItem[];
+    mutableItems.push({
+      id: "mutated",
+      source: "shutdown",
+      sourceLabel: "Mutated",
+      kind: "shutdown_failed",
+      phase: "failed",
+      tone: "error",
+      statusLabel: "Mutated",
+      title: "Mutated",
+      summary: "Mutated",
+      badges: ["shutdown"],
+    });
+    if (snapshot.panel.primaryCommand !== null) {
+      const mutableCommand = snapshot.panel.primaryCommand as {
+        label: string;
+      };
+      mutableCommand.label = "Mutated";
+    }
+    throw new Error("lifecycle panel controller listener failed");
+  });
+  const unsubscribeObserved = controller.subscribe((snapshot) => {
+    observed.push({
+      readiness: snapshot.panel.readiness,
+      primaryLabel: snapshot.panel.primaryCommand?.label ?? null,
+      itemTotal: snapshot.panel.timelineItems.length,
+    });
+  });
+
+  await controller.invoke("start_runtime");
+  await controller.invoke("refresh_status");
+  assert.deepEqual(observed, [
+    { readiness: "idle", primaryLabel: "Start runtime", itemTotal: 0 },
+    { readiness: "busy", primaryLabel: "Working", itemTotal: 2 },
+  ]);
+  assert.equal(factoryErrors.length, 0);
+  assert.equal(overrideErrors.length, 2);
+  assert.deepEqual(
+    controller.snapshot().panel.timelineItems.map((item) => item.title),
+    ["Starting runtime", "Runtime shutdown registered"],
+  );
+  assert.equal(controller.snapshot().panel.primaryCommand?.label, "Working");
+
+  assert.equal(controller.dispose(), true);
+  assert.equal(controller.listenerCount(), 0);
+  assert.equal(runtime.startupUnsubscribeCount(), 1);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 1);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(controller.dispose(), false);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
