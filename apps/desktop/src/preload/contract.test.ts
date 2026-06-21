@@ -29,6 +29,12 @@ import {
   type RuntimePreloadIpcSubscribe,
 } from "./runtime-bridge.js";
 import {
+  bindRuntimeStartupStatusStoreToPageLifecycle,
+  createRuntimeStartupStatusStore,
+  type RuntimeStartupStatusPageLifecycleEvent,
+  type RuntimeStartupStatusPageLifecycleListener,
+} from "../renderer/startup-status-client.js";
+import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
   type RuntimeShutdownStatusPageLifecycleEvent,
@@ -683,6 +689,159 @@ test("installs the cw preload API through injected Electron-like bridges", async
       },
     },
   ]);
+});
+
+test("renderer startup status store refreshes and appends live updates", async () => {
+  const errors: unknown[] = [];
+  const firstObservedKinds: Array<RuntimeIpcStartupStatus["kind"]> = [];
+  const secondObservedKinds: Array<RuntimeIpcStartupStatus["kind"]> = [];
+  let liveListener:
+    | ((statuses: readonly RuntimeIpcStartupStatus[]) => void)
+    | undefined;
+  let startupStatusSnapshot: readonly RuntimeIpcStartupStatus[] = [
+    createStartupStatus("starting_sidecar"),
+  ];
+  const store = createRuntimeStartupStatusStore({
+    runtime: {
+      startupStatus: async () => startupStatusSnapshot,
+      onStartupStatus: (listener) => {
+        liveListener = listener;
+        let subscribed = true;
+        return () => {
+          if (!subscribed) {
+            return false;
+          }
+          subscribed = false;
+          liveListener = undefined;
+          return true;
+        };
+      },
+    },
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+
+  const unsubscribeFirst = store.subscribe((statuses) => {
+    const [status] = statuses;
+    assert.ok(status);
+    firstObservedKinds.push(status.kind);
+    const mutableStatuses = statuses as RuntimeIpcStartupStatus[];
+    mutableStatuses[0] = createStartupStatus("startup_blocked");
+  });
+  store.subscribe(() => {
+    throw new Error("listener failed");
+  });
+  const unsubscribeSecond = store.subscribe((statuses) => {
+    const [status] = statuses;
+    assert.ok(status);
+    secondObservedKinds.push(status.kind);
+  });
+
+  assert.equal(store.isStarted(), false);
+  assert.equal(store.start(), true);
+  assert.equal(store.start(), false);
+  assert.equal(store.isStarted(), true);
+  assert.deepEqual(await store.refresh(), [
+    createStartupStatus("starting_sidecar"),
+  ]);
+  assert.deepEqual(firstObservedKinds, ["starting_sidecar"]);
+  assert.deepEqual(secondObservedKinds, ["starting_sidecar"]);
+  assert.equal(errors.length, 1);
+
+  liveListener?.([createStartupStatus("runtime_ready")]);
+  assert.deepEqual(store.snapshot(), [
+    createStartupStatus("starting_sidecar"),
+    createStartupStatus("runtime_ready"),
+  ]);
+  assert.deepEqual(firstObservedKinds, [
+    "starting_sidecar",
+    "starting_sidecar",
+  ]);
+  assert.deepEqual(secondObservedKinds, [
+    "starting_sidecar",
+    "starting_sidecar",
+  ]);
+  assert.equal(errors.length, 2);
+
+  startupStatusSnapshot = [createStartupStatus("startup_blocked")];
+  assert.deepEqual(await store.refresh(), [
+    createStartupStatus("startup_blocked"),
+  ]);
+  assert.equal(unsubscribeFirst(), true);
+  assert.equal(unsubscribeFirst(), false);
+  assert.equal(unsubscribeSecond(), true);
+  assert.equal(store.listenerCount(), 1);
+  assert.equal(store.stop(), true);
+  assert.equal(store.stop(), false);
+  assert.equal(store.isStarted(), false);
+});
+
+test("renderer startup status store ignores stale refresh after live update", async () => {
+  let liveListener:
+    | ((statuses: readonly RuntimeIpcStartupStatus[]) => void)
+    | undefined;
+  let resolveStartupStatus:
+    | ((statuses: readonly RuntimeIpcStartupStatus[]) => void)
+    | undefined;
+  const store = createRuntimeStartupStatusStore({
+    runtime: {
+      startupStatus: async () =>
+        new Promise<readonly RuntimeIpcStartupStatus[]>((resolve) => {
+          resolveStartupStatus = resolve;
+        }),
+      onStartupStatus: (listener) => {
+        liveListener = listener;
+        return () => true;
+      },
+    },
+  });
+
+  assert.equal(store.start(), true);
+  const refreshPromise = store.refresh();
+  liveListener?.([createStartupStatus("runtime_ready")]);
+  resolveStartupStatus?.([createStartupStatus("starting_sidecar")]);
+
+  assert.deepEqual(await refreshPromise, [
+    createStartupStatus("runtime_ready"),
+  ]);
+  assert.deepEqual(store.snapshot(), [createStartupStatus("runtime_ready")]);
+});
+
+test("renderer startup status page lifecycle binding stops and disposes once", () => {
+  const events = new Map<
+    RuntimeStartupStatusPageLifecycleEvent,
+    RuntimeStartupStatusPageLifecycleListener
+  >();
+  let stopCalls = 0;
+  const dispose = bindRuntimeStartupStatusStoreToPageLifecycle(
+    {
+      stop: () => {
+        stopCalls += 1;
+        return stopCalls === 1;
+      },
+    },
+    {
+      addEventListener: (type, listener) => {
+        events.set(type, listener);
+      },
+      removeEventListener: (type, listener) => {
+        if (events.get(type) === listener) {
+          events.delete(type);
+        }
+      },
+    },
+    { eventType: "pagehide" },
+  );
+
+  events.get("pagehide")?.();
+  assert.equal(stopCalls, 1);
+  assert.equal(events.has("pagehide"), true);
+  assert.equal(dispose(), true);
+  assert.equal(stopCalls, 1);
+  assert.equal(events.has("pagehide"), false);
+  assert.equal(dispose(), false);
+  assert.equal(stopCalls, 1);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
@@ -3120,6 +3279,87 @@ function assertRuntimeStreamEventTypesEqualNoDuplicates(
 
 function createNoopSubscribe(): RuntimePreloadIpcSubscribe {
   return () => () => false;
+}
+
+function createStartupStatus(
+  kind: RuntimeIpcStartupStatus["kind"],
+): RuntimeIpcStartupStatus {
+  switch (kind) {
+    case "starting_sidecar":
+      return {
+        kind,
+        action: "start_sidecar",
+        attempt: 1,
+        lockStatus: "missing",
+        severity: "info",
+        message: "Starting runtime sidecar.",
+        lifecycleComplete: false,
+        userActionRequired: false,
+        retryable: false,
+      };
+    case "cleaning_stale_lock":
+      return {
+        kind,
+        action: "cleanup_then_start",
+        attempt: 1,
+        lockStatus: "stale",
+        severity: "warning",
+        message: "Cleaning stale runtime lock.",
+        lifecycleComplete: false,
+        userActionRequired: false,
+        retryable: true,
+      };
+    case "waiting_for_existing":
+      return {
+        kind,
+        action: "wait_for_existing",
+        attempt: 1,
+        lockStatus: "active",
+        severity: "info",
+        message: "Waiting for existing runtime sidecar.",
+        lifecycleComplete: false,
+        userActionRequired: false,
+        retryable: false,
+      };
+    case "runtime_ready":
+      return {
+        kind,
+        action: "reuse_existing",
+        attempt: 1,
+        lockStatus: "active",
+        severity: "info",
+        message: "Runtime sidecar is ready.",
+        lifecycleComplete: true,
+        userActionRequired: false,
+        retryable: false,
+      };
+    case "startup_blocked":
+      return {
+        kind,
+        action: "block_startup",
+        attempt: 1,
+        lockStatus: "corrupt",
+        severity: "error",
+        message: "Runtime startup is blocked.",
+        lifecycleComplete: true,
+        userActionRequired: true,
+        retryable: false,
+        reason: "runtime lock is corrupt",
+      };
+    case "startup_timed_out":
+      return {
+        kind,
+        action: "timeout_waiting_for_existing",
+        attempt: 1,
+        lockStatus: "active",
+        severity: "error",
+        message: "Timed out waiting for existing runtime sidecar.",
+        lifecycleComplete: true,
+        userActionRequired: true,
+        retryable: true,
+        reason: "runtime did not become ready before timeout",
+      };
+  }
 }
 
 function createShutdownStatus(
