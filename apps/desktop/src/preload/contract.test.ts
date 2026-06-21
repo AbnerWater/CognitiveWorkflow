@@ -65,6 +65,7 @@ import {
   createRuntimeLifecyclePanelInteraction,
   type RuntimeLifecyclePanelInteractionCommand,
 } from "../renderer/runtime-lifecycle-panel-interaction.js";
+import { createRuntimeLifecyclePanelSessionFactory } from "../renderer/runtime-lifecycle-panel-session.js";
 import {
   bindRuntimeShutdownStatusStoreToPageLifecycle,
   createRuntimeShutdownStatusStore,
@@ -2949,6 +2950,207 @@ test("renderer runtime lifecycle panel interaction isolates listeners and active
   assert.equal(viewModel.dispose(), true);
   assert.equal(runtime.startupUnsubscribeCount(), 1);
   assert.equal(runtime.shutdownUnsubscribeCount(), 1);
+});
+
+test("renderer runtime lifecycle panel session composes external store contract", async () => {
+  const errors: unknown[] = [];
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const pageLifecycle = createFakeRuntimeLifecycleStatusPageLifecycleTarget();
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const sessionFactory = createRuntimeLifecyclePanelSessionFactory({
+    controllerFactory,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const session = sessionFactory.createSession();
+  const notifications: Array<{
+    readonly filter: string;
+    readonly focusedCommand: string | null;
+    readonly focusedItem: string | null;
+    readonly selected: string | null;
+    readonly started: boolean;
+    readonly visible: number;
+  }> = [];
+
+  assert.equal(Object.hasOwn(session, "adapter"), false);
+  assert.equal(Object.hasOwn(session, "controller"), false);
+  assert.equal(Object.hasOwn(session, "viewModel"), false);
+  assert.equal(Object.hasOwn(session, "interaction"), false);
+  const initialSnapshot = session.getSnapshot();
+  assert.strictEqual(session.getServerSnapshot(), initialSnapshot);
+  assert.strictEqual(session.snapshot(), initialSnapshot);
+  assert.equal(initialSnapshot.interaction.view.timelineFilter, "all");
+  assert.equal(initialSnapshot.interaction.view.visibleTimelineItemCount, 0);
+  assert.equal(Object.isFrozen(initialSnapshot), true);
+
+  const unsubscribe = session.subscribe(() => {
+    const snapshot = session.getSnapshot();
+    notifications.push({
+      filter: snapshot.interaction.view.timelineFilter,
+      focusedCommand: snapshot.interaction.focusedCommandId,
+      focusedItem: snapshot.interaction.focusedTimelineItemId,
+      selected: snapshot.interaction.view.selectedTimelineItemId,
+      started: snapshot.interaction.view.panel.started,
+      visible: snapshot.interaction.view.visibleTimelineItemCount,
+    });
+  });
+
+  const focused = await session.dispatch("focus_primary_command");
+  assert.equal(focused.interaction.focusedCommandId, "start_runtime");
+  assert.notStrictEqual(session.getSnapshot(), initialSnapshot);
+
+  const started = await session.dispatch("activate_focused_command");
+  assert.equal(started.interaction.view.panel.started, true);
+  const refreshed = await session.dispatch("refresh_status");
+  assert.equal(refreshed.interaction.view.visibleTimelineItemCount, 2);
+  assert.equal(
+    refreshed.interaction.availableCommandIds.includes("wait"),
+    true,
+  );
+
+  const waitFocused = session.focusCommand("wait");
+  assert.equal(waitFocused.interaction.canActivateFocusedCommand, false);
+  const beforeNoOpCount = notifications.length;
+  const beforeNoOpSnapshot = session.getSnapshot();
+  const disabledNoOp = await session.dispatch("activate_focused_command");
+  assert.strictEqual(session.getSnapshot(), beforeNoOpSnapshot);
+  assert.equal(disabledNoOp.interaction.focusedCommandId, "wait");
+  assert.equal(notifications.length, beforeNoOpCount);
+  await assert.rejects(
+    async () => session.invokeCommand("wait"),
+    /command is not enabled/u,
+  );
+
+  const shutdownOnly = session.setTimelineFilter("shutdown");
+  assert.equal(shutdownOnly.interaction.view.timelineFilter, "shutdown");
+  assert.equal(shutdownOnly.interaction.view.visibleTimelineItemCount, 1);
+  const focusedTimeline = session.focusTimelineItem(
+    shutdownOnly.interaction.view.visibleTimelineItems[0]?.id ?? "",
+  );
+  assert.equal(
+    focusedTimeline.interaction.focusedTimelineItemId?.startsWith("shutdown:"),
+    true,
+  );
+  const selected = await session.dispatch("select_focused_timeline_item");
+  assert.equal(
+    selected.interaction.view.selectedTimelineItem?.source,
+    "shutdown",
+  );
+  assert.equal(
+    session.clearSelection().interaction.view.selectedTimelineItemId,
+    null,
+  );
+
+  const unbindPageLifecycle = session.bindPageLifecycle(pageLifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 1);
+  assert.equal(unbindPageLifecycle(), true);
+  assert.equal(unbindPageLifecycle(), false);
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 0);
+
+  assert.equal(errors.length, 0);
+  assert.ok(notifications.length >= 6);
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(session.listenerCount(), 0);
+  assert.equal(session.dispose(), true);
+  assert.equal(session.dispose(), false);
+  assert.equal(session.isDisposed(), true);
+  assert.equal(runtime.startupUnsubscribeCount(), 1);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 1);
+  assert.equal(session.subscribe(() => undefined)(), false);
+  await assert.rejects(
+    async () => session.dispatch("refresh_status"),
+    /lifecycle panel session is disposed/u,
+  );
+  assert.throws(
+    () => session.setTimelineFilter("all"),
+    /lifecycle panel session is disposed/u,
+  );
+});
+
+test("renderer runtime lifecycle panel session isolates listeners and active dispose", async () => {
+  const errors: unknown[] = [];
+  const runtime = createFakeRuntimeLifecycleStatusRuntime(
+    [createStartupStatus("starting_sidecar")],
+    [createShutdownStatus("registered")],
+  );
+  const pageLifecycle = createFakeRuntimeLifecycleStatusPageLifecycleTarget();
+  const controllerFactory = createRuntimeLifecyclePanelControllerFactory({
+    runtime: runtime.runtime,
+  });
+  const sessionFactory = createRuntimeLifecyclePanelSessionFactory({
+    controllerFactory,
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const session = sessionFactory.createSession({
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const observed: Array<{
+    readonly focusedCommand: string | null;
+    readonly selected: string | null;
+    readonly visible: number;
+  }> = [];
+
+  const disposeUnbind = session.bindPageLifecycle(pageLifecycle, {
+    eventType: "pagehide",
+  });
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 1);
+
+  const unsubscribeThrowing = session.subscribe(() => {
+    const mutableCommandIds = session.getSnapshot().interaction
+      .availableCommandIds as RuntimeLifecyclePanelInteractionCommand[];
+    mutableCommandIds.push("refresh_status");
+  });
+  const unsubscribeObserved = session.subscribe(() => {
+    const snapshot = session.getSnapshot();
+    observed.push({
+      focusedCommand: snapshot.interaction.focusedCommandId,
+      selected: snapshot.interaction.view.selectedTimelineItemId,
+      visible: snapshot.interaction.view.visibleTimelineItemCount,
+    });
+  });
+
+  await session.dispatch("focus_primary_command");
+  await session.dispatch("activate_focused_command");
+  await session.dispatch("refresh_status");
+  await session.dispatch("focus_next_timeline_item");
+  await session.dispatch("select_focused_timeline_item");
+
+  assert.equal(errors.length, observed.length);
+  assert.equal(
+    observed.some(
+      (snapshot) =>
+        snapshot.visible === 2 && snapshot.selected?.startsWith("startup:"),
+    ),
+    true,
+  );
+  assert.deepEqual(session.getSnapshot().interaction.availableCommandIds, [
+    "wait",
+    "refresh_status",
+    "stop_runtime",
+  ]);
+
+  assert.equal(session.dispose(), true);
+  assert.equal(session.listenerCount(), 0);
+  assert.equal(pageLifecycle.listenerCount("pagehide"), 0);
+  assert.equal(disposeUnbind(), false);
+  assert.equal(runtime.startupUnsubscribeCount(), 1);
+  assert.equal(runtime.shutdownUnsubscribeCount(), 1);
+  assert.equal(unsubscribeThrowing(), false);
+  assert.equal(unsubscribeObserved(), false);
+  assert.equal(session.dispose(), false);
 });
 
 test("renderer shutdown status store refreshes and appends live updates", async () => {
