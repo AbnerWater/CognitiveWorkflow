@@ -36,6 +36,7 @@ export type RuntimeStreamEventStoreClientFactory = (
 export interface RuntimeStreamEventStore {
   readonly start: () => Promise<RuntimeStreamEventStoreSnapshot>;
   readonly stop: () => boolean;
+  readonly resetFullReloadRequired: () => RuntimeStreamEventStoreSnapshot;
   readonly snapshot: () => RuntimeStreamEventStoreSnapshot;
   readonly subscribe: (
     listener: RuntimeStreamEventStoreListener,
@@ -220,6 +221,22 @@ export function createRuntimeStreamEventStore(
       status = "stopped";
       publish();
       return true;
+    },
+    resetFullReloadRequired: () => {
+      if (status !== "full_reload_required") {
+        return snapshot();
+      }
+
+      startGeneration += 1;
+      clearClientSubscriptions();
+      activeClient?.close();
+      activeClient = null;
+      fullReloadDecision = undefined;
+      events = [];
+      totalEvents = 0;
+      status = "idle";
+      publish();
+      return snapshot();
     },
     snapshot,
     subscribe: (listener) => {

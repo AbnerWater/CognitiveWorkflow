@@ -1421,6 +1421,26 @@ test("renderer runtime stream event store handles full reload terminal cleanup",
   });
   assert.equal(store.isStarted(), false);
   assert.equal(store.stop(), false);
+
+  const blockedRestart = await store.start();
+  assert.equal(blockedRestart.status, "full_reload_required");
+  assert.equal(clientFactory.clients.length, 1);
+
+  const resetSnapshot = store.resetFullReloadRequired();
+  assert.deepEqual(resetSnapshot, {
+    status: "idle",
+    events: [],
+    totalEvents: 0,
+  });
+  assert.deepEqual(store.resetFullReloadRequired(), resetSnapshot);
+
+  const restarted = await store.start();
+  assert.equal(restarted.status, "running");
+  assert.equal(clientFactory.clients.length, 2);
+  const restartedClient = clientFactory.clients.at(1);
+  assert.ok(restartedClient);
+  assert.equal(restartedClient.listenerCount("model.text_delta"), 1);
+  assert.equal(store.stop(), true);
 });
 
 test("renderer runtime stream event store stops on page lifecycle", async () => {
@@ -2203,6 +2223,83 @@ test("renderer runtime stream session uses spec channel defaults and lifecycle s
   assert.equal(unbind(), true);
   assert.equal(lifecycle.listenerCount("pagehide"), 0);
   assert.equal(unbind(), false);
+  assert.equal(session.dispose(), true);
+});
+
+test("renderer runtime stream session resets full reload latch before restart", async () => {
+  const clientFactory = createFakeRuntimeStreamEventStoreClientFactory();
+  const session = createRuntimeStreamInteractionSession({
+    clientOptions: createRuntimeStreamEventStoreClientOptions(),
+    clientFactory: clientFactory.factory,
+    eventTypes: ["model.text_delta"],
+  });
+
+  await session.start();
+  const client = clientFactory.clients[0];
+  assert.ok(client !== undefined);
+  client.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_before_reload",
+      seq: 1,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "Before reload",
+      content: "stale buffered content",
+      expandable: false,
+      created_at: "2026-06-21T00:00:00.001Z",
+    }),
+  );
+  assert.equal(session.interaction.markAllRead().read.lastSeenTotalEvents, 1);
+  client.fullReload({
+    action: "full_reload",
+    lastEventId: "evt_before_reload",
+    reason: "Last-Event-ID was not found",
+    status: 412,
+    errorCode: RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
+  });
+
+  const reloadSnapshot = session.snapshot();
+  assert.equal(reloadSnapshot.store.status, "full_reload_required");
+  assert.equal(reloadSnapshot.interaction.view.fullReloadRequired, true);
+  assert.equal(client.listenerCount("model.text_delta"), 0);
+  assert.equal(client.closeCount(), 1);
+
+  const blockedRestart = await session.start();
+  assert.equal(blockedRestart.store.status, "full_reload_required");
+  assert.equal(clientFactory.clients.length, 1);
+
+  const resetSnapshot = session.resetFullReloadRequired();
+  assert.equal(resetSnapshot.store.status, "idle");
+  assert.equal(resetSnapshot.store.totalEvents, 0);
+  assert.deepEqual(resetSnapshot.store.events, []);
+  assert.equal(resetSnapshot.interaction.view.fullReloadRequired, false);
+  assert.equal(resetSnapshot.interaction.view.fullReloadDecision, null);
+  assert.equal(resetSnapshot.interaction.read.lastSeenTotalEvents, 0);
+  assert.equal(resetSnapshot.interaction.read.unreadCount, 0);
+
+  const restarted = await session.start();
+  assert.equal(restarted.store.status, "running");
+  assert.equal(clientFactory.clients.length, 2);
+  const restartedClient = clientFactory.clients[1];
+  assert.ok(restartedClient !== undefined);
+  assert.equal(restartedClient.listenerCount("model.text_delta"), 1);
+  restartedClient.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_after_reload",
+      seq: 1,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "After reload",
+      content: "fresh content",
+      expandable: false,
+      created_at: "2026-06-21T00:00:00.002Z",
+    }),
+  );
+  assert.equal(session.snapshot().interaction.read.unreadCount, 1);
   assert.equal(session.dispose(), true);
 });
 

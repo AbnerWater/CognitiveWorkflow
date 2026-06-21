@@ -222,6 +222,7 @@ export interface RuntimeStreamInteractionSession {
   readonly snapshot: () => RuntimeStreamInteractionSessionSnapshot;
   readonly start: () => Promise<RuntimeStreamInteractionSessionSnapshot>;
   readonly stop: () => boolean;
+  readonly resetFullReloadRequired: () => RuntimeStreamInteractionSessionSnapshot;
   readonly bindPageLifecycle: (
     target: RuntimeStreamEventStorePageLifecycleTarget,
     options?: BindRuntimeStreamEventStorePageLifecycleOptions,
@@ -314,6 +315,16 @@ export function createRuntimeStreamInteractionSession(
         return false;
       }
       return store.stop();
+    },
+    resetFullReloadRequired: () => {
+      assertActive();
+      const wasFullReloadRequired =
+        store.snapshot().status === "full_reload_required";
+      store.resetFullReloadRequired();
+      if (wasFullReloadRequired) {
+        interaction.markAllRead();
+      }
+      return snapshot();
     },
     bindPageLifecycle: (target, bindOptions) => {
       assertActive();
