@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { startCwDesktopElectronApp } from "./electron-app.js";
-import type { StartRuntimeWithLifecycleOptions } from "./runtime-startup-controller.js";
+import { buildElectronRuntimeStartupOptions } from "./electron-runtime-startup-options.js";
 
 const mainDistDir = path.dirname(fileURLToPath(import.meta.url));
 const preloadPath = path.resolve(
@@ -13,6 +13,7 @@ const preloadPath = path.resolve(
 );
 const projectRoot = process.env["CW_PROJECT_ROOT"] ?? process.cwd();
 const rendererDevServerUrl = process.env["CW_DESKTOP_RENDERER_URL"];
+const workspaceRoot = path.resolve(mainDistDir, "..", "..", "..", "..");
 
 void startCwDesktopElectronApp({
   app,
@@ -21,49 +22,21 @@ void startCwDesktopElectronApp({
   platform: process.platform,
   preloadPath,
   ...(rendererDevServerUrl !== undefined ? { rendererDevServerUrl } : {}),
-  startup: buildElectronRuntimeStartupOptions(projectRoot),
+  startup: buildElectronRuntimeStartupOptions({
+    projectRoot,
+    resourcesPath: process.resourcesPath,
+    workspaceRoot,
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    ...(process.env["CW_RUNTIME_DEV_COMMAND"] !== undefined
+      ? { runtimeDevCommand: process.env["CW_RUNTIME_DEV_COMMAND"] }
+      : {}),
+  }),
   onError: reportElectronMainError,
 }).catch((error: unknown) => {
   reportElectronMainError(error);
   app.quit();
 });
-
-function buildElectronRuntimeStartupOptions(
-  projectRoot: string,
-): StartRuntimeWithLifecycleOptions {
-  const runtimeDevCommand = process.env["CW_RUNTIME_DEV_COMMAND"];
-  return {
-    projectRoot,
-    cwd: projectRoot,
-    command: {
-      platform: process.platform,
-      resourcesPath: process.resourcesPath,
-      ...buildElectronRuntimeDevCommand(runtimeDevCommand),
-    },
-  };
-}
-
-function buildElectronRuntimeDevCommand(
-  runtimeDevCommand: string | undefined,
-): Pick<StartRuntimeWithLifecycleOptions["command"], "devArgs" | "devCommand"> {
-  if (runtimeDevCommand !== undefined) {
-    return { devCommand: runtimeDevCommand };
-  }
-  if (app.isPackaged) {
-    return {};
-  }
-  return {
-    devCommand: "uv",
-    devArgs: [
-      "run",
-      "--package",
-      "cw_runtime",
-      "--extra",
-      "runtime",
-      "cw-runtime",
-    ],
-  };
-}
 
 function reportElectronMainError(error: unknown): void {
   console.error(error);
