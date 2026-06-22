@@ -2,11 +2,17 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useState,
+  type ChangeEvent,
   useSyncExternalStore,
   type MouseEvent,
   type ReactElement,
 } from "react";
 import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
+import type {
+  RuntimeStreamCategory,
+  RuntimeStreamDisplayLevel,
+} from "./runtime-stream-client.js";
 import type { CreateRuntimeStreamInteractionSessionFactorySessionOptions } from "./runtime-stream-session.js";
 import type {
   RuntimeWorkbenchInteractionCommand,
@@ -28,15 +34,51 @@ export interface RuntimeWorkbenchShellReactActionOptions {
   readonly runtimeStreamSessionOptions?: CreateRuntimeStreamInteractionSessionFactorySessionOptions;
 }
 
+export type RuntimeWorkbenchShellReactStreamChannelKind = "run" | "planning";
+
+export interface RuntimeWorkbenchShellReactStreamOptionsFormState {
+  readonly channelKind: RuntimeWorkbenchShellReactStreamChannelKind;
+  readonly runId: string;
+  readonly planningSessionId: string;
+  readonly projectId: string;
+  readonly displayLevel: RuntimeStreamDisplayLevel;
+  readonly categories: readonly RuntimeStreamCategory[];
+  readonly sinceSeq: string;
+  readonly untilSeq: string;
+}
+
 export interface RuntimeWorkbenchShellReactViewProps {
   readonly session: RuntimeWorkbenchShellDomSession;
   readonly title?: string;
   readonly keyboardTarget?: RuntimeWorkbenchShellKeyboardDomEventTarget | null;
   readonly keyboardOptions?: RuntimeWorkbenchShellDomSessionKeyboardOptions;
   readonly runtimeStreamSessionOptions?: CreateRuntimeStreamInteractionSessionFactorySessionOptions;
+  readonly defaultRuntimeStreamOptionsFormState?: Partial<RuntimeWorkbenchShellReactStreamOptionsFormState>;
   readonly className?: string;
   readonly onActionError?: (error: unknown) => void;
 }
+
+const RUNTIME_WORKBENCH_STREAM_DISPLAY_LEVELS: readonly RuntimeStreamDisplayLevel[] =
+  ["minimal", "default", "detailed"] as const;
+
+const RUNTIME_WORKBENCH_RUN_STREAM_CATEGORIES: readonly RuntimeStreamCategory[] =
+  [
+    "lifecycle",
+    "model",
+    "tool",
+    "context",
+    "evidence",
+    "evaluation",
+    "repair",
+    "human",
+    "artifact",
+    "metric",
+    "error",
+    "system",
+  ] as const;
+
+const RUNTIME_WORKBENCH_PLANNING_STREAM_CATEGORIES: readonly RuntimeStreamCategory[] =
+  ["planning", "system"] as const;
 
 export function useRuntimeWorkbenchShellSnapshot(
   session: RuntimeWorkbenchShellDomSession,
@@ -78,6 +120,60 @@ export function bindRuntimeWorkbenchShellReactKeyboardTarget(
   };
 }
 
+export function createRuntimeWorkbenchShellReactStreamOptionsFormState(
+  input: Partial<RuntimeWorkbenchShellReactStreamOptionsFormState> = {},
+): RuntimeWorkbenchShellReactStreamOptionsFormState {
+  const channelKind = input.channelKind ?? "run";
+  return Object.freeze({
+    channelKind,
+    runId: input.runId ?? "",
+    planningSessionId: input.planningSessionId ?? "",
+    projectId: input.projectId ?? "",
+    displayLevel: input.displayLevel ?? "default",
+    categories: Object.freeze(
+      normalizeRuntimeWorkbenchShellReactStreamCategories(
+        channelKind,
+        input.categories ?? [],
+      ),
+    ),
+    sinceSeq: input.sinceSeq ?? "",
+    untilSeq: input.untilSeq ?? "",
+  });
+}
+
+export function buildRuntimeWorkbenchShellReactStreamSessionOptions(
+  state: RuntimeWorkbenchShellReactStreamOptionsFormState,
+): CreateRuntimeStreamInteractionSessionFactorySessionOptions | null {
+  const channelId =
+    state.channelKind === "run" ? state.runId : state.planningSessionId;
+  const normalizedChannelId =
+    normalizeRuntimeWorkbenchShellReactPathSegment(channelId);
+  if (normalizedChannelId === null) {
+    return null;
+  }
+
+  const filters = buildRuntimeWorkbenchShellReactStreamFilters(state);
+  if (filters === null) {
+    return null;
+  }
+
+  const projectId = normalizeRuntimeWorkbenchShellReactProjectId(
+    state.projectId,
+  );
+  if (projectId === null) {
+    return null;
+  }
+
+  return {
+    channel:
+      state.channelKind === "run"
+        ? { kind: "run", runId: normalizedChannelId }
+        : { kind: "planning", sessionId: normalizedChannelId },
+    ...(projectId.length > 0 ? { projectId } : {}),
+    ...(Object.keys(filters).length > 0 ? { filters } : {}),
+  };
+}
+
 export function isRuntimeWorkbenchShellReactActionEnabled(
   action: RuntimeWorkbenchShellAction,
   options: RuntimeWorkbenchShellReactActionOptions = {},
@@ -115,12 +211,25 @@ export function RuntimeWorkbenchShellReactView(
 ): ReactElement {
   const snapshot = useRuntimeWorkbenchShellSnapshot(props.session);
   const title = props.title ?? "CognitiveWorkflow Runtime Workbench";
+  const [streamOptionsForm, setStreamOptionsForm] =
+    useState<RuntimeWorkbenchShellReactStreamOptionsFormState>(() =>
+      createRuntimeWorkbenchShellReactStreamOptionsFormState(
+        props.defaultRuntimeStreamOptionsFormState,
+      ),
+    );
+  const formRuntimeStreamSessionOptions = useMemo(
+    () =>
+      buildRuntimeWorkbenchShellReactStreamSessionOptions(streamOptionsForm),
+    [streamOptionsForm],
+  );
+  const runtimeStreamSessionOptions =
+    props.runtimeStreamSessionOptions ?? formRuntimeStreamSessionOptions;
   const actionOptions = useMemo(
     (): RuntimeWorkbenchShellReactActionOptions =>
-      props.runtimeStreamSessionOptions === undefined
+      runtimeStreamSessionOptions === null
         ? {}
-        : { runtimeStreamSessionOptions: props.runtimeStreamSessionOptions },
-    [props.runtimeStreamSessionOptions],
+        : { runtimeStreamSessionOptions },
+    [runtimeStreamSessionOptions],
   );
   const actionsById = useMemo(
     () => new Map(snapshot.actions.map((action) => [action.id, action])),
@@ -175,6 +284,84 @@ export function RuntimeWorkbenchShellReactView(
       void props.session.dispatch(command).catch(handleActionError);
     },
     [actionOptions, actionsById, handleActionError, props.session],
+  );
+  const handleStreamChannelKindClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const channelKind = event.currentTarget.dataset.streamChannelKind;
+      if (channelKind !== "run" && channelKind !== "planning") {
+        return;
+      }
+      setStreamOptionsForm((current) =>
+        createRuntimeWorkbenchShellReactStreamOptionsFormState({
+          ...current,
+          channelKind,
+          categories: normalizeRuntimeWorkbenchShellReactStreamCategories(
+            channelKind,
+            current.categories,
+          ),
+        }),
+      );
+    },
+    [],
+  );
+  const handleStreamTextInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      const field = event.currentTarget.dataset.streamField;
+      if (
+        field !== "runId" &&
+        field !== "planningSessionId" &&
+        field !== "projectId" &&
+        field !== "sinceSeq" &&
+        field !== "untilSeq"
+      ) {
+        return;
+      }
+      const value = event.currentTarget.value;
+      setStreamOptionsForm((current) =>
+        createRuntimeWorkbenchShellReactStreamOptionsFormState({
+          ...current,
+          [field]: value,
+        }),
+      );
+    },
+    [],
+  );
+  const handleStreamDisplayLevelClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const displayLevel = event.currentTarget.dataset.streamDisplayLevel;
+      if (displayLevel === undefined) {
+        return;
+      }
+      if (!isRuntimeWorkbenchShellReactDisplayLevel(displayLevel)) {
+        return;
+      }
+      setStreamOptionsForm((current) =>
+        createRuntimeWorkbenchShellReactStreamOptionsFormState({
+          ...current,
+          displayLevel,
+        }),
+      );
+    },
+    [],
+  );
+  const handleStreamCategoryChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      const category = event.currentTarget.value;
+      if (!isRuntimeWorkbenchShellReactCategory(category)) {
+        return;
+      }
+      const checked = event.currentTarget.checked;
+      setStreamOptionsForm((current) => {
+        const categories = checked
+          ? [...current.categories, category]
+          : current.categories.filter((candidate) => candidate !== category);
+        return createRuntimeWorkbenchShellReactStreamOptionsFormState({
+          ...current,
+          categories,
+        });
+      });
+    },
+    [],
   );
 
   useEffect(() => {
@@ -241,6 +428,15 @@ export function RuntimeWorkbenchShellReactView(
         )}
       </section>
 
+      <RuntimeWorkbenchShellStreamOptionsForm
+        onCategoryChange={handleStreamCategoryChange}
+        onChannelKindClick={handleStreamChannelKindClick}
+        onDisplayLevelClick={handleStreamDisplayLevelClick}
+        onTextInputChange={handleStreamTextInputChange}
+        optionsReady={runtimeStreamSessionOptions !== null}
+        state={streamOptionsForm}
+      />
+
       <section
         aria-label="Runtime workbench actions"
         className="cw-workbench__actions"
@@ -284,6 +480,134 @@ export function RuntimeWorkbenchShellReactView(
   );
 }
 
+function RuntimeWorkbenchShellStreamOptionsForm(props: {
+  readonly state: RuntimeWorkbenchShellReactStreamOptionsFormState;
+  readonly optionsReady: boolean;
+  readonly onChannelKindClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onTextInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onDisplayLevelClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onCategoryChange: (event: ChangeEvent<HTMLInputElement>) => void;
+}): ReactElement {
+  const activeCategories = runtimeWorkbenchShellReactCategoriesForChannel(
+    props.state.channelKind,
+  );
+  return (
+    <section
+      aria-label="Runtime stream options"
+      className="cw-workbench__stream-options"
+    >
+      <div className="cw-workbench__stream-option-group cw-workbench__stream-option-group--source">
+        <span className="cw-workbench__stream-label">Stream source</span>
+        <div className="cw-workbench__segmented">
+          {(["run", "planning"] as const).map((channelKind) => (
+            <button
+              aria-pressed={props.state.channelKind === channelKind}
+              className="cw-workbench__segment"
+              data-stream-channel-kind={channelKind}
+              key={channelKind}
+              onClick={props.onChannelKindClick}
+              type="button"
+            >
+              {channelKind === "run" ? "Run" : "Planning"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="cw-workbench__stream-field">
+        <span>
+          {props.state.channelKind === "run" ? "Run id" : "Planning session id"}
+        </span>
+        <input
+          data-stream-field={
+            props.state.channelKind === "run" ? "runId" : "planningSessionId"
+          }
+          inputMode="text"
+          onChange={props.onTextInputChange}
+          value={
+            props.state.channelKind === "run"
+              ? props.state.runId
+              : props.state.planningSessionId
+          }
+        />
+      </label>
+
+      <label className="cw-workbench__stream-field">
+        <span>Project id</span>
+        <input
+          data-stream-field="projectId"
+          inputMode="text"
+          onChange={props.onTextInputChange}
+          value={props.state.projectId}
+        />
+      </label>
+
+      <div className="cw-workbench__stream-option-group">
+        <span>Level</span>
+        <div className="cw-workbench__segmented cw-workbench__segmented--level">
+          {RUNTIME_WORKBENCH_STREAM_DISPLAY_LEVELS.map((level) => (
+            <button
+              aria-pressed={props.state.displayLevel === level}
+              className="cw-workbench__segment"
+              data-stream-display-level={level}
+              key={level}
+              onClick={props.onDisplayLevelClick}
+              type="button"
+            >
+              {runtimeWorkbenchShellReactTitleCase(level)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="cw-workbench__stream-field">
+        <span>Since seq</span>
+        <input
+          data-stream-field="sinceSeq"
+          inputMode="numeric"
+          onChange={props.onTextInputChange}
+          value={props.state.sinceSeq}
+        />
+      </label>
+
+      <label className="cw-workbench__stream-field">
+        <span>Until seq</span>
+        <input
+          data-stream-field="untilSeq"
+          inputMode="numeric"
+          onChange={props.onTextInputChange}
+          value={props.state.untilSeq}
+        />
+      </label>
+
+      <fieldset className="cw-workbench__stream-categories">
+        <legend>Categories</legend>
+        {activeCategories.map((category) => (
+          <label className="cw-workbench__stream-category" key={category}>
+            <input
+              checked={props.state.categories.includes(category)}
+              onChange={props.onCategoryChange}
+              type="checkbox"
+              value={category}
+            />
+            <span>{runtimeWorkbenchShellReactTitleCase(category)}</span>
+          </label>
+        ))}
+      </fieldset>
+
+      <div
+        className={
+          props.optionsReady
+            ? "cw-workbench__stream-ready cw-workbench__stream-ready--ready"
+            : "cw-workbench__stream-ready"
+        }
+      >
+        {props.optionsReady ? "Ready" : "Waiting"}
+      </div>
+    </section>
+  );
+}
+
 function RuntimeWorkbenchShellPanelSummary(props: {
   readonly snapshot: RuntimeWorkbenchShellSnapshot;
 }): ReactElement {
@@ -315,4 +639,122 @@ function activePanelSummary(snapshot: RuntimeWorkbenchShellSnapshot): string {
   return snapshot.activePanel === "lifecycle"
     ? `Lifecycle panel is ${snapshot.lifecyclePanelStatus}.`
     : `Runtime stream is ${snapshot.runtimeStreamChannelLabel ?? snapshot.runtimeStreamStatus}.`;
+}
+
+function buildRuntimeWorkbenchShellReactStreamFilters(
+  state: RuntimeWorkbenchShellReactStreamOptionsFormState,
+): NonNullable<
+  CreateRuntimeStreamInteractionSessionFactorySessionOptions["filters"]
+> | null {
+  const sinceSeq = normalizeRuntimeWorkbenchShellReactSeq(state.sinceSeq);
+  const untilSeq = normalizeRuntimeWorkbenchShellReactSeq(state.untilSeq);
+  if (
+    sinceSeq === null ||
+    untilSeq === null ||
+    (sinceSeq !== undefined && untilSeq !== undefined && untilSeq < sinceSeq)
+  ) {
+    return null;
+  }
+
+  const categories = normalizeRuntimeWorkbenchShellReactStreamCategories(
+    state.channelKind,
+    state.categories,
+  );
+  return {
+    level: state.displayLevel,
+    ...(categories.length > 0 ? { category: categories } : {}),
+    ...(sinceSeq !== undefined ? { sinceSeq } : {}),
+    ...(untilSeq !== undefined ? { untilSeq } : {}),
+  };
+}
+
+function normalizeRuntimeWorkbenchShellReactSeq(
+  value: string,
+): number | undefined | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  if (!/^\d+$/u.test(trimmed)) {
+    return null;
+  }
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function normalizeRuntimeWorkbenchShellReactProjectId(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return "";
+  }
+  return /^[\u0020-\u007e]+$/u.test(trimmed) && !/[\r\n]/u.test(trimmed)
+    ? trimmed
+    : null;
+}
+
+function normalizeRuntimeWorkbenchShellReactPathSegment(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.includes("?") ||
+    trimmed.includes("#") ||
+    trimmed.includes("..") ||
+    /[\u0000-\u001f\u007f\s]/u.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeRuntimeWorkbenchShellReactStreamCategories(
+  channelKind: RuntimeWorkbenchShellReactStreamChannelKind,
+  categories: readonly RuntimeStreamCategory[],
+): RuntimeStreamCategory[] {
+  const allowed = runtimeWorkbenchShellReactCategoriesForChannel(channelKind);
+  const normalized: RuntimeStreamCategory[] = [];
+  for (const category of categories) {
+    if (allowed.includes(category) && !normalized.includes(category)) {
+      normalized.push(category);
+    }
+  }
+  return normalized;
+}
+
+function runtimeWorkbenchShellReactCategoriesForChannel(
+  channelKind: RuntimeWorkbenchShellReactStreamChannelKind,
+): readonly RuntimeStreamCategory[] {
+  return channelKind === "run"
+    ? RUNTIME_WORKBENCH_RUN_STREAM_CATEGORIES
+    : RUNTIME_WORKBENCH_PLANNING_STREAM_CATEGORIES;
+}
+
+function isRuntimeWorkbenchShellReactDisplayLevel(
+  value: string,
+): value is RuntimeStreamDisplayLevel {
+  return RUNTIME_WORKBENCH_STREAM_DISPLAY_LEVELS.includes(
+    value as RuntimeStreamDisplayLevel,
+  );
+}
+
+function isRuntimeWorkbenchShellReactCategory(
+  value: string,
+): value is RuntimeStreamCategory {
+  return (
+    RUNTIME_WORKBENCH_RUN_STREAM_CATEGORIES.includes(
+      value as RuntimeStreamCategory,
+    ) ||
+    RUNTIME_WORKBENCH_PLANNING_STREAM_CATEGORIES.includes(
+      value as RuntimeStreamCategory,
+    )
+  );
+}
+
+function runtimeWorkbenchShellReactTitleCase(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
 }

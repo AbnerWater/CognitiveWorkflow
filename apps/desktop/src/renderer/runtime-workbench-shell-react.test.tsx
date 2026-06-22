@@ -19,6 +19,8 @@ import {
 import {
   RuntimeWorkbenchShellReactView,
   bindRuntimeWorkbenchShellReactKeyboardTarget,
+  buildRuntimeWorkbenchShellReactStreamSessionOptions,
+  createRuntimeWorkbenchShellReactStreamOptionsFormState,
   isRuntimeWorkbenchShellReactActionEnabled,
   runtimeWorkbenchShellActionToCommand,
 } from "./runtime-workbench-shell-react.js";
@@ -42,6 +44,28 @@ test("renderer runtime workbench React shell renders server snapshot without DOM
   assert.equal(session.listenerCount(), 0);
   assert.equal(session.bindKeyboardTargetCount(), 0);
   assert.equal(target.listenerCount("keydown"), 0);
+});
+
+test("renderer runtime workbench React shell renders stream options readiness", () => {
+  const snapshot = createRuntimeWorkbenchShellReactSnapshot();
+  const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+  const markup = renderToString(
+    <RuntimeWorkbenchShellReactView
+      defaultRuntimeStreamOptionsFormState={{
+        categories: ["model", "tool"],
+        displayLevel: "detailed",
+        runId: "run_ssr_stream",
+      }}
+      session={session}
+      title="Stream Options Runtime Workbench"
+    />,
+  );
+
+  assert.match(markup, /Runtime stream options/u);
+  assert.match(markup, /Run id/u);
+  assert.match(markup, /run_ssr_stream/u);
+  assert.match(markup, /Detailed/u);
+  assert.match(markup, /Ready/u);
 });
 
 test("renderer runtime workbench React shell binds keyboard lifecycle on client mount", async () => {
@@ -143,6 +167,81 @@ test("renderer runtime workbench React shell maps actions to commands", () => {
       type: "open_runtime_stream_session",
       options: streamOptions,
     },
+  );
+});
+
+test("renderer runtime workbench React shell builds run stream options from form state", () => {
+  const state = createRuntimeWorkbenchShellReactStreamOptionsFormState({
+    categories: ["model", "tool", "model", "planning"],
+    displayLevel: "detailed",
+    projectId: " project_alpha ",
+    runId: " run_stream_1 ",
+    sinceSeq: "7",
+    untilSeq: "11",
+  });
+
+  assert.deepEqual(buildRuntimeWorkbenchShellReactStreamSessionOptions(state), {
+    channel: { kind: "run", runId: "run_stream_1" },
+    projectId: "project_alpha",
+    filters: {
+      level: "detailed",
+      category: ["model", "tool"],
+      sinceSeq: 7,
+      untilSeq: 11,
+    },
+  });
+});
+
+test("renderer runtime workbench React shell builds planning stream options from form state", () => {
+  const state = createRuntimeWorkbenchShellReactStreamOptionsFormState({
+    categories: ["planning", "system", "model"],
+    channelKind: "planning",
+    displayLevel: "minimal",
+    planningSessionId: "ps_stream_1",
+  });
+
+  assert.deepEqual(buildRuntimeWorkbenchShellReactStreamSessionOptions(state), {
+    channel: { kind: "planning", sessionId: "ps_stream_1" },
+    filters: {
+      level: "minimal",
+      category: ["planning", "system"],
+    },
+  });
+});
+
+test("renderer runtime workbench React shell rejects incomplete or unsafe stream options", () => {
+  assert.equal(
+    buildRuntimeWorkbenchShellReactStreamSessionOptions(
+      createRuntimeWorkbenchShellReactStreamOptionsFormState(),
+    ),
+    null,
+  );
+  assert.equal(
+    buildRuntimeWorkbenchShellReactStreamSessionOptions(
+      createRuntimeWorkbenchShellReactStreamOptionsFormState({
+        runId: "run/unsafe",
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    buildRuntimeWorkbenchShellReactStreamSessionOptions(
+      createRuntimeWorkbenchShellReactStreamOptionsFormState({
+        projectId: "project\r\ninjected",
+        runId: "run_safe",
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    buildRuntimeWorkbenchShellReactStreamSessionOptions(
+      createRuntimeWorkbenchShellReactStreamOptionsFormState({
+        runId: "run_safe",
+        sinceSeq: "12",
+        untilSeq: "3",
+      }),
+    ),
+    null,
   );
 });
 

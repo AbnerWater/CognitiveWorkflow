@@ -162,6 +162,118 @@ button {
   background: #ffffff;
 }
 
+.cw-workbench__stream-options {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) repeat(4, minmax(120px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__stream-option-group,
+.cw-workbench__stream-field {
+  display: grid;
+  gap: 6px;
+}
+
+.cw-workbench__stream-label,
+.cw-workbench__stream-field span,
+.cw-workbench__stream-categories legend {
+  color: #657487;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__segmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.cw-workbench__segmented--level {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cw-workbench__segment {
+  min-height: 34px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2c3a;
+  cursor: pointer;
+}
+
+.cw-workbench__segment[aria-pressed="true"] {
+  border-color: #3d6fa7;
+  background: #eaf2fb;
+}
+
+.cw-workbench__stream-field input,
+.cw-workbench__stream-field select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #17202a;
+  font: inherit;
+  font-size: 14px;
+}
+
+.cw-workbench__stream-field input {
+  padding: 0 8px;
+}
+
+.cw-workbench__stream-field select {
+  padding: 0 6px;
+}
+
+.cw-workbench__stream-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 220px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cw-workbench__stream-categories legend {
+  flex-basis: 100%;
+  padding: 0;
+}
+
+.cw-workbench__stream-category {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  min-height: 26px;
+  color: #445162;
+  font-size: 12px;
+}
+
+.cw-workbench__stream-ready {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 74px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  color: #526173;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__stream-ready--ready {
+  border-color: #77b28c;
+  color: #285f3b;
+}
+
 .cw-workbench__empty {
   display: grid;
   min-height: 220px;
@@ -222,6 +334,7 @@ button {
   }
 
   .cw-workbench__header,
+  .cw-workbench__stream-options,
   .cw-workbench__panel-summary {
     grid-template-columns: 1fr;
   }

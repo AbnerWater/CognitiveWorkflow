@@ -1,6 +1,7 @@
 import { StrictMode, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { CwDesktopApi } from "../preload/contract.js";
+import { createRuntimeFetchEventSourceFactory } from "./runtime-stream-fetch-event-source.js";
 import { RuntimeWorkbenchShellReactView } from "./runtime-workbench-shell-react.js";
 import { createRuntimeWorkbenchShellReactSession } from "./runtime-workbench-shell-react-session.js";
 import "./runtime-workbench-shell.css";
@@ -19,6 +20,7 @@ if (desktopApi === null) {
 } else {
   const session = createRuntimeWorkbenchShellReactSession({
     runtime: desktopApi.runtime,
+    eventSourceFactory: createRuntimeFetchEventSourceFactory(),
     onError: reportRuntimeWorkbenchShellError,
   });
   window.addEventListener(
