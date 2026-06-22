@@ -7,18 +7,28 @@
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "dev": "echo '[@cw/desktop] M1.5 milestone 内落实 Electron Forge dev pipeline'",
-    "build": "tsc -p tsconfig.json",
-    "test": "pnpm run build && node --test dist/main/runtime.test.js dist/main/runtime-command.test.js dist/main/runtime-connection-registry.test.js dist/main/runtime-handoff.test.js dist/main/runtime-ipc-handlers.test.js dist/main/runtime-ipc-main-factory.test.js dist/main/runtime-lifecycle.test.js dist/main/runtime-lock.test.js dist/main/runtime-orchestration.test.js dist/main/runtime-startup-controller.test.js dist/main/security.test.js dist/main/sidecar.test.js dist/preload/contract.test.js dist/shared/runtime-ipc.test.js",
+    "dev": "echo '[@cw/desktop] Electron Forge dev pipeline remains dependency-gated; use dev:renderer for W1.5.79 renderer shell'",
+    "dev:renderer": "vite --config vite.config.ts --host 127.0.0.1",
+    "build": "pnpm run build:ts && pnpm run build:renderer",
+    "build:renderer": "vite build --config vite.config.ts",
+    "build:ts": "tsc -p tsconfig.json",
+    "test": "pnpm run build && node --test dist/main/runtime.test.js dist/main/runtime-command.test.js dist/main/runtime-connection-registry.test.js dist/main/runtime-handoff.test.js dist/main/runtime-ipc-handlers.test.js dist/main/runtime-ipc-main-factory.test.js dist/main/runtime-lifecycle.test.js dist/main/runtime-lock.test.js dist/main/runtime-orchestration.test.js dist/main/runtime-startup-controller.test.js dist/main/security.test.js dist/main/sidecar.test.js dist/preload/contract.test.js dist/renderer/runtime-workbench-shell-react.test.js dist/shared/runtime-ipc.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@cw/schemas": "workspace:*",
-    "@cw/ui": "workspace:*"
+    "@cw/ui": "workspace:*",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
-    "typescript": "^5.6.3"
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "electron": "35.7.5",
+    "typescript": "^5.6.3",
+    "vite": "5.4.21"
   }
 }

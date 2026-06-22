@@ -115,6 +115,7 @@ logs/
 # Electron / electron-builder 构建产物
 apps/desktop/out/
 apps/desktop/dist/
+apps/desktop/dist-renderer/
 apps/desktop/release/
 apps/desktop/resources/runtime/
 apps/desktop/.vite/
