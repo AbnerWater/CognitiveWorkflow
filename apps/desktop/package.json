@@ -5,14 +5,15 @@
   "description": "CognitiveWorkflow Electron desktop shell (main + preload + renderer)",
   "license": "MIT",
   "type": "module",
-  "main": "dist/main/index.js",
+  "main": "dist/main/electron-main.js",
   "scripts": {
-    "dev": "echo '[@cw/desktop] Electron Forge dev pipeline remains dependency-gated; use dev:renderer for W1.5.79 renderer shell'",
+    "dev": "pnpm run dev:electron",
+    "dev:electron": "pnpm run build && electron .",
     "dev:renderer": "vite --config vite.config.ts --host 127.0.0.1",
     "build": "pnpm run build:ts && pnpm run build:renderer",
     "build:renderer": "vite build --config vite.config.ts",
     "build:ts": "tsc -p tsconfig.json",
-    "test": "pnpm run build && node --test dist/main/runtime.test.js dist/main/runtime-command.test.js dist/main/runtime-connection-registry.test.js dist/main/runtime-handoff.test.js dist/main/runtime-ipc-handlers.test.js dist/main/runtime-ipc-main-factory.test.js dist/main/runtime-lifecycle.test.js dist/main/runtime-lock.test.js dist/main/runtime-orchestration.test.js dist/main/runtime-startup-controller.test.js dist/main/security.test.js dist/main/sidecar.test.js dist/preload/contract.test.js dist/renderer/runtime-workbench-shell-react.test.js dist/shared/runtime-ipc.test.js",
+    "test": "pnpm run build && node --test dist/main/electron-app.test.js dist/main/runtime.test.js dist/main/runtime-command.test.js dist/main/runtime-connection-registry.test.js dist/main/runtime-handoff.test.js dist/main/runtime-ipc-handlers.test.js dist/main/runtime-ipc-main-factory.test.js dist/main/runtime-lifecycle.test.js dist/main/runtime-lock.test.js dist/main/runtime-orchestration.test.js dist/main/runtime-startup-controller.test.js dist/main/security.test.js dist/main/sidecar.test.js dist/preload/contract.test.js dist/renderer/runtime-workbench-shell-react.test.js dist/shared/runtime-ipc.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
