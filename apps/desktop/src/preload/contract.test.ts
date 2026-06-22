@@ -64,6 +64,7 @@ import {
 import {
   createRuntimeLifecyclePanelInteraction,
   type RuntimeLifecyclePanelInteractionCommand,
+  type RuntimeLifecyclePanelInteractionSnapshot,
 } from "../renderer/runtime-lifecycle-panel-interaction.js";
 import {
   createRuntimeLifecyclePanelSessionController,
@@ -4538,6 +4539,7 @@ test("renderer runtime workbench host session composes interaction and shortcuts
   assert.deepEqual(initialSnapshot.lifecyclePanel, {
     active: false,
     disposed: false,
+    activeSession: null,
   });
   assert.deepEqual(initialSnapshot.runtimeStream, {
     active: false,
@@ -4610,10 +4612,13 @@ test("renderer runtime workbench host session composes interaction and shortcuts
     type: "open_lifecycle_panel_session",
     options: { timelineFilter: "startup" },
   });
-  assert.deepEqual(lifecycleOpened.lifecyclePanel, {
-    active: true,
-    disposed: false,
-  });
+  assert.equal(lifecycleOpened.lifecyclePanel.active, true);
+  assert.equal(lifecycleOpened.lifecyclePanel.disposed, false);
+  assert.equal(
+    lifecycleOpened.lifecyclePanel.activeSession?.interaction.view
+      .timelineFilter,
+    "startup",
+  );
   assert.equal(
     lifecycleOpened.enabledShortcutIds.includes(
       "focus_lifecycle_primary_command",
@@ -4822,6 +4827,94 @@ test("renderer runtime workbench host session isolates listeners and active disp
 });
 
 test("renderer runtime workbench shell presenter projects host snapshots", () => {
+  const lifecycleTimelineItem: RuntimeLifecyclePanelTimelineItem =
+    Object.freeze({
+      id: "lifecycle_evt_shell",
+      source: "startup",
+      sourceLabel: "Startup",
+      kind: "starting_sidecar",
+      phase: "starting",
+      tone: "info",
+      statusLabel: "Starting",
+      title: "Lifecycle active event",
+      summary: "Lifecycle panel event is projected into the shell snapshot.",
+      badges: Object.freeze(["startup", "retryable"] as const),
+    });
+  const activeLifecyclePanelInteraction: RuntimeLifecyclePanelInteractionSnapshot =
+    Object.freeze({
+      view: Object.freeze({
+        panel: Object.freeze({
+          readiness: "busy",
+          tone: "info",
+          statusLabel: "Starting",
+          title: "Lifecycle active",
+          summary: "Runtime lifecycle is starting.",
+          runtimeReady: false,
+          busy: true,
+          terminal: false,
+          lifecycleComplete: false,
+          userActionRequired: false,
+          retryable: true,
+          startupTotal: 1,
+          shutdownTotal: 0,
+          started: true,
+          disposed: false,
+          ariaLive: "polite",
+          primaryCommand: Object.freeze({
+            id: "refresh_status",
+            role: "primary",
+            label: "Refresh",
+            title: "Refresh runtime status.",
+            enabled: true,
+            busy: false,
+            tone: "accent",
+          }),
+          secondaryCommands: Object.freeze([
+            Object.freeze({
+              id: "stop_runtime",
+              role: "secondary",
+              label: "Stop",
+              title: "Stop runtime.",
+              enabled: true,
+              busy: false,
+              tone: "danger",
+            }),
+          ]),
+          timelineItems: Object.freeze([lifecycleTimelineItem]),
+          emptyState: null,
+        }),
+        disposed: false,
+        timelineFilter: "all",
+        timelineFilterOptions: Object.freeze([
+          Object.freeze({
+            id: "all",
+            label: "All",
+            count: 1,
+            active: true,
+          }),
+        ]),
+        visibleTimelineItems: Object.freeze([lifecycleTimelineItem]),
+        selectedTimelineItemId: lifecycleTimelineItem.id,
+        selectedTimelineItem: lifecycleTimelineItem,
+        totalTimelineItems: 1,
+        visibleTimelineItemCount: 1,
+        hiddenTimelineItemCount: 0,
+      }),
+      disposed: false,
+      focusTarget: "timeline_item",
+      focusedCommandId: null,
+      focusedTimelineItemId: lifecycleTimelineItem.id,
+      availableCommandIds: Object.freeze([
+        "refresh_status",
+        "stop_runtime",
+      ] as const),
+      enabledCommandIds: Object.freeze([
+        "refresh_status",
+        "stop_runtime",
+      ] as const),
+      canActivateFocusedCommand: false,
+      canSelectFocusedTimelineItem: true,
+    });
   const availableCommandIds: RuntimeWorkbenchInteractionCommandId[] = [
     "show_lifecycle_panel",
     "show_stream_panel",
@@ -4842,6 +4935,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     lifecyclePanel: {
       active: true,
       disposed: false,
+      activeSession: null,
     },
     runtimeStream: {
       active: true,
@@ -4978,7 +5072,12 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(Object.hasOwn(snapshot, "interaction"), false);
   assert.equal(Object.hasOwn(snapshot, "shortcuts"), false);
   assert.equal(Object.hasOwn(snapshot, "delegatedCommandIds"), false);
-  assert.equal(Object.hasOwn(snapshot, "lifecyclePanel"), false);
+  assert.equal(Object.hasOwn(snapshot, "lifecyclePanel"), true);
+  assert.equal(snapshot.lifecyclePanel, null);
+  assert.equal(
+    Object.hasOwn(snapshot.lifecyclePanel ?? {}, "controller"),
+    false,
+  );
   assert.equal(Object.hasOwn(snapshot, "runtimeStream"), false);
   assert.deepEqual(
     snapshot.panels.map((panel) => ({
@@ -5061,7 +5160,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
 
   const emptySnapshot = buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
-    lifecyclePanel: { active: false, disposed: false },
+    lifecyclePanel: { active: false, disposed: false, activeSession: null },
     runtimeStream: { active: false, activeChannel: null, disposed: false },
     runtimeStreamPanel: null,
     availableCommandIds: ["show_stream_panel"],
@@ -5074,10 +5173,106 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(emptySnapshot.emptyState?.title, "No active session");
   assert.equal(emptySnapshot.ariaLive, "off");
 
+  const activeLifecycleSnapshot = buildRuntimeWorkbenchShellSnapshot({
+    activePanel: "lifecycle",
+    lifecyclePanel: {
+      active: true,
+      disposed: false,
+      activeSession: Object.freeze({
+        interaction: activeLifecyclePanelInteraction,
+        disposed: false,
+      }),
+    },
+    runtimeStream: { active: false, activeChannel: null, disposed: false },
+    runtimeStreamPanel: null,
+    availableCommandIds: ["show_lifecycle_panel", "dispatch_lifecycle_panel"],
+    enabledCommandIds: ["show_lifecycle_panel", "dispatch_lifecycle_panel"],
+    availableShortcutIds: ["show_lifecycle_panel"],
+    enabledShortcutIds: ["show_lifecycle_panel"],
+    lastHandledShortcutId: null,
+    disposed: false,
+  });
+  assert.ok(activeLifecycleSnapshot.lifecyclePanel !== null);
+  const activeLifecyclePanel = activeLifecycleSnapshot.lifecyclePanel;
+  assert.notEqual(activeLifecyclePanel, activeLifecyclePanelInteraction);
+  assert.notEqual(
+    activeLifecyclePanel.view,
+    activeLifecyclePanelInteraction.view,
+  );
+  assert.notEqual(
+    activeLifecyclePanel.view.panel,
+    activeLifecyclePanelInteraction.view.panel,
+  );
+  assert.equal(activeLifecyclePanel.view.panel.title, "Lifecycle active");
+  assert.equal(
+    activeLifecyclePanel.view.visibleTimelineItems[0]?.id,
+    lifecycleTimelineItem.id,
+  );
+  assert.notEqual(
+    activeLifecyclePanel.view.visibleTimelineItems[0],
+    lifecycleTimelineItem,
+  );
+  assert.notEqual(
+    activeLifecyclePanel.view.selectedTimelineItem,
+    lifecycleTimelineItem,
+  );
+  assert.equal(Object.hasOwn(activeLifecyclePanel, "controller"), false);
+  assert.equal(Object.hasOwn(activeLifecyclePanel, "adapter"), false);
+  assert.equal(Object.hasOwn(activeLifecyclePanel, "runtime"), false);
+  assert.equal(Object.isFrozen(activeLifecyclePanel), true);
+  assert.equal(Object.isFrozen(activeLifecyclePanel.view), true);
+  assert.equal(Object.isFrozen(activeLifecyclePanel.view.panel), true);
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.panel.primaryCommand),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.panel.secondaryCommands),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.panel.secondaryCommands[0]),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.panel.timelineItems),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.panel.timelineItems[0]),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.panel.timelineItems[0]?.badges),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.timelineFilterOptions),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.timelineFilterOptions[0]),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.visibleTimelineItems),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.visibleTimelineItems[0]),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(activeLifecyclePanel.view.selectedTimelineItem),
+    true,
+  );
+  assert.equal(Object.isFrozen(activeLifecyclePanel.availableCommandIds), true);
+  assert.equal(Object.isFrozen(activeLifecyclePanel.enabledCommandIds), true);
+
   const disposedSnapshot = buildRuntimeWorkbenchShellSnapshot(
     {
       activePanel: "lifecycle",
-      lifecyclePanel: { active: false, disposed: true },
+      lifecyclePanel: { active: false, disposed: true, activeSession: null },
       runtimeStream: { active: false, activeChannel: null, disposed: true },
       runtimeStreamPanel: null,
       availableCommandIds: ["show_stream_panel"],

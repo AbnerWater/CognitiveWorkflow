@@ -10,6 +10,12 @@ import {
 } from "react";
 import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
 import type {
+  RuntimeLifecyclePanelCommand,
+  RuntimeLifecyclePanelCommandId,
+  RuntimeLifecyclePanelTimelineItem,
+} from "./runtime-lifecycle-panel-presenter.js";
+import type { RuntimeLifecyclePanelInteractionCommand } from "./runtime-lifecycle-panel-interaction.js";
+import type {
   RuntimeStreamCategory,
   RuntimeStreamDisplayLevel,
 } from "./runtime-stream-client.js";
@@ -24,6 +30,7 @@ import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-work
 import type {
   RuntimeWorkbenchShellAction,
   RuntimeWorkbenchShellActionId,
+  RuntimeWorkbenchShellLifecyclePanelSnapshot,
   RuntimeWorkbenchShellRuntimeStreamEventSnapshot,
   RuntimeWorkbenchShellRuntimeStreamPanelSnapshot,
   RuntimeWorkbenchShellSnapshot,
@@ -214,6 +221,15 @@ export function runtimeWorkbenchShellStreamPanelCommandToWorkbenchCommand(
 ): RuntimeWorkbenchInteractionCommand {
   return {
     type: "dispatch_runtime_stream",
+    command,
+  };
+}
+
+export function runtimeWorkbenchShellLifecyclePanelCommandToWorkbenchCommand(
+  command: RuntimeLifecyclePanelInteractionCommand,
+): RuntimeWorkbenchInteractionCommand {
+  return {
+    type: "dispatch_lifecycle_panel",
     command,
   };
 }
@@ -435,6 +451,45 @@ export function RuntimeWorkbenchShellReactView(
     },
     [dispatchStreamPanelCommand],
   );
+  const dispatchLifecyclePanelCommand = useCallback(
+    (command: RuntimeLifecyclePanelInteractionCommand): void => {
+      void props.session
+        .dispatch(
+          runtimeWorkbenchShellLifecyclePanelCommandToWorkbenchCommand(command),
+        )
+        .catch(handleActionError);
+    },
+    [handleActionError, props.session],
+  );
+  const handleLifecyclePanelCommandClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const commandId = event.currentTarget.dataset.lifecycleCommandId as
+        | RuntimeLifecyclePanelCommandId
+        | undefined;
+      if (commandId === undefined) {
+        return;
+      }
+      const command =
+        runtimeWorkbenchShellLifecycleCommandIdToInteractionCommand(commandId);
+      if (command === null) {
+        return;
+      }
+      dispatchLifecyclePanelCommand(command);
+    },
+    [dispatchLifecyclePanelCommand],
+  );
+  const handleLifecyclePanelNavigationClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const command = event.currentTarget.dataset.lifecycleNavigationCommand as
+        | RuntimeLifecyclePanelInteractionCommand
+        | undefined;
+      if (command === undefined) {
+        return;
+      }
+      dispatchLifecyclePanelCommand(command);
+    },
+    [dispatchLifecyclePanelCommand],
+  );
 
   useEffect(() => {
     const unbindKeyboardTarget = bindRuntimeWorkbenchShellReactKeyboardTarget(
@@ -507,8 +562,14 @@ export function RuntimeWorkbenchShellReactView(
               onToggleExpandedClick={handleStreamPanelToggleExpandedClick}
               snapshot={snapshot}
             />
-          ) : (
+          ) : snapshot.lifecyclePanel === null ? (
             <RuntimeWorkbenchShellPanelSummary snapshot={snapshot} />
+          ) : (
+            <RuntimeWorkbenchShellLifecyclePanel
+              onCommandClick={handleLifecyclePanelCommandClick}
+              onNavigationClick={handleLifecyclePanelNavigationClick}
+              panel={snapshot.lifecyclePanel}
+            />
           )
         ) : (
           <div className="cw-workbench__empty">
@@ -568,6 +629,24 @@ export function RuntimeWorkbenchShellReactView(
       </footer>
     </main>
   );
+}
+
+function runtimeWorkbenchShellLifecycleCommandIdToInteractionCommand(
+  commandId: RuntimeLifecyclePanelCommandId,
+): RuntimeLifecyclePanelInteractionCommand | null {
+  switch (commandId) {
+    case "start_runtime":
+    case "retry_startup":
+      return "start_or_retry_runtime";
+    case "refresh_status":
+      return "refresh_status";
+    case "stop_runtime":
+      return "stop_runtime";
+    case "inspect_issue":
+    case "wait":
+    case "none":
+      return null;
+  }
 }
 
 function RuntimeWorkbenchShellStreamOptionsForm(props: {
@@ -719,6 +798,252 @@ function RuntimeWorkbenchShellPanelSummary(props: {
         </p>
       </article>
     </div>
+  );
+}
+
+function RuntimeWorkbenchShellLifecyclePanel(props: {
+  readonly panel: RuntimeWorkbenchShellLifecyclePanelSnapshot;
+  readonly onCommandClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onNavigationClick: (event: MouseEvent<HTMLButtonElement>) => void;
+}): ReactElement {
+  const panel = props.panel.view.panel;
+  const selected = props.panel.view.selectedTimelineItem;
+  return (
+    <div className="cw-workbench__lifecycle-panel">
+      <div className="cw-workbench__lifecycle-header">
+        <div>
+          <h2>{panel.title}</h2>
+          <p>{panel.summary}</p>
+        </div>
+        <RuntimeWorkbenchShellLifecycleMetrics panel={props.panel} />
+      </div>
+
+      <div className="cw-workbench__lifecycle-command-bar">
+        {panel.primaryCommand === null ? null : (
+          <RuntimeWorkbenchShellLifecycleCommandButton
+            command={panel.primaryCommand}
+            focusedCommandId={props.panel.focusedCommandId}
+            onClick={props.onCommandClick}
+          />
+        )}
+        {panel.secondaryCommands.map((command) => (
+          <RuntimeWorkbenchShellLifecycleCommandButton
+            command={command}
+            focusedCommandId={props.panel.focusedCommandId}
+            key={command.id}
+            onClick={props.onCommandClick}
+          />
+        ))}
+      </div>
+
+      <div className="cw-workbench__lifecycle-body">
+        <section className="cw-workbench__lifecycle-timeline">
+          <div className="cw-workbench__lifecycle-timeline-header">
+            <div>
+              <h3>Lifecycle timeline</h3>
+              <p>
+                {props.panel.view.visibleTimelineItemCount}/
+                {props.panel.view.totalTimelineItems} visible
+              </p>
+            </div>
+            <div className="cw-workbench__lifecycle-navigation">
+              <button
+                data-lifecycle-navigation-command="focus_previous_timeline_item"
+                disabled={props.panel.view.visibleTimelineItemCount === 0}
+                onClick={props.onNavigationClick}
+                type="button"
+              >
+                Previous
+              </button>
+              <button
+                data-lifecycle-navigation-command="focus_next_timeline_item"
+                disabled={props.panel.view.visibleTimelineItemCount === 0}
+                onClick={props.onNavigationClick}
+                type="button"
+              >
+                Next
+              </button>
+              <button
+                data-lifecycle-navigation-command="select_focused_timeline_item"
+                disabled={!props.panel.canSelectFocusedTimelineItem}
+                onClick={props.onNavigationClick}
+                type="button"
+              >
+                Select focused
+              </button>
+              <button
+                data-lifecycle-navigation-command="clear_selection"
+                disabled={selected === null}
+                onClick={props.onNavigationClick}
+                type="button"
+              >
+                Clear selection
+              </button>
+            </div>
+          </div>
+
+          <RuntimeWorkbenchShellLifecycleFilterSummary panel={props.panel} />
+
+          {panel.emptyState === null ? (
+            <ol className="cw-workbench__lifecycle-items">
+              {props.panel.view.visibleTimelineItems.map((item) => (
+                <RuntimeWorkbenchShellLifecycleTimelineItem
+                  focused={props.panel.focusedTimelineItemId === item.id}
+                  item={item}
+                  key={item.id}
+                  selected={props.panel.view.selectedTimelineItemId === item.id}
+                />
+              ))}
+            </ol>
+          ) : (
+            <div className="cw-workbench__lifecycle-empty">
+              <h3>{panel.emptyState.title}</h3>
+              <p>{panel.emptyState.summary}</p>
+            </div>
+          )}
+        </section>
+
+        <RuntimeWorkbenchShellLifecycleSelection item={selected} />
+      </div>
+    </div>
+  );
+}
+
+function RuntimeWorkbenchShellLifecycleCommandButton(props: {
+  readonly command: RuntimeLifecyclePanelCommand;
+  readonly focusedCommandId: RuntimeLifecyclePanelCommandId | null;
+  readonly onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+}): ReactElement {
+  const mappedCommand =
+    runtimeWorkbenchShellLifecycleCommandIdToInteractionCommand(
+      props.command.id,
+    );
+  return (
+    <button
+      aria-pressed={props.focusedCommandId === props.command.id}
+      className={`cw-workbench__lifecycle-command cw-workbench__lifecycle-command--${props.command.role} cw-workbench__lifecycle-command--${props.command.tone}`}
+      data-lifecycle-command-id={props.command.id}
+      disabled={
+        mappedCommand === null || !props.command.enabled || props.command.busy
+      }
+      onClick={props.onClick}
+      title={props.command.title}
+      type="button"
+    >
+      {props.command.label}
+    </button>
+  );
+}
+
+function RuntimeWorkbenchShellLifecycleMetrics(props: {
+  readonly panel: RuntimeWorkbenchShellLifecyclePanelSnapshot;
+}): ReactElement {
+  const panel = props.panel.view.panel;
+  const metrics: ReadonlyArray<readonly [string, string | number]> = [
+    ["Status", panel.statusLabel],
+    ["Startup", panel.startupTotal],
+    ["Shutdown", panel.shutdownTotal],
+    ["Visible", props.panel.view.visibleTimelineItemCount],
+  ];
+  return (
+    <dl className="cw-workbench__lifecycle-metrics">
+      {metrics.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function RuntimeWorkbenchShellLifecycleFilterSummary(props: {
+  readonly panel: RuntimeWorkbenchShellLifecyclePanelSnapshot;
+}): ReactElement {
+  return (
+    <div className="cw-workbench__lifecycle-filters">
+      {props.panel.view.timelineFilterOptions.map((option) => (
+        <span
+          className={
+            option.active
+              ? "cw-workbench__lifecycle-filter cw-workbench__lifecycle-filter--active"
+              : "cw-workbench__lifecycle-filter"
+          }
+          key={option.id}
+          title={`${option.label}: ${option.count}`}
+        >
+          {option.label}
+          <strong>{option.count}</strong>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function RuntimeWorkbenchShellLifecycleTimelineItem(props: {
+  readonly item: RuntimeLifecyclePanelTimelineItem;
+  readonly focused: boolean;
+  readonly selected: boolean;
+}): ReactElement {
+  return (
+    <li
+      className={[
+        "cw-workbench__lifecycle-item",
+        `cw-workbench__lifecycle-item--${props.item.tone}`,
+        props.focused ? "cw-workbench__lifecycle-item--focused" : "",
+        props.selected ? "cw-workbench__lifecycle-item--selected" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div className="cw-workbench__lifecycle-item-main">
+        <span>{props.item.sourceLabel}</span>
+        <div>
+          <h4>{props.item.title}</h4>
+          <p>{props.item.summary}</p>
+        </div>
+      </div>
+      <div className="cw-workbench__lifecycle-item-meta">
+        <span>{props.item.statusLabel}</span>
+        <span>{props.item.kind}</span>
+        {props.item.badges.map((badge) => (
+          <span key={badge}>{runtimeWorkbenchShellReactTitleCase(badge)}</span>
+        ))}
+      </div>
+    </li>
+  );
+}
+
+function RuntimeWorkbenchShellLifecycleSelection(props: {
+  readonly item: RuntimeLifecyclePanelTimelineItem | null;
+}): ReactElement {
+  return (
+    <aside className="cw-workbench__lifecycle-selection">
+      <h3>Lifecycle selection</h3>
+      {props.item === null ? (
+        <p className="cw-workbench__stream-muted">No timeline item selected</p>
+      ) : (
+        <div className="cw-workbench__lifecycle-selected-item">
+          <strong>{props.item.title}</strong>
+          <span>{props.item.statusLabel}</span>
+          <p>{props.item.summary}</p>
+          <dl>
+            <div>
+              <dt>Source</dt>
+              <dd>{props.item.sourceLabel}</dd>
+            </div>
+            <div>
+              <dt>Phase</dt>
+              <dd>{props.item.phase}</dd>
+            </div>
+            <div>
+              <dt>Kind</dt>
+              <dd>{props.item.kind}</dd>
+            </div>
+          </dl>
+        </div>
+      )}
+    </aside>
   );
 }
 

@@ -1,4 +1,14 @@
 import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
+import type {
+  RuntimeLifecyclePanelCommand,
+  RuntimeLifecyclePanelSnapshot,
+  RuntimeLifecyclePanelTimelineItem,
+} from "./runtime-lifecycle-panel-presenter.js";
+import type { RuntimeLifecyclePanelInteractionSnapshot } from "./runtime-lifecycle-panel-interaction.js";
+import type {
+  RuntimeLifecyclePanelTimelineFilterOption,
+  RuntimeLifecyclePanelViewModelSnapshot,
+} from "./runtime-lifecycle-panel-view-model.js";
 import type { RuntimeWorkbenchShortcutKeyEvent } from "./runtime-workbench-shortcuts.js";
 import type { RuntimeWorkbenchShortcutId } from "./runtime-workbench-shortcuts.js";
 import type {
@@ -95,10 +105,14 @@ export type RuntimeWorkbenchShellRuntimeStreamFullReloadSnapshot =
 export type RuntimeWorkbenchShellRuntimeStreamPanelSnapshot =
   RuntimeWorkbenchHostRuntimeStreamPanelSnapshot;
 
+export type RuntimeWorkbenchShellLifecyclePanelSnapshot =
+  RuntimeLifecyclePanelInteractionSnapshot;
+
 export interface RuntimeWorkbenchShellSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly activePanelLabel: string;
   readonly lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus;
+  readonly lifecyclePanel: RuntimeWorkbenchShellLifecyclePanelSnapshot | null;
   readonly runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus;
   readonly runtimeStreamChannelLabel: string | null;
   readonly runtimeStreamPanel: RuntimeWorkbenchShellRuntimeStreamPanelSnapshot | null;
@@ -319,6 +333,12 @@ export function buildRuntimeWorkbenchShellSnapshot(
   const lifecyclePanelStatus = disposed
     ? "disposed"
     : panelStatus(host.lifecyclePanel);
+  const lifecyclePanel =
+    disposed || host.lifecyclePanel.activeSession === null
+      ? null
+      : cloneRuntimeWorkbenchShellLifecyclePanel(
+          host.lifecyclePanel.activeSession.interaction,
+        );
   const runtimeStreamStatus = disposed
     ? "disposed"
     : panelStatus(host.runtimeStream);
@@ -344,6 +364,7 @@ export function buildRuntimeWorkbenchShellSnapshot(
     activePanel: host.activePanel,
     activePanelLabel,
     lifecyclePanelStatus,
+    lifecyclePanel,
     runtimeStreamStatus,
     runtimeStreamChannelLabel,
     runtimeStreamPanel,
@@ -789,6 +810,10 @@ function freezeRuntimeWorkbenchShellSnapshot(
         : cloneRuntimeWorkbenchShellRuntimeStreamPanel(
             snapshot.runtimeStreamPanel,
           ),
+    lifecyclePanel:
+      snapshot.lifecyclePanel === null
+        ? null
+        : cloneRuntimeWorkbenchShellLifecyclePanel(snapshot.lifecyclePanel),
     availableActionIds: Object.freeze([...snapshot.availableActionIds]),
     enabledActionIds: Object.freeze([...snapshot.enabledActionIds]),
     emptyState:
@@ -802,6 +827,112 @@ function runtimeWorkbenchShellSnapshotSignature(
   snapshot: RuntimeWorkbenchShellSnapshot,
 ): string {
   return JSON.stringify(snapshot);
+}
+
+function cloneRuntimeWorkbenchShellLifecyclePanel(
+  panel: RuntimeWorkbenchShellLifecyclePanelSnapshot,
+): RuntimeWorkbenchShellLifecyclePanelSnapshot {
+  return Object.freeze({
+    view: cloneRuntimeWorkbenchShellLifecyclePanelView(panel.view),
+    disposed: panel.disposed,
+    focusTarget: panel.focusTarget,
+    focusedCommandId: panel.focusedCommandId,
+    focusedTimelineItemId: panel.focusedTimelineItemId,
+    availableCommandIds: Object.freeze([...panel.availableCommandIds]),
+    enabledCommandIds: Object.freeze([...panel.enabledCommandIds]),
+    canActivateFocusedCommand: panel.canActivateFocusedCommand,
+    canSelectFocusedTimelineItem: panel.canSelectFocusedTimelineItem,
+  });
+}
+
+function cloneRuntimeWorkbenchShellLifecyclePanelView(
+  view: RuntimeLifecyclePanelViewModelSnapshot,
+): RuntimeLifecyclePanelViewModelSnapshot {
+  return Object.freeze({
+    panel: cloneRuntimeWorkbenchShellLifecyclePanelStatus(view.panel),
+    disposed: view.disposed,
+    timelineFilter: view.timelineFilter,
+    timelineFilterOptions: Object.freeze(
+      view.timelineFilterOptions.map(
+        cloneRuntimeWorkbenchShellLifecyclePanelTimelineFilterOption,
+      ),
+    ),
+    visibleTimelineItems: Object.freeze(
+      view.visibleTimelineItems.map(
+        cloneRuntimeWorkbenchShellLifecyclePanelTimelineItem,
+      ),
+    ),
+    selectedTimelineItemId: view.selectedTimelineItemId,
+    selectedTimelineItem:
+      view.selectedTimelineItem === null
+        ? null
+        : cloneRuntimeWorkbenchShellLifecyclePanelTimelineItem(
+            view.selectedTimelineItem,
+          ),
+    totalTimelineItems: view.totalTimelineItems,
+    visibleTimelineItemCount: view.visibleTimelineItemCount,
+    hiddenTimelineItemCount: view.hiddenTimelineItemCount,
+  });
+}
+
+function cloneRuntimeWorkbenchShellLifecyclePanelStatus(
+  panel: RuntimeLifecyclePanelSnapshot,
+): RuntimeLifecyclePanelSnapshot {
+  return Object.freeze({
+    readiness: panel.readiness,
+    tone: panel.tone,
+    statusLabel: panel.statusLabel,
+    title: panel.title,
+    summary: panel.summary,
+    runtimeReady: panel.runtimeReady,
+    busy: panel.busy,
+    terminal: panel.terminal,
+    lifecycleComplete: panel.lifecycleComplete,
+    userActionRequired: panel.userActionRequired,
+    retryable: panel.retryable,
+    startupTotal: panel.startupTotal,
+    shutdownTotal: panel.shutdownTotal,
+    started: panel.started,
+    disposed: panel.disposed,
+    ariaLive: panel.ariaLive,
+    primaryCommand:
+      panel.primaryCommand === null
+        ? null
+        : cloneRuntimeWorkbenchShellLifecyclePanelCommand(panel.primaryCommand),
+    secondaryCommands: Object.freeze(
+      panel.secondaryCommands.map(
+        cloneRuntimeWorkbenchShellLifecyclePanelCommand,
+      ),
+    ),
+    timelineItems: Object.freeze(
+      panel.timelineItems.map(
+        cloneRuntimeWorkbenchShellLifecyclePanelTimelineItem,
+      ),
+    ),
+    emptyState:
+      panel.emptyState === null ? null : Object.freeze({ ...panel.emptyState }),
+  });
+}
+
+function cloneRuntimeWorkbenchShellLifecyclePanelCommand(
+  command: RuntimeLifecyclePanelCommand,
+): RuntimeLifecyclePanelCommand {
+  return Object.freeze({ ...command });
+}
+
+function cloneRuntimeWorkbenchShellLifecyclePanelTimelineFilterOption(
+  option: RuntimeLifecyclePanelTimelineFilterOption,
+): RuntimeLifecyclePanelTimelineFilterOption {
+  return Object.freeze({ ...option });
+}
+
+function cloneRuntimeWorkbenchShellLifecyclePanelTimelineItem(
+  item: RuntimeLifecyclePanelTimelineItem,
+): RuntimeLifecyclePanelTimelineItem {
+  return Object.freeze({
+    ...item,
+    badges: Object.freeze([...item.badges]),
+  });
 }
 
 function cloneRuntimeWorkbenchShellRuntimeStreamPanel(

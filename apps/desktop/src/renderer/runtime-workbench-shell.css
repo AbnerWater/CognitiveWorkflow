@@ -307,6 +307,274 @@ button {
   font-size: 16px;
 }
 
+.cw-workbench__lifecycle-panel {
+  display: grid;
+  gap: 14px;
+  min-height: 100%;
+}
+
+.cw-workbench__lifecycle-header {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(280px, 480px);
+  gap: 12px;
+  align-items: start;
+}
+
+.cw-workbench__lifecycle-header h2 {
+  margin-bottom: 6px;
+  font-size: 18px;
+}
+
+.cw-workbench__lifecycle-header p {
+  color: #526173;
+  overflow-wrap: anywhere;
+}
+
+.cw-workbench__lifecycle-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.cw-workbench__lifecycle-metrics div {
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.cw-workbench__lifecycle-metrics dt {
+  color: #657487;
+  font-size: 11px;
+}
+
+.cw-workbench__lifecycle-metrics dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cw-workbench__lifecycle-command-bar,
+.cw-workbench__lifecycle-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cw-workbench__lifecycle-command,
+.cw-workbench__lifecycle-navigation button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2c3a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__lifecycle-command--primary,
+.cw-workbench__lifecycle-command--accent {
+  border-color: #3d6fa7;
+}
+
+.cw-workbench__lifecycle-command--danger {
+  border-color: #c56b6b;
+}
+
+.cw-workbench__lifecycle-command[aria-pressed="true"] {
+  background: #eaf2fb;
+}
+
+.cw-workbench__lifecycle-command:disabled,
+.cw-workbench__lifecycle-navigation button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.cw-workbench__lifecycle-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+  gap: 12px;
+  align-items: start;
+}
+
+.cw-workbench__lifecycle-timeline,
+.cw-workbench__lifecycle-selection {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.cw-workbench__lifecycle-timeline-header {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.cw-workbench__lifecycle-timeline-header h3,
+.cw-workbench__lifecycle-selection h3 {
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+
+.cw-workbench__lifecycle-timeline-header p {
+  color: #657487;
+  font-size: 12px;
+}
+
+.cw-workbench__lifecycle-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cw-workbench__lifecycle-filter {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  color: #526173;
+  font-size: 12px;
+}
+
+.cw-workbench__lifecycle-filter--active {
+  border-color: #3d6fa7;
+  color: #1f4d7c;
+}
+
+.cw-workbench__lifecycle-items {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cw-workbench__lifecycle-item {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__lifecycle-item--ok {
+  border-left-color: #77b28c;
+}
+
+.cw-workbench__lifecycle-item--success {
+  border-left-color: #77b28c;
+}
+
+.cw-workbench__lifecycle-item--warning {
+  border-left-color: #c9a24f;
+}
+
+.cw-workbench__lifecycle-item--error {
+  border-left-color: #c56b6b;
+}
+
+.cw-workbench__lifecycle-item--neutral {
+  border-left-color: #4f8cc9;
+}
+
+.cw-workbench__lifecycle-item--focused,
+.cw-workbench__lifecycle-item--selected {
+  background: #eef5fc;
+}
+
+.cw-workbench__lifecycle-item-main {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.cw-workbench__lifecycle-item-main > span {
+  color: #657487;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__lifecycle-item h4 {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.cw-workbench__lifecycle-item p,
+.cw-workbench__lifecycle-selected-item p {
+  color: #445162;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.cw-workbench__lifecycle-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cw-workbench__lifecycle-item-meta span {
+  padding: 2px 6px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  color: #526173;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.cw-workbench__lifecycle-empty {
+  display: grid;
+  gap: 6px;
+  color: #657487;
+}
+
+.cw-workbench__lifecycle-selected-item {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cw-workbench__lifecycle-selected-item span,
+.cw-workbench__lifecycle-selected-item strong {
+  overflow-wrap: anywhere;
+}
+
+.cw-workbench__lifecycle-selected-item dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.cw-workbench__lifecycle-selected-item dt {
+  color: #657487;
+  font-size: 11px;
+}
+
+.cw-workbench__lifecycle-selected-item dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .cw-workbench__stream-panel {
   display: grid;
   gap: 14px;
@@ -657,12 +925,16 @@ button {
   .cw-workbench__stream-controls,
   .cw-workbench__stream-panel-header,
   .cw-workbench__stream-panel-body,
+  .cw-workbench__lifecycle-header,
+  .cw-workbench__lifecycle-body,
+  .cw-workbench__lifecycle-timeline-header,
   .cw-workbench__panel-summary {
     grid-template-columns: 1fr;
   }
 
   .cw-workbench__status-grid,
-  .cw-workbench__stream-metrics {
+  .cw-workbench__stream-metrics,
+  .cw-workbench__lifecycle-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -670,7 +942,9 @@ button {
 @media (max-width: 520px) {
   .cw-workbench__status-grid,
   .cw-workbench__stream-metrics,
-  .cw-workbench__stream-selected-event dl {
+  .cw-workbench__lifecycle-metrics,
+  .cw-workbench__stream-selected-event dl,
+  .cw-workbench__lifecycle-selected-item dl {
     grid-template-columns: 1fr;
   }
 }

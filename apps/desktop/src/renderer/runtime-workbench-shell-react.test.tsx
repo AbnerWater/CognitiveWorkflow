@@ -12,6 +12,7 @@ import type {
   RuntimeConnectionInfo,
   RuntimeStatusUnsubscribe,
 } from "../preload/contract.js";
+import type { RuntimeLifecyclePanelSessionSnapshot } from "./runtime-lifecycle-panel-session.js";
 import type { RuntimeStreamReconnectScheduler } from "./runtime-stream-client.js";
 import { createRuntimeFetchEventSourceFactory } from "./runtime-stream-fetch-event-source.js";
 import { DEFAULT_RUNTIME_WORKBENCH_SHORTCUT_BINDINGS } from "./runtime-workbench-shortcuts.js";
@@ -35,6 +36,7 @@ import {
   buildRuntimeWorkbenchShellReactStreamSessionOptions,
   createRuntimeWorkbenchShellReactStreamOptionsFormState,
   isRuntimeWorkbenchShellReactActionEnabled,
+  runtimeWorkbenchShellLifecyclePanelCommandToWorkbenchCommand,
   runtimeWorkbenchShellActionToCommand,
   runtimeWorkbenchShellStreamPanelCommandToWorkbenchCommand,
 } from "./runtime-workbench-shell-react.js";
@@ -110,6 +112,31 @@ test("renderer runtime workbench React shell renders active stream panel events"
   assert.match(markup, /Acknowledge/u);
   assert.match(markup, /Select/u);
   assert.match(markup, /Expand/u);
+  assert.match(markup, /Clear selection/u);
+});
+
+test("renderer runtime workbench React shell renders lifecycle panel events", () => {
+  const snapshot = createRuntimeWorkbenchShellReactLifecycleSnapshot();
+  const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+  const markup = renderToString(
+    <RuntimeWorkbenchShellReactView
+      session={session}
+      title="Lifecycle Runtime Workbench"
+    />,
+  );
+
+  assert.match(markup, /Lifecycle Runtime Workbench/u);
+  assert.match(markup, /Runtime lifecycle ready/u);
+  assert.match(markup, /Sidecar accepted the desktop token/u);
+  assert.match(markup, /Start runtime/u);
+  assert.match(markup, /Refresh/u);
+  assert.match(markup, /Stop tracking/u);
+  assert.match(markup, /Lifecycle timeline/u);
+  assert.match(markup, /Runtime READY emitted/u);
+  assert.match(markup, /Startup complete/u);
+  assert.match(markup, /Lifecycle selection/u);
+  assert.match(markup, /READY stdout captured/u);
+  assert.match(markup, /Select focused/u);
   assert.match(markup, /Clear selection/u);
 });
 
@@ -239,6 +266,63 @@ test("renderer runtime workbench React shell maps actions to commands", () => {
       },
     },
   );
+  assert.deepEqual(
+    runtimeWorkbenchShellLifecyclePanelCommandToWorkbenchCommand(
+      "refresh_status",
+    ),
+    {
+      type: "dispatch_lifecycle_panel",
+      command: "refresh_status",
+    },
+  );
+});
+
+test("renderer runtime workbench React shell dispatches lifecycle panel buttons", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactLifecycleSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Lifecycle Command Runtime Workbench"
+        />,
+      );
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Refresh"),
+      );
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "dispatch_lifecycle_panel",
+      command: "refresh_status",
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Next"),
+      );
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "dispatch_lifecycle_panel",
+      command: "focus_next_timeline_item",
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
 });
 
 test("renderer runtime workbench React shell opens loopback SSE and resets full reload", async () => {
@@ -787,7 +871,11 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 function createRuntimeWorkbenchShellReactSnapshot(): RuntimeWorkbenchShellSnapshot {
   return buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
-    lifecyclePanel: Object.freeze({ active: false, disposed: false }),
+    lifecyclePanel: Object.freeze({
+      active: false,
+      disposed: false,
+      activeSession: null,
+    }),
     runtimeStream: Object.freeze({
       active: false,
       activeChannel: null,
@@ -814,7 +902,11 @@ function createRuntimeWorkbenchShellReactSnapshot(): RuntimeWorkbenchShellSnapsh
 function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShellSnapshot {
   return buildRuntimeWorkbenchShellSnapshot({
     activePanel: "stream",
-    lifecyclePanel: Object.freeze({ active: false, disposed: false }),
+    lifecyclePanel: Object.freeze({
+      active: false,
+      disposed: false,
+      activeSession: null,
+    }),
     runtimeStream: Object.freeze({
       active: true,
       activeChannel: { kind: "run", runId: "run_react_stream" } as const,
@@ -898,6 +990,185 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
   });
 }
 
+function createRuntimeWorkbenchShellReactLifecycleSnapshot(): RuntimeWorkbenchShellSnapshot {
+  return buildRuntimeWorkbenchShellSnapshot({
+    activePanel: "lifecycle",
+    lifecyclePanel: Object.freeze({
+      active: true,
+      disposed: false,
+      activeSession: createRuntimeWorkbenchShellReactLifecycleSessionSnapshot(),
+    }),
+    runtimeStream: Object.freeze({
+      active: false,
+      activeChannel: null,
+      disposed: false,
+    }),
+    runtimeStreamPanel: null,
+    availableCommandIds: Object.freeze([
+      ...RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS,
+    ]),
+    enabledCommandIds: Object.freeze([
+      ...RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS,
+    ]),
+    availableShortcutIds: Object.freeze(
+      DEFAULT_RUNTIME_WORKBENCH_SHORTCUT_BINDINGS.map((binding) => binding.id),
+    ),
+    enabledShortcutIds: Object.freeze(
+      DEFAULT_RUNTIME_WORKBENCH_SHORTCUT_BINDINGS.map((binding) => binding.id),
+    ),
+    lastHandledShortcutId: null,
+    disposed: false,
+  });
+}
+
+function createRuntimeWorkbenchShellReactLifecycleSessionSnapshot(): RuntimeLifecyclePanelSessionSnapshot {
+  const timelineItems = Object.freeze([
+    Object.freeze({
+      id: "startup:0:runtime_ready",
+      source: "startup",
+      sourceLabel: "Startup",
+      kind: "runtime_ready",
+      phase: "ready",
+      tone: "success",
+      statusLabel: "Ready",
+      title: "Runtime READY emitted",
+      summary: "READY stdout captured",
+      badges: Object.freeze(["startup", "complete"] as const),
+    }),
+    Object.freeze({
+      id: "startup:1:startup_complete",
+      source: "startup",
+      sourceLabel: "Startup",
+      kind: "startup_complete",
+      phase: "ready",
+      tone: "success",
+      statusLabel: "Ready",
+      title: "Startup complete",
+      summary: "Sidecar accepted the desktop token",
+      badges: Object.freeze(["startup", "complete"] as const),
+    }),
+  ] satisfies RuntimeLifecyclePanelSessionSnapshot["interaction"]["view"]["visibleTimelineItems"]);
+  const selectedTimelineItem = timelineItems[0] ?? null;
+  return Object.freeze({
+    disposed: false,
+    interaction: Object.freeze({
+      view: Object.freeze({
+        panel: Object.freeze({
+          readiness: "ready",
+          tone: "success",
+          statusLabel: "Ready",
+          title: "Runtime lifecycle ready",
+          summary: "Sidecar accepted the desktop token",
+          runtimeReady: true,
+          busy: false,
+          terminal: false,
+          lifecycleComplete: true,
+          userActionRequired: false,
+          retryable: false,
+          startupTotal: 2,
+          shutdownTotal: 0,
+          started: true,
+          disposed: false,
+          ariaLive: "polite",
+          primaryCommand: Object.freeze({
+            id: "start_runtime",
+            role: "primary",
+            label: "Start runtime",
+            title: "Start runtime lifecycle tracking.",
+            enabled: true,
+            busy: false,
+            tone: "accent",
+          }),
+          secondaryCommands: Object.freeze([
+            Object.freeze({
+              id: "refresh_status",
+              role: "secondary",
+              label: "Refresh",
+              title: "Refresh runtime lifecycle status.",
+              enabled: true,
+              busy: false,
+              tone: "neutral",
+            }),
+            Object.freeze({
+              id: "stop_runtime",
+              role: "secondary",
+              label: "Stop tracking",
+              title: "Stop runtime lifecycle tracking.",
+              enabled: true,
+              busy: false,
+              tone: "neutral",
+            }),
+          ]),
+          timelineItems,
+          emptyState: null,
+        }),
+        disposed: false,
+        timelineFilter: "all",
+        timelineFilterOptions: Object.freeze([
+          Object.freeze({
+            id: "all",
+            label: "All",
+            count: 2,
+            active: true,
+          }),
+          Object.freeze({
+            id: "startup",
+            label: "Startup",
+            count: 2,
+            active: false,
+          }),
+          Object.freeze({
+            id: "shutdown",
+            label: "Shutdown",
+            count: 0,
+            active: false,
+          }),
+          Object.freeze({
+            id: "action_required",
+            label: "Action required",
+            count: 0,
+            active: false,
+          }),
+          Object.freeze({
+            id: "retryable",
+            label: "Retryable",
+            count: 0,
+            active: false,
+          }),
+          Object.freeze({
+            id: "error",
+            label: "Errors",
+            count: 0,
+            active: false,
+          }),
+        ]),
+        visibleTimelineItems: timelineItems,
+        selectedTimelineItemId: selectedTimelineItem?.id ?? null,
+        selectedTimelineItem,
+        totalTimelineItems: 2,
+        visibleTimelineItemCount: 2,
+        hiddenTimelineItemCount: 0,
+      }),
+      disposed: false,
+      focusTarget: "timeline_item",
+      focusedCommandId: "start_runtime",
+      focusedTimelineItemId: "startup:0:runtime_ready",
+      availableCommandIds: Object.freeze([
+        "start_runtime",
+        "refresh_status",
+        "stop_runtime",
+      ] as const),
+      enabledCommandIds: Object.freeze([
+        "start_runtime",
+        "refresh_status",
+        "stop_runtime",
+      ] as const),
+      canActivateFocusedCommand: true,
+      canSelectFocusedTimelineItem: true,
+    }),
+  });
+}
+
 function requireRuntimeWorkbenchShellReactAction(
   snapshot: RuntimeWorkbenchShellSnapshot,
   actionId: RuntimeWorkbenchShellAction["id"],
@@ -915,6 +1186,7 @@ function createFakeRuntimeWorkbenchShellReactSession(
   initialSnapshot: RuntimeWorkbenchShellSnapshot,
 ): RuntimeWorkbenchShellDomSession & {
   readonly bindKeyboardTargetCount: () => number;
+  readonly dispatchedCommands: () => readonly RuntimeWorkbenchInteractionCommand[];
   readonly serverSnapshotCount: () => number;
 } {
   const listeners = new Set<() => void>();
@@ -997,6 +1269,7 @@ function createFakeRuntimeWorkbenchShellReactSession(
     },
     isDisposed: () => disposed,
     bindKeyboardTargetCount: () => bindCount,
+    dispatchedCommands: () => [...commands],
     serverSnapshotCount: () => serverSnapshotCount,
   };
 }

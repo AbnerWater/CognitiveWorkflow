@@ -1,5 +1,6 @@
 import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
 import type { RuntimeStreamChannel } from "./runtime-stream-client.js";
+import type { RuntimeLifecyclePanelSessionSnapshot } from "./runtime-lifecycle-panel-session.js";
 import type { RuntimeLifecyclePanelSessionController } from "./runtime-lifecycle-panel-session.js";
 import type {
   RuntimeStreamInteractionSessionController,
@@ -35,6 +36,7 @@ import {
 export interface RuntimeWorkbenchHostLifecyclePanelSnapshot {
   readonly active: boolean;
   readonly disposed: boolean;
+  readonly activeSession: RuntimeLifecyclePanelSessionSnapshot | null;
 }
 
 export interface RuntimeWorkbenchHostRuntimeStreamSnapshot {
@@ -367,6 +369,10 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
 ): RuntimeWorkbenchHostSessionSnapshot {
   const interaction = shortcuts.workbench;
   const workbench = interaction.workbench;
+  const lifecyclePanelActiveSession =
+    disposed || workbench.lifecyclePanel.activeSession === null
+      ? null
+      : workbench.lifecyclePanel.activeSession;
   const activeChannel = workbench.runtimeStream.activeChannel;
   const runtimeStreamPanel =
     disposed || workbench.runtimeStream.activeSession === null
@@ -377,8 +383,12 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
   return {
     activePanel: interaction.activePanel,
     lifecyclePanel: Object.freeze({
-      active: workbench.lifecyclePanel.activeSession !== null,
+      active: lifecyclePanelActiveSession !== null,
       disposed: workbench.lifecyclePanel.disposed,
+      activeSession:
+        lifecyclePanelActiveSession === null
+          ? null
+          : lifecyclePanelActiveSession,
     }),
     runtimeStream: Object.freeze({
       active: workbench.runtimeStream.activeSession !== null,
