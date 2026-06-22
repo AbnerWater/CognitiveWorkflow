@@ -68,6 +68,28 @@ test("renderer runtime workbench React shell renders stream options readiness", 
   assert.match(markup, /Ready/u);
 });
 
+test("renderer runtime workbench React shell renders active stream panel events", () => {
+  const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+  const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+  const markup = renderToString(
+    <RuntimeWorkbenchShellReactView
+      session={session}
+      title="Stream Panel Runtime Workbench"
+    />,
+  );
+
+  assert.match(markup, /Stream Panel Runtime Workbench/u);
+  assert.match(markup, /Runtime stream/u);
+  assert.match(markup, /Run run_react_stream/u);
+  assert.match(markup, /Model delta/u);
+  assert.match(markup, /delta content/u);
+  assert.match(markup, /Search[\s\S]*delta[\s\S]*1[\s\S]*matches/u);
+  assert.match(markup, /Full reload required/u);
+  assert.match(markup, /Replay point expired/u);
+  assert.match(markup, /Selection/u);
+  assert.match(markup, /model.text_delta/u);
+});
+
 test("renderer runtime workbench React shell binds keyboard lifecycle on client mount", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {
@@ -253,6 +275,94 @@ function createRuntimeWorkbenchShellReactSnapshot(): RuntimeWorkbenchShellSnapsh
       active: false,
       activeChannel: null,
       disposed: false,
+    }),
+    runtimeStreamPanel: null,
+    availableCommandIds: Object.freeze([
+      ...RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS,
+    ]),
+    enabledCommandIds: Object.freeze([
+      ...RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS,
+    ]),
+    availableShortcutIds: Object.freeze(
+      DEFAULT_RUNTIME_WORKBENCH_SHORTCUT_BINDINGS.map((binding) => binding.id),
+    ),
+    enabledShortcutIds: Object.freeze(
+      DEFAULT_RUNTIME_WORKBENCH_SHORTCUT_BINDINGS.map((binding) => binding.id),
+    ),
+    lastHandledShortcutId: null,
+    disposed: false,
+  });
+}
+
+function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShellSnapshot {
+  return buildRuntimeWorkbenchShellSnapshot({
+    activePanel: "stream",
+    lifecyclePanel: Object.freeze({ active: false, disposed: false }),
+    runtimeStream: Object.freeze({
+      active: true,
+      activeChannel: { kind: "run", runId: "run_react_stream" } as const,
+      disposed: false,
+    }),
+    runtimeStreamPanel: Object.freeze({
+      status: "full_reload_required",
+      totalEvents: 3,
+      bufferedEventCount: 3,
+      matchingEventCount: 1,
+      visibleEventCount: 1,
+      hiddenEventCount: 2,
+      foldedChildCount: 0,
+      read: Object.freeze({
+        lastSeenTotalEvents: 2,
+        unreadCount: 1,
+      }),
+      search: Object.freeze({
+        query: "delta",
+        matchCount: 1,
+        activeMatchIndex: 0,
+        activeEventId: "evt_react_stream",
+      }),
+      summaryItems: Object.freeze([]),
+      timelineItems: Object.freeze([
+        Object.freeze({
+          id: "evt_react_stream",
+          seq: 7,
+          type: "model.text_delta",
+          category: "model",
+          displayLevel: "default",
+          severity: "info",
+          title: "Model delta",
+          summary: "delta summary",
+          content: "delta content",
+          expandable: false,
+          expanded: false,
+          childCount: 0,
+          children: Object.freeze([]),
+          createdAt: "2026-06-22T02:00:00.000Z",
+        }),
+      ]),
+      selectedEvent: Object.freeze({
+        id: "evt_react_stream",
+        seq: 7,
+        type: "model.text_delta",
+        category: "model",
+        displayLevel: "default",
+        severity: "info",
+        title: "Model delta",
+        summary: "delta summary",
+        content: "delta content",
+        expandable: false,
+        expanded: false,
+        childCount: 0,
+        children: Object.freeze([]),
+        createdAt: "2026-06-22T02:00:00.000Z",
+      }),
+      fullReload: Object.freeze({
+        acknowledged: false,
+        lastEventId: "evt_old",
+        reason: "Replay point expired",
+        status: 412,
+        errorCode: "SE_SSE_REPLAY_NOT_FOUND",
+      }),
     }),
     availableCommandIds: Object.freeze([
       ...RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS,

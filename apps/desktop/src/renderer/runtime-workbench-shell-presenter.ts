@@ -4,6 +4,9 @@ import type { RuntimeWorkbenchShortcutId } from "./runtime-workbench-shortcuts.j
 import type {
   RuntimeWorkbenchHostSession,
   RuntimeWorkbenchHostSessionErrorHandler,
+  RuntimeWorkbenchHostRuntimeStreamEventSnapshot,
+  RuntimeWorkbenchHostRuntimeStreamFullReloadSnapshot,
+  RuntimeWorkbenchHostRuntimeStreamPanelSnapshot,
   RuntimeWorkbenchHostSessionSnapshot,
 } from "./runtime-workbench-host-session.js";
 import type { RuntimeWorkbenchInteractionCommand } from "./runtime-workbench-interaction.js";
@@ -83,12 +86,22 @@ export interface RuntimeWorkbenchShellEmptyState {
   readonly summary: string;
 }
 
+export type RuntimeWorkbenchShellRuntimeStreamEventSnapshot =
+  RuntimeWorkbenchHostRuntimeStreamEventSnapshot;
+
+export type RuntimeWorkbenchShellRuntimeStreamFullReloadSnapshot =
+  RuntimeWorkbenchHostRuntimeStreamFullReloadSnapshot;
+
+export type RuntimeWorkbenchShellRuntimeStreamPanelSnapshot =
+  RuntimeWorkbenchHostRuntimeStreamPanelSnapshot;
+
 export interface RuntimeWorkbenchShellSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly activePanelLabel: string;
   readonly lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus;
   readonly runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus;
   readonly runtimeStreamChannelLabel: string | null;
+  readonly runtimeStreamPanel: RuntimeWorkbenchShellRuntimeStreamPanelSnapshot | null;
   readonly lastHandledShortcutLabel: string | null;
   readonly panels: readonly RuntimeWorkbenchShellPanelTab[];
   readonly actions: readonly RuntimeWorkbenchShellAction[];
@@ -314,6 +327,10 @@ export function buildRuntimeWorkbenchShellSnapshot(
     disposed || host.runtimeStream.activeChannel === null
       ? null
       : formatRuntimeStreamChannelLabel(host.runtimeStream.activeChannel);
+  const runtimeStreamPanel =
+    disposed || host.runtimeStreamPanel === null
+      ? null
+      : cloneRuntimeWorkbenchShellRuntimeStreamPanel(host.runtimeStreamPanel);
   const lastHandledShortcutLabel =
     disposed || host.lastHandledShortcutId === null
       ? null
@@ -329,6 +346,7 @@ export function buildRuntimeWorkbenchShellSnapshot(
     lifecyclePanelStatus,
     runtimeStreamStatus,
     runtimeStreamChannelLabel,
+    runtimeStreamPanel,
     lastHandledShortcutLabel,
     panels: buildPanelTabs(
       host,
@@ -765,6 +783,12 @@ function freezeRuntimeWorkbenchShellSnapshot(
     statusItems: Object.freeze(
       snapshot.statusItems.map((item) => Object.freeze({ ...item })),
     ),
+    runtimeStreamPanel:
+      snapshot.runtimeStreamPanel === null
+        ? null
+        : cloneRuntimeWorkbenchShellRuntimeStreamPanel(
+            snapshot.runtimeStreamPanel,
+          ),
     availableActionIds: Object.freeze([...snapshot.availableActionIds]),
     enabledActionIds: Object.freeze([...snapshot.enabledActionIds]),
     emptyState:
@@ -778,4 +802,71 @@ function runtimeWorkbenchShellSnapshotSignature(
   snapshot: RuntimeWorkbenchShellSnapshot,
 ): string {
   return JSON.stringify(snapshot);
+}
+
+function cloneRuntimeWorkbenchShellRuntimeStreamPanel(
+  panel: RuntimeWorkbenchShellRuntimeStreamPanelSnapshot,
+): RuntimeWorkbenchShellRuntimeStreamPanelSnapshot {
+  return Object.freeze({
+    status: panel.status,
+    totalEvents: panel.totalEvents,
+    bufferedEventCount: panel.bufferedEventCount,
+    matchingEventCount: panel.matchingEventCount,
+    visibleEventCount: panel.visibleEventCount,
+    hiddenEventCount: panel.hiddenEventCount,
+    foldedChildCount: panel.foldedChildCount,
+    read: Object.freeze({ ...panel.read }),
+    search: Object.freeze({ ...panel.search }),
+    summaryItems: Object.freeze(
+      panel.summaryItems.map(cloneRuntimeWorkbenchShellRuntimeStreamEvent),
+    ),
+    timelineItems: Object.freeze(
+      panel.timelineItems.map(cloneRuntimeWorkbenchShellRuntimeStreamEvent),
+    ),
+    selectedEvent:
+      panel.selectedEvent === null
+        ? null
+        : cloneRuntimeWorkbenchShellRuntimeStreamEvent(panel.selectedEvent),
+    fullReload:
+      panel.fullReload === null
+        ? null
+        : cloneRuntimeWorkbenchShellRuntimeStreamFullReload(panel.fullReload),
+  });
+}
+
+function cloneRuntimeWorkbenchShellRuntimeStreamEvent(
+  event: RuntimeWorkbenchShellRuntimeStreamEventSnapshot,
+): RuntimeWorkbenchShellRuntimeStreamEventSnapshot {
+  return Object.freeze({
+    id: event.id,
+    seq: event.seq,
+    type: event.type,
+    category: event.category,
+    displayLevel: event.displayLevel,
+    severity: event.severity,
+    title: event.title,
+    summary: event.summary,
+    content: event.content,
+    expandable: event.expandable,
+    expanded: event.expanded,
+    childCount: event.childCount,
+    children: Object.freeze(
+      event.children.map(cloneRuntimeWorkbenchShellRuntimeStreamEvent),
+    ),
+    createdAt: event.createdAt,
+  });
+}
+
+function cloneRuntimeWorkbenchShellRuntimeStreamFullReload(
+  fullReload: RuntimeWorkbenchShellRuntimeStreamFullReloadSnapshot,
+): RuntimeWorkbenchShellRuntimeStreamFullReloadSnapshot {
+  return Object.freeze({
+    acknowledged: fullReload.acknowledged,
+    lastEventId: fullReload.lastEventId,
+    reason: fullReload.reason,
+    ...(fullReload.status !== undefined ? { status: fullReload.status } : {}),
+    ...(fullReload.errorCode !== undefined
+      ? { errorCode: fullReload.errorCode }
+      : {}),
+  });
 }

@@ -4724,6 +4724,61 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       activeChannel: { kind: "run", runId: "run_shell" },
       disposed: false,
     },
+    runtimeStreamPanel: {
+      status: "running",
+      totalEvents: 2,
+      bufferedEventCount: 2,
+      matchingEventCount: 1,
+      visibleEventCount: 1,
+      hiddenEventCount: 1,
+      foldedChildCount: 0,
+      read: {
+        lastSeenTotalEvents: 1,
+        unreadCount: 1,
+      },
+      search: {
+        query: "shell",
+        matchCount: 1,
+        activeMatchIndex: 0,
+        activeEventId: "evt_shell",
+      },
+      summaryItems: [],
+      timelineItems: [
+        {
+          id: "evt_shell",
+          seq: 3,
+          type: "model.text_delta",
+          category: "model",
+          displayLevel: "default",
+          severity: "info",
+          title: "Shell stream event",
+          summary: "Projected without raw data",
+          content: "stream content",
+          expandable: false,
+          expanded: false,
+          childCount: 0,
+          children: [],
+          createdAt: "2026-06-22T02:00:00.000Z",
+        },
+      ],
+      selectedEvent: {
+        id: "evt_shell",
+        seq: 3,
+        type: "model.text_delta",
+        category: "model",
+        displayLevel: "default",
+        severity: "info",
+        title: "Shell stream event",
+        summary: "Projected without raw data",
+        content: "stream content",
+        expandable: false,
+        expanded: false,
+        childCount: 0,
+        children: [],
+        createdAt: "2026-06-22T02:00:00.000Z",
+      },
+      fullReload: null,
+    },
     availableCommandIds,
     enabledCommandIds: [
       "show_lifecycle_panel",
@@ -4762,6 +4817,36 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(snapshot.lifecyclePanelStatus, "active");
   assert.equal(snapshot.runtimeStreamStatus, "active");
   assert.equal(snapshot.runtimeStreamChannelLabel, "Run run_shell");
+  assert.equal(snapshot.runtimeStreamPanel?.totalEvents, 2);
+  assert.equal(snapshot.runtimeStreamPanel?.read.unreadCount, 1);
+  assert.equal(snapshot.runtimeStreamPanel?.search.query, "shell");
+  assert.equal(
+    snapshot.runtimeStreamPanel?.timelineItems[0]?.title,
+    "Shell stream event",
+  );
+  assert.equal(snapshot.runtimeStreamPanel?.selectedEvent?.id, "evt_shell");
+  assert.equal(
+    Object.hasOwn(snapshot.runtimeStreamPanel ?? {}, "store"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(snapshot.runtimeStreamPanel ?? {}, "interaction"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(
+      snapshot.runtimeStreamPanel?.timelineItems[0] ?? {},
+      "payload",
+    ),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(
+      snapshot.runtimeStreamPanel?.timelineItems[0] ?? {},
+      "rawData",
+    ),
+    false,
+  );
   assert.equal(snapshot.lastHandledShortcutLabel, "Show stream");
   assert.equal(Object.hasOwn(snapshot, "host"), false);
   assert.equal(Object.hasOwn(snapshot, "workbench"), false);
@@ -4835,6 +4920,17 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(Object.isFrozen(snapshot.shortcutHints[0]), true);
   assert.equal(Object.isFrozen(snapshot.shortcutHints[0]?.keys), true);
   assert.equal(Object.isFrozen(snapshot.statusItems), true);
+  assert.equal(Object.isFrozen(snapshot.runtimeStreamPanel), true);
+  assert.equal(Object.isFrozen(snapshot.runtimeStreamPanel?.read), true);
+  assert.equal(Object.isFrozen(snapshot.runtimeStreamPanel?.search), true);
+  assert.equal(
+    Object.isFrozen(snapshot.runtimeStreamPanel?.timelineItems),
+    true,
+  );
+  assert.equal(
+    Object.isFrozen(snapshot.runtimeStreamPanel?.timelineItems[0]),
+    true,
+  );
   assert.equal(Object.isFrozen(snapshot.availableActionIds), true);
   assert.equal(Object.isFrozen(snapshot.enabledActionIds), true);
 
@@ -4842,6 +4938,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     activePanel: "lifecycle",
     lifecyclePanel: { active: false, disposed: false },
     runtimeStream: { active: false, activeChannel: null, disposed: false },
+    runtimeStreamPanel: null,
     availableCommandIds: ["show_stream_panel"],
     enabledCommandIds: ["show_stream_panel"],
     availableShortcutIds: ["show_stream_panel"],
@@ -4857,6 +4954,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       activePanel: "lifecycle",
       lifecyclePanel: { active: false, disposed: true },
       runtimeStream: { active: false, activeChannel: null, disposed: true },
+      runtimeStreamPanel: null,
       availableCommandIds: ["show_stream_panel"],
       enabledCommandIds: ["show_stream_panel"],
       availableShortcutIds: ["show_stream_panel"],

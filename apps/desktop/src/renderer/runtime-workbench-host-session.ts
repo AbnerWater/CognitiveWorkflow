@@ -1,7 +1,16 @@
 import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
 import type { RuntimeStreamChannel } from "./runtime-stream-client.js";
 import type { RuntimeLifecyclePanelSessionController } from "./runtime-lifecycle-panel-session.js";
-import type { RuntimeStreamInteractionSessionController } from "./runtime-stream-session.js";
+import type {
+  RuntimeStreamInteractionSessionController,
+  RuntimeStreamInteractionSessionSnapshot,
+} from "./runtime-stream-session.js";
+import type { RuntimeStreamEventStoreStatus } from "./runtime-stream-store.js";
+import type {
+  RuntimeStreamViewDisplayLevel,
+  RuntimeStreamViewEvent,
+  RuntimeStreamViewSeverity,
+} from "./runtime-stream-view-model.js";
 import {
   createRuntimeWorkbenchInteraction,
   type RuntimeWorkbenchInteraction,
@@ -34,10 +43,64 @@ export interface RuntimeWorkbenchHostRuntimeStreamSnapshot {
   readonly disposed: boolean;
 }
 
+export interface RuntimeWorkbenchHostRuntimeStreamEventSnapshot {
+  readonly id: string | null;
+  readonly seq: number | null;
+  readonly type: string;
+  readonly category: string | null;
+  readonly displayLevel: RuntimeStreamViewDisplayLevel;
+  readonly severity: RuntimeStreamViewSeverity;
+  readonly title: string;
+  readonly summary: string | null;
+  readonly content: string | null;
+  readonly expandable: boolean;
+  readonly expanded: boolean;
+  readonly childCount: number;
+  readonly children: readonly RuntimeWorkbenchHostRuntimeStreamEventSnapshot[];
+  readonly createdAt: string | null;
+}
+
+export interface RuntimeWorkbenchHostRuntimeStreamSearchSnapshot {
+  readonly query: string;
+  readonly matchCount: number;
+  readonly activeMatchIndex: number | null;
+  readonly activeEventId: string | null;
+}
+
+export interface RuntimeWorkbenchHostRuntimeStreamReadSnapshot {
+  readonly lastSeenTotalEvents: number;
+  readonly unreadCount: number;
+}
+
+export interface RuntimeWorkbenchHostRuntimeStreamFullReloadSnapshot {
+  readonly acknowledged: boolean;
+  readonly lastEventId: string | null;
+  readonly reason: string;
+  readonly status?: number;
+  readonly errorCode?: string;
+}
+
+export interface RuntimeWorkbenchHostRuntimeStreamPanelSnapshot {
+  readonly status: RuntimeStreamEventStoreStatus;
+  readonly totalEvents: number;
+  readonly bufferedEventCount: number;
+  readonly matchingEventCount: number;
+  readonly visibleEventCount: number;
+  readonly hiddenEventCount: number;
+  readonly foldedChildCount: number;
+  readonly read: RuntimeWorkbenchHostRuntimeStreamReadSnapshot;
+  readonly search: RuntimeWorkbenchHostRuntimeStreamSearchSnapshot;
+  readonly summaryItems: readonly RuntimeWorkbenchHostRuntimeStreamEventSnapshot[];
+  readonly timelineItems: readonly RuntimeWorkbenchHostRuntimeStreamEventSnapshot[];
+  readonly selectedEvent: RuntimeWorkbenchHostRuntimeStreamEventSnapshot | null;
+  readonly fullReload: RuntimeWorkbenchHostRuntimeStreamFullReloadSnapshot | null;
+}
+
 export interface RuntimeWorkbenchHostSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly lifecyclePanel: RuntimeWorkbenchHostLifecyclePanelSnapshot;
   readonly runtimeStream: RuntimeWorkbenchHostRuntimeStreamSnapshot;
+  readonly runtimeStreamPanel: RuntimeWorkbenchHostRuntimeStreamPanelSnapshot | null;
   readonly availableCommandIds: readonly RuntimeWorkbenchInteractionCommandId[];
   readonly enabledCommandIds: readonly RuntimeWorkbenchInteractionCommandId[];
   readonly availableShortcutIds: readonly RuntimeWorkbenchShortcutId[];
@@ -305,6 +368,12 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
   const interaction = shortcuts.workbench;
   const workbench = interaction.workbench;
   const activeChannel = workbench.runtimeStream.activeChannel;
+  const runtimeStreamPanel =
+    disposed || workbench.runtimeStream.activeSession === null
+      ? null
+      : buildRuntimeWorkbenchHostRuntimeStreamPanelSnapshot(
+          workbench.runtimeStream.activeSession,
+        );
   return {
     activePanel: interaction.activePanel,
     lifecyclePanel: Object.freeze({
@@ -319,6 +388,7 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
           : cloneRuntimeStreamChannel(activeChannel),
       disposed: workbench.runtimeStream.disposed,
     }),
+    runtimeStreamPanel,
     availableCommandIds: Object.freeze([...interaction.availableCommandIds]),
     enabledCommandIds: Object.freeze(
       disposed ? [] : [...interaction.enabledCommandIds],
@@ -350,4 +420,106 @@ function cloneRuntimeStreamChannel(
   return channel.kind === "planning"
     ? { kind: "planning", sessionId: channel.sessionId }
     : { kind: "run", runId: channel.runId };
+}
+
+function buildRuntimeWorkbenchHostRuntimeStreamPanelSnapshot(
+  session: RuntimeStreamInteractionSessionSnapshot,
+): RuntimeWorkbenchHostRuntimeStreamPanelSnapshot {
+  const view = session.interaction.view;
+  const summaryItems = view.summaryItems.map(
+    toRuntimeWorkbenchHostRuntimeStreamEventSnapshot,
+  );
+  const timelineItems = view.timelineItems.map(
+    toRuntimeWorkbenchHostRuntimeStreamEventSnapshot,
+  );
+  const selectedEvent =
+    session.interaction.selectedEventId === null
+      ? null
+      : findRuntimeWorkbenchHostRuntimeStreamEvent(
+          [...summaryItems, ...timelineItems],
+          session.interaction.selectedEventId,
+        );
+
+  return Object.freeze({
+    status: view.status,
+    totalEvents: view.totalEvents,
+    bufferedEventCount: view.bufferedEventCount,
+    matchingEventCount: view.matchingEventCount,
+    visibleEventCount: view.visibleEventCount,
+    hiddenEventCount: view.hiddenEventCount,
+    foldedChildCount: view.foldedChildCount,
+    read: Object.freeze({ ...session.interaction.read }),
+    search: Object.freeze({
+      query: session.interaction.search.query,
+      matchCount: session.interaction.search.matches.length,
+      activeMatchIndex: session.interaction.search.activeMatchIndex,
+      activeEventId: session.interaction.search.activeEventId,
+    }),
+    summaryItems: Object.freeze(summaryItems),
+    timelineItems: Object.freeze(timelineItems),
+    selectedEvent,
+    fullReload:
+      buildRuntimeWorkbenchHostRuntimeStreamFullReloadSnapshot(session),
+  });
+}
+
+function toRuntimeWorkbenchHostRuntimeStreamEventSnapshot(
+  event: RuntimeStreamViewEvent,
+): RuntimeWorkbenchHostRuntimeStreamEventSnapshot {
+  return Object.freeze({
+    id: event.id,
+    seq: event.seq,
+    type: event.type,
+    category: event.category,
+    displayLevel: event.displayLevel,
+    severity: event.severity,
+    title: event.title,
+    summary: event.summary,
+    content: event.content,
+    expandable: event.expandable,
+    expanded: event.expanded,
+    childCount: event.childCount,
+    children: Object.freeze(
+      event.children.map(toRuntimeWorkbenchHostRuntimeStreamEventSnapshot),
+    ),
+    createdAt: event.createdAt,
+  });
+}
+
+function findRuntimeWorkbenchHostRuntimeStreamEvent(
+  events: readonly RuntimeWorkbenchHostRuntimeStreamEventSnapshot[],
+  eventId: string,
+): RuntimeWorkbenchHostRuntimeStreamEventSnapshot | null {
+  for (const event of events) {
+    if (event.id === eventId) {
+      return event;
+    }
+    const child = findRuntimeWorkbenchHostRuntimeStreamEvent(
+      event.children,
+      eventId,
+    );
+    if (child !== null) {
+      return child;
+    }
+  }
+  return null;
+}
+
+function buildRuntimeWorkbenchHostRuntimeStreamFullReloadSnapshot(
+  session: RuntimeStreamInteractionSessionSnapshot,
+): RuntimeWorkbenchHostRuntimeStreamFullReloadSnapshot | null {
+  const view = session.interaction.view;
+  if (!view.fullReloadRequired) {
+    return null;
+  }
+  const decision = view.fullReloadDecision;
+  return Object.freeze({
+    acknowledged: session.interaction.fullReloadAcknowledged,
+    lastEventId: decision?.lastEventId ?? null,
+    reason: decision?.reason ?? "Runtime stream full reload is required",
+    ...(decision?.status !== undefined ? { status: decision.status } : {}),
+    ...(decision?.errorCode !== undefined
+      ? { errorCode: decision.errorCode }
+      : {}),
+  });
 }

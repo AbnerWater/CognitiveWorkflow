@@ -23,6 +23,8 @@ import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-work
 import type {
   RuntimeWorkbenchShellAction,
   RuntimeWorkbenchShellActionId,
+  RuntimeWorkbenchShellRuntimeStreamEventSnapshot,
+  RuntimeWorkbenchShellRuntimeStreamPanelSnapshot,
   RuntimeWorkbenchShellSnapshot,
 } from "./runtime-workbench-shell-presenter.js";
 import type {
@@ -419,7 +421,11 @@ export function RuntimeWorkbenchShellReactView(
 
       <section aria-live={snapshot.ariaLive} className="cw-workbench__content">
         {snapshot.emptyState === null ? (
-          <RuntimeWorkbenchShellPanelSummary snapshot={snapshot} />
+          snapshot.activePanel === "stream" ? (
+            <RuntimeWorkbenchShellStreamPanel snapshot={snapshot} />
+          ) : (
+            <RuntimeWorkbenchShellPanelSummary snapshot={snapshot} />
+          )
         ) : (
           <div className="cw-workbench__empty">
             <h2>{snapshot.emptyState.title}</h2>
@@ -629,6 +635,191 @@ function RuntimeWorkbenchShellPanelSummary(props: {
         </p>
       </article>
     </div>
+  );
+}
+
+function RuntimeWorkbenchShellStreamPanel(props: {
+  readonly snapshot: RuntimeWorkbenchShellSnapshot;
+}): ReactElement {
+  const panel = props.snapshot.runtimeStreamPanel;
+  if (panel === null) {
+    return (
+      <div className="cw-workbench__stream-panel cw-workbench__stream-panel--empty">
+        <div className="cw-workbench__stream-panel-header">
+          <div>
+            <h2>Runtime stream</h2>
+            <p>
+              {props.snapshot.runtimeStreamChannelLabel ??
+                props.snapshot.runtimeStreamStatus}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="cw-workbench__stream-panel">
+      <div className="cw-workbench__stream-panel-header">
+        <div>
+          <h2>Runtime stream</h2>
+          <p>{props.snapshot.runtimeStreamChannelLabel ?? panel.status}</p>
+        </div>
+        <RuntimeWorkbenchShellStreamPanelMetrics panel={panel} />
+      </div>
+
+      {panel.fullReload === null ? null : (
+        <div className="cw-workbench__stream-full-reload">
+          <strong>Full reload required</strong>
+          <span>{panel.fullReload.reason}</span>
+          {panel.fullReload.acknowledged ? <small>Acknowledged</small> : null}
+        </div>
+      )}
+
+      <div className="cw-workbench__stream-panel-body">
+        <div className="cw-workbench__stream-event-groups">
+          <RuntimeWorkbenchShellStreamEventGroup
+            events={panel.summaryItems}
+            title="Summary"
+          />
+          <RuntimeWorkbenchShellStreamEventGroup
+            events={panel.timelineItems}
+            title="Timeline"
+          />
+        </div>
+        <RuntimeWorkbenchShellStreamSelection panel={panel} />
+      </div>
+    </div>
+  );
+}
+
+function RuntimeWorkbenchShellStreamPanelMetrics(props: {
+  readonly panel: RuntimeWorkbenchShellRuntimeStreamPanelSnapshot;
+}): ReactElement {
+  const metrics: ReadonlyArray<readonly [string, string | number]> = [
+    ["Status", props.panel.status],
+    ["Total", props.panel.totalEvents],
+    ["Visible", props.panel.visibleEventCount],
+    ["Unread", props.panel.read.unreadCount],
+    ["Search", props.panel.search.matchCount],
+  ];
+  return (
+    <dl className="cw-workbench__stream-metrics">
+      {metrics.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function RuntimeWorkbenchShellStreamEventGroup(props: {
+  readonly title: string;
+  readonly events: readonly RuntimeWorkbenchShellRuntimeStreamEventSnapshot[];
+}): ReactElement {
+  return (
+    <section className="cw-workbench__stream-event-group">
+      <div className="cw-workbench__stream-event-group-header">
+        <h3>{props.title}</h3>
+        <span>{props.events.length}</span>
+      </div>
+      {props.events.length === 0 ? (
+        <p className="cw-workbench__stream-muted">No visible events</p>
+      ) : (
+        <ol className="cw-workbench__stream-events">
+          {props.events.map((event, index) => (
+            <RuntimeWorkbenchShellStreamEventItem
+              event={event}
+              key={event.id ?? `${event.type}:${index}`}
+            />
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellStreamEventItem(props: {
+  readonly event: RuntimeWorkbenchShellRuntimeStreamEventSnapshot;
+}): ReactElement {
+  return (
+    <li
+      className={`cw-workbench__stream-event cw-workbench__stream-event--${props.event.severity}`}
+    >
+      <div className="cw-workbench__stream-event-main">
+        <span className="cw-workbench__stream-event-seq">
+          {props.event.seq === null ? "-" : `#${props.event.seq}`}
+        </span>
+        <div>
+          <h4>{props.event.title}</h4>
+          <p>
+            {props.event.summary ?? props.event.content ?? props.event.type}
+          </p>
+        </div>
+      </div>
+      <div className="cw-workbench__stream-event-meta">
+        <span>{props.event.type}</span>
+        {props.event.category === null ? null : (
+          <span>
+            {runtimeWorkbenchShellReactTitleCase(props.event.category)}
+          </span>
+        )}
+        <span>{props.event.displayLevel}</span>
+      </div>
+      {props.event.children.length === 0 ? null : (
+        <ol className="cw-workbench__stream-events cw-workbench__stream-events--children">
+          {props.event.children.map((child, index) => (
+            <RuntimeWorkbenchShellStreamEventItem
+              event={child}
+              key={child.id ?? `${child.type}:${index}`}
+            />
+          ))}
+        </ol>
+      )}
+    </li>
+  );
+}
+
+function RuntimeWorkbenchShellStreamSelection(props: {
+  readonly panel: RuntimeWorkbenchShellRuntimeStreamPanelSnapshot;
+}): ReactElement {
+  const selected = props.panel.selectedEvent;
+  return (
+    <aside className="cw-workbench__stream-selection">
+      <h3>Selection</h3>
+      {props.panel.search.query.length === 0 ? null : (
+        <p>
+          Search "{props.panel.search.query}" - {props.panel.search.matchCount}{" "}
+          matches
+        </p>
+      )}
+      {selected === null ? (
+        <p className="cw-workbench__stream-muted">No event selected</p>
+      ) : (
+        <div className="cw-workbench__stream-selected-event">
+          <strong>{selected.title}</strong>
+          <span>{selected.type}</span>
+          {selected.summary === null ? null : <p>{selected.summary}</p>}
+          {selected.content === null ? null : <p>{selected.content}</p>}
+          <dl>
+            <div>
+              <dt>Seq</dt>
+              <dd>{selected.seq ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Severity</dt>
+              <dd>{selected.severity}</dd>
+            </div>
+            <div>
+              <dt>Created</dt>
+              <dd>{selected.createdAt ?? "-"}</dd>
+            </div>
+          </dl>
+        </div>
+      )}
+    </aside>
   );
 }
 
