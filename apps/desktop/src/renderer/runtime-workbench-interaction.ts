@@ -209,7 +209,9 @@ export function createRuntimeWorkbenchInteraction(
         options.workbench.disposeLifecyclePanelSession();
         return completeAction();
       case "open_runtime_stream_session":
-        options.workbench.openRuntimeStreamSession(safeCommand.options);
+        await options.workbench
+          .openRuntimeStreamSession(safeCommand.options)
+          .start();
         return completeAction();
       case "dispose_runtime_stream_session":
         options.workbench.disposeRuntimeStreamSession();
@@ -221,7 +223,9 @@ export function createRuntimeWorkbenchInteraction(
         return completeAction();
       }
       case "dispatch_runtime_stream":
-        options.workbench.dispatchRuntimeStreamCommand(safeCommand.command);
+        await options.workbench.dispatchRuntimeStreamCommand(
+          safeCommand.command,
+        );
         return completeAction();
     }
   };

@@ -3582,7 +3582,7 @@ test("renderer runtime workbench session composes lifecycle and stream stores", 
     selectedStream.interaction.selectedEventId,
     "evt_workbench_stream",
   );
-  const expandedStream = workbench.dispatchRuntimeStreamCommand({
+  const expandedStream = await workbench.dispatchRuntimeStreamCommand({
     type: "toggle_expanded",
     eventId: "evt_workbench_stream",
   });

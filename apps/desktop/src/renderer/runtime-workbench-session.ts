@@ -67,7 +67,7 @@ export interface RuntimeWorkbenchSession {
   ) => RuntimeWorkbenchStreamSession;
   readonly dispatchRuntimeStreamCommand: (
     command: RuntimeStreamInteractionCommand,
-  ) => RuntimeWorkbenchSessionSnapshot;
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly disposeRuntimeStreamSession: () => boolean;
   readonly listenerCount: () => number;
   readonly dispose: () => boolean;
@@ -278,13 +278,20 @@ export function createRuntimeWorkbenchSession(
         options.runtimeStreamController,
       );
     },
-    dispatchRuntimeStreamCommand: (command) => {
+    dispatchRuntimeStreamCommand: async (command) => {
       assertActive();
       const streamSession = options.runtimeStreamController.activeSession();
       if (streamSession === null) {
         throw new Error("Runtime workbench stream session is not active");
       }
       streamSession.dispatch(command);
+      if (
+        command.type === "acknowledge_full_reload" &&
+        streamSession.snapshot().store.status === "full_reload_required"
+      ) {
+        streamSession.resetFullReloadRequired();
+        await streamSession.start();
+      }
       publishIfChanged();
       return captureSnapshot();
     },

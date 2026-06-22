@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
+import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { renderToString } from "react-dom/server";
-import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
+import type {
+  RuntimeBridge,
+  RuntimeConnectionInfo,
+  RuntimeStatusUnsubscribe,
+} from "../preload/contract.js";
+import type { RuntimeStreamReconnectScheduler } from "./runtime-stream-client.js";
+import { createRuntimeFetchEventSourceFactory } from "./runtime-stream-fetch-event-source.js";
 import { DEFAULT_RUNTIME_WORKBENCH_SHORTCUT_BINDINGS } from "./runtime-workbench-shortcuts.js";
 import type { RuntimeWorkbenchShortcutKeyEvent } from "./runtime-workbench-shortcuts.js";
 import {
@@ -11,6 +23,7 @@ import {
 import type { RuntimeWorkbenchPanelId } from "./runtime-workbench-session.js";
 import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-workbench-shell-keyboard-dom-adapter.js";
 import type { RuntimeWorkbenchShellDomSession } from "./runtime-workbench-shell-dom-session.js";
+import { createRuntimeWorkbenchShellReactSession } from "./runtime-workbench-shell-react-session.js";
 import {
   buildRuntimeWorkbenchShellSnapshot,
   type RuntimeWorkbenchShellAction,
@@ -228,6 +241,235 @@ test("renderer runtime workbench React shell maps actions to commands", () => {
   );
 });
 
+test("renderer runtime workbench React shell opens loopback SSE and resets full reload", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const loopback = await createRuntimeWorkbenchLoopbackSseServer();
+  const errors: unknown[] = [];
+  const runtime = createLoopbackRuntimeBridge({
+    base_url: loopback.baseUrl,
+    token: "loopback-token",
+  });
+  const [{ createRoot }, { act }] = await Promise.all([
+    import("react-dom/client"),
+    import("react"),
+  ]);
+  const session = createRuntimeWorkbenchShellReactSession({
+    runtime,
+    eventSourceFactory: createRuntimeFetchEventSourceFactory(),
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const commands: RuntimeWorkbenchInteractionCommand[] = [];
+  const pendingDispatches: Array<ReturnType<typeof session.dispatch>> = [];
+  const drainDispatches = async (): Promise<void> => {
+    for (;;) {
+      const pendingDispatch = pendingDispatches.shift();
+      if (pendingDispatch === undefined) {
+        return;
+      }
+      await pendingDispatch;
+    }
+  };
+  const reactSession = {
+    ...session,
+    dispatch: async (command: RuntimeWorkbenchInteractionCommand) => {
+      commands.push(command);
+      const pendingDispatch = session.dispatch(command);
+      pendingDispatches.push(pendingDispatch);
+      return pendingDispatch;
+    },
+  };
+  const root = createRoot(dom.container as unknown as Element);
+
+  try {
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          defaultRuntimeStreamOptionsFormState={{
+            categories: ["model", "system"],
+            displayLevel: "default",
+            projectId: "project_live",
+            runId: "run_live_smoke",
+          }}
+          runtimeStreamSessionOptions={{
+            channel: { kind: "run", runId: "run_live_smoke" },
+            filters: { level: "default", category: ["model", "system"] },
+            projectId: "project_live",
+            scheduler: createImmediateRuntimeStreamScheduler(),
+          }}
+          session={reactSession}
+          title="Live Smoke Runtime Workbench"
+        />,
+      );
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "actionId",
+          "open_runtime_stream_session",
+        ),
+      );
+      await drainDispatches();
+    });
+
+    await act(async () => {
+      await waitFor(() => session.getSnapshot().activePanel === "stream");
+      await waitFor(() => loopback.requests.length >= 1);
+      await waitFor(
+        () =>
+          requireRuntimeStreamPanel(session.getSnapshot()).timelineItems[0]
+            ?.id === "evt_live_model",
+      );
+    });
+    assert.equal(session.getSnapshot().runtimeStreamStatus, "active");
+    assert.equal(
+      loopback.requests[0]?.url,
+      "/cw/v1/runs/run_live_smoke/stream?level=default&category=model%2Csystem",
+    );
+    assert.equal(
+      loopback.requests[0]?.headers.authorization,
+      "Bearer loopback-token",
+    );
+    assert.equal(loopback.requests[0]?.headers.accept, "text/event-stream");
+    assert.equal(loopback.requests[0]?.headers["x-project-id"], "project_live");
+    assert.equal(
+      loopback.requests[0]?.headers["x-cw-client"],
+      "electron-renderer",
+    );
+    assert.equal(loopback.requests[0]?.headers["last-event-id"], undefined);
+
+    let panel = requireRuntimeStreamPanel(session.getSnapshot());
+    assert.equal(panel.status, "running");
+    assert.equal(panel.totalEvents, 1);
+    assert.equal(panel.timelineItems[0]?.title, "Live model response");
+    assert.equal(panel.read.unreadCount, 1);
+
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByInputType(dom.container, "search"),
+        "live",
+      );
+      assert.deepEqual(commands.at(-1), {
+        type: "dispatch_runtime_stream",
+        command: { type: "set_search_query", query: "live" },
+      });
+      await drainDispatches();
+      await waitFor(
+        () =>
+          requireRuntimeStreamPanel(session.getSnapshot()).search.matchCount ===
+          1,
+      );
+    });
+    panel = requireRuntimeStreamPanel(session.getSnapshot());
+    assert.equal(panel.search.matchCount, 1);
+    assert.equal(panel.search.activeEventId, "evt_live_model");
+
+    await act(async () => {
+      await waitFor(
+        () =>
+          !requireFakeRuntimeWorkbenchButtonByText(
+            dom.container,
+            "Select match",
+          ).disabled,
+      );
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Select match"),
+      );
+      await drainDispatches();
+    });
+    await waitFor(
+      () =>
+        requireRuntimeStreamPanel(session.getSnapshot()).selectedEvent?.id ===
+        "evt_live_model",
+    );
+    panel = requireRuntimeStreamPanel(session.getSnapshot());
+    assert.equal(panel.selectedEvent?.id, "evt_live_model");
+
+    await act(async () => {
+      await waitFor(
+        () =>
+          !requireFakeRuntimeWorkbenchButtonByText(dom.container, "Mark read")
+            .disabled,
+      );
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Mark read"),
+      );
+      await drainDispatches();
+    });
+    await waitFor(
+      () =>
+        requireRuntimeStreamPanel(session.getSnapshot()).read.unreadCount === 0,
+    );
+    assert.equal(
+      requireRuntimeStreamPanel(session.getSnapshot()).read.unreadCount,
+      0,
+    );
+
+    await act(async () => {
+      loopback.closeActiveStream();
+      await waitFor(() => loopback.requests.length >= 2);
+      await waitFor(
+        () =>
+          requireRuntimeStreamPanel(session.getSnapshot()).status ===
+          "full_reload_required",
+      );
+    });
+    assert.equal(
+      loopback.requests[1]?.headers["last-event-id"],
+      "evt_live_model",
+    );
+    panel = requireRuntimeStreamPanel(session.getSnapshot());
+    assert.equal(panel.fullReload?.status, 412);
+    assert.equal(panel.fullReload?.errorCode, "SE_SSE_REPLAY_NOT_FOUND");
+
+    await act(async () => {
+      await waitFor(
+        () =>
+          !requireFakeRuntimeWorkbenchButtonByText(dom.container, "Acknowledge")
+            .disabled,
+      );
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Acknowledge"),
+      );
+      await drainDispatches();
+      await waitFor(
+        () =>
+          requireRuntimeStreamPanel(session.getSnapshot()).fullReload === null,
+      );
+      await waitFor(() => loopback.requests.length >= 3);
+      await waitFor(
+        () =>
+          requireRuntimeStreamPanel(session.getSnapshot()).timelineItems[0]
+            ?.id === "evt_live_after_reset",
+      );
+    });
+    panel = requireRuntimeStreamPanel(session.getSnapshot());
+    assert.equal(panel.fullReload, null);
+    assert.equal(loopback.requests[2]?.headers["last-event-id"], undefined);
+    panel = requireRuntimeStreamPanel(session.getSnapshot());
+    assert.equal(panel.status, "running");
+    assert.equal(panel.totalEvents, 1);
+    assert.equal(panel.timelineItems[0]?.title, "Live model after reset");
+    assert.deepEqual(errors, []);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    session.dispose();
+    await loopback.close();
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell builds run stream options from form state", () => {
   const state = createRuntimeWorkbenchShellReactStreamOptionsFormState({
     categories: ["model", "tool", "model", "planning"],
@@ -302,6 +544,245 @@ test("renderer runtime workbench React shell rejects incomplete or unsafe stream
     null,
   );
 });
+
+interface RuntimeWorkbenchLoopbackSseRequest {
+  readonly url: string;
+  readonly headers: Readonly<Record<string, string | undefined>>;
+}
+
+interface RuntimeWorkbenchLoopbackSseServer {
+  readonly baseUrl: string;
+  readonly requests: RuntimeWorkbenchLoopbackSseRequest[];
+  readonly closeActiveStream: () => void;
+  readonly close: () => Promise<void>;
+}
+
+async function createRuntimeWorkbenchLoopbackSseServer(): Promise<RuntimeWorkbenchLoopbackSseServer> {
+  const requests: RuntimeWorkbenchLoopbackSseRequest[] = [];
+  let activeStreamResponse: ServerResponse | null = null;
+  let acceptedStreamCount = 0;
+
+  const server = createServer(
+    (request: IncomingMessage, response: ServerResponse) => {
+      requests.push({
+        url: request.url ?? "",
+        headers: {
+          accept: request.headers.accept,
+          authorization: request.headers.authorization,
+          "last-event-id": firstRequestHeaderValue(
+            request.headers["last-event-id"],
+          ),
+          "x-cw-client": firstRequestHeaderValue(
+            request.headers["x-cw-client"],
+          ),
+          "x-project-id": firstRequestHeaderValue(
+            request.headers["x-project-id"],
+          ),
+        },
+      });
+
+      if (!request.url?.startsWith("/cw/v1/runs/run_live_smoke/stream")) {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error_code: "RES_NOT_FOUND" }));
+        return;
+      }
+
+      if (request.headers["last-event-id"] === "evt_live_model") {
+        response.writeHead(412, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            schema_version: "0.1.0",
+            error_code: "SE_SSE_REPLAY_NOT_FOUND",
+            message: "Replay point expired",
+          }),
+        );
+        return;
+      }
+
+      acceptedStreamCount += 1;
+      response.writeHead(200, {
+        "cache-control": "no-cache",
+        "content-type": "text/event-stream; charset=utf-8",
+      });
+      activeStreamResponse = response;
+      response.on("close", () => {
+        if (activeStreamResponse === response) {
+          activeStreamResponse = null;
+        }
+      });
+      const event =
+        acceptedStreamCount === 1
+          ? createRuntimeWorkbenchLoopbackStreamEvent({
+              content: "live streamed content",
+              eventId: "evt_live_model",
+              seq: 1,
+              title: "Live model response",
+            })
+          : createRuntimeWorkbenchLoopbackStreamEvent({
+              content: "content after reset",
+              eventId: "evt_live_after_reset",
+              seq: 1,
+              title: "Live model after reset",
+            });
+      response.write(encodeRuntimeWorkbenchLoopbackSseFrame(event));
+    },
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    const handleError = (error: Error): void => {
+      server.off("listening", handleListening);
+      reject(error);
+    };
+    const handleListening = (): void => {
+      server.off("error", handleError);
+      resolve();
+    };
+    server.once("error", handleError);
+    server.once("listening", handleListening);
+    server.listen(0, "127.0.0.1");
+  });
+  const address = server.address() as AddressInfo | null;
+  if (address === null) {
+    throw new Error("Loopback SSE test server did not bind an address");
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}/cw/v1`,
+    requests,
+    closeActiveStream: () => {
+      activeStreamResponse?.end();
+      activeStreamResponse = null;
+    },
+    close: async () => {
+      activeStreamResponse?.end();
+      activeStreamResponse = null;
+      await new Promise<void>((resolve, reject) => {
+        server.close((error?: Error) => {
+          if (error !== undefined) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    },
+  };
+}
+
+function createRuntimeWorkbenchLoopbackStreamEvent(options: {
+  readonly eventId: string;
+  readonly seq: number;
+  readonly title: string;
+  readonly content: string;
+}): Record<string, unknown> {
+  return {
+    event_id: options.eventId,
+    schema_version: "0.1.0",
+    seq: options.seq,
+    parent_event_id: null,
+    correlation_id: null,
+    run_id: "run_live_smoke",
+    node_id: null,
+    attempt_id: null,
+    type: "model.text_delta",
+    category: "model",
+    phase: "attempt.streaming",
+    title: options.title,
+    summary: null,
+    content: options.content,
+    payload: { delta_text: options.content },
+    artifact_refs: [],
+    display_level: "default",
+    severity: "info",
+    sensitivity: "project",
+    expandable: true,
+    created_at: "2026-06-23T00:00:00.000Z",
+    metadata: {},
+  };
+}
+
+function firstRequestHeaderValue(
+  value: string | readonly string[] | undefined,
+): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return undefined;
+}
+
+function encodeRuntimeWorkbenchLoopbackSseFrame(
+  event: Readonly<Record<string, unknown>>,
+): string {
+  return [
+    `id: ${String(event.event_id)}`,
+    `event: ${String(event.type)}`,
+    "retry: 3000",
+    `data: ${JSON.stringify(event)}`,
+    "",
+    "",
+  ].join("\n");
+}
+
+function createLoopbackRuntimeBridge(
+  connectionInfo: RuntimeConnectionInfo,
+): RuntimeBridge {
+  const noopSubscribe = (): RuntimeStatusUnsubscribe => () => false;
+  return {
+    startupStatus: async () => [],
+    onStartupStatus: noopSubscribe,
+    shutdownStatus: async () => [],
+    onShutdownStatus: noopSubscribe,
+    connectionInfo: async () => connectionInfo,
+    fetch: async () => {
+      throw new Error("Loopback stream smoke does not use runtime.fetch");
+    },
+  };
+}
+
+function createImmediateRuntimeStreamScheduler(): RuntimeStreamReconnectScheduler {
+  return (_delayMs, reconnect) => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) {
+        return;
+      }
+      active = false;
+      reconnect();
+    });
+    return {
+      cancel: () => {
+        if (!active) {
+          return false;
+        }
+        active = false;
+        return true;
+      },
+    };
+  };
+}
+
+function requireRuntimeStreamPanel(
+  snapshot: RuntimeWorkbenchShellSnapshot,
+): NonNullable<RuntimeWorkbenchShellSnapshot["runtimeStreamPanel"]> {
+  const panel = snapshot.runtimeStreamPanel;
+  if (panel === null) {
+    throw new Error("Expected active runtime stream panel");
+  }
+  return panel;
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Timed out waiting for condition");
+}
 
 function createRuntimeWorkbenchShellReactSnapshot(): RuntimeWorkbenchShellSnapshot {
   return buildRuntimeWorkbenchShellSnapshot({
@@ -545,6 +1026,7 @@ interface FakeRuntimeWorkbenchReactDomInstallation {
 type RuntimeWorkbenchReactDomGlobalName =
   | "document"
   | "Element"
+  | "HTMLInputElement"
   | "HTMLElement"
   | "HTMLButtonElement"
   | "Node"
@@ -555,6 +1037,7 @@ type RuntimeWorkbenchReactDomGlobalName =
 type RuntimeWorkbenchReactDomGlobalObject = typeof globalThis & {
   document?: unknown;
   Element?: unknown;
+  HTMLInputElement?: unknown;
   HTMLElement?: unknown;
   HTMLButtonElement?: unknown;
   Node?: unknown;
@@ -657,6 +1140,10 @@ class FakeRuntimeWorkbenchNode {
   }
 
   dispatchEvent(event: Event): boolean {
+    if (event.target === null) {
+      setFakeRuntimeWorkbenchEventProperty(event, "target", this);
+    }
+    setFakeRuntimeWorkbenchEventProperty(event, "currentTarget", this);
     const listeners = this.eventListeners.get(event.type) ?? new Set();
     for (const listener of listeners) {
       if (typeof listener === "function") {
@@ -664,6 +1151,9 @@ class FakeRuntimeWorkbenchNode {
       } else {
         listener.handleEvent(event);
       }
+    }
+    if (event.bubbles && !event.cancelBubble && this.parentNode !== null) {
+      return this.parentNode.dispatchEvent(event);
     }
     return !event.defaultPrevented;
   }
@@ -674,10 +1164,13 @@ class FakeRuntimeWorkbenchElement extends FakeRuntimeWorkbenchNode {
   readonly dataset: Record<string, string> = {};
   readonly namespaceURI: string;
   readonly style: Record<string, string> = {};
+  checked = false;
   className = "";
   disabled = false;
   tagName: string;
   title = "";
+  type = "";
+  value = "";
 
   constructor(
     tagName: string,
@@ -695,6 +1188,18 @@ class FakeRuntimeWorkbenchElement extends FakeRuntimeWorkbenchNode {
     if (name === "class") {
       this.className = stringValue;
     }
+    if (name === "checked") {
+      this.checked = true;
+    }
+    if (name === "disabled") {
+      this.disabled = true;
+    }
+    if (name === "type") {
+      this.type = stringValue;
+    }
+    if (name === "value") {
+      this.value = stringValue;
+    }
     if (name.startsWith("data-")) {
       this.dataset[dataAttributeNameToProperty(name)] = stringValue;
     }
@@ -708,6 +1213,18 @@ class FakeRuntimeWorkbenchElement extends FakeRuntimeWorkbenchNode {
     this.attributes.delete(name);
     if (name === "class") {
       this.className = "";
+    }
+    if (name === "checked") {
+      this.checked = false;
+    }
+    if (name === "disabled") {
+      this.disabled = false;
+    }
+    if (name === "type") {
+      this.type = "";
+    }
+    if (name === "value") {
+      this.value = "";
     }
     if (name.startsWith("data-")) {
       delete this.dataset[dataAttributeNameToProperty(name)];
@@ -736,6 +1253,8 @@ class FakeRuntimeWorkbenchDocument extends FakeRuntimeWorkbenchNode {
   body: FakeRuntimeWorkbenchElement;
   defaultView: Record<string, unknown> | null = null;
   documentElement: FakeRuntimeWorkbenchElement;
+  onchange: EventListener | null = null;
+  oninput: EventListener | null = null;
 
   constructor() {
     super(9, "#document", null);
@@ -777,6 +1296,7 @@ function installFakeRuntimeWorkbenchReactDom(): FakeRuntimeWorkbenchReactDomInst
     Element: FakeRuntimeWorkbenchElement,
     Event,
     HTMLButtonElement: FakeRuntimeWorkbenchElement,
+    HTMLInputElement: FakeRuntimeWorkbenchElement,
     HTMLElement: FakeRuntimeWorkbenchElement,
     HTMLIFrameElement: iframeElement,
     Node: FakeRuntimeWorkbenchNode,
@@ -793,6 +1313,7 @@ function installFakeRuntimeWorkbenchReactDom(): FakeRuntimeWorkbenchReactDomInst
   const globalNames: readonly RuntimeWorkbenchReactDomGlobalName[] = [
     "document",
     "Element",
+    "HTMLInputElement",
     "HTMLElement",
     "HTMLButtonElement",
     "Node",
@@ -824,6 +1345,11 @@ function installFakeRuntimeWorkbenchReactDom(): FakeRuntimeWorkbenchReactDomInst
       writable: true,
     },
     HTMLButtonElement: {
+      configurable: true,
+      value: FakeRuntimeWorkbenchElement,
+      writable: true,
+    },
+    HTMLInputElement: {
       configurable: true,
       value: FakeRuntimeWorkbenchElement,
       writable: true,
@@ -865,4 +1391,139 @@ function dataAttributeNameToProperty(name: string): string {
   return name
     .slice("data-".length)
     .replace(/-([a-z])/gu, (_match, letter: string) => letter.toUpperCase());
+}
+
+function clickFakeRuntimeWorkbenchElement(
+  element: FakeRuntimeWorkbenchElement,
+): void {
+  assert.equal(element.disabled, false);
+  element.dispatchEvent(
+    new Event("click", { bubbles: true, cancelable: true }),
+  );
+}
+
+function inputFakeRuntimeWorkbenchElement(
+  element: FakeRuntimeWorkbenchElement,
+  value: string,
+): void {
+  assert.equal(element.disabled, false);
+  element.value = value;
+  callFakeRuntimeWorkbenchReactInputOnChange(element);
+}
+
+function requireFakeRuntimeWorkbenchElementByData(
+  root: FakeRuntimeWorkbenchNode,
+  dataKey: string,
+  value: string,
+): FakeRuntimeWorkbenchElement {
+  return requireFakeRuntimeWorkbenchElement(
+    root,
+    (element) => element.dataset[dataKey] === value,
+    `data-${dataKey}=${value}`,
+  );
+}
+
+function requireFakeRuntimeWorkbenchElementByInputType(
+  root: FakeRuntimeWorkbenchNode,
+  type: string,
+): FakeRuntimeWorkbenchElement {
+  return requireFakeRuntimeWorkbenchElement(
+    root,
+    (element) => element.tagName === "INPUT" && element.type === type,
+    `input[type=${type}]`,
+  );
+}
+
+function requireFakeRuntimeWorkbenchButtonByText(
+  root: FakeRuntimeWorkbenchNode,
+  text: string,
+): FakeRuntimeWorkbenchElement {
+  return requireFakeRuntimeWorkbenchElement(
+    root,
+    (element) =>
+      element.tagName === "BUTTON" &&
+      fakeRuntimeWorkbenchNodeTextContent(element).trim() === text,
+    `button text ${text}`,
+  );
+}
+
+function requireFakeRuntimeWorkbenchElement(
+  root: FakeRuntimeWorkbenchNode,
+  predicate: (element: FakeRuntimeWorkbenchElement) => boolean,
+  label: string,
+): FakeRuntimeWorkbenchElement {
+  const found = findFakeRuntimeWorkbenchElement(root, predicate);
+  if (found === null) {
+    throw new Error(`Expected fake DOM element for ${label}`);
+  }
+  return found;
+}
+
+function findFakeRuntimeWorkbenchElement(
+  root: FakeRuntimeWorkbenchNode,
+  predicate: (element: FakeRuntimeWorkbenchElement) => boolean,
+): FakeRuntimeWorkbenchElement | null {
+  if (root instanceof FakeRuntimeWorkbenchElement && predicate(root)) {
+    return root;
+  }
+  for (const child of root.childNodes) {
+    const found = findFakeRuntimeWorkbenchElement(child, predicate);
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function fakeRuntimeWorkbenchNodeTextContent(
+  root: FakeRuntimeWorkbenchNode,
+): string {
+  if (root.nodeType === 3) {
+    return root.nodeValue ?? "";
+  }
+  if (root.childNodes.length === 0) {
+    return root.textContent;
+  }
+  return root.childNodes.map(fakeRuntimeWorkbenchNodeTextContent).join("");
+}
+
+function setFakeRuntimeWorkbenchEventProperty(
+  event: Event,
+  name: "currentTarget" | "target",
+  value: FakeRuntimeWorkbenchNode | null,
+): void {
+  Object.defineProperty(event, name, {
+    configurable: true,
+    value,
+  });
+}
+
+function callFakeRuntimeWorkbenchReactInputOnChange(
+  element: FakeRuntimeWorkbenchElement,
+): void {
+  const props = getFakeRuntimeWorkbenchReactProps(element);
+  const onChange = props.onChange;
+  if (typeof onChange !== "function") {
+    throw new Error("Expected fake DOM input to expose a React onChange prop");
+  }
+  const handleChange = onChange as (event: {
+    readonly currentTarget: FakeRuntimeWorkbenchElement;
+  }) => void;
+  handleChange({ currentTarget: element });
+}
+
+function getFakeRuntimeWorkbenchReactProps(
+  element: FakeRuntimeWorkbenchElement,
+): Record<string, unknown> {
+  const reactPropsKey = Object.getOwnPropertyNames(element).find((key) =>
+    key.startsWith("__reactProps$"),
+  );
+  if (reactPropsKey === undefined) {
+    throw new Error("Expected fake DOM element to expose React props");
+  }
+  const props = (element as unknown as Record<string, unknown>)[reactPropsKey];
+  if (typeof props !== "object" || props === null || Array.isArray(props)) {
+    throw new Error("Expected fake DOM React props to be an object");
+  }
+  return props as Record<string, unknown>;
 }
