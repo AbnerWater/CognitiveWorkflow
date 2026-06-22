@@ -13,6 +13,7 @@ import type {
   RuntimeStreamCategory,
   RuntimeStreamDisplayLevel,
 } from "./runtime-stream-client.js";
+import type { RuntimeStreamInteractionCommand } from "./runtime-stream-interaction.js";
 import type { CreateRuntimeStreamInteractionSessionFactorySessionOptions } from "./runtime-stream-session.js";
 import type {
   RuntimeWorkbenchInteractionCommand,
@@ -208,6 +209,15 @@ export function runtimeWorkbenchShellActionToCommand(
   }
 }
 
+export function runtimeWorkbenchShellStreamPanelCommandToWorkbenchCommand(
+  command: RuntimeStreamInteractionCommand,
+): RuntimeWorkbenchInteractionCommand {
+  return {
+    type: "dispatch_runtime_stream",
+    command,
+  };
+}
+
 export function RuntimeWorkbenchShellReactView(
   props: RuntimeWorkbenchShellReactViewProps,
 ): ReactElement {
@@ -365,6 +375,66 @@ export function RuntimeWorkbenchShellReactView(
     },
     [],
   );
+  const dispatchStreamPanelCommand = useCallback(
+    (command: RuntimeStreamInteractionCommand): void => {
+      void props.session
+        .dispatch(
+          runtimeWorkbenchShellStreamPanelCommandToWorkbenchCommand(command),
+        )
+        .catch(handleActionError);
+    },
+    [handleActionError, props.session],
+  );
+  const handleStreamPanelSearchChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      dispatchStreamPanelCommand({
+        type: "set_search_query",
+        query: event.currentTarget.value,
+      });
+    },
+    [dispatchStreamPanelCommand],
+  );
+  const handleStreamPanelClearSearchClick = useCallback((): void => {
+    dispatchStreamPanelCommand({ type: "clear_search" });
+  }, [dispatchStreamPanelCommand]);
+  const handleStreamPanelPreviousSearchClick = useCallback((): void => {
+    dispatchStreamPanelCommand({ type: "previous_search_match" });
+  }, [dispatchStreamPanelCommand]);
+  const handleStreamPanelNextSearchClick = useCallback((): void => {
+    dispatchStreamPanelCommand({ type: "next_search_match" });
+  }, [dispatchStreamPanelCommand]);
+  const handleStreamPanelSelectSearchClick = useCallback((): void => {
+    dispatchStreamPanelCommand({ type: "select_active_search_match" });
+  }, [dispatchStreamPanelCommand]);
+  const handleStreamPanelMarkReadClick = useCallback((): void => {
+    dispatchStreamPanelCommand({ type: "mark_all_read" });
+  }, [dispatchStreamPanelCommand]);
+  const handleStreamPanelAcknowledgeFullReloadClick = useCallback((): void => {
+    dispatchStreamPanelCommand({ type: "acknowledge_full_reload" });
+  }, [dispatchStreamPanelCommand]);
+  const handleStreamPanelSelectEventClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const eventId = event.currentTarget.dataset.streamEventId;
+      if (eventId === undefined || eventId.length === 0) {
+        return;
+      }
+      dispatchStreamPanelCommand({ type: "select_event", eventId });
+    },
+    [dispatchStreamPanelCommand],
+  );
+  const handleStreamPanelClearSelectionClick = useCallback((): void => {
+    dispatchStreamPanelCommand({ type: "select_event", eventId: null });
+  }, [dispatchStreamPanelCommand]);
+  const handleStreamPanelToggleExpandedClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const eventId = event.currentTarget.dataset.streamEventId;
+      if (eventId === undefined || eventId.length === 0) {
+        return;
+      }
+      dispatchStreamPanelCommand({ type: "toggle_expanded", eventId });
+    },
+    [dispatchStreamPanelCommand],
+  );
 
   useEffect(() => {
     const unbindKeyboardTarget = bindRuntimeWorkbenchShellReactKeyboardTarget(
@@ -422,7 +492,21 @@ export function RuntimeWorkbenchShellReactView(
       <section aria-live={snapshot.ariaLive} className="cw-workbench__content">
         {snapshot.emptyState === null ? (
           snapshot.activePanel === "stream" ? (
-            <RuntimeWorkbenchShellStreamPanel snapshot={snapshot} />
+            <RuntimeWorkbenchShellStreamPanel
+              onAcknowledgeFullReloadClick={
+                handleStreamPanelAcknowledgeFullReloadClick
+              }
+              onClearSearchClick={handleStreamPanelClearSearchClick}
+              onClearSelectionClick={handleStreamPanelClearSelectionClick}
+              onMarkReadClick={handleStreamPanelMarkReadClick}
+              onNextSearchClick={handleStreamPanelNextSearchClick}
+              onPreviousSearchClick={handleStreamPanelPreviousSearchClick}
+              onSearchChange={handleStreamPanelSearchChange}
+              onSelectEventClick={handleStreamPanelSelectEventClick}
+              onSelectSearchClick={handleStreamPanelSelectSearchClick}
+              onToggleExpandedClick={handleStreamPanelToggleExpandedClick}
+              snapshot={snapshot}
+            />
           ) : (
             <RuntimeWorkbenchShellPanelSummary snapshot={snapshot} />
           )
@@ -640,6 +724,18 @@ function RuntimeWorkbenchShellPanelSummary(props: {
 
 function RuntimeWorkbenchShellStreamPanel(props: {
   readonly snapshot: RuntimeWorkbenchShellSnapshot;
+  readonly onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onClearSearchClick: () => void;
+  readonly onPreviousSearchClick: () => void;
+  readonly onNextSearchClick: () => void;
+  readonly onSelectSearchClick: () => void;
+  readonly onMarkReadClick: () => void;
+  readonly onAcknowledgeFullReloadClick: () => void;
+  readonly onSelectEventClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onClearSelectionClick: () => void;
+  readonly onToggleExpandedClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 }): ReactElement {
   const panel = props.snapshot.runtimeStreamPanel;
   if (panel === null) {
@@ -672,23 +768,115 @@ function RuntimeWorkbenchShellStreamPanel(props: {
         <div className="cw-workbench__stream-full-reload">
           <strong>Full reload required</strong>
           <span>{panel.fullReload.reason}</span>
-          {panel.fullReload.acknowledged ? <small>Acknowledged</small> : null}
+          {panel.fullReload.acknowledged ? (
+            <small>Acknowledged</small>
+          ) : (
+            <button onClick={props.onAcknowledgeFullReloadClick} type="button">
+              Acknowledge
+            </button>
+          )}
         </div>
       )}
+
+      <RuntimeWorkbenchShellStreamControls
+        onClearSearchClick={props.onClearSearchClick}
+        onMarkReadClick={props.onMarkReadClick}
+        onNextSearchClick={props.onNextSearchClick}
+        onPreviousSearchClick={props.onPreviousSearchClick}
+        onSearchChange={props.onSearchChange}
+        onSelectSearchClick={props.onSelectSearchClick}
+        panel={panel}
+      />
 
       <div className="cw-workbench__stream-panel-body">
         <div className="cw-workbench__stream-event-groups">
           <RuntimeWorkbenchShellStreamEventGroup
             events={panel.summaryItems}
+            onSelectEventClick={props.onSelectEventClick}
+            onToggleExpandedClick={props.onToggleExpandedClick}
             title="Summary"
           />
           <RuntimeWorkbenchShellStreamEventGroup
             events={panel.timelineItems}
+            onSelectEventClick={props.onSelectEventClick}
+            onToggleExpandedClick={props.onToggleExpandedClick}
             title="Timeline"
           />
         </div>
-        <RuntimeWorkbenchShellStreamSelection panel={panel} />
+        <RuntimeWorkbenchShellStreamSelection
+          onClearSelectionClick={props.onClearSelectionClick}
+          panel={panel}
+        />
       </div>
+    </div>
+  );
+}
+
+function RuntimeWorkbenchShellStreamControls(props: {
+  readonly panel: RuntimeWorkbenchShellRuntimeStreamPanelSnapshot;
+  readonly onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onClearSearchClick: () => void;
+  readonly onPreviousSearchClick: () => void;
+  readonly onNextSearchClick: () => void;
+  readonly onSelectSearchClick: () => void;
+  readonly onMarkReadClick: () => void;
+}): ReactElement {
+  const hasSearch = props.panel.search.query.length > 0;
+  const hasMatches = props.panel.search.matchCount > 0;
+  const searchPosition =
+    props.panel.search.activeMatchIndex === null
+      ? "-"
+      : `${props.panel.search.activeMatchIndex + 1}/${props.panel.search.matchCount}`;
+  return (
+    <div className="cw-workbench__stream-controls">
+      <label className="cw-workbench__stream-search">
+        <span>Search events</span>
+        <input
+          onChange={props.onSearchChange}
+          type="search"
+          value={props.panel.search.query}
+        />
+      </label>
+      <div className="cw-workbench__stream-control-buttons">
+        <button
+          disabled={!hasSearch}
+          onClick={props.onClearSearchClick}
+          type="button"
+        >
+          Clear
+        </button>
+        <button
+          disabled={!hasMatches}
+          onClick={props.onPreviousSearchClick}
+          type="button"
+        >
+          Previous
+        </button>
+        <button
+          disabled={!hasMatches}
+          onClick={props.onNextSearchClick}
+          type="button"
+        >
+          Next
+        </button>
+        <button
+          disabled={props.panel.search.activeEventId === null}
+          onClick={props.onSelectSearchClick}
+          type="button"
+        >
+          Select match
+        </button>
+        <button
+          disabled={props.panel.read.unreadCount === 0}
+          onClick={props.onMarkReadClick}
+          type="button"
+        >
+          Mark read
+        </button>
+      </div>
+      <span className="cw-workbench__stream-search-position">
+        {searchPosition}
+      </span>
     </div>
   );
 }
@@ -718,6 +906,10 @@ function RuntimeWorkbenchShellStreamPanelMetrics(props: {
 function RuntimeWorkbenchShellStreamEventGroup(props: {
   readonly title: string;
   readonly events: readonly RuntimeWorkbenchShellRuntimeStreamEventSnapshot[];
+  readonly onSelectEventClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onToggleExpandedClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 }): ReactElement {
   return (
     <section className="cw-workbench__stream-event-group">
@@ -733,6 +925,8 @@ function RuntimeWorkbenchShellStreamEventGroup(props: {
             <RuntimeWorkbenchShellStreamEventItem
               event={event}
               key={event.id ?? `${event.type}:${index}`}
+              onSelectEventClick={props.onSelectEventClick}
+              onToggleExpandedClick={props.onToggleExpandedClick}
             />
           ))}
         </ol>
@@ -743,6 +937,10 @@ function RuntimeWorkbenchShellStreamEventGroup(props: {
 
 function RuntimeWorkbenchShellStreamEventItem(props: {
   readonly event: RuntimeWorkbenchShellRuntimeStreamEventSnapshot;
+  readonly onSelectEventClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onToggleExpandedClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 }): ReactElement {
   return (
     <li
@@ -768,12 +966,34 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
         )}
         <span>{props.event.displayLevel}</span>
       </div>
+      <div className="cw-workbench__stream-event-actions">
+        <button
+          data-stream-event-id={props.event.id ?? undefined}
+          disabled={props.event.id === null}
+          onClick={props.onSelectEventClick}
+          type="button"
+        >
+          Select
+        </button>
+        {props.event.expandable ? (
+          <button
+            data-stream-event-id={props.event.id ?? undefined}
+            disabled={props.event.id === null}
+            onClick={props.onToggleExpandedClick}
+            type="button"
+          >
+            {props.event.expanded ? "Collapse" : "Expand"}
+          </button>
+        ) : null}
+      </div>
       {props.event.children.length === 0 ? null : (
         <ol className="cw-workbench__stream-events cw-workbench__stream-events--children">
           {props.event.children.map((child, index) => (
             <RuntimeWorkbenchShellStreamEventItem
               event={child}
               key={child.id ?? `${child.type}:${index}`}
+              onSelectEventClick={props.onSelectEventClick}
+              onToggleExpandedClick={props.onToggleExpandedClick}
             />
           ))}
         </ol>
@@ -784,6 +1004,7 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
 
 function RuntimeWorkbenchShellStreamSelection(props: {
   readonly panel: RuntimeWorkbenchShellRuntimeStreamPanelSnapshot;
+  readonly onClearSelectionClick: () => void;
 }): ReactElement {
   const selected = props.panel.selectedEvent;
   return (
@@ -799,6 +1020,9 @@ function RuntimeWorkbenchShellStreamSelection(props: {
         <p className="cw-workbench__stream-muted">No event selected</p>
       ) : (
         <div className="cw-workbench__stream-selected-event">
+          <button onClick={props.onClearSelectionClick} type="button">
+            Clear selection
+          </button>
           <strong>{selected.title}</strong>
           <span>{selected.type}</span>
           {selected.summary === null ? null : <p>{selected.summary}</p>}

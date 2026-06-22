@@ -378,6 +378,85 @@ button {
   overflow-wrap: anywhere;
 }
 
+.cw-workbench__stream-full-reload button,
+.cw-workbench__stream-controls button,
+.cw-workbench__stream-event-actions button,
+.cw-workbench__stream-selected-event button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2c3a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__stream-full-reload button:disabled,
+.cw-workbench__stream-controls button:disabled,
+.cw-workbench__stream-event-actions button:disabled,
+.cw-workbench__stream-selected-event button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.cw-workbench__stream-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.cw-workbench__stream-search {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cw-workbench__stream-search span {
+  color: #657487;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__stream-search input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #17202a;
+  font: inherit;
+  font-size: 14px;
+}
+
+.cw-workbench__stream-control-buttons,
+.cw-workbench__stream-event-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cw-workbench__stream-search-position {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 52px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  color: #526173;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .cw-workbench__stream-panel-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
@@ -519,6 +598,10 @@ button {
   gap: 8px;
 }
 
+.cw-workbench__stream-selected-event button {
+  justify-self: start;
+}
+
 .cw-workbench__stream-selected-event dl {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -571,6 +654,7 @@ button {
 
   .cw-workbench__header,
   .cw-workbench__stream-options,
+  .cw-workbench__stream-controls,
   .cw-workbench__stream-panel-header,
   .cw-workbench__stream-panel-body,
   .cw-workbench__panel-summary {

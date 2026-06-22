@@ -37,6 +37,43 @@ export interface RuntimeStreamInteractionSnapshot {
   readonly fullReloadAcknowledged: boolean;
 }
 
+export type RuntimeStreamInteractionCommand =
+  | {
+      readonly type: "set_search_query";
+      readonly query: string;
+    }
+  | {
+      readonly type: "clear_search";
+    }
+  | {
+      readonly type: "next_search_match";
+    }
+  | {
+      readonly type: "previous_search_match";
+    }
+  | {
+      readonly type: "select_active_search_match";
+    }
+  | {
+      readonly type: "select_event";
+      readonly eventId: string | null;
+    }
+  | {
+      readonly type: "set_expanded";
+      readonly eventId: string;
+      readonly expanded: boolean;
+    }
+  | {
+      readonly type: "toggle_expanded";
+      readonly eventId: string;
+    }
+  | {
+      readonly type: "mark_all_read";
+    }
+  | {
+      readonly type: "acknowledge_full_reload";
+    };
+
 export type RuntimeStreamInteractionListener = (
   snapshot: RuntimeStreamInteractionSnapshot,
 ) => void;
@@ -60,6 +97,9 @@ export interface RuntimeStreamInteraction {
   readonly subscribe: (
     listener: RuntimeStreamInteractionListener,
   ) => RuntimeStreamUnsubscribe;
+  readonly dispatch: (
+    command: RuntimeStreamInteractionCommand,
+  ) => RuntimeStreamInteractionSnapshot;
   readonly selectEvent: (
     eventId: string | null,
   ) => RuntimeStreamInteractionSnapshot;
@@ -187,6 +227,127 @@ export function createRuntimeStreamInteraction(
     publish();
   });
 
+  const selectEvent = (
+    eventId: string | null,
+  ): RuntimeStreamInteractionSnapshot => {
+    selectedEventId =
+      eventId === null
+        ? null
+        : requireVisibleRuntimeStreamViewEvent(
+            viewSnapshot,
+            requireRuntimeStreamInteractionEventId(eventId),
+          ).id;
+    publish();
+    return snapshot();
+  };
+
+  const selectActiveSearchMatch = (): RuntimeStreamInteractionSnapshot => {
+    const currentSnapshot = snapshot();
+    selectedEventId = currentSnapshot.search.activeEventId;
+    publish();
+    return snapshot();
+  };
+
+  const setSearchQuery = (query: string): RuntimeStreamInteractionSnapshot => {
+    searchQuery = normalizeRuntimeStreamInteractionSearchQuery(query);
+    activeSearchEventId = null;
+    reconcileState();
+    publish();
+    return snapshot();
+  };
+
+  const clearSearch = (): RuntimeStreamInteractionSnapshot => {
+    searchQuery = "";
+    activeSearchEventId = null;
+    publish();
+    return snapshot();
+  };
+
+  const nextSearchMatch = (): RuntimeStreamInteractionSnapshot => {
+    const currentSnapshot = snapshot();
+    if (currentSnapshot.search.matches.length > 0) {
+      const activeIndex = currentSnapshot.search.activeMatchIndex ?? -1;
+      const nextIndex =
+        (activeIndex + 1) % currentSnapshot.search.matches.length;
+      activeSearchEventId =
+        currentSnapshot.search.matches[nextIndex]?.eventId ?? null;
+    }
+    publish();
+    return snapshot();
+  };
+
+  const previousSearchMatch = (): RuntimeStreamInteractionSnapshot => {
+    const currentSnapshot = snapshot();
+    if (currentSnapshot.search.matches.length > 0) {
+      const activeIndex =
+        currentSnapshot.search.activeMatchIndex ??
+        currentSnapshot.search.matches.length;
+      const previousIndex =
+        (activeIndex - 1 + currentSnapshot.search.matches.length) %
+        currentSnapshot.search.matches.length;
+      activeSearchEventId =
+        currentSnapshot.search.matches[previousIndex]?.eventId ?? null;
+    }
+    publish();
+    return snapshot();
+  };
+
+  const markAllRead = (): RuntimeStreamInteractionSnapshot => {
+    lastSeenTotalEvents = viewSnapshot.totalEvents;
+    publish();
+    return snapshot();
+  };
+
+  const acknowledgeFullReload = (): RuntimeStreamInteractionSnapshot => {
+    acknowledgedFullReloadKey =
+      buildRuntimeStreamFullReloadInteractionKey(viewSnapshot);
+    publish();
+    return snapshot();
+  };
+
+  const setExpanded = (
+    eventId: string,
+    expanded: boolean,
+  ): RuntimeStreamInteractionSnapshot => {
+    viewSnapshot = options.viewModel.setExpanded(eventId, expanded);
+    return snapshot();
+  };
+
+  const toggleExpanded = (
+    eventId: string,
+  ): RuntimeStreamInteractionSnapshot => {
+    viewSnapshot = options.viewModel.toggleExpanded(eventId);
+    return snapshot();
+  };
+
+  const dispatch = (
+    command: RuntimeStreamInteractionCommand,
+  ): RuntimeStreamInteractionSnapshot => {
+    const safeCommand = requireRuntimeStreamInteractionCommand(command);
+    switch (safeCommand.type) {
+      case "set_search_query":
+        return setSearchQuery(safeCommand.query);
+      case "clear_search":
+        return clearSearch();
+      case "next_search_match":
+        return nextSearchMatch();
+      case "previous_search_match":
+        return previousSearchMatch();
+      case "select_active_search_match":
+        return selectActiveSearchMatch();
+      case "select_event":
+        return selectEvent(safeCommand.eventId);
+      case "set_expanded":
+        return setExpanded(safeCommand.eventId, safeCommand.expanded);
+      case "toggle_expanded":
+        return toggleExpanded(safeCommand.eventId);
+      case "mark_all_read":
+        return markAllRead();
+      case "acknowledge_full_reload":
+        return acknowledgeFullReload();
+    }
+  };
+
   return {
     snapshot,
     subscribe: (listener) => {
@@ -203,82 +364,17 @@ export function createRuntimeStreamInteraction(
         return listeners.delete(listener);
       };
     },
-    selectEvent: (eventId) => {
-      selectedEventId =
-        eventId === null
-          ? null
-          : requireVisibleRuntimeStreamViewEvent(
-              viewSnapshot,
-              requireRuntimeStreamInteractionEventId(eventId),
-            ).id;
-      publish();
-      return snapshot();
-    },
-    selectActiveSearchMatch: () => {
-      const currentSnapshot = snapshot();
-      selectedEventId = currentSnapshot.search.activeEventId;
-      publish();
-      return snapshot();
-    },
-    setSearchQuery: (query) => {
-      searchQuery = normalizeRuntimeStreamInteractionSearchQuery(query);
-      activeSearchEventId = null;
-      reconcileState();
-      publish();
-      return snapshot();
-    },
-    clearSearch: () => {
-      searchQuery = "";
-      activeSearchEventId = null;
-      publish();
-      return snapshot();
-    },
-    nextSearchMatch: () => {
-      const currentSnapshot = snapshot();
-      if (currentSnapshot.search.matches.length > 0) {
-        const activeIndex = currentSnapshot.search.activeMatchIndex ?? -1;
-        const nextIndex =
-          (activeIndex + 1) % currentSnapshot.search.matches.length;
-        activeSearchEventId =
-          currentSnapshot.search.matches[nextIndex]?.eventId ?? null;
-      }
-      publish();
-      return snapshot();
-    },
-    previousSearchMatch: () => {
-      const currentSnapshot = snapshot();
-      if (currentSnapshot.search.matches.length > 0) {
-        const activeIndex =
-          currentSnapshot.search.activeMatchIndex ??
-          currentSnapshot.search.matches.length;
-        const previousIndex =
-          (activeIndex - 1 + currentSnapshot.search.matches.length) %
-          currentSnapshot.search.matches.length;
-        activeSearchEventId =
-          currentSnapshot.search.matches[previousIndex]?.eventId ?? null;
-      }
-      publish();
-      return snapshot();
-    },
-    markAllRead: () => {
-      lastSeenTotalEvents = viewSnapshot.totalEvents;
-      publish();
-      return snapshot();
-    },
-    acknowledgeFullReload: () => {
-      acknowledgedFullReloadKey =
-        buildRuntimeStreamFullReloadInteractionKey(viewSnapshot);
-      publish();
-      return snapshot();
-    },
-    setExpanded: (eventId, expanded) => {
-      viewSnapshot = options.viewModel.setExpanded(eventId, expanded);
-      return snapshot();
-    },
-    toggleExpanded: (eventId) => {
-      viewSnapshot = options.viewModel.toggleExpanded(eventId);
-      return snapshot();
-    },
+    dispatch,
+    selectEvent,
+    selectActiveSearchMatch,
+    setSearchQuery,
+    clearSearch,
+    nextSearchMatch,
+    previousSearchMatch,
+    markAllRead,
+    acknowledgeFullReload,
+    setExpanded,
+    toggleExpanded,
     listenerCount: () => listeners.size,
     dispose: () => {
       if (disposed) {
@@ -477,6 +573,49 @@ function requireRuntimeStreamInteractionTotalEvents(
   return value;
 }
 
+function requireRuntimeStreamInteractionCommand(
+  command: RuntimeStreamInteractionCommand,
+): RuntimeStreamInteractionCommand {
+  if (!isRecord(command)) {
+    throw new Error("Invalid runtime stream interaction command");
+  }
+  const commandType = command.type;
+  switch (commandType) {
+    case "set_search_query":
+      if (typeof command.query !== "string") {
+        throw new Error("Invalid runtime stream interaction command");
+      }
+      return command;
+    case "select_event":
+      if (command.eventId !== null && typeof command.eventId !== "string") {
+        throw new Error("Invalid runtime stream interaction command");
+      }
+      return command;
+    case "set_expanded":
+      if (
+        typeof command.eventId !== "string" ||
+        typeof command.expanded !== "boolean"
+      ) {
+        throw new Error("Invalid runtime stream interaction command");
+      }
+      return command;
+    case "toggle_expanded":
+      if (typeof command.eventId !== "string") {
+        throw new Error("Invalid runtime stream interaction command");
+      }
+      return command;
+    case "clear_search":
+    case "next_search_match":
+    case "previous_search_match":
+    case "select_active_search_match":
+    case "mark_all_read":
+    case "acknowledge_full_reload":
+      return command;
+    default:
+      throw new Error("Invalid runtime stream interaction command");
+  }
+}
+
 function buildRuntimeStreamFullReloadInteractionKey(
   viewSnapshot: RuntimeStreamViewModelSnapshot,
 ): string | null {
@@ -499,4 +638,8 @@ function cloneRuntimeStreamViewModelSnapshot(
   snapshot: RuntimeStreamViewModelSnapshot,
 ): RuntimeStreamViewModelSnapshot {
   return structuredClone(snapshot) as RuntimeStreamViewModelSnapshot;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

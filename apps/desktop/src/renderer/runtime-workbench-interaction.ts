@@ -1,5 +1,6 @@
 import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
 import type { RuntimeLifecyclePanelInteractionCommand } from "./runtime-lifecycle-panel-interaction.js";
+import type { RuntimeStreamInteractionCommand } from "./runtime-stream-interaction.js";
 import type { CreateRuntimeLifecyclePanelSessionFactorySessionOptions } from "./runtime-lifecycle-panel-session.js";
 import type { CreateRuntimeStreamInteractionSessionFactorySessionOptions } from "./runtime-stream-session.js";
 import type {
@@ -17,6 +18,7 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "open_runtime_stream_session",
   "dispose_runtime_stream_session",
   "dispatch_lifecycle_panel",
+  "dispatch_runtime_stream",
 ] as const;
 
 export type RuntimeWorkbenchInteractionCommandId =
@@ -46,6 +48,10 @@ export type RuntimeWorkbenchInteractionCommand =
   | {
       readonly type: "dispatch_lifecycle_panel";
       readonly command: RuntimeLifecyclePanelInteractionCommand;
+    }
+  | {
+      readonly type: "dispatch_runtime_stream";
+      readonly command: RuntimeStreamInteractionCommand;
     };
 
 export interface RuntimeWorkbenchInteractionSnapshot {
@@ -214,6 +220,9 @@ export function createRuntimeWorkbenchInteraction(
         );
         return completeAction();
       }
+      case "dispatch_runtime_stream":
+        options.workbench.dispatchRuntimeStreamCommand(safeCommand.command);
+        return completeAction();
     }
   };
 
@@ -281,7 +290,10 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
       );
     }
     if (workbench.runtimeStream.activeSession !== null) {
-      enabledCommandIds.push("dispose_runtime_stream_session");
+      enabledCommandIds.push(
+        "dispose_runtime_stream_session",
+        "dispatch_runtime_stream",
+      );
     }
   }
 
@@ -323,6 +335,11 @@ function requireRuntimeWorkbenchInteractionCommand(
       return command;
     case "dispatch_lifecycle_panel":
       if (typeof command.command !== "string") {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "dispatch_runtime_stream":
+      if (!isRecord(command.command)) {
         throw new Error("Invalid runtime workbench interaction command");
       }
       return command;

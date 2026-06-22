@@ -35,6 +35,7 @@ import {
 import {
   createRuntimeStreamInteraction,
   type RuntimeStreamInteraction,
+  type RuntimeStreamInteractionCommand,
   type RuntimeStreamInteractionSnapshot,
 } from "./runtime-stream-interaction.js";
 import {
@@ -233,6 +234,9 @@ export interface RuntimeStreamInteractionSession {
   readonly subscribe: (
     listener: RuntimeStreamInteractionSessionListener,
   ) => RuntimeStreamUnsubscribe;
+  readonly dispatch: (
+    command: RuntimeStreamInteractionCommand,
+  ) => RuntimeStreamInteractionSessionSnapshot;
   readonly start: () => Promise<RuntimeStreamInteractionSessionSnapshot>;
   readonly stop: () => boolean;
   readonly resetFullReloadRequired: () => RuntimeStreamInteractionSessionSnapshot;
@@ -444,6 +448,11 @@ export function createRuntimeStreamInteractionSession(
         }
         return deleted;
       };
+    },
+    dispatch: (command) => {
+      assertActive();
+      interaction.dispatch(command);
+      return snapshot();
     },
     start: async () => {
       assertActive();

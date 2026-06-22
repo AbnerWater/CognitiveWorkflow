@@ -1,5 +1,6 @@
 import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
 import type { RuntimeLifecyclePanelInteractionCommand } from "./runtime-lifecycle-panel-interaction.js";
+import type { RuntimeStreamInteractionCommand } from "./runtime-stream-interaction.js";
 import type {
   RuntimeWorkbenchInteraction,
   RuntimeWorkbenchInteractionCommand,
@@ -476,6 +477,11 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
         snapshot.enabledCommandIds.includes("dispatch_lifecycle_panel") &&
         lifecycleShortcutCommandIsEnabled(command.command, snapshot)
       );
+    case "dispatch_runtime_stream":
+      return (
+        snapshot.activePanel === "stream" &&
+        snapshot.enabledCommandIds.includes("dispatch_runtime_stream")
+      );
   }
 }
 
@@ -634,6 +640,40 @@ function cloneRuntimeWorkbenchInteractionCommand(
         type: command.type,
         command: command.command,
       });
+    case "dispatch_runtime_stream":
+      return Object.freeze({
+        type: command.type,
+        command: cloneRuntimeStreamInteractionCommand(command.command),
+      });
+  }
+}
+
+function cloneRuntimeStreamInteractionCommand(
+  command: RuntimeStreamInteractionCommand,
+): RuntimeStreamInteractionCommand {
+  switch (command.type) {
+    case "set_search_query":
+      return Object.freeze({ type: command.type, query: command.query });
+    case "select_event":
+      return Object.freeze({ type: command.type, eventId: command.eventId });
+    case "set_expanded":
+      return Object.freeze({
+        type: command.type,
+        eventId: command.eventId,
+        expanded: command.expanded,
+      });
+    case "toggle_expanded":
+      return Object.freeze({
+        type: command.type,
+        eventId: command.eventId,
+      });
+    case "clear_search":
+    case "next_search_match":
+    case "previous_search_match":
+    case "select_active_search_match":
+    case "mark_all_read":
+    case "acknowledge_full_reload":
+      return Object.freeze({ type: command.type });
   }
 }
 

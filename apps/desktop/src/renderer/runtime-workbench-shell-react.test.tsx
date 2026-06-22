@@ -23,6 +23,7 @@ import {
   createRuntimeWorkbenchShellReactStreamOptionsFormState,
   isRuntimeWorkbenchShellReactActionEnabled,
   runtimeWorkbenchShellActionToCommand,
+  runtimeWorkbenchShellStreamPanelCommandToWorkbenchCommand,
 } from "./runtime-workbench-shell-react.js";
 
 test("renderer runtime workbench React shell renders server snapshot without DOM binding", () => {
@@ -88,6 +89,15 @@ test("renderer runtime workbench React shell renders active stream panel events"
   assert.match(markup, /Replay point expired/u);
   assert.match(markup, /Selection/u);
   assert.match(markup, /model.text_delta/u);
+  assert.match(markup, /Search events/u);
+  assert.match(markup, /Previous/u);
+  assert.match(markup, /Next/u);
+  assert.match(markup, /Select match/u);
+  assert.match(markup, /Mark read/u);
+  assert.match(markup, /Acknowledge/u);
+  assert.match(markup, /Select/u);
+  assert.match(markup, /Expand/u);
+  assert.match(markup, /Clear selection/u);
 });
 
 test("renderer runtime workbench React shell binds keyboard lifecycle on client mount", async () => {
@@ -188,6 +198,32 @@ test("renderer runtime workbench React shell maps actions to commands", () => {
     {
       type: "open_runtime_stream_session",
       options: streamOptions,
+    },
+  );
+  assert.deepEqual(
+    runtimeWorkbenchShellStreamPanelCommandToWorkbenchCommand({
+      type: "set_search_query",
+      query: "delta",
+    }),
+    {
+      type: "dispatch_runtime_stream",
+      command: {
+        type: "set_search_query",
+        query: "delta",
+      },
+    },
+  );
+  assert.deepEqual(
+    runtimeWorkbenchShellStreamPanelCommandToWorkbenchCommand({
+      type: "toggle_expanded",
+      eventId: "evt_react_stream",
+    }),
+    {
+      type: "dispatch_runtime_stream",
+      command: {
+        type: "toggle_expanded",
+        eventId: "evt_react_stream",
+      },
     },
   );
 });
@@ -333,7 +369,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
           title: "Model delta",
           summary: "delta summary",
           content: "delta content",
-          expandable: false,
+          expandable: true,
           expanded: false,
           childCount: 0,
           children: Object.freeze([]),
@@ -350,7 +386,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
         title: "Model delta",
         summary: "delta summary",
         content: "delta content",
-        expandable: false,
+        expandable: true,
         expanded: false,
         childCount: 0,
         children: Object.freeze([]),

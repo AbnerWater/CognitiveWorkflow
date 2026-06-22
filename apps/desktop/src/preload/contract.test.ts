@@ -139,6 +139,7 @@ import {
 } from "../renderer/runtime-stream-view-model.js";
 import {
   createRuntimeStreamInteraction,
+  type RuntimeStreamInteractionCommand,
   type RuntimeStreamInteractionSnapshot,
 } from "../renderer/runtime-stream-interaction.js";
 import {
@@ -3542,13 +3543,53 @@ test("renderer runtime workbench session composes lifecycle and stream stores", 
       severity: "info",
       title: "Workbench stream",
       content: "stream content",
-      expandable: false,
+      expandable: true,
       created_at: "2026-06-21T00:00:00.008Z",
+    }),
+  );
+  streamClient.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_workbench_stream_child",
+      parent_event_id: "evt_workbench_stream",
+      seq: 2,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "Workbench stream child",
+      content: "stream child content",
+      expandable: false,
+      created_at: "2026-06-21T00:00:00.009Z",
     }),
   );
   assert.equal(
     workbench.snapshot().runtimeStream.activeSession?.store.totalEvents,
-    1,
+    2,
+  );
+  const searchedStream = streamSession.dispatch({
+    type: "set_search_query",
+    query: "stream",
+  });
+  assert.equal(searchedStream.interaction.search.query, "stream");
+  assert.equal(
+    searchedStream.interaction.search.activeEventId,
+    "evt_workbench_stream",
+  );
+  const selectedStream = streamSession.dispatch({
+    type: "select_active_search_match",
+  });
+  assert.equal(
+    selectedStream.interaction.selectedEventId,
+    "evt_workbench_stream",
+  );
+  const expandedStream = workbench.dispatchRuntimeStreamCommand({
+    type: "toggle_expanded",
+    eventId: "evt_workbench_stream",
+  });
+  assert.equal(
+    expandedStream.runtimeStream.activeSession?.interaction.view
+      .timelineItems[0]?.expanded,
+    true,
   );
 
   const beforeNoOpPanel = workbench.getSnapshot();
@@ -3766,6 +3807,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "open_runtime_stream_session",
     "dispose_runtime_stream_session",
     "dispatch_lifecycle_panel",
+    "dispatch_runtime_stream",
   ]);
   assert.deepEqual(initialSnapshot.enabledCommandIds, [
     "show_stream_panel",
@@ -3853,6 +3895,10 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     streamOpened.enabledCommandIds.includes("dispose_runtime_stream_session"),
     true,
   );
+  assert.equal(
+    streamOpened.enabledCommandIds.includes("dispatch_runtime_stream"),
+    true,
+  );
 
   const activeStreamSession = runtimeStreamController.activeSession();
   assert.ok(activeStreamSession !== null);
@@ -3869,15 +3915,84 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
       severity: "info",
       title: "Workbench interaction stream",
       content: "interaction stream content",
-      expandable: false,
+      expandable: true,
       created_at: "2026-06-21T00:00:00.010Z",
+    }),
+  );
+  streamClient.emit(
+    createRuntimeStreamViewModelEvent({
+      event_id: "evt_workbench_interaction_child",
+      parent_event_id: "evt_workbench_interaction",
+      seq: 2,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "Workbench interaction stream child",
+      content: "interaction stream child content",
+      expandable: false,
+      created_at: "2026-06-21T00:00:00.011Z",
     }),
   );
   assert.equal(
     interaction.snapshot().workbench.runtimeStream.activeSession?.store
       .totalEvents,
-    1,
+    2,
   );
+  const streamSearched = await interaction.dispatch({
+    type: "dispatch_runtime_stream",
+    command: { type: "set_search_query", query: "interaction" },
+  });
+  assert.equal(
+    streamSearched.workbench.runtimeStream.activeSession?.interaction.search
+      .query,
+    "interaction",
+  );
+  assert.equal(
+    streamSearched.workbench.runtimeStream.activeSession?.interaction.search
+      .activeEventId,
+    "evt_workbench_interaction",
+  );
+  const streamSelected = await interaction.dispatch({
+    type: "dispatch_runtime_stream",
+    command: { type: "select_active_search_match" },
+  });
+  assert.equal(
+    streamSelected.workbench.runtimeStream.activeSession?.interaction
+      .selectedEventId,
+    "evt_workbench_interaction",
+  );
+  const streamExpanded = await interaction.dispatch({
+    type: "dispatch_runtime_stream",
+    command: { type: "toggle_expanded", eventId: "evt_workbench_interaction" },
+  });
+  assert.equal(
+    streamExpanded.workbench.runtimeStream.activeSession?.interaction.view
+      .timelineItems[0]?.expanded,
+    true,
+  );
+  const streamMarkedRead = await interaction.dispatch({
+    type: "dispatch_runtime_stream",
+    command: { type: "mark_all_read" },
+  });
+  assert.equal(
+    streamMarkedRead.workbench.runtimeStream.activeSession?.interaction.read
+      .unreadCount,
+    0,
+  );
+  const beforeInvalidStreamCommand = interaction.getSnapshot();
+  await assert.rejects(
+    async () =>
+      interaction.dispatch({
+        type: "dispatch_runtime_stream",
+        command: {
+          type: "set_search_query",
+          query: "\u0000",
+        } satisfies RuntimeStreamInteractionCommand,
+      }),
+    /control characters/u,
+  );
+  assert.strictEqual(interaction.getSnapshot(), beforeInvalidStreamCommand);
 
   const beforeNoOpPanelCount = observed.length;
   const beforeNoOpPanelSnapshot = interaction.getSnapshot();
@@ -3970,6 +4085,14 @@ test("renderer runtime workbench interaction isolates listeners and active dispo
         command: "refresh_status",
       }),
     /lifecycle panel session is not active/u,
+  );
+  await assert.rejects(
+    async () =>
+      interaction.dispatch({
+        type: "dispatch_runtime_stream",
+        command: { type: "clear_search" },
+      }),
+    /stream session is not active/u,
   );
 
   const unsubscribeThrowing = interaction.subscribe((snapshot) => {
@@ -4707,6 +4830,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     "open_runtime_stream_session",
     "dispose_runtime_stream_session",
     "dispatch_lifecycle_panel",
+    "dispatch_runtime_stream",
   ];
   const availableShortcutIds: RuntimeWorkbenchShortcutId[] = [
     "show_lifecycle_panel",
@@ -4786,6 +4910,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       "open_runtime_stream_session",
       "dispose_runtime_stream_session",
       "dispatch_lifecycle_panel",
+      "dispatch_runtime_stream",
     ],
     availableShortcutIds,
     enabledShortcutIds: [
@@ -7415,6 +7540,32 @@ test("renderer runtime stream interaction searches and selects visible events", 
       .search.matches.map((match) => match.eventId),
     ["evt_tool_done"],
   );
+  const commandSearched = interaction.dispatch({
+    type: "set_search_query",
+    query: "ready",
+  });
+  assert.equal(commandSearched.search.activeEventId, "evt_system_ready");
+  assert.equal(
+    interaction.dispatch({ type: "select_active_search_match" })
+      .selectedEventId,
+    "evt_system_ready",
+  );
+  assert.equal(interaction.dispatch({ type: "clear_search" }).search.query, "");
+  assert.equal(
+    interaction.dispatch({
+      type: "set_expanded",
+      eventId: "evt_tool_start",
+      expanded: false,
+    }).view.timelineItems[0]?.expanded,
+    false,
+  );
+  assert.equal(
+    interaction.dispatch({
+      type: "select_event",
+      eventId: null,
+    }).selectedEventId,
+    null,
+  );
 });
 
 test("renderer runtime stream interaction tracks unread events and full reload acknowledgement", () => {
@@ -7721,6 +7872,11 @@ test("renderer runtime stream session publishes unified snapshots", async () => 
 
   assert.ok(published.includes(1));
   assert.equal(errors.length > 0, true);
+  const publishedBeforeDispatch = published.length;
+  const errorsBeforeDispatch = errors.length;
+  session.dispatch({ type: "set_search_query", query: "published" });
+  assert.equal(published.length, publishedBeforeDispatch + 1);
+  assert.equal(errors.length, errorsBeforeDispatch + 1);
   assert.equal(unsubscribeThrowing(), true);
   assert.equal(unsubscribeThrowing(), false);
   assert.equal(session.listenerCount(), 1);

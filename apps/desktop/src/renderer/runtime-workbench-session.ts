@@ -14,6 +14,7 @@ import type {
   RuntimeStreamInteractionSessionControllerSnapshot,
   RuntimeStreamKnownEventType,
 } from "./runtime-stream-session.js";
+import type { RuntimeStreamInteractionCommand } from "./runtime-stream-interaction.js";
 
 export type RuntimeWorkbenchPanelId = "lifecycle" | "stream";
 
@@ -33,6 +34,7 @@ export interface RuntimeWorkbenchStreamSession {
   readonly eventTypes: readonly RuntimeStreamKnownEventType[];
   readonly snapshot: RuntimeStreamInteractionSession["snapshot"];
   readonly subscribe: RuntimeStreamInteractionSession["subscribe"];
+  readonly dispatch: RuntimeStreamInteractionSession["dispatch"];
   readonly start: RuntimeStreamInteractionSession["start"];
   readonly stop: RuntimeStreamInteractionSession["stop"];
   readonly resetFullReloadRequired: RuntimeStreamInteractionSession["resetFullReloadRequired"];
@@ -63,6 +65,9 @@ export interface RuntimeWorkbenchSession {
   readonly openRuntimeStreamSession: (
     options: CreateRuntimeStreamInteractionSessionFactorySessionOptions,
   ) => RuntimeWorkbenchStreamSession;
+  readonly dispatchRuntimeStreamCommand: (
+    command: RuntimeStreamInteractionCommand,
+  ) => RuntimeWorkbenchSessionSnapshot;
   readonly disposeRuntimeStreamSession: () => boolean;
   readonly listenerCount: () => number;
   readonly dispose: () => boolean;
@@ -273,6 +278,16 @@ export function createRuntimeWorkbenchSession(
         options.runtimeStreamController,
       );
     },
+    dispatchRuntimeStreamCommand: (command) => {
+      assertActive();
+      const streamSession = options.runtimeStreamController.activeSession();
+      if (streamSession === null) {
+        throw new Error("Runtime workbench stream session is not active");
+      }
+      streamSession.dispatch(command);
+      publishIfChanged();
+      return captureSnapshot();
+    },
     disposeRuntimeStreamSession: () => {
       if (disposed) {
         return false;
@@ -317,6 +332,7 @@ function createRuntimeWorkbenchStreamSessionFacade(
     eventTypes: Object.freeze([...session.eventTypes]),
     snapshot: () => session.snapshot(),
     subscribe: (listener) => session.subscribe(listener),
+    dispatch: (command) => session.dispatch(command),
     start: () => session.start(),
     stop: () => session.stop(),
     resetFullReloadRequired: () => session.resetFullReloadRequired(),
