@@ -312,6 +312,95 @@ test("renderer runtime workbench React shell toggles chat box collapse", async (
   }
 });
 
+test("renderer runtime workbench React shell selects focused canvas node locally", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const session = createRuntimeWorkbenchShellReactSession({
+    runtime: createLoopbackRuntimeBridge({
+      base_url: "http://127.0.0.1:1/cw/v1",
+      token: "canvas-token",
+    }),
+  });
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Canvas Inspector Runtime Workbench"
+        />,
+      );
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "panel",
+          "canvas",
+        ),
+      );
+      await waitFor(() => session.getSnapshot().activePanel === "canvas");
+    });
+
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container),
+      /Canvas Inspector Runtime Workbench/u,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "context_task",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "context_task",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "workflowCanvasNodeSelect",
+          "repair_task",
+        ),
+      );
+    });
+
+    assert.equal(session.getSnapshot().activePanel, "canvas");
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "repair_task",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "repair_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasNodeSelected",
+        "true",
+      ).getAttribute("data-workflow-canvas-node"),
+      "repair_task",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container),
+      /Repair loop[\s\S]*Type[\s\S]*repair_task[\s\S]*Incoming[\s\S]*1[\s\S]*Outgoing[\s\S]*1/u,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    session.dispose();
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell binds keyboard lifecycle on client mount", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {

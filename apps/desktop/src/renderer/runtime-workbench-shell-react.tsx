@@ -40,6 +40,9 @@ import type {
   RuntimeWorkbenchShellSnapshot,
   RuntimeWorkbenchShellTaskDrawerSnapshot,
   RuntimeWorkbenchShellVersionSnapshotsSnapshot,
+  RuntimeWorkbenchShellWorkflowCanvasEdge,
+  RuntimeWorkbenchShellWorkflowCanvasNode,
+  RuntimeWorkbenchShellWorkflowCanvasNodeId,
   RuntimeWorkbenchShellWorkflowCanvasSnapshot,
 } from "./runtime-workbench-shell-presenter.js";
 import type {
@@ -797,6 +800,46 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
   readonly canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot;
   readonly surface: "focused" | "preview";
 }): ReactElement {
+  const [selectedNodeId, setSelectedNodeId] =
+    useState<RuntimeWorkbenchShellWorkflowCanvasNodeId | null>(null);
+  const selectable = props.surface === "focused";
+  const selectedNode = useMemo(
+    () =>
+      selectRuntimeWorkbenchShellWorkflowCanvasNode(
+        props.canvas,
+        selectedNodeId,
+      ),
+    [props.canvas, selectedNodeId],
+  );
+  const selectedIncomingEdges = useMemo(
+    () =>
+      selectedNode === null
+        ? []
+        : props.canvas.edges.filter(
+            (edge) => edge.targetNodeId === selectedNode.nodeId,
+          ),
+    [props.canvas.edges, selectedNode],
+  );
+  const selectedOutgoingEdges = useMemo(
+    () =>
+      selectedNode === null
+        ? []
+        : props.canvas.edges.filter(
+            (edge) => edge.sourceNodeId === selectedNode.nodeId,
+          ),
+    [props.canvas.edges, selectedNode],
+  );
+  const handleNodeSelectClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const nodeId = event.currentTarget.dataset.workflowCanvasNodeSelect;
+      if (!isRuntimeWorkbenchShellWorkflowCanvasNodeId(props.canvas, nodeId)) {
+        return;
+      }
+      setSelectedNodeId(nodeId);
+    },
+    [props.canvas],
+  );
+
   return (
     <section
       aria-label={props.canvas.title}
@@ -820,49 +863,157 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
           className="cw-workbench__workflow-canvas-nodes"
         >
           {props.canvas.nodes.map((node) => (
-            <li
-              className={[
-                "cw-workbench__workflow-canvas-node",
-                `cw-workbench__workflow-canvas-node--${node.tone}`,
-                node.active ? "cw-workbench__workflow-canvas-node--active" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              data-workflow-canvas-node={node.nodeId}
+            <RuntimeWorkbenchShellWorkflowCanvasNodeItem
+              handleNodeSelectClick={handleNodeSelectClick}
               key={node.nodeId}
-              style={
-                {
-                  left: `${node.position.x}%`,
-                  top: `${node.position.y}%`,
-                } as CSSProperties
-              }
-            >
-              <span>{node.type}</span>
-              <strong>{node.title}</strong>
-              <small>{node.statusLabel}</small>
-            </li>
+              node={node}
+              selected={selectable && selectedNode?.nodeId === node.nodeId}
+              selectable={selectable}
+            />
           ))}
         </ol>
-        <ol
-          aria-label="Workflow canvas edges"
-          className="cw-workbench__workflow-canvas-edges"
-        >
-          {props.canvas.edges.map((edge) => (
-            <li
-              className={`cw-workbench__workflow-canvas-edge cw-workbench__workflow-canvas-edge--${edge.tone}`}
-              data-workflow-canvas-edge={edge.edgeId}
-              key={edge.edgeId}
-            >
-              <span>{edge.type}</span>
-              <strong>
-                {edge.sourceNodeId} {" -> "} {edge.targetNodeId}
-              </strong>
-              <small>{edge.label}</small>
-            </li>
-          ))}
-        </ol>
+        <div className="cw-workbench__workflow-canvas-sidebar">
+          {selectable && selectedNode !== null ? (
+            <RuntimeWorkbenchShellWorkflowCanvasInspector
+              incomingEdges={selectedIncomingEdges}
+              node={selectedNode}
+              outgoingEdges={selectedOutgoingEdges}
+            />
+          ) : null}
+          <ol
+            aria-label="Workflow canvas edges"
+            className="cw-workbench__workflow-canvas-edges"
+          >
+            {props.canvas.edges.map((edge) => (
+              <li
+                className={`cw-workbench__workflow-canvas-edge cw-workbench__workflow-canvas-edge--${edge.tone}`}
+                data-workflow-canvas-edge={edge.edgeId}
+                key={edge.edgeId}
+              >
+                <span>{edge.type}</span>
+                <strong>
+                  {edge.sourceNodeId} {" -> "} {edge.targetNodeId}
+                </strong>
+                <small>{edge.label}</small>
+              </li>
+            ))}
+          </ol>
+        </div>
       </div>
     </section>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasNodeItem(props: {
+  readonly node: RuntimeWorkbenchShellWorkflowCanvasNode;
+  readonly selectable: boolean;
+  readonly selected: boolean;
+  readonly handleNodeSelectClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
+}): ReactElement {
+  return (
+    <li
+      className={[
+        "cw-workbench__workflow-canvas-node",
+        `cw-workbench__workflow-canvas-node--${props.node.tone}`,
+        props.node.active ? "cw-workbench__workflow-canvas-node--active" : "",
+        props.selected ? "cw-workbench__workflow-canvas-node--selected" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-workflow-canvas-node={props.node.nodeId}
+      data-workflow-canvas-node-selected={props.selected ? "true" : undefined}
+      style={
+        {
+          left: `${props.node.position.x}%`,
+          top: `${props.node.position.y}%`,
+        } as CSSProperties
+      }
+    >
+      {props.selectable ? (
+        <button
+          aria-pressed={props.selected}
+          className="cw-workbench__workflow-canvas-node-button"
+          data-workflow-canvas-node-select={props.node.nodeId}
+          onClick={props.handleNodeSelectClick}
+          type="button"
+        >
+          <RuntimeWorkbenchShellWorkflowCanvasNodeContent node={props.node} />
+        </button>
+      ) : (
+        <RuntimeWorkbenchShellWorkflowCanvasNodeContent node={props.node} />
+      )}
+    </li>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasNodeContent(props: {
+  readonly node: RuntimeWorkbenchShellWorkflowCanvasNode;
+}): ReactElement {
+  return (
+    <>
+      <span>{props.node.type}</span>
+      <strong>{props.node.title}</strong>
+      <small>{props.node.statusLabel}</small>
+    </>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasInspector(props: {
+  readonly node: RuntimeWorkbenchShellWorkflowCanvasNode;
+  readonly incomingEdges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
+  readonly outgoingEdges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
+}): ReactElement {
+  return (
+    <aside
+      aria-label="Canvas inspector"
+      className="cw-workbench__workflow-canvas-inspector"
+      data-workflow-canvas-inspector={props.node.nodeId}
+    >
+      <h3>{props.node.title}</h3>
+      <dl>
+        <div>
+          <dt>Type</dt>
+          <dd>{props.node.type}</dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>{props.node.statusLabel}</dd>
+        </div>
+        <div>
+          <dt>Incoming</dt>
+          <dd>{props.incomingEdges.length}</dd>
+        </div>
+        <div>
+          <dt>Outgoing</dt>
+          <dd>{props.outgoingEdges.length}</dd>
+        </div>
+      </dl>
+    </aside>
+  );
+}
+
+function selectRuntimeWorkbenchShellWorkflowCanvasNode(
+  canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot,
+  selectedNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null,
+): RuntimeWorkbenchShellWorkflowCanvasNode | null {
+  return (
+    (selectedNodeId === null
+      ? undefined
+      : canvas.nodes.find((node) => node.nodeId === selectedNodeId)) ??
+    canvas.nodes.find((node) => node.active) ??
+    canvas.nodes[0] ??
+    null
+  );
+}
+
+function isRuntimeWorkbenchShellWorkflowCanvasNodeId(
+  canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot,
+  value: string | undefined,
+): value is RuntimeWorkbenchShellWorkflowCanvasNodeId {
+  return (
+    value !== undefined && canvas.nodes.some((node) => node.nodeId === value)
   );
 }
 

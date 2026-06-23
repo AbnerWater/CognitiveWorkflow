@@ -56,6 +56,16 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-workflow-canvas-surface="focused"]').length,
       activeWorkflowCanvasNodes:
         document.querySelectorAll('.cw-workbench__workflow-canvas-node--active').length,
+      selectedWorkflowCanvasNodes:
+        document.querySelectorAll('[data-workflow-canvas-node-selected="true"]').length,
+      selectedWorkflowCanvasNodeId:
+        document.querySelector('[data-workflow-canvas-node-selected="true"]')?.getAttribute('data-workflow-canvas-node') ?? null,
+      selectableWorkflowCanvasNodes:
+        document.querySelectorAll('[data-workflow-canvas-node-select]').length,
+      workflowCanvasInspectorNodeId:
+        document.querySelector('.cw-workbench__workflow-canvas-inspector')?.getAttribute('data-workflow-canvas-inspector') ?? null,
+      workflowCanvasInspectorTitle:
+        document.querySelector('.cw-workbench__workflow-canvas-inspector h3')?.textContent ?? null,
       activeFileTreeNodes:
         document.querySelectorAll('.cw-workbench__file-tree-node--active').length,
       hasRuntimeStreamFileNode:
@@ -97,15 +107,32 @@ async function readMetrics(window) {
 }
 
 async function clickLifecycleCommand(window, command) {
-  await window.webContents.executeJavaScript(`
-    (() => {
-      const button = document.querySelector('[data-lifecycle-navigation-command="${command}"]');
-      if (!(button instanceof HTMLButtonElement)) {
-        throw new Error('Missing lifecycle navigation button: ${command}');
-      }
-      button.click();
-    })()
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const startedAt = Date.now();
+      const clickCommand = () => {
+        const button = document.querySelector('[data-lifecycle-navigation-command="${command}"]');
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing lifecycle navigation button: ${command}',
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(clickCommand);
+      };
+      clickCommand();
+    })
   `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
 }
 
 async function clickPanel(window, panel) {
@@ -118,6 +145,37 @@ async function clickPanel(window, panel) {
       button.click();
     })()
   `);
+}
+
+async function clickWorkflowCanvasNode(window, nodeId) {
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const startedAt = Date.now();
+      const selectNode = () => {
+        const button = document.querySelector('[data-workflow-canvas-surface="focused"] [data-workflow-canvas-node-select="${nodeId}"]');
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing focused workflow canvas node button: ${nodeId}',
+            focusedSurfaces: document.querySelectorAll('[data-workflow-canvas-surface="focused"]').length,
+            selectableNodes: document.querySelectorAll('[data-workflow-canvas-node-select]').length,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(selectNode);
+      };
+      selectNode();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
 }
 
 async function clickTaskDrawerToggle(window) {
@@ -142,6 +200,15 @@ async function clickChatBoxToggle(window) {
       button.click();
     })()
   `);
+}
+
+async function runSmokeStep(label, action) {
+  try {
+    return await action();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label} failed: ${message}`);
+  }
 }
 
 function collectVisualSmokeFailures(
@@ -256,6 +323,31 @@ function collectVisualSmokeFailures(
   if (canvasMetrics.focusedWorkflowCanvasSurfaces !== 1) {
     failures.push(
       `expected one focused canvas surface after canvas click, got ${canvasMetrics.focusedWorkflowCanvasSurfaces}`,
+    );
+  }
+  if (canvasMetrics.selectableWorkflowCanvasNodes !== 5) {
+    failures.push(
+      `expected 5 selectable focused canvas nodes, got ${canvasMetrics.selectableWorkflowCanvasNodes}`,
+    );
+  }
+  if (canvasMetrics.selectedWorkflowCanvasNodes !== 1) {
+    failures.push(
+      `expected one selected focused canvas node, got ${canvasMetrics.selectedWorkflowCanvasNodes}`,
+    );
+  }
+  if (canvasMetrics.selectedWorkflowCanvasNodeId !== "repair_task") {
+    failures.push(
+      `expected selected repair_task canvas node, got ${canvasMetrics.selectedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasInspectorNodeId !== "repair_task") {
+    failures.push(
+      `expected repair_task canvas inspector, got ${canvasMetrics.workflowCanvasInspectorNodeId}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasInspectorTitle !== "Repair loop") {
+    failures.push(
+      `expected Repair loop canvas inspector title, got ${canvasMetrics.workflowCanvasInspectorTitle}`,
     );
   }
   if (metrics.activeFileTreeNodes !== 0) {
@@ -392,26 +484,49 @@ async function main() {
       messages.push(details.message);
     }
   });
-  await window.loadURL(targetUrl);
-  await clickLifecycleCommand(window, "focus_next_timeline_item");
-  await clickLifecycleCommand(window, "select_focused_timeline_item");
-  await clickLifecycleCommand(window, "focus_next_timeline_item");
-  await clickLifecycleCommand(window, "select_focused_timeline_item");
-  await clickTaskDrawerToggle(window);
-  const collapsedMetrics = await readMetrics(window);
-  await clickTaskDrawerToggle(window);
-  await clickChatBoxToggle(window);
-  const chatCollapsedMetrics = await readMetrics(window);
-  await clickChatBoxToggle(window);
-  await clickPanel(window, "canvas");
-  const canvasMetrics = await readMetrics(window);
-  await clickPanel(window, "lifecycle");
+  await runSmokeStep("load renderer", () => window.loadURL(targetUrl));
+  await runSmokeStep("focus next lifecycle item", () =>
+    clickLifecycleCommand(window, "focus_next_timeline_item"),
+  );
+  await runSmokeStep("select focused lifecycle item", () =>
+    clickLifecycleCommand(window, "select_focused_timeline_item"),
+  );
+  await runSmokeStep("focus second lifecycle item", () =>
+    clickLifecycleCommand(window, "focus_next_timeline_item"),
+  );
+  await runSmokeStep("select second lifecycle item", () =>
+    clickLifecycleCommand(window, "select_focused_timeline_item"),
+  );
+  await runSmokeStep("collapse task drawer", () =>
+    clickTaskDrawerToggle(window),
+  );
+  const collapsedMetrics = await runSmokeStep("read drawer metrics", () =>
+    readMetrics(window),
+  );
+  await runSmokeStep("expand task drawer", () => clickTaskDrawerToggle(window));
+  await runSmokeStep("collapse chat box", () => clickChatBoxToggle(window));
+  const chatCollapsedMetrics = await runSmokeStep("read chat metrics", () =>
+    readMetrics(window),
+  );
+  await runSmokeStep("expand chat box", () => clickChatBoxToggle(window));
+  await runSmokeStep("show canvas panel", () => clickPanel(window, "canvas"));
+  await runSmokeStep("select repair canvas node", () =>
+    clickWorkflowCanvasNode(window, "repair_task"),
+  );
+  const canvasMetrics = await runSmokeStep("read canvas metrics", () =>
+    readMetrics(window),
+  );
+  await runSmokeStep("show lifecycle panel", () =>
+    clickPanel(window, "lifecycle"),
+  );
   if (scrollY > 0) {
-    await window.webContents.executeJavaScript(
-      `window.scrollTo(0, ${scrollY})`,
+    await runSmokeStep("scroll viewport", () =>
+      window.webContents.executeJavaScript(`window.scrollTo(0, ${scrollY})`),
     );
   }
-  const metrics = await readMetrics(window);
+  const metrics = await runSmokeStep("read final metrics", () =>
+    readMetrics(window),
+  );
   await new Promise((resolve) => setTimeout(resolve, 500));
   const image = await window.webContents.capturePage();
   if (image.isEmpty()) {

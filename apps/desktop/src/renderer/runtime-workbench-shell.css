@@ -380,6 +380,30 @@ button {
   background: #eaf2fb;
 }
 
+.cw-workbench__workflow-canvas-node--selected {
+  border-color: #3d6fa7;
+  box-shadow: 0 0 0 2px rgba(61, 111, 167, 0.18);
+}
+
+.cw-workbench__workflow-canvas-node-button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.cw-workbench__workflow-canvas-node-button:focus-visible {
+  outline: 2px solid #3d6fa7;
+  outline-offset: 2px;
+}
+
 .cw-workbench__workflow-canvas-node span,
 .cw-workbench__workflow-canvas-node strong,
 .cw-workbench__workflow-canvas-node small {
@@ -399,6 +423,55 @@ button {
 .cw-workbench__workflow-canvas-node small {
   color: #526173;
   font-size: 11px;
+  font-weight: 700;
+}
+
+.cw-workbench__workflow-canvas-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cw-workbench__workflow-canvas-inspector {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #c6d4e3;
+  border-left: 4px solid #3d6fa7;
+  border-radius: 6px;
+  background: #f5f9fc;
+}
+
+.cw-workbench__workflow-canvas-inspector h3 {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.cw-workbench__workflow-canvas-inspector dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.cw-workbench__workflow-canvas-inspector dl > div {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.cw-workbench__workflow-canvas-inspector dt {
+  color: #657487;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cw-workbench__workflow-canvas-inspector dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -1612,6 +1685,7 @@ button {
   .cw-workbench__stream-metrics,
   .cw-workbench__version-snapshot-items,
   .cw-workbench__workflow-canvas-nodes,
+  .cw-workbench__workflow-canvas-inspector dl > div,
   .cw-workbench__lifecycle-metrics,
   .cw-workbench__stream-selected-event dl,
   .cw-workbench__lifecycle-selected-item dl {
