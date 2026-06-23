@@ -3062,20 +3062,10 @@ function RuntimeWorkbenchShellStreamPanel(props: {
       {expanded ? (
         <>
           {panel.fullReload === null ? null : (
-            <div className="cw-workbench__stream-full-reload">
-              <strong>Full reload required</strong>
-              <span>{panel.fullReload.reason}</span>
-              {panel.fullReload.acknowledged ? (
-                <small>Acknowledged</small>
-              ) : (
-                <button
-                  onClick={props.onAcknowledgeFullReloadClick}
-                  type="button"
-                >
-                  Acknowledge
-                </button>
-              )}
-            </div>
+            <RuntimeWorkbenchShellStreamFullReload
+              fullReload={panel.fullReload}
+              onAcknowledgeFullReloadClick={props.onAcknowledgeFullReloadClick}
+            />
           )}
 
           <RuntimeWorkbenchShellStreamControls
@@ -3121,6 +3111,83 @@ function RuntimeWorkbenchShellStreamPanel(props: {
           {collapsedSummary}
         </p>
       )}
+    </div>
+  );
+}
+
+function RuntimeWorkbenchShellStreamFullReload(props: {
+  readonly fullReload: NonNullable<
+    RuntimeWorkbenchShellRuntimeStreamPanelSnapshot["fullReload"]
+  >;
+  readonly onAcknowledgeFullReloadClick: () => void;
+}): ReactElement {
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const handleDetailsToggleClick = useCallback((): void => {
+    setDetailsExpanded((current) => !current);
+  }, []);
+  const statusLabel =
+    props.fullReload.status === undefined
+      ? "-"
+      : String(props.fullReload.status);
+  const errorCodeLabel = props.fullReload.errorCode ?? "-";
+  const lastEventIdLabel = props.fullReload.lastEventId ?? "-";
+  return (
+    <div
+      className={[
+        "cw-workbench__stream-full-reload",
+        detailsExpanded ? "cw-workbench__stream-full-reload--expanded" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-stream-full-reload-expanded={detailsExpanded ? "true" : "false"}
+      data-stream-full-reload-last-event-id={lastEventIdLabel}
+      data-stream-full-reload-status={statusLabel}
+    >
+      <div className="cw-workbench__stream-full-reload-summary">
+        <strong>Full reload required</strong>
+        <span>{props.fullReload.reason}</span>
+        <button
+          aria-expanded={detailsExpanded}
+          data-stream-full-reload-details-toggle="true"
+          onClick={handleDetailsToggleClick}
+          type="button"
+        >
+          {detailsExpanded ? "Hide details" : "Show details"}
+        </button>
+        {props.fullReload.acknowledged ? (
+          <small>Acknowledged</small>
+        ) : (
+          <button
+            data-stream-full-reload-acknowledge="true"
+            onClick={props.onAcknowledgeFullReloadClick}
+            type="button"
+          >
+            Acknowledge
+          </button>
+        )}
+      </div>
+      {detailsExpanded ? (
+        <dl
+          className="cw-workbench__stream-full-reload-details"
+          data-stream-full-reload-details="true"
+          data-stream-full-reload-details-error-code={errorCodeLabel}
+          data-stream-full-reload-details-last-event-id={lastEventIdLabel}
+          data-stream-full-reload-details-status={statusLabel}
+        >
+          <div>
+            <dt>HTTP status</dt>
+            <dd>{statusLabel}</dd>
+          </div>
+          <div>
+            <dt>Error code</dt>
+            <dd>{errorCodeLabel}</dd>
+          </div>
+          <div>
+            <dt>Last event id</dt>
+            <dd>{lastEventIdLabel}</dd>
+          </div>
+        </dl>
+      ) : null}
     </div>
   );
 }

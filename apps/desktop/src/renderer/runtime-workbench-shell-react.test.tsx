@@ -131,6 +131,172 @@ test("renderer runtime workbench React shell renders active stream panel events"
   assert.match(markup, /Clear selection/u);
 });
 
+test("renderer runtime workbench React shell toggles stream full reload details locally", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Stream Full Reload Details Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamFullReloadExpanded",
+        "false",
+      ).getAttribute("data-stream-full-reload-status"),
+      "412",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamFullReloadExpanded",
+        "false",
+      ).getAttribute("data-stream-full-reload-last-event-id"),
+      "evt_old",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamFullReloadDetailsToggle",
+        "true",
+      ).getAttribute("aria-expanded"),
+      "false",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamFullReloadAcknowledge",
+        "true",
+      ).textContent,
+      "Acknowledge",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.streamFullReloadDetails === "true",
+      ),
+      0,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamFullReloadDetailsToggle",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamFullReloadExpanded",
+        "true",
+      ).dataset.streamFullReloadExpanded,
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamFullReloadDetailsToggle",
+        "true",
+      ).getAttribute("aria-expanded"),
+      "true",
+    );
+    const details = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamFullReloadDetails",
+      "true",
+    );
+    assert.equal(
+      details.getAttribute("data-stream-full-reload-details-status"),
+      "412",
+    );
+    assert.equal(
+      details.getAttribute("data-stream-full-reload-details-error-code"),
+      "SE_SSE_REPLAY_NOT_FOUND",
+    );
+    assert.equal(
+      details.getAttribute("data-stream-full-reload-details-last-event-id"),
+      "evt_old",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(details),
+      /HTTP status[\s\S]*412[\s\S]*Error code[\s\S]*SE_SSE_REPLAY_NOT_FOUND[\s\S]*Last event id[\s\S]*evt_old/u,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsBody",
+        "true",
+      ).className,
+      "cw-workbench__stream-controls-body",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamEventGroup",
+        "timeline",
+      ).dataset.streamEventGroupExpanded,
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectedEvent",
+        "true",
+      ).getAttribute("data-stream-selected-event-id"),
+      "evt_react_stream",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamFullReloadDetailsToggle",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamFullReloadExpanded",
+        "false",
+      ).dataset.streamFullReloadExpanded,
+      "false",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.streamFullReloadDetails === "true",
+      ),
+      0,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell toggles stream panel collapse locally", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {

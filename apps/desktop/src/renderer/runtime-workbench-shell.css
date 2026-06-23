@@ -2039,10 +2039,8 @@ button {
 }
 
 .cw-workbench__stream-full-reload {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 8px;
-  align-items: center;
   padding: 10px;
   border: 1px solid #c9a24f;
   border-radius: 6px;
@@ -2050,9 +2048,43 @@ button {
   color: #5f4a16;
 }
 
+.cw-workbench__stream-full-reload-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .cw-workbench__stream-full-reload span,
 .cw-workbench__stream-full-reload small {
   overflow-wrap: anywhere;
+}
+
+.cw-workbench__stream-full-reload-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.cw-workbench__stream-full-reload-details div {
+  min-height: 48px;
+  padding: 8px;
+  border: 1px solid #e1c878;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__stream-full-reload-details dt {
+  color: #6b5a22;
+  font-size: 11px;
+}
+
+.cw-workbench__stream-full-reload-details dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .cw-workbench__stream-full-reload button,
@@ -2484,6 +2516,7 @@ button {
   .cw-workbench__status-grid,
   .cw-workbench__stream-metrics,
   .cw-workbench__stream-controls-body,
+  .cw-workbench__stream-full-reload-details,
   .cw-workbench__version-snapshot-items,
   .cw-workbench__workflow-canvas-nodes,
   .cw-workbench__workflow-canvas-summary dl,

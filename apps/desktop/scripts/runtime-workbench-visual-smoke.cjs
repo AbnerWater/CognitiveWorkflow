@@ -67,6 +67,26 @@ async function readMetrics(window) {
         document.querySelectorAll('.cw-workbench__stream-panel-body').length,
       streamFullReloads:
         document.querySelectorAll('.cw-workbench__stream-full-reload').length,
+      streamFullReloadExpanded:
+        document.querySelector('.cw-workbench__stream-full-reload')?.getAttribute('data-stream-full-reload-expanded') ?? null,
+      streamFullReloadStatus:
+        document.querySelector('.cw-workbench__stream-full-reload')?.getAttribute('data-stream-full-reload-status') ?? null,
+      streamFullReloadLastEventId:
+        document.querySelector('.cw-workbench__stream-full-reload')?.getAttribute('data-stream-full-reload-last-event-id') ?? null,
+      streamFullReloadDetailToggles:
+        document.querySelectorAll('[data-stream-full-reload-details-toggle="true"]').length,
+      streamFullReloadDetailToggleExpanded:
+        document.querySelector('[data-stream-full-reload-details-toggle="true"]')?.getAttribute('aria-expanded') ?? null,
+      streamFullReloadDetails:
+        document.querySelectorAll('[data-stream-full-reload-details="true"]').length,
+      streamFullReloadDetailsStatus:
+        document.querySelector('[data-stream-full-reload-details="true"]')?.getAttribute('data-stream-full-reload-details-status') ?? null,
+      streamFullReloadDetailsErrorCode:
+        document.querySelector('[data-stream-full-reload-details="true"]')?.getAttribute('data-stream-full-reload-details-error-code') ?? null,
+      streamFullReloadDetailsLastEventId:
+        document.querySelector('[data-stream-full-reload-details="true"]')?.getAttribute('data-stream-full-reload-details-last-event-id') ?? null,
+      streamFullReloadAcknowledgeButtons:
+        document.querySelectorAll('[data-stream-full-reload-acknowledge="true"]').length,
       streamEventSelectButtons:
         document.querySelectorAll('[data-stream-event-id]').length,
       streamEventGroups:
@@ -1254,6 +1274,18 @@ async function clickStreamPanelToggle(window) {
   `);
 }
 
+async function clickStreamFullReloadDetailsToggle(window) {
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const button = document.querySelector('[data-stream-full-reload-details-toggle="true"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('Missing stream full reload details toggle button');
+      }
+      button.click();
+    })()
+  `);
+}
+
 async function clickStreamControlsToggle(window) {
   await window.webContents.executeJavaScript(`
     (() => {
@@ -1304,6 +1336,8 @@ function collectVisualSmokeFailures(
   messages,
   requestedWidth,
   initialStreamMetrics,
+  streamFullReloadExpandedMetrics,
+  streamFullReloadCollapsedMetrics,
   streamControlsCollapsedMetrics,
   streamControlsExpandedMetrics,
   streamGroupCollapsedMetrics,
@@ -1506,6 +1540,41 @@ function collectVisualSmokeFailures(
       `expected initial stream full reload banner, got ${initialStreamMetrics.streamFullReloads}`,
     );
   }
+  if (initialStreamMetrics.streamFullReloadExpanded !== "false") {
+    failures.push(
+      `expected initial stream full reload details collapsed, got ${initialStreamMetrics.streamFullReloadExpanded}`,
+    );
+  }
+  if (initialStreamMetrics.streamFullReloadStatus !== "412") {
+    failures.push(
+      `expected initial stream full reload status 412, got ${initialStreamMetrics.streamFullReloadStatus}`,
+    );
+  }
+  if (initialStreamMetrics.streamFullReloadLastEventId !== "evt_old") {
+    failures.push(
+      `expected initial stream full reload last event evt_old, got ${initialStreamMetrics.streamFullReloadLastEventId}`,
+    );
+  }
+  if (initialStreamMetrics.streamFullReloadDetailToggles !== 1) {
+    failures.push(
+      `expected one stream full reload details toggle, got ${initialStreamMetrics.streamFullReloadDetailToggles}`,
+    );
+  }
+  if (initialStreamMetrics.streamFullReloadDetailToggleExpanded !== "false") {
+    failures.push(
+      `expected initial stream full reload details toggle aria-expanded false, got ${initialStreamMetrics.streamFullReloadDetailToggleExpanded}`,
+    );
+  }
+  if (initialStreamMetrics.streamFullReloadDetails !== 0) {
+    failures.push(
+      `expected initial stream full reload details hidden, got ${initialStreamMetrics.streamFullReloadDetails}`,
+    );
+  }
+  if (initialStreamMetrics.streamFullReloadAcknowledgeButtons !== 1) {
+    failures.push(
+      `expected one stream full reload acknowledge button, got ${initialStreamMetrics.streamFullReloadAcknowledgeButtons}`,
+    );
+  }
   if (initialStreamMetrics.streamEventGroups !== 2) {
     failures.push(
       `expected two initial stream event groups, got ${initialStreamMetrics.streamEventGroups}`,
@@ -1549,6 +1618,80 @@ function collectVisualSmokeFailures(
   if (initialStreamMetrics.streamSelectedEventBodies !== 1) {
     failures.push(
       `expected initial stream selected event body, got ${initialStreamMetrics.streamSelectedEventBodies}`,
+    );
+  }
+  if (streamFullReloadExpandedMetrics.streamPanelExpanded !== "true") {
+    failures.push(
+      `expected stream panel to stay expanded while full reload details are expanded, got ${streamFullReloadExpandedMetrics.streamPanelExpanded}`,
+    );
+  }
+  if (streamFullReloadExpandedMetrics.streamFullReloadExpanded !== "true") {
+    failures.push(
+      `expected expanded stream full reload details true, got ${streamFullReloadExpandedMetrics.streamFullReloadExpanded}`,
+    );
+  }
+  if (
+    streamFullReloadExpandedMetrics.streamFullReloadDetailToggleExpanded !==
+    "true"
+  ) {
+    failures.push(
+      `expected expanded stream full reload details toggle aria-expanded true, got ${streamFullReloadExpandedMetrics.streamFullReloadDetailToggleExpanded}`,
+    );
+  }
+  if (streamFullReloadExpandedMetrics.streamFullReloadDetails !== 1) {
+    failures.push(
+      `expected expanded stream full reload details body, got ${streamFullReloadExpandedMetrics.streamFullReloadDetails}`,
+    );
+  }
+  if (streamFullReloadExpandedMetrics.streamFullReloadDetailsStatus !== "412") {
+    failures.push(
+      `expected expanded stream full reload details status 412, got ${streamFullReloadExpandedMetrics.streamFullReloadDetailsStatus}`,
+    );
+  }
+  if (
+    streamFullReloadExpandedMetrics.streamFullReloadDetailsErrorCode !==
+    "SE_SSE_REPLAY_NOT_FOUND"
+  ) {
+    failures.push(
+      `expected expanded stream full reload details error code SE_SSE_REPLAY_NOT_FOUND, got ${streamFullReloadExpandedMetrics.streamFullReloadDetailsErrorCode}`,
+    );
+  }
+  if (
+    streamFullReloadExpandedMetrics.streamFullReloadDetailsLastEventId !==
+    "evt_old"
+  ) {
+    failures.push(
+      `expected expanded stream full reload details last event evt_old, got ${streamFullReloadExpandedMetrics.streamFullReloadDetailsLastEventId}`,
+    );
+  }
+  if (streamFullReloadExpandedMetrics.streamControlsBodies !== 1) {
+    failures.push(
+      `expected full reload details expansion to keep controls body visible, got ${streamFullReloadExpandedMetrics.streamControlsBodies}`,
+    );
+  }
+  if (streamFullReloadExpandedMetrics.streamEventSelectButtons !== 2) {
+    failures.push(
+      `expected full reload details expansion to keep event actions visible, got ${streamFullReloadExpandedMetrics.streamEventSelectButtons}`,
+    );
+  }
+  if (streamFullReloadExpandedMetrics.streamSelectedEventBodies !== 1) {
+    failures.push(
+      `expected full reload details expansion to keep selection body visible, got ${streamFullReloadExpandedMetrics.streamSelectedEventBodies}`,
+    );
+  }
+  if (streamFullReloadCollapsedMetrics.streamFullReloadExpanded !== "false") {
+    failures.push(
+      `expected collapsed stream full reload details false, got ${streamFullReloadCollapsedMetrics.streamFullReloadExpanded}`,
+    );
+  }
+  if (streamFullReloadCollapsedMetrics.streamFullReloadDetails !== 0) {
+    failures.push(
+      `expected collapsed stream full reload details hidden, got ${streamFullReloadCollapsedMetrics.streamFullReloadDetails}`,
+    );
+  }
+  if (streamFullReloadCollapsedMetrics.streamControlsBodies !== 1) {
+    failures.push(
+      `expected full reload details collapse to keep controls body visible, got ${streamFullReloadCollapsedMetrics.streamControlsBodies}`,
     );
   }
   if (streamControlsCollapsedMetrics.streamPanelExpanded !== "true") {
@@ -3351,6 +3494,20 @@ async function main() {
     "read initial stream panel metrics",
     () => readMetrics(window),
   );
+  await runSmokeStep("expand stream full reload details", () =>
+    clickStreamFullReloadDetailsToggle(window),
+  );
+  const streamFullReloadExpandedMetrics = await runSmokeStep(
+    "read expanded stream full reload details metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("collapse stream full reload details", () =>
+    clickStreamFullReloadDetailsToggle(window),
+  );
+  const streamFullReloadCollapsedMetrics = await runSmokeStep(
+    "read collapsed stream full reload details metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("collapse stream controls", () =>
     clickStreamControlsToggle(window),
   );
@@ -3631,6 +3788,8 @@ async function main() {
     messages,
     width,
     initialStreamMetrics,
+    streamFullReloadExpandedMetrics,
+    streamFullReloadCollapsedMetrics,
     streamControlsCollapsedMetrics,
     streamControlsExpandedMetrics,
     streamGroupCollapsedMetrics,
@@ -3675,6 +3834,8 @@ async function main() {
       {
         metrics,
         initialStreamMetrics,
+        streamFullReloadExpandedMetrics,
+        streamFullReloadCollapsedMetrics,
         streamControlsCollapsedMetrics,
         streamControlsExpandedMetrics,
         streamGroupCollapsedMetrics,
