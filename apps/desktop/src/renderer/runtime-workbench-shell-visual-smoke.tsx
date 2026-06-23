@@ -469,6 +469,7 @@ function buildVisualSmokeRuntimeStreamPanelSnapshot(): RuntimeWorkbenchShellRunt
   const event = Object.freeze({
     id: "evt_visual_stream",
     seq: 12,
+    parentEventId: "evt_visual_parent",
     type: "model.text_delta",
     category: "model",
     displayLevel: "default",

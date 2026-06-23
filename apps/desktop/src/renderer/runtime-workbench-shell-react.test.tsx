@@ -633,6 +633,161 @@ test("renderer runtime workbench React shell toggles stream controls locally", a
   }
 });
 
+test("renderer runtime workbench React shell toggles selected stream metadata locally", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Stream Metadata Runtime Workbench"
+        />,
+      );
+    });
+
+    const selectedEvent = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamSelectedEvent",
+      "true",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-parent-id"),
+      "evt_react_parent",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-child-count"),
+      "0",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectionMetadataToggle",
+        "true",
+      ).getAttribute("aria-expanded"),
+      "false",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.streamSelectionMetadata === "true",
+      ),
+      0,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamSelectionMetadataToggle",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectionMetadataToggle",
+        "true",
+      ).getAttribute("aria-expanded"),
+      "true",
+    );
+    const metadata = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamSelectionMetadata",
+      "true",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-category"),
+      "model",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-display-level"),
+      "default",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-parent-id"),
+      "evt_react_parent",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-child-count"),
+      "0",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-expandable"),
+      "yes",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(metadata),
+      /Category[\s\S]*model[\s\S]*Display level[\s\S]*default[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsBody",
+        "true",
+      ).className,
+      "cw-workbench__stream-controls-body",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamEventGroup",
+        "timeline",
+      ).dataset.streamEventGroupExpanded,
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamFullReloadExpanded",
+        "false",
+      ).dataset.streamFullReloadExpanded,
+      "false",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamSelectionMetadataToggle",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectionMetadataToggle",
+        "true",
+      ).getAttribute("aria-expanded"),
+      "false",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.streamSelectionMetadata === "true",
+      ),
+      0,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell toggles stream event groups locally", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {
@@ -4116,6 +4271,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
         Object.freeze({
           id: "evt_react_stream",
           seq: 7,
+          parentEventId: "evt_react_parent",
           type: "model.text_delta",
           category: "model",
           displayLevel: "default",
@@ -4133,6 +4289,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
       selectedEvent: Object.freeze({
         id: "evt_react_stream",
         seq: 7,
+        parentEventId: "evt_react_parent",
         type: "model.text_delta",
         category: "model",
         displayLevel: "default",

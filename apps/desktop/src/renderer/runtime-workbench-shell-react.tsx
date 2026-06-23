@@ -3481,13 +3481,21 @@ function RuntimeWorkbenchShellStreamSelection(props: {
 }): ReactElement {
   const selected = props.panel.selectedEvent;
   const [expanded, setExpanded] = useState(true);
+  const [metadataExpanded, setMetadataExpanded] = useState(false);
   const handleSelectionToggleClick = useCallback((): void => {
     setExpanded((current) => !current);
+  }, []);
+  const handleMetadataToggleClick = useCallback((): void => {
+    setMetadataExpanded((current) => !current);
   }, []);
   const collapsedSummary =
     selected === null
       ? "No event selected"
       : `${selected.title}, ${selected.type}`;
+  const categoryLabel = selected?.category ?? "-";
+  const parentEventIdLabel = selected?.parentEventId ?? "-";
+  const expandableLabel =
+    selected === null ? "-" : selected.expandable ? "yes" : "no";
   return (
     <aside
       className={[
@@ -3531,7 +3539,9 @@ function RuntimeWorkbenchShellStreamSelection(props: {
         <div
           className="cw-workbench__stream-selected-event"
           data-stream-selected-event="true"
+          data-stream-selected-event-child-count={String(selected.childCount)}
           data-stream-selected-event-id={selected.id ?? ""}
+          data-stream-selected-event-parent-id={parentEventIdLabel}
         >
           <button onClick={props.onClearSelectionClick} type="button">
             Clear selection
@@ -3554,6 +3564,50 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               <dd>{selected.createdAt ?? "-"}</dd>
             </div>
           </dl>
+          <button
+            aria-expanded={metadataExpanded}
+            data-stream-selection-metadata-toggle="true"
+            onClick={handleMetadataToggleClick}
+            type="button"
+          >
+            {metadataExpanded ? "Hide metadata" : "Show metadata"}
+          </button>
+          {metadataExpanded ? (
+            <dl
+              className="cw-workbench__stream-selected-event-metadata"
+              data-stream-selection-metadata="true"
+              data-stream-selection-metadata-category={categoryLabel}
+              data-stream-selection-metadata-child-count={String(
+                selected.childCount,
+              )}
+              data-stream-selection-metadata-display-level={
+                selected.displayLevel
+              }
+              data-stream-selection-metadata-expandable={expandableLabel}
+              data-stream-selection-metadata-parent-id={parentEventIdLabel}
+            >
+              <div>
+                <dt>Category</dt>
+                <dd>{categoryLabel}</dd>
+              </div>
+              <div>
+                <dt>Display level</dt>
+                <dd>{selected.displayLevel}</dd>
+              </div>
+              <div>
+                <dt>Parent event</dt>
+                <dd>{parentEventIdLabel}</dd>
+              </div>
+              <div>
+                <dt>Child count</dt>
+                <dd>{selected.childCount}</dd>
+              </div>
+              <div>
+                <dt>Expandable</dt>
+                <dd>{expandableLabel}</dd>
+              </div>
+            </dl>
+          ) : null}
         </div>
       )}
     </aside>

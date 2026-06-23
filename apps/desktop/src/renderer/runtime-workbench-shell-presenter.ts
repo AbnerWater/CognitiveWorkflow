@@ -1624,6 +1624,7 @@ function cloneRuntimeWorkbenchShellRuntimeStreamEvent(
   return Object.freeze({
     id: event.id,
     seq: event.seq,
+    parentEventId: event.parentEventId,
     type: event.type,
     category: event.category,
     displayLevel: event.displayLevel,

@@ -5015,6 +5015,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
         {
           id: "evt_shell",
           seq: 3,
+          parentEventId: null,
           type: "model.text_delta",
           category: "model",
           displayLevel: "default",
@@ -5032,6 +5033,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       selectedEvent: {
         id: "evt_shell",
         seq: 3,
+        parentEventId: null,
         type: "model.text_delta",
         category: "model",
         displayLevel: "default",

@@ -115,6 +115,26 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selection-toggle="true"]')?.getAttribute('aria-expanded') ?? null,
       streamSelectedEventBodies:
         document.querySelectorAll('[data-stream-selected-event="true"]').length,
+      streamSelectedEventParentId:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-parent-id') ?? null,
+      streamSelectedEventChildCount:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-child-count') ?? null,
+      streamSelectionMetadataToggles:
+        document.querySelectorAll('[data-stream-selection-metadata-toggle="true"]').length,
+      streamSelectionMetadataToggleExpanded:
+        document.querySelector('[data-stream-selection-metadata-toggle="true"]')?.getAttribute('aria-expanded') ?? null,
+      streamSelectionMetadataDetails:
+        document.querySelectorAll('[data-stream-selection-metadata="true"]').length,
+      streamSelectionMetadataCategory:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-category') ?? null,
+      streamSelectionMetadataDisplayLevel:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-display-level') ?? null,
+      streamSelectionMetadataParentId:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-parent-id') ?? null,
+      streamSelectionMetadataChildCount:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-child-count') ?? null,
+      streamSelectionMetadataExpandable:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-expandable') ?? null,
       streamSelectionCollapsedSummary:
         document.querySelector('[data-stream-selection-collapsed-summary="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       streamSelectionCollapsedSelectedId:
@@ -1322,6 +1342,18 @@ async function clickStreamSelectionToggle(window) {
   `);
 }
 
+async function clickStreamSelectionMetadataToggle(window) {
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const button = document.querySelector('[data-stream-selection-metadata-toggle="true"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('Missing stream selection metadata toggle button');
+      }
+      button.click();
+    })()
+  `);
+}
+
 async function runSmokeStep(label, action) {
   try {
     return await action();
@@ -1344,6 +1376,8 @@ function collectVisualSmokeFailures(
   streamGroupExpandedMetrics,
   streamSelectionCollapsedMetrics,
   streamSelectionExpandedMetrics,
+  streamSelectionMetadataExpandedMetrics,
+  streamSelectionMetadataCollapsedMetrics,
   streamCollapsedMetrics,
   streamExpandedMetrics,
   initialFileTreeMetrics,
@@ -1871,6 +1905,125 @@ function collectVisualSmokeFailures(
   if (streamSelectionExpandedMetrics.streamSelectedEventBodies !== 1) {
     failures.push(
       `expected re-expanded stream selection body, got ${streamSelectionExpandedMetrics.streamSelectedEventBodies}`,
+    );
+  }
+  if (
+    initialStreamMetrics.streamSelectedEventParentId !== "evt_visual_parent"
+  ) {
+    failures.push(
+      `expected initial selected stream parent evt_visual_parent, got ${initialStreamMetrics.streamSelectedEventParentId}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventChildCount !== "0") {
+    failures.push(
+      `expected initial selected stream child count 0, got ${initialStreamMetrics.streamSelectedEventChildCount}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectionMetadataToggles !== 1) {
+    failures.push(
+      `expected one stream selection metadata toggle, got ${initialStreamMetrics.streamSelectionMetadataToggles}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectionMetadataToggleExpanded !== "false") {
+    failures.push(
+      `expected initial stream selection metadata toggle aria-expanded false, got ${initialStreamMetrics.streamSelectionMetadataToggleExpanded}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectionMetadataDetails !== 0) {
+    failures.push(
+      `expected initial stream selection metadata hidden, got ${initialStreamMetrics.streamSelectionMetadataDetails}`,
+    );
+  }
+  if (streamSelectionMetadataExpandedMetrics.streamPanelExpanded !== "true") {
+    failures.push(
+      `expected stream panel to stay expanded while selection metadata is expanded, got ${streamSelectionMetadataExpandedMetrics.streamPanelExpanded}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionExpanded !== "true"
+  ) {
+    failures.push(
+      `expected selection to stay expanded while metadata is expanded, got ${streamSelectionMetadataExpandedMetrics.streamSelectionExpanded}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataToggleExpanded !==
+    "true"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata toggle aria-expanded true, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataToggleExpanded}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataDetails !== 1
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata body, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataDetails}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataCategory !==
+    "model"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata category model, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataCategory}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataDisplayLevel !==
+    "default"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata display level default, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataDisplayLevel}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataParentId !==
+    "evt_visual_parent"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata parent evt_visual_parent, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataParentId}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataChildCount !==
+    "0"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata child count 0, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataChildCount}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataExpandable !==
+    "yes"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata expandable yes, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataExpandable}`,
+    );
+  }
+  if (streamSelectionMetadataExpandedMetrics.streamControlsBodies !== 1) {
+    failures.push(
+      `expected selection metadata expansion to keep controls body visible, got ${streamSelectionMetadataExpandedMetrics.streamControlsBodies}`,
+    );
+  }
+  if (streamSelectionMetadataExpandedMetrics.streamEventSelectButtons !== 2) {
+    failures.push(
+      `expected selection metadata expansion to keep event actions visible, got ${streamSelectionMetadataExpandedMetrics.streamEventSelectButtons}`,
+    );
+  }
+  if (
+    streamSelectionMetadataCollapsedMetrics.streamSelectionMetadataToggleExpanded !==
+    "false"
+  ) {
+    failures.push(
+      `expected collapsed stream selection metadata toggle aria-expanded false, got ${streamSelectionMetadataCollapsedMetrics.streamSelectionMetadataToggleExpanded}`,
+    );
+  }
+  if (
+    streamSelectionMetadataCollapsedMetrics.streamSelectionMetadataDetails !== 0
+  ) {
+    failures.push(
+      `expected collapsed stream selection metadata hidden, got ${streamSelectionMetadataCollapsedMetrics.streamSelectionMetadataDetails}`,
     );
   }
   if (streamCollapsedMetrics.streamPanelExpanded !== "false") {
@@ -3550,6 +3703,20 @@ async function main() {
     "read expanded stream selection metrics",
     () => readMetrics(window),
   );
+  await runSmokeStep("expand stream selection metadata", () =>
+    clickStreamSelectionMetadataToggle(window),
+  );
+  const streamSelectionMetadataExpandedMetrics = await runSmokeStep(
+    "read expanded stream selection metadata metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("collapse stream selection metadata", () =>
+    clickStreamSelectionMetadataToggle(window),
+  );
+  const streamSelectionMetadataCollapsedMetrics = await runSmokeStep(
+    "read collapsed stream selection metadata metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("collapse stream panel", () =>
     clickStreamPanelToggle(window),
   );
@@ -3796,6 +3963,8 @@ async function main() {
     streamGroupExpandedMetrics,
     streamSelectionCollapsedMetrics,
     streamSelectionExpandedMetrics,
+    streamSelectionMetadataExpandedMetrics,
+    streamSelectionMetadataCollapsedMetrics,
     streamCollapsedMetrics,
     streamExpandedMetrics,
     initialFileTreeMetrics,
@@ -3842,6 +4011,8 @@ async function main() {
         streamGroupExpandedMetrics,
         streamSelectionCollapsedMetrics,
         streamSelectionExpandedMetrics,
+        streamSelectionMetadataExpandedMetrics,
+        streamSelectionMetadataCollapsedMetrics,
         streamCollapsedMetrics,
         streamExpandedMetrics,
         initialFileTreeMetrics,

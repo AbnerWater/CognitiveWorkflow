@@ -48,6 +48,7 @@ export interface RuntimeWorkbenchHostRuntimeStreamSnapshot {
 export interface RuntimeWorkbenchHostRuntimeStreamEventSnapshot {
   readonly id: string | null;
   readonly seq: number | null;
+  readonly parentEventId: string | null;
   readonly type: string;
   readonly category: string | null;
   readonly displayLevel: RuntimeStreamViewDisplayLevel;
@@ -479,6 +480,7 @@ function toRuntimeWorkbenchHostRuntimeStreamEventSnapshot(
   return Object.freeze({
     id: event.id,
     seq: event.seq,
+    parentEventId: event.parentEventId,
     type: event.type,
     category: event.category,
     displayLevel: event.displayLevel,
