@@ -62,10 +62,38 @@ async function readMetrics(window) {
         document.querySelector('[data-workflow-canvas-node-selected="true"]')?.getAttribute('data-workflow-canvas-node') ?? null,
       selectableWorkflowCanvasNodes:
         document.querySelectorAll('[data-workflow-canvas-node-select]').length,
+      selectedWorkflowCanvasEdges:
+        document.querySelectorAll('[data-workflow-canvas-edge-selected="true"]').length,
+      selectedWorkflowCanvasEdgeIds:
+        Array.from(
+          document.querySelectorAll('[data-workflow-canvas-edge-selected="true"]'),
+          (element) => element.getAttribute('data-workflow-canvas-edge')
+        ).filter(Boolean).sort(),
+      incomingWorkflowCanvasEdges:
+        document.querySelectorAll('[data-workflow-canvas-edge-direction="incoming"]').length,
+      incomingWorkflowCanvasEdgeIds:
+        Array.from(
+          document.querySelectorAll('[data-workflow-canvas-edge-direction="incoming"]'),
+          (element) => element.getAttribute('data-workflow-canvas-edge')
+        ).filter(Boolean).sort(),
+      outgoingWorkflowCanvasEdges:
+        document.querySelectorAll('[data-workflow-canvas-edge-direction="outgoing"]').length,
+      outgoingWorkflowCanvasEdgeIds:
+        Array.from(
+          document.querySelectorAll('[data-workflow-canvas-edge-direction="outgoing"]'),
+          (element) => element.getAttribute('data-workflow-canvas-edge')
+        ).filter(Boolean).sort(),
       workflowCanvasInspectorNodeId:
         document.querySelector('.cw-workbench__workflow-canvas-inspector')?.getAttribute('data-workflow-canvas-inspector') ?? null,
       workflowCanvasInspectorTitle:
         document.querySelector('.cw-workbench__workflow-canvas-inspector h3')?.textContent ?? null,
+      workflowCanvasInspectorEdges:
+        document.querySelectorAll('[data-workflow-canvas-inspector-edge]').length,
+      workflowCanvasInspectorEdgeIds:
+        Array.from(
+          document.querySelectorAll('[data-workflow-canvas-inspector-edge]'),
+          (element) => element.getAttribute('data-workflow-canvas-inspector-edge')
+        ).filter(Boolean).sort(),
       activeFileTreeNodes:
         document.querySelectorAll('.cw-workbench__file-tree-node--active').length,
       hasRuntimeStreamFileNode:
@@ -220,6 +248,26 @@ function collectVisualSmokeFailures(
   canvasMetrics,
 ) {
   const failures = [];
+  const selectedWorkflowCanvasEdgeIds = Array.isArray(
+    canvasMetrics.selectedWorkflowCanvasEdgeIds,
+  )
+    ? canvasMetrics.selectedWorkflowCanvasEdgeIds.join(",")
+    : "";
+  const incomingWorkflowCanvasEdgeIds = Array.isArray(
+    canvasMetrics.incomingWorkflowCanvasEdgeIds,
+  )
+    ? canvasMetrics.incomingWorkflowCanvasEdgeIds.join(",")
+    : "";
+  const outgoingWorkflowCanvasEdgeIds = Array.isArray(
+    canvasMetrics.outgoingWorkflowCanvasEdgeIds,
+  )
+    ? canvasMetrics.outgoingWorkflowCanvasEdgeIds.join(",")
+    : "";
+  const workflowCanvasInspectorEdgeIds = Array.isArray(
+    canvasMetrics.workflowCanvasInspectorEdgeIds,
+  )
+    ? canvasMetrics.workflowCanvasInspectorEdgeIds.join(",")
+    : "";
 
   if (messages.length > 0) {
     failures.push(
@@ -304,6 +352,11 @@ function collectVisualSmokeFailures(
       `expected no focused workflow canvas surface in lifecycle smoke, got ${metrics.focusedWorkflowCanvasSurfaces}`,
     );
   }
+  if (metrics.selectedWorkflowCanvasEdges !== 0) {
+    failures.push(
+      `expected no selected workflow canvas edges in lifecycle smoke, got ${metrics.selectedWorkflowCanvasEdges}`,
+    );
+  }
   if (canvasMetrics.activePanelText !== "Canvas") {
     failures.push(
       `expected Canvas active panel, got ${canvasMetrics.activePanelText}`,
@@ -348,6 +401,46 @@ function collectVisualSmokeFailures(
   if (canvasMetrics.workflowCanvasInspectorTitle !== "Repair loop") {
     failures.push(
       `expected Repair loop canvas inspector title, got ${canvasMetrics.workflowCanvasInspectorTitle}`,
+    );
+  }
+  if (canvasMetrics.selectedWorkflowCanvasEdges !== 2) {
+    failures.push(
+      `expected 2 selected repair_task canvas edges, got ${canvasMetrics.selectedWorkflowCanvasEdges}`,
+    );
+  }
+  if (selectedWorkflowCanvasEdgeIds !== "repair_to_context,review_to_repair") {
+    failures.push(
+      `expected selected repair_task canvas edges repair_to_context,review_to_repair, got ${selectedWorkflowCanvasEdgeIds}`,
+    );
+  }
+  if (canvasMetrics.incomingWorkflowCanvasEdges !== 1) {
+    failures.push(
+      `expected 1 incoming repair_task canvas edge, got ${canvasMetrics.incomingWorkflowCanvasEdges}`,
+    );
+  }
+  if (incomingWorkflowCanvasEdgeIds !== "review_to_repair") {
+    failures.push(
+      `expected incoming repair_task canvas edge review_to_repair, got ${incomingWorkflowCanvasEdgeIds}`,
+    );
+  }
+  if (canvasMetrics.outgoingWorkflowCanvasEdges !== 1) {
+    failures.push(
+      `expected 1 outgoing repair_task canvas edge, got ${canvasMetrics.outgoingWorkflowCanvasEdges}`,
+    );
+  }
+  if (outgoingWorkflowCanvasEdgeIds !== "repair_to_context") {
+    failures.push(
+      `expected outgoing repair_task canvas edge repair_to_context, got ${outgoingWorkflowCanvasEdgeIds}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasInspectorEdges !== 2) {
+    failures.push(
+      `expected 2 repair_task inspector edge rows, got ${canvasMetrics.workflowCanvasInspectorEdges}`,
+    );
+  }
+  if (workflowCanvasInspectorEdgeIds !== "repair_to_context,review_to_repair") {
+    failures.push(
+      `expected repair_task inspector edge rows repair_to_context,review_to_repair, got ${workflowCanvasInspectorEdgeIds}`,
     );
   }
   if (metrics.activeFileTreeNodes !== 0) {

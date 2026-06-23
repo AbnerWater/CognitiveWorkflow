@@ -387,9 +387,30 @@ test("renderer runtime workbench React shell selects focused canvas node locally
       ).getAttribute("data-workflow-canvas-node"),
       "repair_task",
     );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasEdgeSelected === "true",
+      ),
+      2,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasEdgeDirection === "incoming",
+      ),
+      1,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasEdgeDirection === "outgoing",
+      ),
+      1,
+    );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(dom.container),
-      /Repair loop[\s\S]*Type[\s\S]*repair_task[\s\S]*Incoming[\s\S]*1[\s\S]*Outgoing[\s\S]*1/u,
+      /Repair loop[\s\S]*Type[\s\S]*repair_task[\s\S]*Incoming[\s\S]*1[\s\S]*Outgoing[\s\S]*1[\s\S]*Incoming edges[\s\S]*review_task[\s\S]*repair_task[\s\S]*Outgoing edges[\s\S]*repair_task[\s\S]*context_task/u,
     );
 
     await act(async () => {
@@ -2014,6 +2035,22 @@ function findFakeRuntimeWorkbenchElement(
     }
   }
   return null;
+}
+
+function countFakeRuntimeWorkbenchElements(
+  root: FakeRuntimeWorkbenchNode,
+  predicate: (element: FakeRuntimeWorkbenchElement) => boolean,
+): number {
+  const current =
+    root instanceof FakeRuntimeWorkbenchElement && predicate(root) ? 1 : 0;
+  return (
+    current +
+    root.childNodes.reduce(
+      (count, child) =>
+        count + countFakeRuntimeWorkbenchElements(child, predicate),
+      0,
+    )
+  );
 }
 
 function fakeRuntimeWorkbenchNodeTextContent(

@@ -885,17 +885,18 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
             className="cw-workbench__workflow-canvas-edges"
           >
             {props.canvas.edges.map((edge) => (
-              <li
-                className={`cw-workbench__workflow-canvas-edge cw-workbench__workflow-canvas-edge--${edge.tone}`}
-                data-workflow-canvas-edge={edge.edgeId}
+              <RuntimeWorkbenchShellWorkflowCanvasEdgeItem
+                edge={edge}
                 key={edge.edgeId}
-              >
-                <span>{edge.type}</span>
-                <strong>
-                  {edge.sourceNodeId} {" -> "} {edge.targetNodeId}
-                </strong>
-                <small>{edge.label}</small>
-              </li>
+                selectedDirection={
+                  selectable && selectedNode !== null
+                    ? runtimeWorkbenchShellWorkflowCanvasEdgeDirection(
+                        edge,
+                        selectedNode.nodeId,
+                      )
+                    : null
+                }
+              />
             ))}
           </ol>
         </div>
@@ -948,6 +949,52 @@ function RuntimeWorkbenchShellWorkflowCanvasNodeItem(props: {
   );
 }
 
+function RuntimeWorkbenchShellWorkflowCanvasEdgeItem(props: {
+  readonly edge: RuntimeWorkbenchShellWorkflowCanvasEdge;
+  readonly selectedDirection: "incoming" | "outgoing" | null;
+}): ReactElement {
+  return (
+    <li
+      className={[
+        "cw-workbench__workflow-canvas-edge",
+        `cw-workbench__workflow-canvas-edge--${props.edge.tone}`,
+        props.selectedDirection === null
+          ? ""
+          : "cw-workbench__workflow-canvas-edge--selected",
+        props.selectedDirection === "incoming"
+          ? "cw-workbench__workflow-canvas-edge--incoming"
+          : "",
+        props.selectedDirection === "outgoing"
+          ? "cw-workbench__workflow-canvas-edge--outgoing"
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-workflow-canvas-edge={props.edge.edgeId}
+      data-workflow-canvas-edge-direction={props.selectedDirection ?? undefined}
+      data-workflow-canvas-edge-selected={
+        props.selectedDirection === null ? undefined : "true"
+      }
+    >
+      <RuntimeWorkbenchShellWorkflowCanvasEdgeContent edge={props.edge} />
+    </li>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasEdgeContent(props: {
+  readonly edge: RuntimeWorkbenchShellWorkflowCanvasEdge;
+}): ReactElement {
+  return (
+    <>
+      <span>{props.edge.type}</span>
+      <strong>
+        {props.edge.sourceNodeId} {" -> "} {props.edge.targetNodeId}
+      </strong>
+      <small>{props.edge.label}</small>
+    </>
+  );
+}
+
 function RuntimeWorkbenchShellWorkflowCanvasNodeContent(props: {
   readonly node: RuntimeWorkbenchShellWorkflowCanvasNode;
 }): ReactElement {
@@ -990,7 +1037,43 @@ function RuntimeWorkbenchShellWorkflowCanvasInspector(props: {
           <dd>{props.outgoingEdges.length}</dd>
         </div>
       </dl>
+      <RuntimeWorkbenchShellWorkflowCanvasInspectorEdgeList
+        edges={props.incomingEdges}
+        emptyLabel="No incoming edges"
+        title="Incoming edges"
+      />
+      <RuntimeWorkbenchShellWorkflowCanvasInspectorEdgeList
+        edges={props.outgoingEdges}
+        emptyLabel="No outgoing edges"
+        title="Outgoing edges"
+      />
     </aside>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasInspectorEdgeList(props: {
+  readonly title: string;
+  readonly emptyLabel: string;
+  readonly edges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
+}): ReactElement {
+  return (
+    <section className="cw-workbench__workflow-canvas-inspector-routes">
+      <h4>{props.title}</h4>
+      {props.edges.length === 0 ? (
+        <p>{props.emptyLabel}</p>
+      ) : (
+        <ol>
+          {props.edges.map((edge) => (
+            <li
+              data-workflow-canvas-inspector-edge={edge.edgeId}
+              key={edge.edgeId}
+            >
+              <RuntimeWorkbenchShellWorkflowCanvasEdgeContent edge={edge} />
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }
 
@@ -1015,6 +1098,19 @@ function isRuntimeWorkbenchShellWorkflowCanvasNodeId(
   return (
     value !== undefined && canvas.nodes.some((node) => node.nodeId === value)
   );
+}
+
+function runtimeWorkbenchShellWorkflowCanvasEdgeDirection(
+  edge: RuntimeWorkbenchShellWorkflowCanvasEdge,
+  selectedNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId,
+): "incoming" | "outgoing" | null {
+  if (edge.targetNodeId === selectedNodeId) {
+    return "incoming";
+  }
+  if (edge.sourceNodeId === selectedNodeId) {
+    return "outgoing";
+  }
+  return null;
 }
 
 function RuntimeWorkbenchShellTaskDrawer(props: {
