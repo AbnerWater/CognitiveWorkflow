@@ -321,9 +321,10 @@ function buildRuntimeStreamViewEvent(
   visitedEventIds: readonly string[],
 ): RuntimeStreamViewEvent {
   const children = childDrafts.get(draft) ?? [];
+  const expandable = draft.expandable || children.length > 0;
   const expanded =
     draft.id !== null &&
-    children.length > 0 &&
+    expandable &&
     expandedEventIds.has(draft.id) &&
     !visitedEventIds.includes(draft.id);
   const nextVisitedEventIds =
@@ -339,7 +340,7 @@ function buildRuntimeStreamViewEvent(
     title: draft.title,
     summary: draft.summary,
     content: draft.content,
-    expandable: draft.expandable || children.length > 0,
+    expandable,
     expanded,
     childCount: children.length,
     children: expanded

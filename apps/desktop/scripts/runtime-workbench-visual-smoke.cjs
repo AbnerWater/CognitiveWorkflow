@@ -89,6 +89,20 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-stream-full-reload-acknowledge="true"]').length,
       streamEventSelectButtons:
         document.querySelectorAll('[data-stream-event-id]').length,
+      streamExpandedEvents:
+        document.querySelectorAll('[data-stream-event-expanded="true"]').length,
+      streamEventExpandToggleButtons:
+        document.querySelectorAll('[data-stream-event-expand-toggle]').length,
+      streamEventExpandToggleExpanded:
+        document.querySelector('[data-stream-event-expand-toggle="evt_visual_stream"]')?.getAttribute('aria-expanded') ?? null,
+      streamEventDetails:
+        document.querySelectorAll('[data-stream-event-detail="true"]').length,
+      streamEventDetailContent:
+        document.querySelector('[data-stream-event-detail-content="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
+      streamEventDetailParentId:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-parent-id') ?? null,
+      streamEventDetailChildCount:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-child-count') ?? null,
       streamEventGroups:
         document.querySelectorAll('[data-stream-event-group]').length,
       streamEventGroupToggleButtons:
@@ -1306,6 +1320,18 @@ async function clickStreamFullReloadDetailsToggle(window) {
   `);
 }
 
+async function clickStreamEventExpandToggle(window, eventId) {
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const button = document.querySelector('[data-stream-event-expand-toggle="${eventId}"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('Missing stream event expand toggle button: ${eventId}');
+      }
+      button.click();
+    })()
+  `);
+}
+
 async function clickStreamControlsToggle(window) {
   await window.webContents.executeJavaScript(`
     (() => {
@@ -1368,6 +1394,8 @@ function collectVisualSmokeFailures(
   messages,
   requestedWidth,
   initialStreamMetrics,
+  streamEventExpandedMetrics,
+  streamEventCollapsedMetrics,
   streamFullReloadExpandedMetrics,
   streamFullReloadCollapsedMetrics,
   streamControlsCollapsedMetrics,
@@ -1652,6 +1680,83 @@ function collectVisualSmokeFailures(
   if (initialStreamMetrics.streamSelectedEventBodies !== 1) {
     failures.push(
       `expected initial stream selected event body, got ${initialStreamMetrics.streamSelectedEventBodies}`,
+    );
+  }
+  if (initialStreamMetrics.streamExpandedEvents !== 0) {
+    failures.push(
+      `expected initial expanded stream events 0, got ${initialStreamMetrics.streamExpandedEvents}`,
+    );
+  }
+  if (initialStreamMetrics.streamEventExpandToggleButtons !== 1) {
+    failures.push(
+      `expected one stream event expand toggle, got ${initialStreamMetrics.streamEventExpandToggleButtons}`,
+    );
+  }
+  if (initialStreamMetrics.streamEventExpandToggleExpanded !== "false") {
+    failures.push(
+      `expected initial stream event expand toggle aria-expanded false, got ${initialStreamMetrics.streamEventExpandToggleExpanded}`,
+    );
+  }
+  if (initialStreamMetrics.streamEventDetails !== 0) {
+    failures.push(
+      `expected initial stream event detail hidden, got ${initialStreamMetrics.streamEventDetails}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamExpandedEvents !== 1) {
+    failures.push(
+      `expected expanded stream event count 1, got ${streamEventExpandedMetrics.streamExpandedEvents}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventExpandToggleExpanded !== "true") {
+    failures.push(
+      `expected expanded stream event toggle aria-expanded true, got ${streamEventExpandedMetrics.streamEventExpandToggleExpanded}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetails !== 1) {
+    failures.push(
+      `expected expanded stream event detail body, got ${streamEventExpandedMetrics.streamEventDetails}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailContent !== "delta content") {
+    failures.push(
+      `expected expanded stream event detail content delta content, got ${streamEventExpandedMetrics.streamEventDetailContent}`,
+    );
+  }
+  if (
+    streamEventExpandedMetrics.streamEventDetailParentId !== "evt_visual_parent"
+  ) {
+    failures.push(
+      `expected expanded stream event detail parent evt_visual_parent, got ${streamEventExpandedMetrics.streamEventDetailParentId}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailChildCount !== "0") {
+    failures.push(
+      `expected expanded stream event detail child count 0, got ${streamEventExpandedMetrics.streamEventDetailChildCount}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamControlsBodies !== 1) {
+    failures.push(
+      `expected stream event detail expansion to keep controls body visible, got ${streamEventExpandedMetrics.streamControlsBodies}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamSelectedEventBodies !== 1) {
+    failures.push(
+      `expected stream event detail expansion to keep selection body visible, got ${streamEventExpandedMetrics.streamSelectedEventBodies}`,
+    );
+  }
+  if (streamEventCollapsedMetrics.streamExpandedEvents !== 0) {
+    failures.push(
+      `expected collapsed stream event count 0, got ${streamEventCollapsedMetrics.streamExpandedEvents}`,
+    );
+  }
+  if (streamEventCollapsedMetrics.streamEventExpandToggleExpanded !== "false") {
+    failures.push(
+      `expected collapsed stream event toggle aria-expanded false, got ${streamEventCollapsedMetrics.streamEventExpandToggleExpanded}`,
+    );
+  }
+  if (streamEventCollapsedMetrics.streamEventDetails !== 0) {
+    failures.push(
+      `expected collapsed stream event detail hidden, got ${streamEventCollapsedMetrics.streamEventDetails}`,
     );
   }
   if (streamFullReloadExpandedMetrics.streamPanelExpanded !== "true") {
@@ -3647,6 +3752,20 @@ async function main() {
     "read initial stream panel metrics",
     () => readMetrics(window),
   );
+  await runSmokeStep("expand stream event detail", () =>
+    clickStreamEventExpandToggle(window, "evt_visual_stream"),
+  );
+  const streamEventExpandedMetrics = await runSmokeStep(
+    "read expanded stream event detail metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("collapse stream event detail", () =>
+    clickStreamEventExpandToggle(window, "evt_visual_stream"),
+  );
+  const streamEventCollapsedMetrics = await runSmokeStep(
+    "read collapsed stream event detail metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("expand stream full reload details", () =>
     clickStreamFullReloadDetailsToggle(window),
   );
@@ -3955,6 +4074,8 @@ async function main() {
     messages,
     width,
     initialStreamMetrics,
+    streamEventExpandedMetrics,
+    streamEventCollapsedMetrics,
     streamFullReloadExpandedMetrics,
     streamFullReloadCollapsedMetrics,
     streamControlsCollapsedMetrics,
@@ -4003,6 +4124,8 @@ async function main() {
       {
         metrics,
         initialStreamMetrics,
+        streamEventExpandedMetrics,
+        streamEventCollapsedMetrics,
         streamFullReloadExpandedMetrics,
         streamFullReloadCollapsedMetrics,
         streamControlsCollapsedMetrics,

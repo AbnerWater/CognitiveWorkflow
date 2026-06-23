@@ -2342,6 +2342,38 @@ button {
   font-size: 11px;
 }
 
+.cw-workbench__stream-event-detail {
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__stream-event-detail p {
+  margin: 0;
+}
+
+.cw-workbench__stream-event-detail dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.cw-workbench__stream-event-detail dt {
+  color: #657487;
+  font-size: 11px;
+}
+
+.cw-workbench__stream-event-detail dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .cw-workbench__stream-selection {
   display: grid;
   gap: 8px;
@@ -2516,6 +2548,7 @@ button {
   .cw-workbench__status-grid,
   .cw-workbench__stream-metrics,
   .cw-workbench__stream-controls-body,
+  .cw-workbench__stream-event-detail dl,
   .cw-workbench__stream-full-reload-details,
   .cw-workbench__version-snapshot-items,
   .cw-workbench__workflow-canvas-nodes,

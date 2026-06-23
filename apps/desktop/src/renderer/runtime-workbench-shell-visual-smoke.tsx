@@ -49,6 +49,7 @@ interface VisualSmokeState {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly focusedTimelineItemId: string;
   readonly selectedTimelineItemId: string | null;
+  readonly streamEventExpanded: boolean;
   readonly lastHandledShortcutLabel: string | null;
 }
 
@@ -58,6 +59,7 @@ function createRuntimeWorkbenchShellVisualSmokeSession(): RuntimeWorkbenchShellD
     activePanel: "lifecycle",
     focusedTimelineItemId: VISUAL_SMOKE_TIMELINE_ITEMS[0]?.id ?? "",
     selectedTimelineItemId: VISUAL_SMOKE_TIMELINE_ITEMS[1]?.id ?? null,
+    streamEventExpanded: false,
     lastHandledShortcutLabel: "None",
   };
   let disposed = false;
@@ -118,6 +120,43 @@ function createRuntimeWorkbenchShellVisualSmokeSession(): RuntimeWorkbenchShellD
         return currentSnapshot;
     }
   };
+  const handleRuntimeStreamCommand = (
+    command: RuntimeWorkbenchInteractionCommand,
+  ): RuntimeWorkbenchShellSnapshot => {
+    if (command.type !== "dispatch_runtime_stream") {
+      return currentSnapshot;
+    }
+    if (
+      command.command.type === "toggle_expanded" &&
+      command.command.eventId === "evt_visual_stream"
+    ) {
+      return updateState({
+        ...state,
+        streamEventExpanded: !state.streamEventExpanded,
+      });
+    }
+    if (
+      command.command.type === "set_expanded" &&
+      command.command.eventId === "evt_visual_stream"
+    ) {
+      return updateState({
+        ...state,
+        streamEventExpanded: command.command.expanded,
+      });
+    }
+    return currentSnapshot;
+  };
+  const handleCommand = (
+    command: RuntimeWorkbenchInteractionCommand,
+  ): RuntimeWorkbenchShellSnapshot => {
+    if (command.type === "dispatch_lifecycle_panel") {
+      return handleLifecycleCommand(command);
+    }
+    if (command.type === "dispatch_runtime_stream") {
+      return handleRuntimeStreamCommand(command);
+    }
+    return currentSnapshot;
+  };
   const unbindKeyboardTarget = (): boolean => {
     if (keyboardTarget === null) {
       return false;
@@ -147,7 +186,7 @@ function createRuntimeWorkbenchShellVisualSmokeSession(): RuntimeWorkbenchShellD
         return listeners.delete(listener);
       };
     },
-    dispatch: async (command) => handleLifecycleCommand(command),
+    dispatch: async (command) => handleCommand(command),
     setActivePanel: (panel) => updateState({ ...state, activePanel: panel }),
     resolveKeyEvent: () => null,
     handleKeyEvent: async (_event: RuntimeWorkbenchShortcutKeyEvent) =>
@@ -192,7 +231,7 @@ function buildVisualSmokeSnapshot(
   const activePanelLabel = visualSmokePanelLabel(state.activePanel);
   const runtimeStreamPanel =
     state.activePanel === "stream" && !disposed
-      ? buildVisualSmokeRuntimeStreamPanelSnapshot()
+      ? buildVisualSmokeRuntimeStreamPanelSnapshot(state)
       : null;
   return Object.freeze({
     activePanel: state.activePanel,
@@ -465,7 +504,9 @@ function buildVisualSmokeSnapshot(
   });
 }
 
-function buildVisualSmokeRuntimeStreamPanelSnapshot(): RuntimeWorkbenchShellRuntimeStreamPanelSnapshot {
+function buildVisualSmokeRuntimeStreamPanelSnapshot(
+  state: VisualSmokeState,
+): RuntimeWorkbenchShellRuntimeStreamPanelSnapshot {
   const event = Object.freeze({
     id: "evt_visual_stream",
     seq: 12,
@@ -478,7 +519,7 @@ function buildVisualSmokeRuntimeStreamPanelSnapshot(): RuntimeWorkbenchShellRunt
     summary: "delta summary",
     content: "delta content",
     expandable: true,
-    expanded: false,
+    expanded: state.streamEventExpanded,
     childCount: 0,
     children: Object.freeze([]),
     createdAt: "2026-06-23T00:00:00.000Z",

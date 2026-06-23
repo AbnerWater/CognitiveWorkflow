@@ -3418,6 +3418,8 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
   return (
     <li
       className={`cw-workbench__stream-event cw-workbench__stream-event--${props.event.severity}`}
+      data-stream-event-expanded={props.event.expanded ? "true" : "false"}
+      data-stream-event-parent-id={props.event.parentEventId ?? ""}
     >
       <div className="cw-workbench__stream-event-main">
         <span className="cw-workbench__stream-event-seq">
@@ -3442,6 +3444,7 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
       <div className="cw-workbench__stream-event-actions">
         <button
           data-stream-event-id={props.event.id ?? undefined}
+          data-stream-event-select={props.event.id ?? undefined}
           disabled={props.event.id === null}
           onClick={props.onSelectEventClick}
           type="button"
@@ -3450,6 +3453,8 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
         </button>
         {props.event.expandable ? (
           <button
+            aria-expanded={props.event.expanded}
+            data-stream-event-expand-toggle={props.event.id ?? undefined}
             data-stream-event-id={props.event.id ?? undefined}
             disabled={props.event.id === null}
             onClick={props.onToggleExpandedClick}
@@ -3470,6 +3475,28 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             />
           ))}
         </ol>
+      )}
+      {!props.event.expanded ? null : (
+        <div
+          className="cw-workbench__stream-event-detail"
+          data-stream-event-detail="true"
+          data-stream-event-detail-child-count={String(props.event.childCount)}
+          data-stream-event-detail-parent-id={props.event.parentEventId ?? ""}
+        >
+          {props.event.content === null ? null : (
+            <p data-stream-event-detail-content="true">{props.event.content}</p>
+          )}
+          <dl>
+            <div>
+              <dt>Parent event</dt>
+              <dd>{props.event.parentEventId ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Child count</dt>
+              <dd>{props.event.childCount}</dd>
+            </div>
+          </dl>
+        </div>
       )}
     </li>
   );

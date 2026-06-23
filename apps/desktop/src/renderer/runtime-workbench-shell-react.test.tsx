@@ -131,6 +131,76 @@ test("renderer runtime workbench React shell renders active stream panel events"
   assert.match(markup, /Clear selection/u);
 });
 
+test("renderer runtime workbench React shell renders expanded stream event detail", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot =
+      createRuntimeWorkbenchShellReactExpandedStreamEventSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Stream Event Detail Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamEventExpanded",
+        "true",
+      ).getAttribute("data-stream-event-parent-id"),
+      "evt_react_parent",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamEventId",
+        "evt_react_stream",
+      ).textContent,
+      "Select",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.streamEventDetail === "true",
+      ),
+      1,
+    );
+    const detail = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamEventDetail",
+      "true",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-parent-id"),
+      "evt_react_parent",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-child-count"),
+      "0",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(detail),
+      /delta content[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell toggles stream full reload details locally", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {
@@ -4325,6 +4395,27 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
     ),
     lastHandledShortcutId: null,
     disposed: false,
+  });
+}
+
+function createRuntimeWorkbenchShellReactExpandedStreamEventSnapshot(): RuntimeWorkbenchShellSnapshot {
+  const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+  const panel = requireRuntimeStreamPanel(snapshot);
+  const event = panel.timelineItems[0];
+  if (event === undefined) {
+    throw new Error("Expected stream event fixture");
+  }
+  const expandedEvent = Object.freeze({
+    ...event,
+    expanded: true,
+  });
+  return Object.freeze({
+    ...snapshot,
+    runtimeStreamPanel: Object.freeze({
+      ...panel,
+      timelineItems: Object.freeze([expandedEvent]),
+      selectedEvent: expandedEvent,
+    }),
   });
 }
 

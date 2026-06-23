@@ -7851,6 +7851,48 @@ test("renderer runtime stream view model folds children and filters spec fields"
   assert.equal(filtered.hiddenEventCount, 3);
 });
 
+test("renderer runtime stream view model expands childless event details", () => {
+  const store = createFakeRuntimeStreamViewModelStore({
+    status: "running",
+    events: [
+      createRuntimeStreamViewModelEvent({
+        event_id: "evt_detail",
+        seq: 1,
+        type: "model.text_completed",
+        category: "model",
+        display_level: "default",
+        severity: "success",
+        title: "Model text completed",
+        summary: "Collapsed text summary",
+        content: "Expanded text detail",
+        expandable: true,
+        payload: { text: "Expanded text detail" },
+        artifact_refs: [],
+        created_at: "2026-06-21T00:00:00.006Z",
+      }),
+    ],
+    totalEvents: 1,
+  });
+  const viewModel = createRuntimeStreamViewModel({ store: store.store });
+
+  const initial = viewModel.snapshot();
+  assert.equal(initial.timelineItems.length, 1);
+  assert.equal(initial.timelineItems[0]?.id, "evt_detail");
+  assert.equal(initial.timelineItems[0]?.expandable, true);
+  assert.equal(initial.timelineItems[0]?.expanded, false);
+  assert.equal(initial.timelineItems[0]?.children.length, 0);
+
+  const expanded = viewModel.toggleExpanded("evt_detail");
+  assert.equal(expanded.timelineItems[0]?.expanded, true);
+  assert.equal(expanded.timelineItems[0]?.content, "Expanded text detail");
+  assert.equal(expanded.timelineItems[0]?.children.length, 0);
+  assert.equal(expanded.visibleEventCount, 1);
+  assert.equal(expanded.foldedChildCount, 0);
+
+  const collapsed = viewModel.toggleExpanded("evt_detail");
+  assert.equal(collapsed.timelineItems[0]?.expanded, false);
+});
+
 test("renderer runtime stream view model publishes isolated snapshots and full reload state", () => {
   const errors: unknown[] = [];
   const published: RuntimeStreamViewModelSnapshot[] = [];
