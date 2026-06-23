@@ -47,6 +47,22 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-panel-toggle="true"]')?.getAttribute('aria-expanded') ?? null,
       streamPanelControls:
         document.querySelectorAll('.cw-workbench__stream-controls').length,
+      streamControlsExpanded:
+        document.querySelector('.cw-workbench__stream-controls')?.getAttribute('data-stream-controls-expanded') ?? null,
+      streamControlsToggleButtons:
+        document.querySelectorAll('[data-stream-controls-toggle="true"]').length,
+      streamControlsToggleExpanded:
+        document.querySelector('[data-stream-controls-toggle="true"]')?.getAttribute('aria-expanded') ?? null,
+      streamControlsBodies:
+        document.querySelectorAll('[data-stream-controls-body="true"]').length,
+      streamControlsCollapsedSummary:
+        document.querySelector('[data-stream-controls-collapsed-summary="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
+      streamControlsCollapsedQuery:
+        document.querySelector('[data-stream-controls-collapsed-summary="true"]')?.getAttribute('data-stream-controls-collapsed-query') ?? null,
+      streamControlsCollapsedMatches:
+        document.querySelector('[data-stream-controls-collapsed-summary="true"]')?.getAttribute('data-stream-controls-collapsed-matches') ?? null,
+      streamControlsCollapsedUnread:
+        document.querySelector('[data-stream-controls-collapsed-summary="true"]')?.getAttribute('data-stream-controls-collapsed-unread') ?? null,
       streamPanelBodies:
         document.querySelectorAll('.cw-workbench__stream-panel-body').length,
       streamFullReloads:
@@ -1238,6 +1254,18 @@ async function clickStreamPanelToggle(window) {
   `);
 }
 
+async function clickStreamControlsToggle(window) {
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const button = document.querySelector('[data-stream-controls-toggle="true"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('Missing stream controls toggle button');
+      }
+      button.click();
+    })()
+  `);
+}
+
 async function clickStreamEventGroupToggle(window, groupId) {
   await window.webContents.executeJavaScript(`
     (() => {
@@ -1276,6 +1304,8 @@ function collectVisualSmokeFailures(
   messages,
   requestedWidth,
   initialStreamMetrics,
+  streamControlsCollapsedMetrics,
+  streamControlsExpandedMetrics,
   streamGroupCollapsedMetrics,
   streamGroupExpandedMetrics,
   streamSelectionCollapsedMetrics,
@@ -1451,6 +1481,21 @@ function collectVisualSmokeFailures(
       `expected initial stream panel controls, got ${initialStreamMetrics.streamPanelControls}`,
     );
   }
+  if (initialStreamMetrics.streamControlsExpanded !== "true") {
+    failures.push(
+      `expected initial stream controls expanded true, got ${initialStreamMetrics.streamControlsExpanded}`,
+    );
+  }
+  if (initialStreamMetrics.streamControlsToggleButtons !== 1) {
+    failures.push(
+      `expected one stream controls toggle button, got ${initialStreamMetrics.streamControlsToggleButtons}`,
+    );
+  }
+  if (initialStreamMetrics.streamControlsBodies !== 1) {
+    failures.push(
+      `expected initial stream controls body, got ${initialStreamMetrics.streamControlsBodies}`,
+    );
+  }
   if (initialStreamMetrics.streamPanelBodies !== 1) {
     failures.push(
       `expected initial stream panel body, got ${initialStreamMetrics.streamPanelBodies}`,
@@ -1504,6 +1549,69 @@ function collectVisualSmokeFailures(
   if (initialStreamMetrics.streamSelectedEventBodies !== 1) {
     failures.push(
       `expected initial stream selected event body, got ${initialStreamMetrics.streamSelectedEventBodies}`,
+    );
+  }
+  if (streamControlsCollapsedMetrics.streamPanelExpanded !== "true") {
+    failures.push(
+      `expected stream panel to stay expanded while controls are collapsed, got ${streamControlsCollapsedMetrics.streamPanelExpanded}`,
+    );
+  }
+  if (streamControlsCollapsedMetrics.streamControlsExpanded !== "false") {
+    failures.push(
+      `expected collapsed stream controls expanded false, got ${streamControlsCollapsedMetrics.streamControlsExpanded}`,
+    );
+  }
+  if (streamControlsCollapsedMetrics.streamControlsToggleExpanded !== "false") {
+    failures.push(
+      `expected collapsed stream controls toggle aria-expanded false, got ${streamControlsCollapsedMetrics.streamControlsToggleExpanded}`,
+    );
+  }
+  if (streamControlsCollapsedMetrics.streamControlsBodies !== 0) {
+    failures.push(
+      `expected collapsed stream controls body hidden, got ${streamControlsCollapsedMetrics.streamControlsBodies}`,
+    );
+  }
+  if (
+    streamControlsCollapsedMetrics.streamControlsCollapsedSummary !==
+    'Search "delta", 1 match, 1 unread'
+  ) {
+    failures.push(
+      `expected collapsed stream controls summary, got ${streamControlsCollapsedMetrics.streamControlsCollapsedSummary}`,
+    );
+  }
+  if (streamControlsCollapsedMetrics.streamControlsCollapsedQuery !== "delta") {
+    failures.push(
+      `expected collapsed stream controls query delta, got ${streamControlsCollapsedMetrics.streamControlsCollapsedQuery}`,
+    );
+  }
+  if (streamControlsCollapsedMetrics.streamControlsCollapsedMatches !== "1") {
+    failures.push(
+      `expected collapsed stream controls matches 1, got ${streamControlsCollapsedMetrics.streamControlsCollapsedMatches}`,
+    );
+  }
+  if (streamControlsCollapsedMetrics.streamControlsCollapsedUnread !== "1") {
+    failures.push(
+      `expected collapsed stream controls unread 1, got ${streamControlsCollapsedMetrics.streamControlsCollapsedUnread}`,
+    );
+  }
+  if (streamControlsCollapsedMetrics.streamEventSelectButtons !== 2) {
+    failures.push(
+      `expected controls collapse to keep event actions visible, got ${streamControlsCollapsedMetrics.streamEventSelectButtons}`,
+    );
+  }
+  if (streamControlsCollapsedMetrics.streamSelectedEventBodies !== 1) {
+    failures.push(
+      `expected controls collapse to keep selection body visible, got ${streamControlsCollapsedMetrics.streamSelectedEventBodies}`,
+    );
+  }
+  if (streamControlsExpandedMetrics.streamControlsExpanded !== "true") {
+    failures.push(
+      `expected re-expanded stream controls expanded true, got ${streamControlsExpandedMetrics.streamControlsExpanded}`,
+    );
+  }
+  if (streamControlsExpandedMetrics.streamControlsBodies !== 1) {
+    failures.push(
+      `expected re-expanded stream controls body, got ${streamControlsExpandedMetrics.streamControlsBodies}`,
     );
   }
   if (streamGroupCollapsedMetrics.streamPanelExpanded !== "true") {
@@ -3243,6 +3351,20 @@ async function main() {
     "read initial stream panel metrics",
     () => readMetrics(window),
   );
+  await runSmokeStep("collapse stream controls", () =>
+    clickStreamControlsToggle(window),
+  );
+  const streamControlsCollapsedMetrics = await runSmokeStep(
+    "read collapsed stream controls metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("expand stream controls", () =>
+    clickStreamControlsToggle(window),
+  );
+  const streamControlsExpandedMetrics = await runSmokeStep(
+    "read expanded stream controls metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("collapse timeline stream event group", () =>
     clickStreamEventGroupToggle(window, "timeline"),
   );
@@ -3509,6 +3631,8 @@ async function main() {
     messages,
     width,
     initialStreamMetrics,
+    streamControlsCollapsedMetrics,
+    streamControlsExpandedMetrics,
     streamGroupCollapsedMetrics,
     streamGroupExpandedMetrics,
     streamSelectionCollapsedMetrics,
@@ -3551,6 +3675,8 @@ async function main() {
       {
         metrics,
         initialStreamMetrics,
+        streamControlsCollapsedMetrics,
+        streamControlsExpandedMetrics,
         streamGroupCollapsedMetrics,
         streamGroupExpandedMetrics,
         streamSelectionCollapsedMetrics,

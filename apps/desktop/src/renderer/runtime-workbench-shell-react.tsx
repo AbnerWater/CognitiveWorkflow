@@ -3143,62 +3143,113 @@ function RuntimeWorkbenchShellStreamControls(props: {
   readonly onSelectSearchClick: () => void;
   readonly onMarkReadClick: () => void;
 }): ReactElement {
+  const [expanded, setExpanded] = useState(true);
   const hasSearch = props.panel.search.query.length > 0;
   const hasMatches = props.panel.search.matchCount > 0;
   const searchPosition =
     props.panel.search.activeMatchIndex === null
       ? "-"
       : `${props.panel.search.activeMatchIndex + 1}/${props.panel.search.matchCount}`;
+  const handleControlsToggleClick = useCallback((): void => {
+    setExpanded((current) => !current);
+  }, []);
+  const matchLabel = props.panel.search.matchCount === 1 ? "match" : "matches";
+  const collapsedSummary = `${
+    hasSearch ? `Search "${props.panel.search.query}"` : "No search"
+  }, ${props.panel.search.matchCount} ${matchLabel}, ${props.panel.read.unreadCount} unread`;
   return (
-    <div className="cw-workbench__stream-controls">
-      <label className="cw-workbench__stream-search">
-        <span>Search events</span>
-        <input
-          onChange={props.onSearchChange}
-          type="search"
-          value={props.panel.search.query}
-        />
-      </label>
-      <div className="cw-workbench__stream-control-buttons">
+    <div
+      className={[
+        "cw-workbench__stream-controls",
+        expanded ? "" : "cw-workbench__stream-controls--collapsed",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-stream-controls-expanded={expanded ? "true" : "false"}
+      data-stream-controls-matches={String(props.panel.search.matchCount)}
+      data-stream-controls-query={props.panel.search.query}
+      data-stream-controls-unread={String(props.panel.read.unreadCount)}
+    >
+      <div className="cw-workbench__stream-controls-header">
+        <h3>Controls</h3>
         <button
-          disabled={!hasSearch}
-          onClick={props.onClearSearchClick}
+          aria-expanded={expanded}
+          data-stream-controls-toggle="true"
+          onClick={handleControlsToggleClick}
           type="button"
         >
-          Clear
-        </button>
-        <button
-          disabled={!hasMatches}
-          onClick={props.onPreviousSearchClick}
-          type="button"
-        >
-          Previous
-        </button>
-        <button
-          disabled={!hasMatches}
-          onClick={props.onNextSearchClick}
-          type="button"
-        >
-          Next
-        </button>
-        <button
-          disabled={props.panel.search.activeEventId === null}
-          onClick={props.onSelectSearchClick}
-          type="button"
-        >
-          Select match
-        </button>
-        <button
-          disabled={props.panel.read.unreadCount === 0}
-          onClick={props.onMarkReadClick}
-          type="button"
-        >
-          Mark read
+          {expanded ? "Collapse controls" : "Expand controls"}
         </button>
       </div>
-      <span className="cw-workbench__stream-search-position">
-        {searchPosition}
-      </span>
+      {expanded ? (
+        <div
+          className="cw-workbench__stream-controls-body"
+          data-stream-controls-body="true"
+        >
+          <label className="cw-workbench__stream-search">
+            <span>Search events</span>
+            <input
+              onChange={props.onSearchChange}
+              type="search"
+              value={props.panel.search.query}
+            />
+          </label>
+          <div className="cw-workbench__stream-control-buttons">
+            <button
+              disabled={!hasSearch}
+              onClick={props.onClearSearchClick}
+              type="button"
+            >
+              Clear
+            </button>
+            <button
+              disabled={!hasMatches}
+              onClick={props.onPreviousSearchClick}
+              type="button"
+            >
+              Previous
+            </button>
+            <button
+              disabled={!hasMatches}
+              onClick={props.onNextSearchClick}
+              type="button"
+            >
+              Next
+            </button>
+            <button
+              disabled={props.panel.search.activeEventId === null}
+              onClick={props.onSelectSearchClick}
+              type="button"
+            >
+              Select match
+            </button>
+            <button
+              disabled={props.panel.read.unreadCount === 0}
+              onClick={props.onMarkReadClick}
+              type="button"
+            >
+              Mark read
+            </button>
+          </div>
+          <span className="cw-workbench__stream-search-position">
+            {searchPosition}
+          </span>
+        </div>
+      ) : (
+        <p
+          className="cw-workbench__stream-controls-collapsed"
+          data-stream-controls-collapsed-matches={String(
+            props.panel.search.matchCount,
+          )}
+          data-stream-controls-collapsed-query={props.panel.search.query}
+          data-stream-controls-collapsed-summary="true"
+          data-stream-controls-collapsed-unread={String(
+            props.panel.read.unreadCount,
+          )}
+        >
+          {collapsedSummary}
+        </p>
+      )}
     </div>
   );
 }

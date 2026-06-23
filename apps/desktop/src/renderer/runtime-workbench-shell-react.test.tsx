@@ -275,6 +275,198 @@ test("renderer runtime workbench React shell toggles stream panel collapse local
   }
 });
 
+test("renderer runtime workbench React shell toggles stream controls locally", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Stream Controls Collapse Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsExpanded",
+        "true",
+      ).getAttribute("data-stream-controls-query"),
+      "delta",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsExpanded",
+        "true",
+      ).getAttribute("data-stream-controls-matches"),
+      "1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsToggle",
+        "true",
+      ).getAttribute("aria-expanded"),
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsBody",
+        "true",
+      ).className,
+      "cw-workbench__stream-controls-body",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByInputType(dom.container, "search")
+        .value,
+      "delta",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamControlsToggle",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsExpanded",
+        "false",
+      ).getAttribute("data-stream-controls-unread"),
+      "1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsToggle",
+        "true",
+      ).getAttribute("aria-expanded"),
+      "false",
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamControlsCollapsedSummary",
+          "true",
+        ),
+      ),
+      'Search "delta", 1 match, 1 unread',
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsCollapsedSummary",
+        "true",
+      ).getAttribute("data-stream-controls-collapsed-query"),
+      "delta",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsCollapsedSummary",
+        "true",
+      ).getAttribute("data-stream-controls-collapsed-unread"),
+      "1",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.streamControlsBody === "true",
+      ),
+      0,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.tagName === "INPUT" && element.type === "search",
+      ),
+      0,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamPanelExpanded",
+        "true",
+      ).dataset.streamPanelExpanded,
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamEventGroup",
+        "timeline",
+      ).dataset.streamEventGroupExpanded,
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectedEvent",
+        "true",
+      ).getAttribute("data-stream-selected-event-id"),
+      "evt_react_stream",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamEventId",
+        "evt_react_stream",
+      ).textContent,
+      "Select",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamControlsToggle",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsExpanded",
+        "true",
+      ).dataset.streamControlsExpanded,
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamControlsBody",
+        "true",
+      ).className,
+      "cw-workbench__stream-controls-body",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell toggles stream event groups locally", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {

@@ -2098,13 +2098,42 @@ button {
 
 .cw-workbench__stream-controls {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto;
   gap: 8px;
-  align-items: end;
   padding: 10px;
   border: 1px solid #d7dde5;
   border-radius: 6px;
   background: #fbfcfd;
+}
+
+.cw-workbench__stream-controls-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.cw-workbench__stream-controls-header h3 {
+  font-size: 15px;
+}
+
+.cw-workbench__stream-controls-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.cw-workbench__stream-controls-collapsed {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #526173;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .cw-workbench__stream-search {
@@ -2454,6 +2483,7 @@ button {
   .cw-workbench__task-drawer-header,
   .cw-workbench__status-grid,
   .cw-workbench__stream-metrics,
+  .cw-workbench__stream-controls-body,
   .cw-workbench__version-snapshot-items,
   .cw-workbench__workflow-canvas-nodes,
   .cw-workbench__workflow-canvas-summary dl,
