@@ -484,6 +484,13 @@ function buildVisualSmokeChromeSnapshot(
       title: "Task Drawer",
       summary:
         state.activePanel === "lifecycle" ? "Lifecycle focus" : "Stream focus",
+      collapsedSummary: `${
+        state.activePanel === "lifecycle" ? "Lifecycle" : "Stream"
+      } focus, ${VISUAL_SMOKE_TIMELINE_ITEMS.length} visible, 0 unread`,
+      collapsible: true,
+      defaultCollapsed: false,
+      expandLabel: "Expand drawer",
+      collapseLabel: "Collapse drawer",
       items: Object.freeze([
         Object.freeze({
           id: "active_panel",

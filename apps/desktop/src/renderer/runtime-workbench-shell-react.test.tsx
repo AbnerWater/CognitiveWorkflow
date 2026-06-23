@@ -58,6 +58,7 @@ test("renderer runtime workbench React shell renders server snapshot without DOM
   assert.match(markup, /Lifecycle/u);
   assert.match(markup, /Stream/u);
   assert.match(markup, /Task Drawer/u);
+  assert.match(markup, /Collapse drawer/u);
   assert.match(markup, /Chat Box/u);
   assert.equal(session.serverSnapshotCount(), 1);
   assert.equal(session.listenerCount(), 0);
@@ -143,6 +144,88 @@ test("renderer runtime workbench React shell renders lifecycle panel events", ()
   assert.match(markup, /READY stdout captured/u);
   assert.match(markup, /Select focused/u);
   assert.match(markup, /Clear selection/u);
+});
+
+test("renderer runtime workbench React shell toggles task drawer collapse", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Task Drawer Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerExpanded",
+        "true",
+      ).getAttribute("data-task-drawer-expanded"),
+      "true",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container),
+      /Active panel[\s\S]*Stream/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(
+          dom.container,
+          "Collapse drawer",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerExpanded",
+        "false",
+      ).getAttribute("data-task-drawer-expanded"),
+      "false",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container),
+      /Stream focus, 1 visible, 1 unread/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Expand drawer"),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerExpanded",
+        "true",
+      ).getAttribute("data-task-drawer-expanded"),
+      "true",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container),
+      /Unread[\s\S]*1/u,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
 });
 
 test("renderer runtime workbench React shell binds keyboard lifecycle on client mount", async () => {

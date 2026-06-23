@@ -701,23 +701,56 @@ function RuntimeWorkbenchShellDock(props: {
 function RuntimeWorkbenchShellTaskDrawer(props: {
   readonly drawer: RuntimeWorkbenchShellTaskDrawerSnapshot;
 }): ReactElement {
+  const [expanded, setExpanded] = useState(
+    () => !props.drawer.defaultCollapsed,
+  );
+  const handleToggleClick = useCallback((): void => {
+    setExpanded((current) => !current);
+  }, []);
   return (
-    <aside className="cw-workbench__task-drawer">
+    <aside
+      className={[
+        "cw-workbench__task-drawer",
+        expanded ? "" : "cw-workbench__task-drawer--collapsed",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-task-drawer-expanded={expanded ? "true" : "false"}
+    >
       <div className="cw-workbench__task-drawer-header">
-        <h2>{props.drawer.title}</h2>
-        <p>{props.drawer.summary}</p>
-      </div>
-      <dl className="cw-workbench__task-drawer-items">
-        {props.drawer.items.map((item) => (
-          <div
-            className={`cw-workbench__task-drawer-item cw-workbench__task-drawer-item--${item.tone}`}
-            key={item.id}
+        <div>
+          <h2>{props.drawer.title}</h2>
+          <p>{props.drawer.summary}</p>
+        </div>
+        {props.drawer.collapsible ? (
+          <button
+            aria-expanded={expanded}
+            className="cw-workbench__task-drawer-toggle"
+            data-task-drawer-toggle="true"
+            onClick={handleToggleClick}
+            type="button"
           >
-            <dt>{item.label}</dt>
-            <dd>{item.value}</dd>
-          </div>
-        ))}
-      </dl>
+            {expanded ? props.drawer.collapseLabel : props.drawer.expandLabel}
+          </button>
+        ) : null}
+      </div>
+      {expanded ? (
+        <dl className="cw-workbench__task-drawer-items">
+          {props.drawer.items.map((item) => (
+            <div
+              className={`cw-workbench__task-drawer-item cw-workbench__task-drawer-item--${item.tone}`}
+              key={item.id}
+            >
+              <dt>{item.label}</dt>
+              <dd>{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="cw-workbench__task-drawer-collapsed">
+          {props.drawer.collapsedSummary}
+        </p>
+      )}
     </aside>
   );
 }

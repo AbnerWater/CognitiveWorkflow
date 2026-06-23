@@ -5113,6 +5113,14 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   );
   assert.equal(snapshot.chrome.taskDrawer.title, "Task Drawer");
   assert.equal(snapshot.chrome.taskDrawer.summary, "Stream focus");
+  assert.equal(
+    snapshot.chrome.taskDrawer.collapsedSummary,
+    "Stream focus, 1 visible, 1 unread",
+  );
+  assert.equal(snapshot.chrome.taskDrawer.collapsible, true);
+  assert.equal(snapshot.chrome.taskDrawer.defaultCollapsed, false);
+  assert.equal(snapshot.chrome.taskDrawer.expandLabel, "Expand drawer");
+  assert.equal(snapshot.chrome.taskDrawer.collapseLabel, "Collapse drawer");
   assert.deepEqual(
     snapshot.chrome.taskDrawer.items.map((item) => [
       item.id,

@@ -26,6 +26,12 @@ async function readMetrics(window) {
       hasTaskDrawer: document.querySelector('.cw-workbench__task-drawer') !== null,
       hasChatBox: document.querySelector('.cw-workbench__chat') !== null,
       dockItems: document.querySelectorAll('.cw-workbench__dock-item').length,
+      hasTaskDrawerToggle: document.querySelector('[data-task-drawer-toggle="true"]') !== null,
+      taskDrawerExpanded:
+        document.querySelector('.cw-workbench__task-drawer')?.getAttribute('data-task-drawer-expanded') ?? null,
+      taskDrawerItems: document.querySelectorAll('.cw-workbench__task-drawer-item').length,
+      taskDrawerCollapsedSummary:
+        document.querySelector('.cw-workbench__task-drawer-collapsed')?.textContent ?? null,
       timelineItems: document.querySelectorAll('.cw-workbench__lifecycle-item').length,
       commandButtons: document.querySelectorAll('.cw-workbench__lifecycle-command').length,
       selectedText: document.querySelector('.cw-workbench__lifecycle-selected-item strong')?.textContent ?? null,
@@ -57,7 +63,24 @@ async function clickLifecycleCommand(window, command) {
   `);
 }
 
-function collectVisualSmokeFailures(metrics, messages, requestedWidth) {
+async function clickTaskDrawerToggle(window) {
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const button = document.querySelector('[data-task-drawer-toggle="true"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('Missing task drawer toggle button');
+      }
+      button.click();
+    })()
+  `);
+}
+
+function collectVisualSmokeFailures(
+  metrics,
+  messages,
+  requestedWidth,
+  collapsedMetrics,
+) {
   const failures = [];
 
   if (messages.length > 0) {
@@ -82,6 +105,35 @@ function collectVisualSmokeFailures(metrics, messages, requestedWidth) {
   }
   if (metrics.dockItems !== 4) {
     failures.push(`expected 4 dock items, got ${metrics.dockItems}`);
+  }
+  if (metrics.hasTaskDrawerToggle !== true) {
+    failures.push("missing task drawer toggle");
+  }
+  if (metrics.taskDrawerExpanded !== "true") {
+    failures.push(
+      `expected expanded task drawer, got ${metrics.taskDrawerExpanded}`,
+    );
+  }
+  if (metrics.taskDrawerItems !== 5) {
+    failures.push(
+      `expected 5 task drawer items, got ${metrics.taskDrawerItems}`,
+    );
+  }
+  if (collapsedMetrics.taskDrawerExpanded !== "false") {
+    failures.push(
+      `expected collapsed task drawer during toggle check, got ${collapsedMetrics.taskDrawerExpanded}`,
+    );
+  }
+  if (collapsedMetrics.taskDrawerItems !== 0) {
+    failures.push(
+      `expected collapsed task drawer to hide items, got ${collapsedMetrics.taskDrawerItems}`,
+    );
+  }
+  if (
+    typeof collapsedMetrics.taskDrawerCollapsedSummary !== "string" ||
+    collapsedMetrics.taskDrawerCollapsedSummary.length === 0
+  ) {
+    failures.push("missing collapsed task drawer summary");
   }
   if (metrics.timelineItems !== 5) {
     failures.push(`expected 5 timeline items, got ${metrics.timelineItems}`);
@@ -152,6 +204,9 @@ async function main() {
   await clickLifecycleCommand(window, "select_focused_timeline_item");
   await clickLifecycleCommand(window, "focus_next_timeline_item");
   await clickLifecycleCommand(window, "select_focused_timeline_item");
+  await clickTaskDrawerToggle(window);
+  const collapsedMetrics = await readMetrics(window);
+  await clickTaskDrawerToggle(window);
   if (scrollY > 0) {
     await window.webContents.executeJavaScript(
       `window.scrollTo(0, ${scrollY})`,
@@ -163,11 +218,20 @@ async function main() {
   if (image.isEmpty()) {
     throw new Error("Electron visual smoke capture returned an empty image");
   }
-  const failures = collectVisualSmokeFailures(metrics, messages, width);
+  const failures = collectVisualSmokeFailures(
+    metrics,
+    messages,
+    width,
+    collapsedMetrics,
+  );
   await fs.writeFile(outputPath, image.toPNG());
   await fs.writeFile(
     `${outputPath}.json`,
-    JSON.stringify({ metrics, messages, failures, outputPath }, null, 2),
+    JSON.stringify(
+      { metrics, collapsedMetrics, messages, failures, outputPath },
+      null,
+      2,
+    ),
   );
   if (failures.length > 0) {
     throw new Error(`Electron visual smoke failed: ${failures.join("; ")}`);

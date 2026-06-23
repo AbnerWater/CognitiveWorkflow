@@ -287,6 +287,11 @@ function freezeChrome(
     taskDrawer: Object.freeze({
       title: chrome.taskDrawer.title,
       summary: chrome.taskDrawer.summary,
+      collapsedSummary: chrome.taskDrawer.collapsedSummary,
+      collapsible: chrome.taskDrawer.collapsible,
+      defaultCollapsed: chrome.taskDrawer.defaultCollapsed,
+      expandLabel: chrome.taskDrawer.expandLabel,
+      collapseLabel: chrome.taskDrawer.collapseLabel,
       items: Object.freeze(
         chrome.taskDrawer.items.map((item) => Object.freeze({ ...item })),
       ),

@@ -126,6 +126,11 @@ export interface RuntimeWorkbenchShellTaskDrawerItem {
 export interface RuntimeWorkbenchShellTaskDrawerSnapshot {
   readonly title: string;
   readonly summary: string;
+  readonly collapsedSummary: string;
+  readonly collapsible: boolean;
+  readonly defaultCollapsed: boolean;
+  readonly expandLabel: string;
+  readonly collapseLabel: string;
   readonly items: readonly RuntimeWorkbenchShellTaskDrawerItem[];
 }
 
@@ -540,6 +545,11 @@ function buildShellChrome(
     taskDrawer: {
       title: "Task Drawer",
       summary: `${activePanelLabel} focus`,
+      collapsedSummary: `${activePanelLabel} focus, ${visibleItems} visible, ${unreadEvents} unread`,
+      collapsible: true,
+      defaultCollapsed: false,
+      expandLabel: "Expand drawer",
+      collapseLabel: "Collapse drawer",
       items: [
         taskDrawerItem({
           id: "active_panel",
@@ -1032,6 +1042,11 @@ function freezeRuntimeWorkbenchShellChrome(
     taskDrawer: Object.freeze({
       title: chrome.taskDrawer.title,
       summary: chrome.taskDrawer.summary,
+      collapsedSummary: chrome.taskDrawer.collapsedSummary,
+      collapsible: chrome.taskDrawer.collapsible,
+      defaultCollapsed: chrome.taskDrawer.defaultCollapsed,
+      expandLabel: chrome.taskDrawer.expandLabel,
+      collapseLabel: chrome.taskDrawer.collapseLabel,
       items: Object.freeze(
         chrome.taskDrawer.items.map((item) => taskDrawerItem(item)),
       ),

@@ -106,7 +106,9 @@ button {
 
 .cw-workbench__task-drawer-header {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
+  align-items: start;
 }
 
 .cw-workbench__task-drawer-header h2,
@@ -118,6 +120,36 @@ button {
   color: #657487;
   overflow-wrap: anywhere;
   font-size: 13px;
+}
+
+.cw-workbench__task-drawer-toggle {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2c3a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cw-workbench__task-drawer-toggle:hover {
+  border-color: #3d6fa7;
+}
+
+.cw-workbench__task-drawer-collapsed {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-left: 4px solid #4f8cc9;
+  border-radius: 6px;
+  background: #fbfcfd;
+  color: #526173;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .cw-workbench__task-drawer-items {
@@ -1154,6 +1186,7 @@ button {
 
 @media (max-width: 520px) {
   .cw-workbench__dock,
+  .cw-workbench__task-drawer-header,
   .cw-workbench__status-grid,
   .cw-workbench__stream-metrics,
   .cw-workbench__lifecycle-metrics,
