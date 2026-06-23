@@ -188,9 +188,48 @@ test("renderer runtime workbench React shell renders expanded stream event detai
       detail.getAttribute("data-stream-event-detail-child-count"),
       "0",
     );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-artifact-count"),
+      "1",
+    );
+    const eventArtifact = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamArtifactRef",
+      "event-detail",
+    );
+    assert.equal(
+      eventArtifact.getAttribute("data-stream-artifact-ref-id"),
+      "artifact_react_report",
+    );
+    assert.equal(
+      eventArtifact.getAttribute("data-stream-artifact-ref-kind"),
+      "file",
+    );
+    assert.equal(
+      eventArtifact.getAttribute("data-stream-artifact-ref-path"),
+      "artifacts/report.md",
+    );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(detail),
-      /delta content[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
+      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
+    );
+    const selectedEvent = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamSelectedEvent",
+      "true",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-artifact-count"),
+      "1",
+    );
+    const selectedArtifact = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamArtifactRef",
+      "selection",
+    );
+    assert.equal(
+      selectedArtifact.getAttribute("data-stream-artifact-ref-id"),
+      "artifact_react_report",
     );
 
     await act(async () => {
@@ -4353,6 +4392,17 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
           expanded: false,
           childCount: 0,
           children: Object.freeze([]),
+          artifactRefs: Object.freeze([
+            Object.freeze({
+              artifactId: "artifact_react_report",
+              kind: "file",
+              displayName: "Report draft",
+              mimeType: "text/markdown",
+              sizeBytes: 128,
+              previewText: "Report preview",
+              path: "artifacts/report.md",
+            }),
+          ]),
           createdAt: "2026-06-22T02:00:00.000Z",
         }),
       ]),
@@ -4371,6 +4421,17 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
         expanded: false,
         childCount: 0,
         children: Object.freeze([]),
+        artifactRefs: Object.freeze([
+          Object.freeze({
+            artifactId: "artifact_react_report",
+            kind: "file",
+            displayName: "Report draft",
+            mimeType: "text/markdown",
+            sizeBytes: 128,
+            previewText: "Report preview",
+            path: "artifacts/report.md",
+          }),
+        ]),
         createdAt: "2026-06-22T02:00:00.000Z",
       }),
       fullReload: Object.freeze({

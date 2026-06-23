@@ -45,6 +45,25 @@ export interface RuntimeWorkbenchHostRuntimeStreamSnapshot {
   readonly disposed: boolean;
 }
 
+export type RuntimeWorkbenchHostRuntimeStreamArtifactKind =
+  | "artifact"
+  | "pack"
+  | "evaluation"
+  | "patch"
+  | "file"
+  | "image"
+  | "chart";
+
+export interface RuntimeWorkbenchHostRuntimeStreamArtifactRefSnapshot {
+  readonly artifactId: string;
+  readonly kind: RuntimeWorkbenchHostRuntimeStreamArtifactKind;
+  readonly displayName: string;
+  readonly mimeType: string | null;
+  readonly sizeBytes: number | null;
+  readonly previewText: string | null;
+  readonly path: string | null;
+}
+
 export interface RuntimeWorkbenchHostRuntimeStreamEventSnapshot {
   readonly id: string | null;
   readonly seq: number | null;
@@ -60,6 +79,7 @@ export interface RuntimeWorkbenchHostRuntimeStreamEventSnapshot {
   readonly expanded: boolean;
   readonly childCount: number;
   readonly children: readonly RuntimeWorkbenchHostRuntimeStreamEventSnapshot[];
+  readonly artifactRefs: readonly RuntimeWorkbenchHostRuntimeStreamArtifactRefSnapshot[];
   readonly createdAt: string | null;
 }
 
@@ -494,8 +514,94 @@ function toRuntimeWorkbenchHostRuntimeStreamEventSnapshot(
     children: Object.freeze(
       event.children.map(toRuntimeWorkbenchHostRuntimeStreamEventSnapshot),
     ),
+    artifactRefs: toRuntimeWorkbenchHostRuntimeStreamArtifactRefs(
+      event.artifactRefs,
+    ),
     createdAt: event.createdAt,
   });
+}
+
+function toRuntimeWorkbenchHostRuntimeStreamArtifactRefs(
+  value: unknown,
+): readonly RuntimeWorkbenchHostRuntimeStreamArtifactRefSnapshot[] {
+  if (!Array.isArray(value)) {
+    return Object.freeze([]);
+  }
+  return Object.freeze(
+    value.flatMap((item) => {
+      const ref = toRuntimeWorkbenchHostRuntimeStreamArtifactRef(item);
+      return ref === null ? [] : [ref];
+    }),
+  );
+}
+
+function toRuntimeWorkbenchHostRuntimeStreamArtifactRef(
+  value: unknown,
+): RuntimeWorkbenchHostRuntimeStreamArtifactRefSnapshot | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const artifactId = readNonEmptyString(value, "artifact_id");
+  const kind = readArtifactKind(value, "kind");
+  const displayName = readNonEmptyString(value, "display_name");
+  if (artifactId === null || kind === null || displayName === null) {
+    return null;
+  }
+  return Object.freeze({
+    artifactId,
+    kind,
+    displayName,
+    mimeType: readOptionalString(value, "mime_type"),
+    sizeBytes: readOptionalNonNegativeInteger(value, "size_bytes"),
+    previewText: readOptionalString(value, "preview_text"),
+    path: readOptionalString(value, "path"),
+  });
+}
+
+function readArtifactKind(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): RuntimeWorkbenchHostRuntimeStreamArtifactKind | null {
+  const value = readNonEmptyString(record, key);
+  return value === "artifact" ||
+    value === "pack" ||
+    value === "evaluation" ||
+    value === "patch" ||
+    value === "file" ||
+    value === "image" ||
+    value === "chart"
+    ? value
+    : null;
+}
+
+function readNonEmptyString(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): string | null {
+  const value = record[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function readOptionalString(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): string | null {
+  const value = record[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function readOptionalNonNegativeInteger(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): number | null {
+  const value = record[key];
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function findRuntimeWorkbenchHostRuntimeStreamEvent(

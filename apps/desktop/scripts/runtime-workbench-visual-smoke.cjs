@@ -103,6 +103,16 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-parent-id') ?? null,
       streamEventDetailChildCount:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-child-count') ?? null,
+      streamEventDetailArtifactCount:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-artifact-count') ?? null,
+      streamEventDetailArtifactRefs:
+        document.querySelectorAll('[data-stream-artifact-ref="event-detail"]').length,
+      streamEventDetailArtifactId:
+        document.querySelector('[data-stream-artifact-ref="event-detail"]')?.getAttribute('data-stream-artifact-ref-id') ?? null,
+      streamEventDetailArtifactKind:
+        document.querySelector('[data-stream-artifact-ref="event-detail"]')?.getAttribute('data-stream-artifact-ref-kind') ?? null,
+      streamEventDetailArtifactPath:
+        document.querySelector('[data-stream-artifact-ref="event-detail"]')?.getAttribute('data-stream-artifact-ref-path') ?? null,
       streamEventGroups:
         document.querySelectorAll('[data-stream-event-group]').length,
       streamEventGroupToggleButtons:
@@ -133,6 +143,16 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-parent-id') ?? null,
       streamSelectedEventChildCount:
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-child-count') ?? null,
+      streamSelectedEventArtifactCount:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-artifact-count') ?? null,
+      streamSelectedEventArtifactRefs:
+        document.querySelectorAll('[data-stream-artifact-ref="selection"]').length,
+      streamSelectedEventArtifactId:
+        document.querySelector('[data-stream-artifact-ref="selection"]')?.getAttribute('data-stream-artifact-ref-id') ?? null,
+      streamSelectedEventArtifactKind:
+        document.querySelector('[data-stream-artifact-ref="selection"]')?.getAttribute('data-stream-artifact-ref-kind') ?? null,
+      streamSelectedEventArtifactPath:
+        document.querySelector('[data-stream-artifact-ref="selection"]')?.getAttribute('data-stream-artifact-ref-path') ?? null,
       streamSelectionMetadataToggles:
         document.querySelectorAll('[data-stream-selection-metadata-toggle="true"]').length,
       streamSelectionMetadataToggleExpanded:
@@ -1682,6 +1702,24 @@ function collectVisualSmokeFailures(
       `expected initial stream selected event body, got ${initialStreamMetrics.streamSelectedEventBodies}`,
     );
   }
+  if (initialStreamMetrics.streamSelectedEventArtifactCount !== "1") {
+    failures.push(
+      `expected initial stream selected event artifact count 1, got ${initialStreamMetrics.streamSelectedEventArtifactCount}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventArtifactRefs !== 1) {
+    failures.push(
+      `expected initial stream selected event artifact ref, got ${initialStreamMetrics.streamSelectedEventArtifactRefs}`,
+    );
+  }
+  if (
+    initialStreamMetrics.streamSelectedEventArtifactId !==
+    "artifact_visual_report"
+  ) {
+    failures.push(
+      `expected initial stream selected event artifact id artifact_visual_report, got ${initialStreamMetrics.streamSelectedEventArtifactId}`,
+    );
+  }
   if (initialStreamMetrics.streamExpandedEvents !== 0) {
     failures.push(
       `expected initial expanded stream events 0, got ${initialStreamMetrics.streamExpandedEvents}`,
@@ -1732,6 +1770,37 @@ function collectVisualSmokeFailures(
   if (streamEventExpandedMetrics.streamEventDetailChildCount !== "0") {
     failures.push(
       `expected expanded stream event detail child count 0, got ${streamEventExpandedMetrics.streamEventDetailChildCount}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailArtifactCount !== "1") {
+    failures.push(
+      `expected expanded stream event detail artifact count 1, got ${streamEventExpandedMetrics.streamEventDetailArtifactCount}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailArtifactRefs !== 1) {
+    failures.push(
+      `expected expanded stream event detail artifact ref, got ${streamEventExpandedMetrics.streamEventDetailArtifactRefs}`,
+    );
+  }
+  if (
+    streamEventExpandedMetrics.streamEventDetailArtifactId !==
+    "artifact_visual_report"
+  ) {
+    failures.push(
+      `expected expanded stream event detail artifact id artifact_visual_report, got ${streamEventExpandedMetrics.streamEventDetailArtifactId}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailArtifactKind !== "file") {
+    failures.push(
+      `expected expanded stream event detail artifact kind file, got ${streamEventExpandedMetrics.streamEventDetailArtifactKind}`,
+    );
+  }
+  if (
+    streamEventExpandedMetrics.streamEventDetailArtifactPath !==
+    "artifacts/visual-report.md"
+  ) {
+    failures.push(
+      `expected expanded stream event detail artifact path artifacts/visual-report.md, got ${streamEventExpandedMetrics.streamEventDetailArtifactPath}`,
     );
   }
   if (streamEventExpandedMetrics.streamControlsBodies !== 1) {

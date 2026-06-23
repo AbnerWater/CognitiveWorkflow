@@ -4734,6 +4734,22 @@ test("renderer runtime workbench host session composes interaction and shortcuts
       title: "Workbench host stream",
       content: "host stream content",
       expandable: false,
+      artifact_refs: [
+        {
+          artifact_id: "artifact_workbench_host",
+          kind: "file",
+          display_name: "Workbench host report",
+          mime_type: "text/markdown",
+          size_bytes: 512,
+          preview_text: "Projected artifact ref",
+          path: "artifacts/workbench-host.md",
+        },
+        {
+          artifact_id: "artifact_bad_kind",
+          kind: "unsafe",
+          display_name: "Dropped artifact",
+        },
+      ],
       created_at: "2026-06-21T00:00:00.011Z",
     }),
   );
@@ -4741,6 +4757,21 @@ test("renderer runtime workbench host session composes interaction and shortcuts
     runtimeStreamController.activeSession()?.snapshot().store.totalEvents,
     1,
   );
+  assert.deepEqual(
+    host.getSnapshot().runtimeStreamPanel?.timelineItems[0]?.artifactRefs,
+    [
+      {
+        artifactId: "artifact_workbench_host",
+        kind: "file",
+        displayName: "Workbench host report",
+        mimeType: "text/markdown",
+        sizeBytes: 512,
+        previewText: "Projected artifact ref",
+        path: "artifacts/workbench-host.md",
+      },
+    ],
+  );
+  assert.equal(host.getSnapshot().runtimeStreamPanel?.selectedEvent, null);
 
   const streamDisposed = await host.handleKeyEvent(
     key({ key: "Escape", shiftKey: true }),
@@ -5027,6 +5058,17 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
           expanded: false,
           childCount: 0,
           children: [],
+          artifactRefs: [
+            {
+              artifactId: "artifact_shell_report",
+              kind: "file",
+              displayName: "Shell report",
+              mimeType: "text/markdown",
+              sizeBytes: 64,
+              previewText: "Shell report preview",
+              path: "artifacts/shell-report.md",
+            },
+          ],
           createdAt: "2026-06-22T02:00:00.000Z",
         },
       ],
@@ -5045,6 +5087,17 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
         expanded: false,
         childCount: 0,
         children: [],
+        artifactRefs: [
+          {
+            artifactId: "artifact_shell_report",
+            kind: "file",
+            displayName: "Shell report",
+            mimeType: "text/markdown",
+            sizeBytes: 64,
+            previewText: "Shell report preview",
+            path: "artifacts/shell-report.md",
+          },
+        ],
         createdAt: "2026-06-22T02:00:00.000Z",
       },
       fullReload: null,
@@ -5096,6 +5149,20 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(
     snapshot.runtimeStreamPanel?.timelineItems[0]?.title,
     "Shell stream event",
+  );
+  assert.deepEqual(
+    snapshot.runtimeStreamPanel?.timelineItems[0]?.artifactRefs,
+    [
+      {
+        artifactId: "artifact_shell_report",
+        kind: "file",
+        displayName: "Shell report",
+        mimeType: "text/markdown",
+        sizeBytes: 64,
+        previewText: "Shell report preview",
+        path: "artifacts/shell-report.md",
+      },
+    ],
   );
   assert.equal(snapshot.runtimeStreamPanel?.selectedEvent?.id, "evt_shell");
   assert.equal(

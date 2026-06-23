@@ -2374,6 +2374,64 @@ button {
   font-weight: 700;
 }
 
+.cw-workbench__stream-artifact-refs {
+  display: grid;
+  gap: 6px;
+}
+
+.cw-workbench__stream-artifact-refs h5 {
+  margin: 0;
+  color: #526173;
+  font-size: 12px;
+}
+
+.cw-workbench__stream-artifact-refs ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cw-workbench__stream-artifact-refs li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #f7fafc;
+}
+
+.cw-workbench__stream-artifact-refs strong,
+.cw-workbench__stream-artifact-refs span,
+.cw-workbench__stream-artifact-refs small,
+.cw-workbench__stream-artifact-refs code {
+  overflow-wrap: anywhere;
+}
+
+.cw-workbench__stream-artifact-refs span,
+.cw-workbench__stream-artifact-refs small,
+.cw-workbench__stream-artifact-refs code {
+  color: #526173;
+  font-size: 11px;
+}
+
+.cw-workbench__stream-artifact-refs code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #edf2f7;
+}
+
+.cw-workbench__stream-artifact-refs p {
+  flex-basis: 100%;
+  margin: 0;
+  color: #3f4d5c;
+  font-size: 12px;
+}
+
 .cw-workbench__stream-selection {
   display: grid;
   gap: 8px;

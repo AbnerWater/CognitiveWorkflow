@@ -1638,6 +1638,11 @@ function cloneRuntimeWorkbenchShellRuntimeStreamEvent(
     children: Object.freeze(
       event.children.map(cloneRuntimeWorkbenchShellRuntimeStreamEvent),
     ),
+    artifactRefs: Object.freeze(
+      event.artifactRefs.map((artifactRef) =>
+        Object.freeze({ ...artifactRef }),
+      ),
+    ),
     createdAt: event.createdAt,
   });
 }

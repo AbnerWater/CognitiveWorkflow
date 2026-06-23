@@ -3480,12 +3480,19 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
         <div
           className="cw-workbench__stream-event-detail"
           data-stream-event-detail="true"
+          data-stream-event-detail-artifact-count={String(
+            props.event.artifactRefs.length,
+          )}
           data-stream-event-detail-child-count={String(props.event.childCount)}
           data-stream-event-detail-parent-id={props.event.parentEventId ?? ""}
         >
           {props.event.content === null ? null : (
             <p data-stream-event-detail-content="true">{props.event.content}</p>
           )}
+          <RuntimeWorkbenchShellStreamArtifactRefs
+            artifactRefs={props.event.artifactRefs}
+            source="event-detail"
+          />
           <dl>
             <div>
               <dt>Parent event</dt>
@@ -3499,6 +3506,53 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
         </div>
       )}
     </li>
+  );
+}
+
+function RuntimeWorkbenchShellStreamArtifactRefs(props: {
+  readonly artifactRefs: readonly RuntimeWorkbenchShellRuntimeStreamEventSnapshot["artifactRefs"][number][];
+  readonly source: "event-detail" | "selection";
+}): ReactElement | null {
+  if (props.artifactRefs.length === 0) {
+    return null;
+  }
+  return (
+    <section
+      className="cw-workbench__stream-artifact-refs"
+      data-stream-artifact-ref-count={String(props.artifactRefs.length)}
+      data-stream-artifact-refs={props.source}
+    >
+      <h5>Artifact refs</h5>
+      <ul>
+        {props.artifactRefs.map((artifactRef) => (
+          <li
+            data-stream-artifact-ref={props.source}
+            data-stream-artifact-ref-id={artifactRef.artifactId}
+            data-stream-artifact-ref-kind={artifactRef.kind}
+            data-stream-artifact-ref-path={artifactRef.path ?? ""}
+            data-stream-artifact-ref-size-bytes={
+              artifactRef.sizeBytes === null
+                ? ""
+                : String(artifactRef.sizeBytes)
+            }
+            key={artifactRef.artifactId}
+          >
+            <strong>{artifactRef.displayName}</strong>
+            <span>{runtimeWorkbenchShellReactTitleCase(artifactRef.kind)}</span>
+            {artifactRef.path === null ? null : <code>{artifactRef.path}</code>}
+            {artifactRef.mimeType === null ? null : (
+              <small>{artifactRef.mimeType}</small>
+            )}
+            {artifactRef.sizeBytes === null ? null : (
+              <small>{artifactRef.sizeBytes} bytes</small>
+            )}
+            {artifactRef.previewText === null ? null : (
+              <p>{artifactRef.previewText}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -3566,6 +3620,9 @@ function RuntimeWorkbenchShellStreamSelection(props: {
         <div
           className="cw-workbench__stream-selected-event"
           data-stream-selected-event="true"
+          data-stream-selected-event-artifact-count={String(
+            selected.artifactRefs.length,
+          )}
           data-stream-selected-event-child-count={String(selected.childCount)}
           data-stream-selected-event-id={selected.id ?? ""}
           data-stream-selected-event-parent-id={parentEventIdLabel}
@@ -3577,6 +3634,10 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           <span>{selected.type}</span>
           {selected.summary === null ? null : <p>{selected.summary}</p>}
           {selected.content === null ? null : <p>{selected.content}</p>}
+          <RuntimeWorkbenchShellStreamArtifactRefs
+            artifactRefs={selected.artifactRefs}
+            source="selection"
+          />
           <dl>
             <div>
               <dt>Seq</dt>

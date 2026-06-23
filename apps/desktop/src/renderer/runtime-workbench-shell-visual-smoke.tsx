@@ -522,6 +522,17 @@ function buildVisualSmokeRuntimeStreamPanelSnapshot(
     expanded: state.streamEventExpanded,
     childCount: 0,
     children: Object.freeze([]),
+    artifactRefs: Object.freeze([
+      Object.freeze({
+        artifactId: "artifact_visual_report",
+        kind: "file",
+        displayName: "Visual report",
+        mimeType: "text/markdown",
+        sizeBytes: 256,
+        previewText: "Visual report preview",
+        path: "artifacts/visual-report.md",
+      }),
+    ]),
     createdAt: "2026-06-23T00:00:00.000Z",
   } satisfies RuntimeWorkbenchShellRuntimeStreamPanelSnapshot["timelineItems"][number]);
   return Object.freeze({
