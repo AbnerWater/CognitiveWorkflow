@@ -43,6 +43,8 @@ import type {
   RuntimeWorkbenchShellRuntimeStreamPanelSnapshot,
   RuntimeWorkbenchShellSnapshot,
   RuntimeWorkbenchShellTaskDrawerSnapshot,
+  RuntimeWorkbenchShellVersionSnapshotId,
+  RuntimeWorkbenchShellVersionSnapshotItem,
   RuntimeWorkbenchShellVersionSnapshotsSnapshot,
   RuntimeWorkbenchShellWorkflowCanvasEdge,
   RuntimeWorkbenchShellWorkflowCanvasNode,
@@ -850,6 +852,55 @@ function RuntimeWorkbenchShellFileTreeDetails(props: {
 function RuntimeWorkbenchShellVersionSnapshots(props: {
   readonly snapshots: RuntimeWorkbenchShellVersionSnapshotsSnapshot;
 }): ReactElement {
+  const [selectedSnapshotId, setSelectedSnapshotId] =
+    useState<RuntimeWorkbenchShellVersionSnapshotId | null>(
+      props.snapshots.items.find((item) => item.active)?.id ??
+        props.snapshots.items[0]?.id ??
+        null,
+    );
+  const selectedSnapshot = useMemo(
+    () =>
+      props.snapshots.items.find((item) => item.id === selectedSnapshotId) ??
+      props.snapshots.items.find((item) => item.active) ??
+      props.snapshots.items[0] ??
+      null,
+    [props.snapshots.items, selectedSnapshotId],
+  );
+  const handleSnapshotSelect = useCallback(
+    (snapshotId: RuntimeWorkbenchShellVersionSnapshotId): void => {
+      setSelectedSnapshotId(snapshotId);
+    },
+    [],
+  );
+  const handleSnapshotClick = useCallback(
+    (event: MouseEvent<HTMLLIElement>): void => {
+      const snapshotId = event.currentTarget.dataset.versionSnapshotSelect;
+      if (
+        !isRuntimeWorkbenchShellVersionSnapshotId(props.snapshots, snapshotId)
+      ) {
+        return;
+      }
+      handleSnapshotSelect(snapshotId);
+    },
+    [handleSnapshotSelect, props.snapshots],
+  );
+  const handleSnapshotKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLLIElement>): void => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      const snapshotId = event.currentTarget.dataset.versionSnapshotSelect;
+      if (
+        !isRuntimeWorkbenchShellVersionSnapshotId(props.snapshots, snapshotId)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      handleSnapshotSelect(snapshotId);
+    },
+    [handleSnapshotSelect, props.snapshots],
+  );
+
   return (
     <section
       aria-label={props.snapshots.title}
@@ -859,25 +910,75 @@ function RuntimeWorkbenchShellVersionSnapshots(props: {
         <h2>{props.snapshots.title}</h2>
         <p>{props.snapshots.summary}</p>
       </div>
-      <ol className="cw-workbench__version-snapshot-items">
-        {props.snapshots.items.map((item) => (
-          <li
-            className={[
-              "cw-workbench__version-snapshot-item",
-              `cw-workbench__version-snapshot-item--${item.tone}`,
-              item.active ? "cw-workbench__version-snapshot-item--active" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            data-version-snapshot={item.id}
-            key={item.id}
-          >
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
-            <small>{item.statusLabel}</small>
-          </li>
-        ))}
+      <ol className="cw-workbench__version-snapshot-items" role="listbox">
+        {props.snapshots.items.map((item) => {
+          const selected = selectedSnapshot?.id === item.id;
+          return (
+            <li
+              aria-selected={selected}
+              className={[
+                "cw-workbench__version-snapshot-item",
+                `cw-workbench__version-snapshot-item--${item.tone}`,
+                item.active
+                  ? "cw-workbench__version-snapshot-item--active"
+                  : "",
+                selected ? "cw-workbench__version-snapshot-item--selected" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              data-version-snapshot={item.id}
+              data-version-snapshot-active={item.active ? "true" : undefined}
+              data-version-snapshot-select={item.id}
+              data-version-snapshot-selected={selected ? "true" : undefined}
+              key={item.id}
+              onClick={handleSnapshotClick}
+              onKeyDown={handleSnapshotKeyDown}
+              role="option"
+              tabIndex={0}
+            >
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <small>{item.statusLabel}</small>
+            </li>
+          );
+        })}
       </ol>
+      {selectedSnapshot === null ? null : (
+        <RuntimeWorkbenchShellVersionSnapshotDetails item={selectedSnapshot} />
+      )}
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellVersionSnapshotDetails(props: {
+  readonly item: RuntimeWorkbenchShellVersionSnapshotItem;
+}): ReactElement {
+  return (
+    <section
+      aria-label="Version snapshot selection details"
+      className="cw-workbench__version-snapshot-details"
+      data-version-snapshot-details={props.item.id}
+      data-version-snapshot-details-active={
+        props.item.active ? "true" : "false"
+      }
+      data-version-snapshot-details-status={props.item.statusLabel}
+      data-version-snapshot-details-value={props.item.value}
+    >
+      <h3>{props.item.label}</h3>
+      <dl>
+        <div>
+          <dt>Status</dt>
+          <dd>{props.item.statusLabel}</dd>
+        </div>
+        <div>
+          <dt>Value</dt>
+          <dd>{props.item.value}</dd>
+        </div>
+        <div>
+          <dt>Active</dt>
+          <dd>{props.item.active ? "Yes" : "No"}</dd>
+        </div>
+      </dl>
     </section>
   );
 }
@@ -1808,6 +1909,15 @@ function isRuntimeWorkbenchShellFileTreeNodeId(
 ): value is RuntimeWorkbenchShellFileTreeNodeId {
   return (
     value !== undefined && fileTree.nodes.some((node) => node.id === value)
+  );
+}
+
+function isRuntimeWorkbenchShellVersionSnapshotId(
+  snapshots: RuntimeWorkbenchShellVersionSnapshotsSnapshot,
+  value: string | undefined,
+): value is RuntimeWorkbenchShellVersionSnapshotId {
+  return (
+    value !== undefined && snapshots.items.some((item) => item.id === value)
   );
 }
 

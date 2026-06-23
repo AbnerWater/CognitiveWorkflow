@@ -283,6 +283,7 @@ button {
   border-left-width: 4px;
   border-radius: 6px;
   background: #fbfcfd;
+  cursor: pointer;
 }
 
 .cw-workbench__version-snapshot-item--success {
@@ -305,6 +306,16 @@ button {
   background: #eaf2fb;
 }
 
+.cw-workbench__version-snapshot-item--selected {
+  border-color: #4f8cc9;
+  background: #eef6ff;
+}
+
+.cw-workbench__version-snapshot-item:focus-visible {
+  outline: 2px solid #2f6faf;
+  outline-offset: 2px;
+}
+
 .cw-workbench__version-snapshot-item span,
 .cw-workbench__version-snapshot-item strong,
 .cw-workbench__version-snapshot-item small {
@@ -325,6 +336,48 @@ button {
   color: #526173;
   font-size: 11px;
   font-weight: 700;
+}
+
+.cw-workbench__version-snapshot-details {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__version-snapshot-details h3 {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.cw-workbench__version-snapshot-details dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.cw-workbench__version-snapshot-details div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cw-workbench__version-snapshot-details dt {
+  color: #526173;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cw-workbench__version-snapshot-details dd {
+  min-width: 0;
+  margin: 0;
+  color: #223047;
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 
 .cw-workbench__workflow-canvas {

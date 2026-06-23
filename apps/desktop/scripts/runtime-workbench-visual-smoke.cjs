@@ -60,6 +60,22 @@ async function readMetrics(window) {
         document.querySelectorAll('.cw-workbench__version-snapshot-item').length,
       activeVersionSnapshotItems:
         document.querySelectorAll('.cw-workbench__version-snapshot-item--active').length,
+      versionSnapshotSelectableItems:
+        document.querySelectorAll('[data-version-snapshot-select]').length,
+      selectedVersionSnapshotItems:
+        document.querySelectorAll('[data-version-snapshot-selected="true"]').length,
+      selectedVersionSnapshotId:
+        document.querySelector('[data-version-snapshot-selected="true"]')?.getAttribute('data-version-snapshot') ?? null,
+      versionSnapshotDetailsId:
+        document.querySelector('[data-version-snapshot-details]')?.getAttribute('data-version-snapshot-details') ?? null,
+      versionSnapshotDetailsValue:
+        document.querySelector('[data-version-snapshot-details]')?.getAttribute('data-version-snapshot-details-value') ?? null,
+      versionSnapshotDetailsStatus:
+        document.querySelector('[data-version-snapshot-details]')?.getAttribute('data-version-snapshot-details-status') ?? null,
+      versionSnapshotDetailsActive:
+        document.querySelector('[data-version-snapshot-details]')?.getAttribute('data-version-snapshot-details-active') ?? null,
+      versionSnapshotDetailsText:
+        document.querySelector('[data-version-snapshot-details]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       workflowCanvasNodes:
         document.querySelectorAll('.cw-workbench__workflow-canvas-node').length,
       workflowCanvasEdges:
@@ -277,6 +293,127 @@ async function clickFileTreeNode(window, nodeId) {
   `);
   if (result?.ok !== true) {
     throw new Error(JSON.stringify(result));
+  }
+}
+
+async function clickVersionSnapshot(window, snapshotId) {
+  const snapshotLiteral = JSON.stringify(snapshotId);
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedSnapshotId = ${snapshotLiteral};
+      const startedAt = Date.now();
+      const selectVersionSnapshot = () => {
+        const snapshot = document.querySelector(
+          '[data-version-snapshot-select="' + expectedSnapshotId + '"]'
+        );
+        if (snapshot instanceof HTMLElement) {
+          snapshot.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing version snapshot: ' + expectedSnapshotId,
+            snapshots: Array.from(
+              document.querySelectorAll('[data-version-snapshot-select]'),
+              (element) => element.getAttribute('data-version-snapshot-select')
+            ),
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(selectVersionSnapshot);
+      };
+      selectVersionSnapshot();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
+async function keyVersionSnapshot(window, snapshotId, key) {
+  const snapshotLiteral = JSON.stringify(snapshotId);
+  const keyLiteral = JSON.stringify(key);
+  const keyCode = runtimeWorkbenchVisualSmokeElectronKeyCode(key);
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedSnapshotId = ${snapshotLiteral};
+      const expectedKey = ${keyLiteral};
+      const startedAt = Date.now();
+      const focusVersionSnapshot = () => {
+        const snapshot = document.querySelector(
+          '[data-version-snapshot-select="' + expectedSnapshotId + '"]'
+        );
+        if (snapshot instanceof HTMLElement) {
+          snapshot.focus({ preventScroll: true });
+          resolve({
+            ok: document.activeElement === snapshot,
+            focusedSnapshot: document.activeElement instanceof HTMLElement
+              ? document.activeElement.getAttribute('data-version-snapshot-select')
+              : null,
+          });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing version snapshot for key ' + expectedKey + ': ' + expectedSnapshotId,
+            snapshots: Array.from(
+              document.querySelectorAll('[data-version-snapshot-select]'),
+              (element) => element.getAttribute('data-version-snapshot-select')
+            ),
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(focusVersionSnapshot);
+      };
+      focusVersionSnapshot();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+  window.webContents.sendInputEvent({ keyCode, type: "keyDown" });
+  window.webContents.sendInputEvent({ keyCode, type: "keyUp" });
+  const waitResult = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedSnapshotId = ${snapshotLiteral};
+      const startedAt = Date.now();
+      const waitForSelection = () => {
+        const selectedSnapshot = document.querySelector('[data-version-snapshot-selected="true"]')?.getAttribute('data-version-snapshot') ?? null;
+        const detailsSnapshot = document.querySelector('[data-version-snapshot-details]')?.getAttribute('data-version-snapshot-details') ?? null;
+        const focusedSnapshot = document.activeElement instanceof HTMLElement
+          ? document.activeElement.getAttribute('data-version-snapshot-select')
+          : null;
+        if (
+          selectedSnapshot === expectedSnapshotId &&
+          detailsSnapshot === expectedSnapshotId &&
+          focusedSnapshot === expectedSnapshotId
+        ) {
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Keyboard selection did not select version snapshot ' + expectedSnapshotId,
+            selectedSnapshot,
+            detailsSnapshot,
+            focusedSnapshot,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(waitForSelection);
+      };
+      waitForSelection();
+    })
+  `);
+  if (waitResult?.ok !== true) {
+    throw new Error(JSON.stringify(waitResult));
   }
 }
 
@@ -705,6 +842,9 @@ function collectVisualSmokeFailures(
   requestedWidth,
   initialFileTreeMetrics,
   fileTreeSelectMetrics,
+  initialVersionSnapshotMetrics,
+  versionSnapshotSelectMetrics,
+  versionSnapshotKeyboardMetrics,
   collapsedMetrics,
   chatCollapsedMetrics,
   canvasMetrics,
@@ -952,6 +1092,132 @@ function collectVisualSmokeFailures(
   if (metrics.activeVersionSnapshotItems !== 1) {
     failures.push(
       `expected one active version snapshot item, got ${metrics.activeVersionSnapshotItems}`,
+    );
+  }
+  if (initialVersionSnapshotMetrics.versionSnapshotSelectableItems !== 4) {
+    failures.push(
+      `expected 4 selectable version snapshots, got ${initialVersionSnapshotMetrics.versionSnapshotSelectableItems}`,
+    );
+  }
+  if (initialVersionSnapshotMetrics.selectedVersionSnapshotItems !== 1) {
+    failures.push(
+      `expected one selected version snapshot initially, got ${initialVersionSnapshotMetrics.selectedVersionSnapshotItems}`,
+    );
+  }
+  if (
+    initialVersionSnapshotMetrics.selectedVersionSnapshotId !== "validation"
+  ) {
+    failures.push(
+      `expected initial version snapshot selection validation, got ${initialVersionSnapshotMetrics.selectedVersionSnapshotId}`,
+    );
+  }
+  if (initialVersionSnapshotMetrics.versionSnapshotDetailsId !== "validation") {
+    failures.push(
+      `expected initial version snapshot details validation, got ${initialVersionSnapshotMetrics.versionSnapshotDetailsId}`,
+    );
+  }
+  if (initialVersionSnapshotMetrics.versionSnapshotDetailsStatus !== "Active") {
+    failures.push(
+      `expected initial version snapshot details status Active, got ${initialVersionSnapshotMetrics.versionSnapshotDetailsStatus}`,
+    );
+  }
+  if (
+    initialVersionSnapshotMetrics.versionSnapshotDetailsValue !== "5 visible"
+  ) {
+    failures.push(
+      `expected initial version snapshot details value 5 visible, got ${initialVersionSnapshotMetrics.versionSnapshotDetailsValue}`,
+    );
+  }
+  if (initialVersionSnapshotMetrics.versionSnapshotDetailsActive !== "true") {
+    failures.push(
+      `expected initial version snapshot details active true, got ${initialVersionSnapshotMetrics.versionSnapshotDetailsActive}`,
+    );
+  }
+  if (
+    !initialVersionSnapshotMetrics.versionSnapshotDetailsText?.includes(
+      "ActiveYes",
+    )
+  ) {
+    failures.push(
+      `expected initial version snapshot visible details to include ActiveYes, got ${initialVersionSnapshotMetrics.versionSnapshotDetailsText}`,
+    );
+  }
+  if (versionSnapshotSelectMetrics.selectedVersionSnapshotItems !== 1) {
+    failures.push(
+      `expected one selected version snapshot after click, got ${versionSnapshotSelectMetrics.selectedVersionSnapshotItems}`,
+    );
+  }
+  if (
+    versionSnapshotSelectMetrics.selectedVersionSnapshotId !== "git_snapshot"
+  ) {
+    failures.push(
+      `expected git_snapshot version snapshot selection after click, got ${versionSnapshotSelectMetrics.selectedVersionSnapshotId}`,
+    );
+  }
+  if (
+    versionSnapshotSelectMetrics.versionSnapshotDetailsId !== "git_snapshot"
+  ) {
+    failures.push(
+      `expected git_snapshot version snapshot details after click, got ${versionSnapshotSelectMetrics.versionSnapshotDetailsId}`,
+    );
+  }
+  if (versionSnapshotSelectMetrics.versionSnapshotDetailsStatus !== "Future") {
+    failures.push(
+      `expected git_snapshot version snapshot details status Future, got ${versionSnapshotSelectMetrics.versionSnapshotDetailsStatus}`,
+    );
+  }
+  if (
+    versionSnapshotSelectMetrics.versionSnapshotDetailsValue !== "Not created"
+  ) {
+    failures.push(
+      `expected git_snapshot version snapshot details value Not created, got ${versionSnapshotSelectMetrics.versionSnapshotDetailsValue}`,
+    );
+  }
+  if (versionSnapshotSelectMetrics.versionSnapshotDetailsActive !== "false") {
+    failures.push(
+      `expected git_snapshot version snapshot details active false, got ${versionSnapshotSelectMetrics.versionSnapshotDetailsActive}`,
+    );
+  }
+  if (
+    !versionSnapshotSelectMetrics.versionSnapshotDetailsText?.includes(
+      "ActiveNo",
+    )
+  ) {
+    failures.push(
+      `expected git_snapshot version snapshot visible details to include ActiveNo, got ${versionSnapshotSelectMetrics.versionSnapshotDetailsText}`,
+    );
+  }
+  if (versionSnapshotKeyboardMetrics.selectedVersionSnapshotItems !== 1) {
+    failures.push(
+      `expected one selected version snapshot after keyboard, got ${versionSnapshotKeyboardMetrics.selectedVersionSnapshotItems}`,
+    );
+  }
+  if (versionSnapshotKeyboardMetrics.selectedVersionSnapshotId !== "runtime") {
+    failures.push(
+      `expected runtime version snapshot selection after keyboard, got ${versionSnapshotKeyboardMetrics.selectedVersionSnapshotId}`,
+    );
+  }
+  if (versionSnapshotKeyboardMetrics.versionSnapshotDetailsId !== "runtime") {
+    failures.push(
+      `expected runtime version snapshot details after keyboard, got ${versionSnapshotKeyboardMetrics.versionSnapshotDetailsId}`,
+    );
+  }
+  if (versionSnapshotKeyboardMetrics.versionSnapshotDetailsStatus !== "Idle") {
+    failures.push(
+      `expected runtime version snapshot details status Idle after keyboard, got ${versionSnapshotKeyboardMetrics.versionSnapshotDetailsStatus}`,
+    );
+  }
+  if (
+    versionSnapshotKeyboardMetrics.versionSnapshotDetailsValue !==
+    "No active stream"
+  ) {
+    failures.push(
+      `expected runtime version snapshot details value No active stream after keyboard, got ${versionSnapshotKeyboardMetrics.versionSnapshotDetailsValue}`,
+    );
+  }
+  if (versionSnapshotKeyboardMetrics.versionSnapshotDetailsActive !== "false") {
+    failures.push(
+      `expected runtime version snapshot details active false after keyboard, got ${versionSnapshotKeyboardMetrics.versionSnapshotDetailsActive}`,
     );
   }
   if (metrics.activeWorkflowCanvasNodes !== 1) {
@@ -1812,6 +2078,24 @@ async function main() {
     "read selected file tree metrics",
     () => readMetrics(window),
   );
+  const initialVersionSnapshotMetrics = await runSmokeStep(
+    "read initial version snapshot metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("select git version snapshot", () =>
+    clickVersionSnapshot(window, "git_snapshot"),
+  );
+  const versionSnapshotSelectMetrics = await runSmokeStep(
+    "read selected version snapshot metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("select runtime version snapshot by keyboard", () =>
+    keyVersionSnapshot(window, "runtime", "Enter"),
+  );
+  const versionSnapshotKeyboardMetrics = await runSmokeStep(
+    "read keyboard-selected version snapshot metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("focus next lifecycle item", () =>
     clickLifecycleCommand(window, "focus_next_timeline_item"),
   );
@@ -1959,6 +2243,9 @@ async function main() {
     width,
     initialFileTreeMetrics,
     fileTreeSelectMetrics,
+    initialVersionSnapshotMetrics,
+    versionSnapshotSelectMetrics,
+    versionSnapshotKeyboardMetrics,
     collapsedMetrics,
     chatCollapsedMetrics,
     canvasMetrics,
@@ -1984,6 +2271,9 @@ async function main() {
         metrics,
         initialFileTreeMetrics,
         fileTreeSelectMetrics,
+        initialVersionSnapshotMetrics,
+        versionSnapshotSelectMetrics,
+        versionSnapshotKeyboardMetrics,
         collapsedMetrics,
         chatCollapsedMetrics,
         canvasMetrics,

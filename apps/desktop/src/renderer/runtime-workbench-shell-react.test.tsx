@@ -62,6 +62,7 @@ test("renderer runtime workbench React shell renders server snapshot without DOM
   assert.match(markup, /Status[\s\S]*Open[\s\S]*Path[\s\S]*workspace root/u);
   assert.match(markup, /Version Snapshots/u);
   assert.match(markup, /Git snapshot/u);
+  assert.match(markup, /Version snapshot selection details/u);
   assert.match(markup, /Workflow Canvas/u);
   assert.match(markup, /Review result/u);
   assert.match(markup, /repair_task/u);
@@ -470,6 +471,209 @@ test("renderer runtime workbench React shell selects file tree node locally", as
         "accepted_specs",
       ).getAttribute("data-file-tree-details-status"),
       "Read-only",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench React shell selects version snapshot locally", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Version Snapshot Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotSelected",
+        "true",
+      ).getAttribute("data-version-snapshot"),
+      "validation",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "validation",
+      ).getAttribute("data-version-snapshot-details-status"),
+      "Idle",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "validation",
+      ).getAttribute("data-version-snapshot-details-value"),
+      "0 visible",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "validation",
+      ).getAttribute("data-version-snapshot-details-active"),
+      "true",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "versionSnapshotDetails",
+          "validation",
+        ),
+      ),
+      /Status[\s\S]*Idle[\s\S]*Value[\s\S]*0 visible[\s\S]*Active[\s\S]*Yes/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "versionSnapshotSelect",
+          "git_snapshot",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotSelected",
+        "true",
+      ).getAttribute("data-version-snapshot"),
+      "git_snapshot",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "git_snapshot",
+      ).getAttribute("data-version-snapshot-details-status"),
+      "Future",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "git_snapshot",
+      ).getAttribute("data-version-snapshot-details-value"),
+      "Not created",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "git_snapshot",
+      ).getAttribute("data-version-snapshot-details-active"),
+      "false",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "versionSnapshotDetails",
+          "git_snapshot",
+        ),
+      ),
+      /Status[\s\S]*Future[\s\S]*Value[\s\S]*Not created[\s\S]*Active[\s\S]*No/u,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.versionSnapshotSelected === "true",
+      ),
+      1,
+    );
+
+    await act(async () => {
+      keydownFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "versionSnapshotSelect",
+          "runtime",
+        ),
+        " ",
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotSelected",
+        "true",
+      ).getAttribute("data-version-snapshot"),
+      "runtime",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "runtime",
+      ).getAttribute("data-version-snapshot-details-status"),
+      "Idle",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "runtime",
+      ).getAttribute("data-version-snapshot-details-value"),
+      "No active stream",
+    );
+
+    await act(async () => {
+      keydownFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "versionSnapshotSelect",
+          "draft",
+        ),
+        "Enter",
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotSelected",
+        "true",
+      ).getAttribute("data-version-snapshot"),
+      "draft",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "draft",
+      ).getAttribute("data-version-snapshot-details-status"),
+      "Read-only",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "draft",
+      ).getAttribute("data-version-snapshot-details-value"),
+      "v0",
     );
 
     await act(async () => {
