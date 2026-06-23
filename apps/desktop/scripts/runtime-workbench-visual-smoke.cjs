@@ -101,6 +101,10 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-event-detail-content="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       streamEventDetailParentId:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-parent-id') ?? null,
+      streamEventDetailPhase:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-phase') ?? null,
+      streamEventDetailSensitivity:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-sensitivity') ?? null,
       streamEventDetailChildCount:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-child-count') ?? null,
       streamEventDetailArtifactCount:
@@ -141,6 +145,10 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-stream-selected-event="true"]').length,
       streamSelectedEventParentId:
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-parent-id') ?? null,
+      streamSelectedEventPhase:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-phase') ?? null,
+      streamSelectedEventSensitivity:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-sensitivity') ?? null,
       streamSelectedEventChildCount:
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-child-count') ?? null,
       streamSelectedEventArtifactCount:
@@ -163,6 +171,10 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-category') ?? null,
       streamSelectionMetadataDisplayLevel:
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-display-level') ?? null,
+      streamSelectionMetadataPhase:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-phase') ?? null,
+      streamSelectionMetadataSensitivity:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-sensitivity') ?? null,
       streamSelectionMetadataParentId:
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-parent-id') ?? null,
       streamSelectionMetadataChildCount:
@@ -1767,6 +1779,18 @@ function collectVisualSmokeFailures(
       `expected expanded stream event detail parent evt_visual_parent, got ${streamEventExpandedMetrics.streamEventDetailParentId}`,
     );
   }
+  if (
+    streamEventExpandedMetrics.streamEventDetailPhase !== "attempt.streaming"
+  ) {
+    failures.push(
+      `expected expanded stream event detail phase attempt.streaming, got ${streamEventExpandedMetrics.streamEventDetailPhase}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailSensitivity !== "sensitive") {
+    failures.push(
+      `expected expanded stream event detail sensitivity sensitive, got ${streamEventExpandedMetrics.streamEventDetailSensitivity}`,
+    );
+  }
   if (streamEventExpandedMetrics.streamEventDetailChildCount !== "0") {
     failures.push(
       `expected expanded stream event detail child count 0, got ${streamEventExpandedMetrics.streamEventDetailChildCount}`,
@@ -2088,6 +2112,16 @@ function collectVisualSmokeFailures(
       `expected initial selected stream parent evt_visual_parent, got ${initialStreamMetrics.streamSelectedEventParentId}`,
     );
   }
+  if (initialStreamMetrics.streamSelectedEventPhase !== "attempt.streaming") {
+    failures.push(
+      `expected initial selected stream phase attempt.streaming, got ${initialStreamMetrics.streamSelectedEventPhase}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventSensitivity !== "sensitive") {
+    failures.push(
+      `expected initial selected stream sensitivity sensitive, got ${initialStreamMetrics.streamSelectedEventSensitivity}`,
+    );
+  }
   if (initialStreamMetrics.streamSelectedEventChildCount !== "0") {
     failures.push(
       `expected initial selected stream child count 0, got ${initialStreamMetrics.streamSelectedEventChildCount}`,
@@ -2149,6 +2183,22 @@ function collectVisualSmokeFailures(
   ) {
     failures.push(
       `expected expanded stream selection metadata display level default, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataDisplayLevel}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataPhase !==
+    "attempt.streaming"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata phase attempt.streaming, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataPhase}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSensitivity !==
+    "sensitive"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata sensitivity sensitive, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSensitivity}`,
     );
   }
   if (

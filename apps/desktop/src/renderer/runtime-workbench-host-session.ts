@@ -8,8 +8,10 @@ import type {
 } from "./runtime-stream-session.js";
 import type { RuntimeStreamEventStoreStatus } from "./runtime-stream-store.js";
 import type {
+  RuntimeStreamViewEventPhase,
   RuntimeStreamViewDisplayLevel,
   RuntimeStreamViewEvent,
+  RuntimeStreamViewSensitivity,
   RuntimeStreamViewSeverity,
 } from "./runtime-stream-view-model.js";
 import {
@@ -70,8 +72,10 @@ export interface RuntimeWorkbenchHostRuntimeStreamEventSnapshot {
   readonly parentEventId: string | null;
   readonly type: string;
   readonly category: string | null;
+  readonly phase: RuntimeStreamViewEventPhase | null;
   readonly displayLevel: RuntimeStreamViewDisplayLevel;
   readonly severity: RuntimeStreamViewSeverity;
+  readonly sensitivity: RuntimeStreamViewSensitivity;
   readonly title: string;
   readonly summary: string | null;
   readonly content: string | null;
@@ -503,8 +507,10 @@ function toRuntimeWorkbenchHostRuntimeStreamEventSnapshot(
     parentEventId: event.parentEventId,
     type: event.type,
     category: event.category,
+    phase: event.phase,
     displayLevel: event.displayLevel,
     severity: event.severity,
+    sensitivity: event.sensitivity,
     title: event.title,
     summary: event.summary,
     content: event.content,

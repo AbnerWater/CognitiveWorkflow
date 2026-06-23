@@ -192,6 +192,14 @@ test("renderer runtime workbench React shell renders expanded stream event detai
       detail.getAttribute("data-stream-event-detail-artifact-count"),
       "1",
     );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-phase"),
+      "attempt.streaming",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-sensitivity"),
+      "project",
+    );
     const eventArtifact = requireFakeRuntimeWorkbenchElementByData(
       dom.container,
       "streamArtifactRef",
@@ -211,7 +219,7 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(detail),
-      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
+      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
     );
     const selectedEvent = requireFakeRuntimeWorkbenchElementByData(
       dom.container,
@@ -221,6 +229,14 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-artifact-count"),
       "1",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-phase"),
+      "attempt.streaming",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-sensitivity"),
+      "project",
     );
     const selectedArtifact = requireFakeRuntimeWorkbenchElementByData(
       dom.container,
@@ -819,6 +835,14 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
       "model",
     );
     assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-phase"),
+      "attempt.streaming",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-sensitivity"),
+      "project",
+    );
+    assert.equal(
       metadata.getAttribute("data-stream-selection-metadata-display-level"),
       "default",
     );
@@ -836,7 +860,7 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(metadata),
-      /Category[\s\S]*model[\s\S]*Display level[\s\S]*default[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
+      /Category[\s\S]*model[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Display level[\s\S]*default[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -4383,8 +4407,10 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
           parentEventId: "evt_react_parent",
           type: "model.text_delta",
           category: "model",
+          phase: "attempt.streaming",
           displayLevel: "default",
           severity: "info",
+          sensitivity: "project",
           title: "Model delta",
           summary: "delta summary",
           content: "delta content",
@@ -4412,8 +4438,10 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
         parentEventId: "evt_react_parent",
         type: "model.text_delta",
         category: "model",
+        phase: "attempt.streaming",
         displayLevel: "default",
         severity: "info",
+        sensitivity: "project",
         title: "Model delta",
         summary: "delta summary",
         content: "delta content",

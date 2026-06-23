@@ -3485,6 +3485,8 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
           )}
           data-stream-event-detail-child-count={String(props.event.childCount)}
           data-stream-event-detail-parent-id={props.event.parentEventId ?? ""}
+          data-stream-event-detail-phase={props.event.phase ?? ""}
+          data-stream-event-detail-sensitivity={props.event.sensitivity}
         >
           {props.event.content === null ? null : (
             <p data-stream-event-detail-content="true">{props.event.content}</p>
@@ -3494,6 +3496,16 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             source="event-detail"
           />
           <dl>
+            <div>
+              <dt>Phase</dt>
+              <dd>{props.event.phase ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Sensitivity</dt>
+              <dd>
+                {runtimeWorkbenchShellReactTitleCase(props.event.sensitivity)}
+              </dd>
+            </div>
             <div>
               <dt>Parent event</dt>
               <dd>{props.event.parentEventId ?? "-"}</dd>
@@ -3574,7 +3586,12 @@ function RuntimeWorkbenchShellStreamSelection(props: {
       ? "No event selected"
       : `${selected.title}, ${selected.type}`;
   const categoryLabel = selected?.category ?? "-";
+  const phaseLabel = selected?.phase ?? "-";
   const parentEventIdLabel = selected?.parentEventId ?? "-";
+  const sensitivityLabel =
+    selected === null
+      ? "-"
+      : runtimeWorkbenchShellReactTitleCase(selected.sensitivity);
   const expandableLabel =
     selected === null ? "-" : selected.expandable ? "yes" : "no";
   return (
@@ -3626,6 +3643,8 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           data-stream-selected-event-child-count={String(selected.childCount)}
           data-stream-selected-event-id={selected.id ?? ""}
           data-stream-selected-event-parent-id={parentEventIdLabel}
+          data-stream-selected-event-phase={selected.phase ?? ""}
+          data-stream-selected-event-sensitivity={selected.sensitivity}
         >
           <button onClick={props.onClearSelectionClick} type="button">
             Clear selection
@@ -3673,10 +3692,20 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               }
               data-stream-selection-metadata-expandable={expandableLabel}
               data-stream-selection-metadata-parent-id={parentEventIdLabel}
+              data-stream-selection-metadata-phase={phaseLabel}
+              data-stream-selection-metadata-sensitivity={selected.sensitivity}
             >
               <div>
                 <dt>Category</dt>
                 <dd>{categoryLabel}</dd>
+              </div>
+              <div>
+                <dt>Phase</dt>
+                <dd>{phaseLabel}</dd>
+              </div>
+              <div>
+                <dt>Sensitivity</dt>
+                <dd>{sensitivityLabel}</dd>
               </div>
               <div>
                 <dt>Display level</dt>

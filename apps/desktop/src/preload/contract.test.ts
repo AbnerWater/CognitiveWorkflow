@@ -4729,8 +4729,10 @@ test("renderer runtime workbench host session composes interaction and shortcuts
       seq: 1,
       type: "model.text_delta",
       category: "model",
+      phase: "attempt.streaming",
       display_level: "default",
       severity: "info",
+      sensitivity: "sensitive",
       title: "Workbench host stream",
       content: "host stream content",
       expandable: false,
@@ -4770,6 +4772,14 @@ test("renderer runtime workbench host session composes interaction and shortcuts
         path: "artifacts/workbench-host.md",
       },
     ],
+  );
+  assert.equal(
+    host.getSnapshot().runtimeStreamPanel?.timelineItems[0]?.phase,
+    "attempt.streaming",
+  );
+  assert.equal(
+    host.getSnapshot().runtimeStreamPanel?.timelineItems[0]?.sensitivity,
+    "sensitive",
   );
   assert.equal(host.getSnapshot().runtimeStreamPanel?.selectedEvent, null);
 
@@ -5049,8 +5059,10 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
           parentEventId: null,
           type: "model.text_delta",
           category: "model",
+          phase: "attempt.streaming",
           displayLevel: "default",
           severity: "info",
+          sensitivity: "project",
           title: "Shell stream event",
           summary: "Projected without raw data",
           content: "stream content",
@@ -5078,8 +5090,10 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
         parentEventId: null,
         type: "model.text_delta",
         category: "model",
+        phase: "attempt.streaming",
         displayLevel: "default",
         severity: "info",
+        sensitivity: "project",
         title: "Shell stream event",
         summary: "Projected without raw data",
         content: "stream content",
@@ -5149,6 +5163,14 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(
     snapshot.runtimeStreamPanel?.timelineItems[0]?.title,
     "Shell stream event",
+  );
+  assert.equal(
+    snapshot.runtimeStreamPanel?.timelineItems[0]?.phase,
+    "attempt.streaming",
+  );
+  assert.equal(
+    snapshot.runtimeStreamPanel?.timelineItems[0]?.sensitivity,
+    "project",
   );
   assert.deepEqual(
     snapshot.runtimeStreamPanel?.timelineItems[0]?.artifactRefs,
@@ -7829,8 +7851,10 @@ test("renderer runtime stream view model folds children and filters spec fields"
         seq: 1,
         type: "tool.call_started",
         category: "tool",
+        phase: "attempt.tool_calling",
         display_level: "default",
         severity: "info",
+        sensitivity: "project",
         title: "Calling tool",
         summary: "evidence_lookup",
         expandable: true,
@@ -7856,8 +7880,10 @@ test("renderer runtime stream view model folds children and filters spec fields"
         seq: 3,
         type: "model.text_delta",
         category: "model",
+        phase: "unsupported.phase",
         display_level: "minimal",
         severity: "info",
+        sensitivity: "unsupported",
         title: "Model text",
         content: "hello",
         expandable: false,
@@ -7892,8 +7918,12 @@ test("renderer runtime stream view model folds children and filters spec fields"
   assert.equal(initial.summaryItems[0]?.id, "evt_model_delta");
   assert.equal(initial.timelineItems.length, 2);
   assert.equal(initial.timelineItems[0]?.id, "evt_tool_start");
+  assert.equal(initial.timelineItems[0]?.phase, "attempt.tool_calling");
+  assert.equal(initial.timelineItems[0]?.sensitivity, "project");
   assert.equal(initial.timelineItems[0]?.childCount, 1);
   assert.equal(initial.timelineItems[0]?.children.length, 0);
+  assert.equal(initial.summaryItems[0]?.phase, null);
+  assert.equal(initial.summaryItems[0]?.sensitivity, "project");
   assert.equal(initial.timelineItems[1]?.id, "evt_orphan_eval");
 
   const expanded = viewModel.toggleExpanded("evt_tool_start");
@@ -7927,8 +7957,10 @@ test("renderer runtime stream view model expands childless event details", () =>
         seq: 1,
         type: "model.text_completed",
         category: "model",
+        phase: "attempt.completed",
         display_level: "default",
         severity: "success",
+        sensitivity: "public",
         title: "Model text completed",
         summary: "Collapsed text summary",
         content: "Expanded text detail",
@@ -7945,6 +7977,8 @@ test("renderer runtime stream view model expands childless event details", () =>
   const initial = viewModel.snapshot();
   assert.equal(initial.timelineItems.length, 1);
   assert.equal(initial.timelineItems[0]?.id, "evt_detail");
+  assert.equal(initial.timelineItems[0]?.phase, "attempt.completed");
+  assert.equal(initial.timelineItems[0]?.sensitivity, "public");
   assert.equal(initial.timelineItems[0]?.expandable, true);
   assert.equal(initial.timelineItems[0]?.expanded, false);
   assert.equal(initial.timelineItems[0]?.children.length, 0);

@@ -17,6 +17,47 @@ export type RuntimeStreamViewSeverity =
   | "error"
   | "fatal";
 
+const RUNTIME_STREAM_VIEW_EVENT_PHASES = [
+  "run.created",
+  "run.started",
+  "run.paused",
+  "run.resumed",
+  "run.completed",
+  "run.failed",
+  "run.cancelled",
+  "node.idle",
+  "node.ready",
+  "node.running",
+  "node.validating",
+  "node.reviewing",
+  "node.passed",
+  "node.review_failed",
+  "node.repairing",
+  "node.retrying",
+  "node.waiting_user",
+  "node.skipped",
+  "node.failed",
+  "attempt.started",
+  "attempt.streaming",
+  "attempt.tool_calling",
+  "attempt.validating",
+  "attempt.completed",
+  "attempt.failed",
+  "planning.exploring",
+  "planning.understanding",
+  "planning.clarifying",
+  "planning.planning",
+  "planning.validating",
+  "planning.previewing",
+  "planning.revising",
+  "planning.created",
+] as const;
+
+export type RuntimeStreamViewEventPhase =
+  (typeof RUNTIME_STREAM_VIEW_EVENT_PHASES)[number];
+
+export type RuntimeStreamViewSensitivity = "public" | "project" | "sensitive";
+
 export type RuntimeStreamViewCategory =
   | "lifecycle"
   | "model"
@@ -47,8 +88,10 @@ export interface RuntimeStreamViewEvent {
   readonly parentEventId: string | null;
   readonly type: string;
   readonly category: RuntimeStreamViewCategory | null;
+  readonly phase: RuntimeStreamViewEventPhase | null;
   readonly displayLevel: RuntimeStreamViewDisplayLevel;
   readonly severity: RuntimeStreamViewSeverity;
+  readonly sensitivity: RuntimeStreamViewSensitivity;
   readonly title: string;
   readonly summary: string | null;
   readonly content: string | null;
@@ -120,8 +163,10 @@ interface RuntimeStreamViewEventDraft {
   readonly parentEventId: string | null;
   readonly type: string;
   readonly category: RuntimeStreamViewCategory | null;
+  readonly phase: RuntimeStreamViewEventPhase | null;
   readonly displayLevel: RuntimeStreamViewDisplayLevel;
   readonly severity: RuntimeStreamViewSeverity;
+  readonly sensitivity: RuntimeStreamViewSensitivity;
   readonly title: string;
   readonly summary: string | null;
   readonly content: string | null;
@@ -335,8 +380,10 @@ function buildRuntimeStreamViewEvent(
     parentEventId: draft.parentEventId,
     type: draft.type,
     category: draft.category,
+    phase: draft.phase,
     displayLevel: draft.displayLevel,
     severity: draft.severity,
+    sensitivity: draft.sensitivity,
     title: draft.title,
     summary: draft.summary,
     content: draft.content,
@@ -372,8 +419,10 @@ function toRuntimeStreamViewEventDraft(
     parentEventId: readNullableString(data, "parent_event_id"),
     type,
     category: readRuntimeStreamCategory(data, "category"),
+    phase: readRuntimeStreamEventPhase(data, "phase"),
     displayLevel: readRuntimeStreamDisplayLevel(data, "display_level"),
     severity: readRuntimeStreamSeverity(data, "severity"),
+    sensitivity: readRuntimeStreamSensitivity(data, "sensitivity"),
     title: readString(data, "title") ?? type,
     summary: readNullableString(data, "summary"),
     content: readNullableString(data, "content"),
@@ -504,6 +553,34 @@ function readRuntimeStreamSeverity(
     return value;
   }
   return "info";
+}
+
+function readRuntimeStreamSensitivity(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): RuntimeStreamViewSensitivity {
+  const value = readString(record, key);
+  if (value === "public" || value === "project" || value === "sensitive") {
+    return value;
+  }
+  return "project";
+}
+
+function readRuntimeStreamEventPhase(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): RuntimeStreamViewEventPhase | null {
+  const value = readString(record, key);
+  if (value === null) {
+    return null;
+  }
+  return isRuntimeStreamEventPhase(value) ? value : null;
+}
+
+function isRuntimeStreamEventPhase(
+  value: string,
+): value is RuntimeStreamViewEventPhase {
+  return RUNTIME_STREAM_VIEW_EVENT_PHASES.some((phase) => phase === value);
 }
 
 function readRuntimeStreamCategory(
