@@ -238,6 +238,183 @@ test("renderer runtime workbench React shell toggles task drawer collapse", asyn
   }
 });
 
+test("renderer runtime workbench React shell selects task drawer item locally", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Task Drawer Selection Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerItemSelected",
+        "true",
+      ).getAttribute("data-task-drawer-item"),
+      "active_panel",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerDetails",
+        "active_panel",
+      ).getAttribute("data-task-drawer-details-value"),
+      "Stream",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerDetails",
+        "active_panel",
+      ).getAttribute("data-task-drawer-details-tone"),
+      "neutral",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "taskDrawerItemSelect",
+          "unread_events",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerItemSelected",
+        "true",
+      ).getAttribute("data-task-drawer-item"),
+      "unread_events",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerDetails",
+        "unread_events",
+      ).getAttribute("data-task-drawer-details-value"),
+      "1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerDetails",
+        "unread_events",
+      ).getAttribute("data-task-drawer-details-tone"),
+      "accent",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "taskDrawerDetails",
+          "unread_events",
+        ),
+      ),
+      /Unread[\s\S]*Value[\s\S]*1[\s\S]*Tone[\s\S]*accent/u,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.taskDrawerItemSelected === "true",
+      ),
+      1,
+    );
+
+    await act(async () => {
+      keydownFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "taskDrawerItemSelect",
+          "visible_items",
+        ),
+        " ",
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerItemSelected",
+        "true",
+      ).getAttribute("data-task-drawer-item"),
+      "visible_items",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerDetails",
+        "visible_items",
+      ).getAttribute("data-task-drawer-details-value"),
+      "1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerDetails",
+        "visible_items",
+      ).getAttribute("data-task-drawer-details-tone"),
+      "neutral",
+    );
+
+    await act(async () => {
+      keydownFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "taskDrawerItemSelect",
+          "runtime_stream",
+        ),
+        "Enter",
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerItemSelected",
+        "true",
+      ).getAttribute("data-task-drawer-item"),
+      "runtime_stream",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerDetails",
+        "runtime_stream",
+      ).getAttribute("data-task-drawer-details-value"),
+      "Run run_react_stream",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "taskDrawerDetails",
+        "runtime_stream",
+      ).getAttribute("data-task-drawer-details-tone"),
+      "success",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell toggles chat box collapse", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {

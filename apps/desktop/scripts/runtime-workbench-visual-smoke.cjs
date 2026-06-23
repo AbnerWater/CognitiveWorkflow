@@ -232,6 +232,22 @@ async function readMetrics(window) {
       taskDrawerExpanded:
         document.querySelector('.cw-workbench__task-drawer')?.getAttribute('data-task-drawer-expanded') ?? null,
       taskDrawerItems: document.querySelectorAll('.cw-workbench__task-drawer-item').length,
+      taskDrawerSelectableItems:
+        document.querySelectorAll('[data-task-drawer-item-select]').length,
+      selectedTaskDrawerItems:
+        document.querySelectorAll('[data-task-drawer-item-selected="true"]').length,
+      selectedTaskDrawerItemId:
+        document.querySelector('[data-task-drawer-item-selected="true"]')?.getAttribute('data-task-drawer-item') ?? null,
+      taskDrawerDetailsId:
+        document.querySelector('[data-task-drawer-details]')?.getAttribute('data-task-drawer-details') ?? null,
+      taskDrawerDetailsLabel:
+        document.querySelector('[data-task-drawer-details]')?.getAttribute('data-task-drawer-details-label') ?? null,
+      taskDrawerDetailsTone:
+        document.querySelector('[data-task-drawer-details]')?.getAttribute('data-task-drawer-details-tone') ?? null,
+      taskDrawerDetailsValue:
+        document.querySelector('[data-task-drawer-details]')?.getAttribute('data-task-drawer-details-value') ?? null,
+      taskDrawerDetailsText:
+        document.querySelector('[data-task-drawer-details]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       taskDrawerCollapsedSummary:
         document.querySelector('.cw-workbench__task-drawer-collapsed')?.textContent ?? null,
       chatBoxExpanded:
@@ -815,6 +831,127 @@ async function clickTaskDrawerToggle(window) {
   `);
 }
 
+async function clickTaskDrawerItem(window, itemId) {
+  const itemLiteral = JSON.stringify(itemId);
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedItemId = ${itemLiteral};
+      const startedAt = Date.now();
+      const selectTaskDrawerItem = () => {
+        const item = document.querySelector(
+          '[data-task-drawer-item-select="' + expectedItemId + '"]'
+        );
+        if (item instanceof HTMLElement) {
+          item.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing task drawer item: ' + expectedItemId,
+            items: Array.from(
+              document.querySelectorAll('[data-task-drawer-item-select]'),
+              (element) => element.getAttribute('data-task-drawer-item-select')
+            ),
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(selectTaskDrawerItem);
+      };
+      selectTaskDrawerItem();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
+async function keyTaskDrawerItem(window, itemId, key) {
+  const itemLiteral = JSON.stringify(itemId);
+  const keyLiteral = JSON.stringify(key);
+  const keyCode = runtimeWorkbenchVisualSmokeElectronKeyCode(key);
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedItemId = ${itemLiteral};
+      const expectedKey = ${keyLiteral};
+      const startedAt = Date.now();
+      const focusTaskDrawerItem = () => {
+        const item = document.querySelector(
+          '[data-task-drawer-item-select="' + expectedItemId + '"]'
+        );
+        if (item instanceof HTMLElement) {
+          item.focus({ preventScroll: true });
+          resolve({
+            ok: document.activeElement === item,
+            focusedItem: document.activeElement instanceof HTMLElement
+              ? document.activeElement.getAttribute('data-task-drawer-item-select')
+              : null,
+          });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing task drawer item for key ' + expectedKey + ': ' + expectedItemId,
+            items: Array.from(
+              document.querySelectorAll('[data-task-drawer-item-select]'),
+              (element) => element.getAttribute('data-task-drawer-item-select')
+            ),
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(focusTaskDrawerItem);
+      };
+      focusTaskDrawerItem();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+  window.webContents.sendInputEvent({ keyCode, type: "keyDown" });
+  window.webContents.sendInputEvent({ keyCode, type: "keyUp" });
+  const waitResult = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedItemId = ${itemLiteral};
+      const startedAt = Date.now();
+      const waitForSelection = () => {
+        const selectedItem = document.querySelector('[data-task-drawer-item-selected="true"]')?.getAttribute('data-task-drawer-item') ?? null;
+        const detailsItem = document.querySelector('[data-task-drawer-details]')?.getAttribute('data-task-drawer-details') ?? null;
+        const focusedItem = document.activeElement instanceof HTMLElement
+          ? document.activeElement.getAttribute('data-task-drawer-item-select')
+          : null;
+        if (
+          selectedItem === expectedItemId &&
+          detailsItem === expectedItemId &&
+          focusedItem === expectedItemId
+        ) {
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Keyboard selection did not select task drawer item ' + expectedItemId,
+            selectedItem,
+            detailsItem,
+            focusedItem,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(waitForSelection);
+      };
+      waitForSelection();
+    })
+  `);
+  if (waitResult?.ok !== true) {
+    throw new Error(JSON.stringify(waitResult));
+  }
+}
+
 async function clickChatBoxToggle(window) {
   await window.webContents.executeJavaScript(`
     (() => {
@@ -845,6 +982,10 @@ function collectVisualSmokeFailures(
   initialVersionSnapshotMetrics,
   versionSnapshotSelectMetrics,
   versionSnapshotKeyboardMetrics,
+  initialTaskDrawerMetrics,
+  taskDrawerSelectMetrics,
+  taskDrawerSpaceMetrics,
+  taskDrawerKeyboardMetrics,
   collapsedMetrics,
   chatCollapsedMetrics,
   canvasMetrics,
@@ -1962,6 +2103,119 @@ function collectVisualSmokeFailures(
       `expected 5 task drawer items, got ${metrics.taskDrawerItems}`,
     );
   }
+  if (initialTaskDrawerMetrics.taskDrawerSelectableItems !== 5) {
+    failures.push(
+      `expected 5 selectable task drawer items, got ${initialTaskDrawerMetrics.taskDrawerSelectableItems}`,
+    );
+  }
+  if (initialTaskDrawerMetrics.selectedTaskDrawerItems !== 1) {
+    failures.push(
+      `expected one selected task drawer item initially, got ${initialTaskDrawerMetrics.selectedTaskDrawerItems}`,
+    );
+  }
+  if (initialTaskDrawerMetrics.selectedTaskDrawerItemId !== "active_panel") {
+    failures.push(
+      `expected initial task drawer selection active_panel, got ${initialTaskDrawerMetrics.selectedTaskDrawerItemId}`,
+    );
+  }
+  if (initialTaskDrawerMetrics.taskDrawerDetailsId !== "active_panel") {
+    failures.push(
+      `expected initial task drawer details active_panel, got ${initialTaskDrawerMetrics.taskDrawerDetailsId}`,
+    );
+  }
+  if (initialTaskDrawerMetrics.taskDrawerDetailsValue !== "Lifecycle") {
+    failures.push(
+      `expected initial task drawer details value Lifecycle, got ${initialTaskDrawerMetrics.taskDrawerDetailsValue}`,
+    );
+  }
+  if (initialTaskDrawerMetrics.taskDrawerDetailsTone !== "neutral") {
+    failures.push(
+      `expected initial task drawer details tone neutral, got ${initialTaskDrawerMetrics.taskDrawerDetailsTone}`,
+    );
+  }
+  if (taskDrawerSelectMetrics.selectedTaskDrawerItems !== 1) {
+    failures.push(
+      `expected one selected task drawer item after click, got ${taskDrawerSelectMetrics.selectedTaskDrawerItems}`,
+    );
+  }
+  if (taskDrawerSelectMetrics.selectedTaskDrawerItemId !== "unread_events") {
+    failures.push(
+      `expected unread_events task drawer selection after click, got ${taskDrawerSelectMetrics.selectedTaskDrawerItemId}`,
+    );
+  }
+  if (taskDrawerSelectMetrics.taskDrawerDetailsId !== "unread_events") {
+    failures.push(
+      `expected unread_events task drawer details after click, got ${taskDrawerSelectMetrics.taskDrawerDetailsId}`,
+    );
+  }
+  if (taskDrawerSelectMetrics.taskDrawerDetailsValue !== "0") {
+    failures.push(
+      `expected unread_events task drawer details value 0, got ${taskDrawerSelectMetrics.taskDrawerDetailsValue}`,
+    );
+  }
+  if (taskDrawerSelectMetrics.taskDrawerDetailsTone !== "neutral") {
+    failures.push(
+      `expected unread_events task drawer details tone neutral, got ${taskDrawerSelectMetrics.taskDrawerDetailsTone}`,
+    );
+  }
+  if (
+    !taskDrawerSelectMetrics.taskDrawerDetailsText?.includes("Tone") ||
+    !taskDrawerSelectMetrics.taskDrawerDetailsText?.includes("neutral")
+  ) {
+    failures.push(
+      `expected unread_events task drawer visible details to include Tone neutral, got ${taskDrawerSelectMetrics.taskDrawerDetailsText}`,
+    );
+  }
+  if (taskDrawerSpaceMetrics.selectedTaskDrawerItems !== 1) {
+    failures.push(
+      `expected one selected task drawer item after Space, got ${taskDrawerSpaceMetrics.selectedTaskDrawerItems}`,
+    );
+  }
+  if (taskDrawerSpaceMetrics.selectedTaskDrawerItemId !== "visible_items") {
+    failures.push(
+      `expected visible_items task drawer selection after Space, got ${taskDrawerSpaceMetrics.selectedTaskDrawerItemId}`,
+    );
+  }
+  if (taskDrawerSpaceMetrics.taskDrawerDetailsId !== "visible_items") {
+    failures.push(
+      `expected visible_items task drawer details after Space, got ${taskDrawerSpaceMetrics.taskDrawerDetailsId}`,
+    );
+  }
+  if (taskDrawerSpaceMetrics.taskDrawerDetailsValue !== "5") {
+    failures.push(
+      `expected visible_items task drawer details value 5 after Space, got ${taskDrawerSpaceMetrics.taskDrawerDetailsValue}`,
+    );
+  }
+  if (taskDrawerSpaceMetrics.taskDrawerDetailsTone !== "neutral") {
+    failures.push(
+      `expected visible_items task drawer details tone neutral after Space, got ${taskDrawerSpaceMetrics.taskDrawerDetailsTone}`,
+    );
+  }
+  if (taskDrawerKeyboardMetrics.selectedTaskDrawerItems !== 1) {
+    failures.push(
+      `expected one selected task drawer item after keyboard, got ${taskDrawerKeyboardMetrics.selectedTaskDrawerItems}`,
+    );
+  }
+  if (taskDrawerKeyboardMetrics.selectedTaskDrawerItemId !== "runtime_stream") {
+    failures.push(
+      `expected runtime_stream task drawer selection after keyboard, got ${taskDrawerKeyboardMetrics.selectedTaskDrawerItemId}`,
+    );
+  }
+  if (taskDrawerKeyboardMetrics.taskDrawerDetailsId !== "runtime_stream") {
+    failures.push(
+      `expected runtime_stream task drawer details after keyboard, got ${taskDrawerKeyboardMetrics.taskDrawerDetailsId}`,
+    );
+  }
+  if (taskDrawerKeyboardMetrics.taskDrawerDetailsValue !== "Idle") {
+    failures.push(
+      `expected runtime_stream task drawer details value Idle after keyboard, got ${taskDrawerKeyboardMetrics.taskDrawerDetailsValue}`,
+    );
+  }
+  if (taskDrawerKeyboardMetrics.taskDrawerDetailsTone !== "neutral") {
+    failures.push(
+      `expected runtime_stream task drawer details tone neutral after keyboard, got ${taskDrawerKeyboardMetrics.taskDrawerDetailsTone}`,
+    );
+  }
   if (collapsedMetrics.taskDrawerExpanded !== "false") {
     failures.push(
       `expected collapsed task drawer during toggle check, got ${collapsedMetrics.taskDrawerExpanded}`,
@@ -2094,6 +2348,31 @@ async function main() {
   );
   const versionSnapshotKeyboardMetrics = await runSmokeStep(
     "read keyboard-selected version snapshot metrics",
+    () => readMetrics(window),
+  );
+  const initialTaskDrawerMetrics = await runSmokeStep(
+    "read initial task drawer metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("select unread task drawer item", () =>
+    clickTaskDrawerItem(window, "unread_events"),
+  );
+  const taskDrawerSelectMetrics = await runSmokeStep(
+    "read selected task drawer metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("select visible task drawer item by Space", () =>
+    keyTaskDrawerItem(window, "visible_items", "Space"),
+  );
+  const taskDrawerSpaceMetrics = await runSmokeStep(
+    "read Space-selected task drawer metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("select runtime task drawer item by keyboard", () =>
+    keyTaskDrawerItem(window, "runtime_stream", "Enter"),
+  );
+  const taskDrawerKeyboardMetrics = await runSmokeStep(
+    "read keyboard-selected task drawer metrics",
     () => readMetrics(window),
   );
   await runSmokeStep("focus next lifecycle item", () =>
@@ -2246,6 +2525,10 @@ async function main() {
     initialVersionSnapshotMetrics,
     versionSnapshotSelectMetrics,
     versionSnapshotKeyboardMetrics,
+    initialTaskDrawerMetrics,
+    taskDrawerSelectMetrics,
+    taskDrawerSpaceMetrics,
+    taskDrawerKeyboardMetrics,
     collapsedMetrics,
     chatCollapsedMetrics,
     canvasMetrics,
@@ -2274,6 +2557,10 @@ async function main() {
         initialVersionSnapshotMetrics,
         versionSnapshotSelectMetrics,
         versionSnapshotKeyboardMetrics,
+        initialTaskDrawerMetrics,
+        taskDrawerSelectMetrics,
+        taskDrawerSpaceMetrics,
+        taskDrawerKeyboardMetrics,
         collapsedMetrics,
         chatCollapsedMetrics,
         canvasMetrics,

@@ -42,6 +42,8 @@ import type {
   RuntimeWorkbenchShellRuntimeStreamEventSnapshot,
   RuntimeWorkbenchShellRuntimeStreamPanelSnapshot,
   RuntimeWorkbenchShellSnapshot,
+  RuntimeWorkbenchShellTaskDrawerItem,
+  RuntimeWorkbenchShellTaskDrawerItemId,
   RuntimeWorkbenchShellTaskDrawerSnapshot,
   RuntimeWorkbenchShellVersionSnapshotId,
   RuntimeWorkbenchShellVersionSnapshotItem,
@@ -1921,6 +1923,13 @@ function isRuntimeWorkbenchShellVersionSnapshotId(
   );
 }
 
+function isRuntimeWorkbenchShellTaskDrawerItemId(
+  drawer: RuntimeWorkbenchShellTaskDrawerSnapshot,
+  value: string | undefined,
+): value is RuntimeWorkbenchShellTaskDrawerItemId {
+  return value !== undefined && drawer.items.some((item) => item.id === value);
+}
+
 function isRuntimeWorkbenchShellWorkflowCanvasNodeId(
   canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot,
   value: string | undefined,
@@ -2053,9 +2062,53 @@ function RuntimeWorkbenchShellTaskDrawer(props: {
   const [expanded, setExpanded] = useState(
     () => !props.drawer.defaultCollapsed,
   );
+  const [selectedItemId, setSelectedItemId] =
+    useState<RuntimeWorkbenchShellTaskDrawerItemId | null>(
+      props.drawer.items.find((item) => item.id === "active_panel")?.id ??
+        props.drawer.items[0]?.id ??
+        null,
+    );
+  const selectedItem = useMemo(
+    () =>
+      props.drawer.items.find((item) => item.id === selectedItemId) ??
+      props.drawer.items[0] ??
+      null,
+    [props.drawer.items, selectedItemId],
+  );
   const handleToggleClick = useCallback((): void => {
     setExpanded((current) => !current);
   }, []);
+  const handleItemSelect = useCallback(
+    (itemId: RuntimeWorkbenchShellTaskDrawerItemId): void => {
+      setSelectedItemId(itemId);
+    },
+    [],
+  );
+  const handleItemClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>): void => {
+      const itemId = event.currentTarget.dataset.taskDrawerItemSelect;
+      if (!isRuntimeWorkbenchShellTaskDrawerItemId(props.drawer, itemId)) {
+        return;
+      }
+      handleItemSelect(itemId);
+    },
+    [handleItemSelect, props.drawer],
+  );
+  const handleItemKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>): void => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      const itemId = event.currentTarget.dataset.taskDrawerItemSelect;
+      if (!isRuntimeWorkbenchShellTaskDrawerItemId(props.drawer, itemId)) {
+        return;
+      }
+      event.preventDefault();
+      handleItemSelect(itemId);
+    },
+    [handleItemSelect, props.drawer],
+  );
+
   return (
     <aside
       className={[
@@ -2084,23 +2137,77 @@ function RuntimeWorkbenchShellTaskDrawer(props: {
         ) : null}
       </div>
       {expanded ? (
-        <dl className="cw-workbench__task-drawer-items">
-          {props.drawer.items.map((item) => (
-            <div
-              className={`cw-workbench__task-drawer-item cw-workbench__task-drawer-item--${item.tone}`}
-              key={item.id}
-            >
-              <dt>{item.label}</dt>
-              <dd>{item.value}</dd>
-            </div>
-          ))}
-        </dl>
+        <>
+          <dl
+            aria-label="Task drawer items"
+            className="cw-workbench__task-drawer-items"
+            role="listbox"
+          >
+            {props.drawer.items.map((item) => {
+              const selected = selectedItem?.id === item.id;
+              return (
+                <div
+                  aria-selected={selected}
+                  className={[
+                    "cw-workbench__task-drawer-item",
+                    `cw-workbench__task-drawer-item--${item.tone}`,
+                    selected ? "cw-workbench__task-drawer-item--selected" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  data-task-drawer-item={item.id}
+                  data-task-drawer-item-select={item.id}
+                  data-task-drawer-item-selected={selected ? "true" : undefined}
+                  data-task-drawer-item-tone={item.tone}
+                  key={item.id}
+                  onClick={handleItemClick}
+                  onKeyDown={handleItemKeyDown}
+                  role="option"
+                  tabIndex={0}
+                >
+                  <dt>{item.label}</dt>
+                  <dd>{item.value}</dd>
+                </div>
+              );
+            })}
+          </dl>
+          {selectedItem === null ? null : (
+            <RuntimeWorkbenchShellTaskDrawerDetails item={selectedItem} />
+          )}
+        </>
       ) : (
         <p className="cw-workbench__task-drawer-collapsed">
           {props.drawer.collapsedSummary}
         </p>
       )}
     </aside>
+  );
+}
+
+function RuntimeWorkbenchShellTaskDrawerDetails(props: {
+  readonly item: RuntimeWorkbenchShellTaskDrawerItem;
+}): ReactElement {
+  return (
+    <section
+      aria-label="Task drawer selection details"
+      className="cw-workbench__task-drawer-details"
+      data-task-drawer-details={props.item.id}
+      data-task-drawer-details-label={props.item.label}
+      data-task-drawer-details-tone={props.item.tone}
+      data-task-drawer-details-value={props.item.value}
+    >
+      <h3>{props.item.label}</h3>
+      <dl>
+        <div>
+          <dt>Value</dt>
+          <dd>{props.item.value}</dd>
+        </div>
+        <div>
+          <dt>Tone</dt>
+          <dd>{props.item.tone}</dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 
