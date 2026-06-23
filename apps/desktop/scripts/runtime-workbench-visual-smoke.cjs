@@ -82,6 +82,14 @@ async function readMetrics(window) {
             ':' +
             (element.getAttribute('data-workflow-canvas-summary-count') ?? '')
         ).filter(Boolean).sort(),
+      workflowCanvasTypeFocusButtons:
+        document.querySelectorAll('button[data-workflow-canvas-type-focus-kind][data-workflow-canvas-type-focus-value]').length,
+      workflowCanvasTypeFocusActiveButtons:
+        document.querySelectorAll('[data-workflow-canvas-type-focus-active="true"]').length,
+      workflowCanvasTypeFocusKind:
+        document.querySelector('[data-workflow-canvas-summary="true"]')?.getAttribute('data-workflow-canvas-type-focus-kind') ?? null,
+      workflowCanvasTypeFocusValue:
+        document.querySelector('[data-workflow-canvas-summary="true"]')?.getAttribute('data-workflow-canvas-type-focus-value') ?? null,
       activeWorkflowCanvasNodes:
         document.querySelectorAll('.cw-workbench__workflow-canvas-node--active').length,
       selectedWorkflowCanvasNodes:
@@ -94,11 +102,25 @@ async function readMetrics(window) {
           : null,
       selectableWorkflowCanvasNodes:
         document.querySelectorAll('[data-workflow-canvas-node-select]').length,
+      typeFocusedWorkflowCanvasNodes:
+        document.querySelectorAll('[data-workflow-canvas-node-type-focused="true"]').length,
+      typeFocusedWorkflowCanvasNodeIds:
+        Array.from(
+          document.querySelectorAll('[data-workflow-canvas-node-type-focused="true"]'),
+          (element) => element.getAttribute('data-workflow-canvas-node')
+        ).filter(Boolean).sort(),
       selectedWorkflowCanvasEdges:
         document.querySelectorAll('[data-workflow-canvas-edge-selected="true"]').length,
       selectedWorkflowCanvasEdgeIds:
         Array.from(
           document.querySelectorAll('[data-workflow-canvas-edge-selected="true"]'),
+          (element) => element.getAttribute('data-workflow-canvas-edge')
+        ).filter(Boolean).sort(),
+      typeFocusedWorkflowCanvasEdges:
+        document.querySelectorAll('[data-workflow-canvas-edge-type-focused="true"]').length,
+      typeFocusedWorkflowCanvasEdgeIds:
+        Array.from(
+          document.querySelectorAll('[data-workflow-canvas-edge-type-focused="true"]'),
           (element) => element.getAttribute('data-workflow-canvas-edge')
         ).filter(Boolean).sort(),
       incomingWorkflowCanvasEdges:
@@ -375,6 +397,82 @@ async function clickWorkflowCanvasHistoryTrail(window, nodeId, index) {
   }
 }
 
+async function clickWorkflowCanvasTypeFocus(window, kind, value) {
+  const kindLiteral = JSON.stringify(kind);
+  const valueLiteral = JSON.stringify(value);
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedKind = ${kindLiteral};
+      const expectedValue = ${valueLiteral};
+      const startedAt = Date.now();
+      const selectTypeFocus = () => {
+        const button = document.querySelector(
+          'button[data-workflow-canvas-type-focus-kind="' +
+            expectedKind +
+            '"][data-workflow-canvas-type-focus-value="' +
+            expectedValue +
+            '"]'
+        );
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing workflow canvas type focus button: ' + expectedKind + ':' + expectedValue,
+            buttons: Array.from(
+              document.querySelectorAll('button[data-workflow-canvas-type-focus-kind][data-workflow-canvas-type-focus-value]'),
+              (element) =>
+                (element.getAttribute('data-workflow-canvas-type-focus-kind') ?? '') +
+                ':' +
+                (element.getAttribute('data-workflow-canvas-type-focus-value') ?? '')
+            ),
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(selectTypeFocus);
+      };
+      selectTypeFocus();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
+async function clearWorkflowCanvasTypeFocus(window) {
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const startedAt = Date.now();
+      const clearTypeFocus = () => {
+        const button = document.querySelector('[data-workflow-canvas-type-focus-clear="true"]');
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing workflow canvas type focus clear button',
+            activeButtons: document.querySelectorAll('[data-workflow-canvas-type-focus-active="true"]').length,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(clearTypeFocus);
+      };
+      clearTypeFocus();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
 async function keyWorkflowCanvasSelectedNode(window, key, expectedNodeId) {
   const keyLiteral = JSON.stringify(key);
   const expectedNodeLiteral = JSON.stringify(expectedNodeId);
@@ -502,6 +600,9 @@ function collectVisualSmokeFailures(
   collapsedMetrics,
   chatCollapsedMetrics,
   canvasMetrics,
+  canvasNodeTypeFocusMetrics,
+  canvasEdgeTypeFocusMetrics,
+  canvasTypeFocusClearMetrics,
   canvasRouteMetrics,
   canvasBackMetrics,
   canvasKeyboardNextMetrics,
@@ -536,6 +637,26 @@ function collectVisualSmokeFailures(
     canvasMetrics.workflowCanvasInspectorRouteSelectNodeIds,
   )
     ? canvasMetrics.workflowCanvasInspectorRouteSelectNodeIds.join(",")
+    : "";
+  const nodeTypeFocusNodeIds = Array.isArray(
+    canvasNodeTypeFocusMetrics.typeFocusedWorkflowCanvasNodeIds,
+  )
+    ? canvasNodeTypeFocusMetrics.typeFocusedWorkflowCanvasNodeIds.join(",")
+    : "";
+  const nodeTypeFocusEdgeIds = Array.isArray(
+    canvasNodeTypeFocusMetrics.typeFocusedWorkflowCanvasEdgeIds,
+  )
+    ? canvasNodeTypeFocusMetrics.typeFocusedWorkflowCanvasEdgeIds.join(",")
+    : "";
+  const edgeTypeFocusNodeIds = Array.isArray(
+    canvasEdgeTypeFocusMetrics.typeFocusedWorkflowCanvasNodeIds,
+  )
+    ? canvasEdgeTypeFocusMetrics.typeFocusedWorkflowCanvasNodeIds.join(",")
+    : "";
+  const edgeTypeFocusEdgeIds = Array.isArray(
+    canvasEdgeTypeFocusMetrics.typeFocusedWorkflowCanvasEdgeIds,
+  )
+    ? canvasEdgeTypeFocusMetrics.typeFocusedWorkflowCanvasEdgeIds.join(",")
     : "";
   const routeWorkflowCanvasEdgeIds = Array.isArray(
     canvasRouteMetrics.selectedWorkflowCanvasEdgeIds,
@@ -651,6 +772,11 @@ function collectVisualSmokeFailures(
       `expected no focused canvas summary in lifecycle smoke, got ${metrics.workflowCanvasSummaries}`,
     );
   }
+  if (metrics.workflowCanvasTypeFocusButtons !== 0) {
+    failures.push(
+      `expected no canvas type focus buttons in lifecycle smoke, got ${metrics.workflowCanvasTypeFocusButtons}`,
+    );
+  }
   if (metrics.selectedWorkflowCanvasEdges !== 0) {
     failures.push(
       `expected no selected workflow canvas edges in lifecycle smoke, got ${metrics.selectedWorkflowCanvasEdges}`,
@@ -685,6 +811,16 @@ function collectVisualSmokeFailures(
   if (canvasMetrics.workflowCanvasSummaries !== 1) {
     failures.push(
       `expected one focused canvas summary, got ${canvasMetrics.workflowCanvasSummaries}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasTypeFocusButtons !== 9) {
+    failures.push(
+      `expected 9 focused canvas type focus buttons, got ${canvasMetrics.workflowCanvasTypeFocusButtons}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasTypeFocusActiveButtons !== 0) {
+    failures.push(
+      `expected no active canvas type focus before selection, got ${canvasMetrics.workflowCanvasTypeFocusActiveButtons}`,
     );
   }
   if (canvasMetrics.workflowCanvasSummaryNodes !== "5") {
@@ -733,6 +869,103 @@ function collectVisualSmokeFailures(
   if (workflowCanvasSummaryEdgeTypes !== "fail:1,normal:2,pass:1,repair:1") {
     failures.push(
       `expected focused canvas summary edge types fail/normal/pass/repair, got ${workflowCanvasSummaryEdgeTypes}`,
+    );
+  }
+  if (canvasNodeTypeFocusMetrics.workflowCanvasTypeFocusKind !== "node") {
+    failures.push(
+      `expected node type focus kind node, got ${canvasNodeTypeFocusMetrics.workflowCanvasTypeFocusKind}`,
+    );
+  }
+  if (
+    canvasNodeTypeFocusMetrics.workflowCanvasTypeFocusValue !== "repair_task"
+  ) {
+    failures.push(
+      `expected node type focus value repair_task, got ${canvasNodeTypeFocusMetrics.workflowCanvasTypeFocusValue}`,
+    );
+  }
+  if (canvasNodeTypeFocusMetrics.workflowCanvasTypeFocusActiveButtons !== 1) {
+    failures.push(
+      `expected one active node type focus button, got ${canvasNodeTypeFocusMetrics.workflowCanvasTypeFocusActiveButtons}`,
+    );
+  }
+  if (canvasNodeTypeFocusMetrics.typeFocusedWorkflowCanvasNodes !== 1) {
+    failures.push(
+      `expected one node highlighted by node type focus, got ${canvasNodeTypeFocusMetrics.typeFocusedWorkflowCanvasNodes}`,
+    );
+  }
+  if (nodeTypeFocusNodeIds !== "repair_task") {
+    failures.push(
+      `expected node type focus to highlight repair_task, got ${nodeTypeFocusNodeIds}`,
+    );
+  }
+  if (canvasNodeTypeFocusMetrics.typeFocusedWorkflowCanvasEdges !== 0) {
+    failures.push(
+      `expected node type focus to leave edges unhighlighted, got ${canvasNodeTypeFocusMetrics.typeFocusedWorkflowCanvasEdges}`,
+    );
+  }
+  if (nodeTypeFocusEdgeIds !== "") {
+    failures.push(
+      `expected no edge ids during node type focus, got ${nodeTypeFocusEdgeIds}`,
+    );
+  }
+  if (canvasEdgeTypeFocusMetrics.workflowCanvasTypeFocusKind !== "edge") {
+    failures.push(
+      `expected edge type focus kind edge, got ${canvasEdgeTypeFocusMetrics.workflowCanvasTypeFocusKind}`,
+    );
+  }
+  if (canvasEdgeTypeFocusMetrics.workflowCanvasTypeFocusValue !== "normal") {
+    failures.push(
+      `expected edge type focus value normal, got ${canvasEdgeTypeFocusMetrics.workflowCanvasTypeFocusValue}`,
+    );
+  }
+  if (canvasEdgeTypeFocusMetrics.workflowCanvasTypeFocusActiveButtons !== 1) {
+    failures.push(
+      `expected one active edge type focus button, got ${canvasEdgeTypeFocusMetrics.workflowCanvasTypeFocusActiveButtons}`,
+    );
+  }
+  if (canvasEdgeTypeFocusMetrics.typeFocusedWorkflowCanvasNodes !== 0) {
+    failures.push(
+      `expected edge type focus to leave nodes unhighlighted, got ${canvasEdgeTypeFocusMetrics.typeFocusedWorkflowCanvasNodes}`,
+    );
+  }
+  if (edgeTypeFocusNodeIds !== "") {
+    failures.push(
+      `expected no node ids during edge type focus, got ${edgeTypeFocusNodeIds}`,
+    );
+  }
+  if (canvasEdgeTypeFocusMetrics.typeFocusedWorkflowCanvasEdges !== 2) {
+    failures.push(
+      `expected two edges highlighted by normal type focus, got ${canvasEdgeTypeFocusMetrics.typeFocusedWorkflowCanvasEdges}`,
+    );
+  }
+  if (edgeTypeFocusEdgeIds !== "context_to_review,start_to_context") {
+    failures.push(
+      `expected normal edge type focus to highlight context_to_review,start_to_context, got ${edgeTypeFocusEdgeIds}`,
+    );
+  }
+  if (canvasTypeFocusClearMetrics.workflowCanvasTypeFocusKind !== null) {
+    failures.push(
+      `expected clear type focus kind null, got ${canvasTypeFocusClearMetrics.workflowCanvasTypeFocusKind}`,
+    );
+  }
+  if (canvasTypeFocusClearMetrics.workflowCanvasTypeFocusValue !== null) {
+    failures.push(
+      `expected clear type focus value null, got ${canvasTypeFocusClearMetrics.workflowCanvasTypeFocusValue}`,
+    );
+  }
+  if (canvasTypeFocusClearMetrics.workflowCanvasTypeFocusActiveButtons !== 0) {
+    failures.push(
+      `expected no active type focus after clear, got ${canvasTypeFocusClearMetrics.workflowCanvasTypeFocusActiveButtons}`,
+    );
+  }
+  if (canvasTypeFocusClearMetrics.typeFocusedWorkflowCanvasNodes !== 0) {
+    failures.push(
+      `expected no node type focus after clear, got ${canvasTypeFocusClearMetrics.typeFocusedWorkflowCanvasNodes}`,
+    );
+  }
+  if (canvasTypeFocusClearMetrics.typeFocusedWorkflowCanvasEdges !== 0) {
+    failures.push(
+      `expected no edge type focus after clear, got ${canvasTypeFocusClearMetrics.typeFocusedWorkflowCanvasEdges}`,
     );
   }
   if (canvasMetrics.selectedWorkflowCanvasNodes !== 1) {
@@ -1284,6 +1517,27 @@ async function main() {
   const canvasMetrics = await runSmokeStep("read canvas metrics", () =>
     readMetrics(window),
   );
+  await runSmokeStep("focus repair canvas node type", () =>
+    clickWorkflowCanvasTypeFocus(window, "node", "repair_task"),
+  );
+  const canvasNodeTypeFocusMetrics = await runSmokeStep(
+    "read canvas node type focus metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("focus normal canvas edge type", () =>
+    clickWorkflowCanvasTypeFocus(window, "edge", "normal"),
+  );
+  const canvasEdgeTypeFocusMetrics = await runSmokeStep(
+    "read canvas edge type focus metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("clear canvas type focus", () =>
+    clearWorkflowCanvasTypeFocus(window),
+  );
+  const canvasTypeFocusClearMetrics = await runSmokeStep(
+    "read canvas type focus clear metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("select incoming repair route", () =>
     clickWorkflowCanvasInspectorRoute(
       window,
@@ -1366,6 +1620,9 @@ async function main() {
     collapsedMetrics,
     chatCollapsedMetrics,
     canvasMetrics,
+    canvasNodeTypeFocusMetrics,
+    canvasEdgeTypeFocusMetrics,
+    canvasTypeFocusClearMetrics,
     canvasRouteMetrics,
     canvasBackMetrics,
     canvasKeyboardNextMetrics,
@@ -1384,6 +1641,9 @@ async function main() {
         collapsedMetrics,
         chatCollapsedMetrics,
         canvasMetrics,
+        canvasNodeTypeFocusMetrics,
+        canvasEdgeTypeFocusMetrics,
+        canvasTypeFocusClearMetrics,
         canvasRouteMetrics,
         canvasBackMetrics,
         canvasKeyboardNextMetrics,

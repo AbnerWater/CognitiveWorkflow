@@ -451,6 +451,152 @@ test("renderer runtime workbench React shell selects focused canvas node locally
 
     await act(async () => {
       clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElement(
+          dom.container,
+          (element) =>
+            element.dataset.workflowCanvasTypeFocusKind === "node" &&
+            element.dataset.workflowCanvasTypeFocusValue === "repair_task",
+          "repair_task node type focus",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasSummary",
+        "true",
+      ).getAttribute("data-workflow-canvas-type-focus-kind"),
+      "node",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasSummary",
+        "true",
+      ).getAttribute("data-workflow-canvas-type-focus-value"),
+      "repair_task",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasTypeFocusActive === "true",
+      ),
+      1,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasNodeTypeFocused",
+        "true",
+      ).getAttribute("data-workflow-canvas-node"),
+      "repair_task",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasEdgeTypeFocused === "true",
+      ),
+      0,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElement(
+          dom.container,
+          (element) =>
+            element.dataset.workflowCanvasTypeFocusKind === "edge" &&
+            element.dataset.workflowCanvasTypeFocusValue === "normal",
+          "normal edge type focus",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasSummary",
+        "true",
+      ).getAttribute("data-workflow-canvas-type-focus-kind"),
+      "edge",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasSummary",
+        "true",
+      ).getAttribute("data-workflow-canvas-type-focus-value"),
+      "normal",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasNodeTypeFocused === "true",
+      ),
+      0,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasEdgeTypeFocused === "true",
+      ),
+      2,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElement(
+        dom.container,
+        (element) =>
+          element.dataset.workflowCanvasEdge === "context_to_review" &&
+          element.dataset.workflowCanvasEdgeTypeFocused === "true",
+        "focused context_to_review normal edge",
+      ).getAttribute("data-workflow-canvas-edge-type-focused"),
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElement(
+        dom.container,
+        (element) =>
+          element.dataset.workflowCanvasEdge === "start_to_context" &&
+          element.dataset.workflowCanvasEdgeTypeFocused === "true",
+        "focused start_to_context normal edge",
+      ).getAttribute("data-workflow-canvas-edge-type-focused"),
+      "true",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "workflowCanvasTypeFocusClear",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasTypeFocusActive === "true",
+      ),
+      0,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasNodeTypeFocused === "true",
+      ),
+      0,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasEdgeTypeFocused === "true",
+      ),
+      0,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
         requireFakeRuntimeWorkbenchElementByData(
           dom.container,
           "workflowCanvasNodeSelect",
