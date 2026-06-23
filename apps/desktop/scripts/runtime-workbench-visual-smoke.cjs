@@ -87,6 +87,12 @@ async function readMetrics(window) {
         document.querySelector('.cw-workbench__workflow-canvas-inspector')?.getAttribute('data-workflow-canvas-inspector') ?? null,
       workflowCanvasInspectorTitle:
         document.querySelector('.cw-workbench__workflow-canvas-inspector h3')?.textContent ?? null,
+      workflowCanvasInspectorHistoryDepth:
+        document.querySelector('.cw-workbench__workflow-canvas-inspector')?.getAttribute('data-workflow-canvas-inspector-history-depth') ?? null,
+      workflowCanvasInspectorBackButtons:
+        document.querySelectorAll('[data-workflow-canvas-inspector-back="true"]').length,
+      workflowCanvasInspectorBackTarget:
+        document.querySelector('[data-workflow-canvas-inspector-back="true"]')?.getAttribute('data-workflow-canvas-inspector-back-target') ?? null,
       workflowCanvasInspectorEdges:
         document.querySelectorAll('[data-workflow-canvas-inspector-edge]').length,
       workflowCanvasInspectorEdgeIds:
@@ -250,6 +256,37 @@ async function clickWorkflowCanvasInspectorRoute(window, edgeId, nodeId) {
   }
 }
 
+async function clickWorkflowCanvasInspectorBack(window, nodeId) {
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const startedAt = Date.now();
+      const selectBack = () => {
+        const button = document.querySelector('[data-workflow-canvas-inspector-back="true"][data-workflow-canvas-inspector-back-target="${nodeId}"]');
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing workflow canvas inspector back button: ${nodeId}',
+            backTarget: document.querySelector('[data-workflow-canvas-inspector-back="true"]')?.getAttribute('data-workflow-canvas-inspector-back-target') ?? null,
+            historyDepth: document.querySelector('.cw-workbench__workflow-canvas-inspector')?.getAttribute('data-workflow-canvas-inspector-history-depth') ?? null,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(selectBack);
+      };
+      selectBack();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
 async function clickTaskDrawerToggle(window) {
   await window.webContents.executeJavaScript(`
     (() => {
@@ -291,6 +328,7 @@ function collectVisualSmokeFailures(
   chatCollapsedMetrics,
   canvasMetrics,
   canvasRouteMetrics,
+  canvasBackMetrics,
 ) {
   const failures = [];
   const selectedWorkflowCanvasEdgeIds = Array.isArray(
@@ -530,6 +568,21 @@ function collectVisualSmokeFailures(
       `expected repair_task inspector route targets context_task,review_task, got ${workflowCanvasInspectorRouteSelectNodeIds}`,
     );
   }
+  if (canvasMetrics.workflowCanvasInspectorHistoryDepth !== "1") {
+    failures.push(
+      `expected repair_task canvas history depth 1, got ${canvasMetrics.workflowCanvasInspectorHistoryDepth}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasInspectorBackButtons !== 1) {
+    failures.push(
+      `expected one repair_task canvas back button, got ${canvasMetrics.workflowCanvasInspectorBackButtons}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasInspectorBackTarget !== "context_task") {
+    failures.push(
+      `expected repair_task canvas back target context_task, got ${canvasMetrics.workflowCanvasInspectorBackTarget}`,
+    );
+  }
   if (canvasRouteMetrics.selectedWorkflowCanvasNodeId !== "review_task") {
     failures.push(
       `expected route navigation to select review_task, got ${canvasRouteMetrics.selectedWorkflowCanvasNodeId}`,
@@ -602,6 +655,41 @@ function collectVisualSmokeFailures(
   ) {
     failures.push(
       `expected review_task inspector route targets context_task,end,repair_task, got ${routeWorkflowCanvasInspectorRouteSelectNodeIds}`,
+    );
+  }
+  if (canvasRouteMetrics.workflowCanvasInspectorHistoryDepth !== "2") {
+    failures.push(
+      `expected review_task canvas history depth 2, got ${canvasRouteMetrics.workflowCanvasInspectorHistoryDepth}`,
+    );
+  }
+  if (canvasRouteMetrics.workflowCanvasInspectorBackButtons !== 1) {
+    failures.push(
+      `expected one review_task canvas back button, got ${canvasRouteMetrics.workflowCanvasInspectorBackButtons}`,
+    );
+  }
+  if (canvasRouteMetrics.workflowCanvasInspectorBackTarget !== "repair_task") {
+    failures.push(
+      `expected review_task canvas back target repair_task, got ${canvasRouteMetrics.workflowCanvasInspectorBackTarget}`,
+    );
+  }
+  if (canvasBackMetrics.selectedWorkflowCanvasNodeId !== "repair_task") {
+    failures.push(
+      `expected back navigation to select repair_task, got ${canvasBackMetrics.selectedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasBackMetrics.workflowCanvasInspectorNodeId !== "repair_task") {
+    failures.push(
+      `expected back navigation inspector repair_task, got ${canvasBackMetrics.workflowCanvasInspectorNodeId}`,
+    );
+  }
+  if (canvasBackMetrics.workflowCanvasInspectorHistoryDepth !== "1") {
+    failures.push(
+      `expected back navigation history depth 1, got ${canvasBackMetrics.workflowCanvasInspectorHistoryDepth}`,
+    );
+  }
+  if (canvasBackMetrics.workflowCanvasInspectorBackTarget !== "context_task") {
+    failures.push(
+      `expected back navigation target context_task, got ${canvasBackMetrics.workflowCanvasInspectorBackTarget}`,
     );
   }
   if (metrics.activeFileTreeNodes !== 0) {
@@ -781,6 +869,12 @@ async function main() {
     "read canvas route metrics",
     () => readMetrics(window),
   );
+  await runSmokeStep("select previous canvas node", () =>
+    clickWorkflowCanvasInspectorBack(window, "repair_task"),
+  );
+  const canvasBackMetrics = await runSmokeStep("read canvas back metrics", () =>
+    readMetrics(window),
+  );
   await runSmokeStep("show lifecycle panel", () =>
     clickPanel(window, "lifecycle"),
   );
@@ -805,6 +899,7 @@ async function main() {
     chatCollapsedMetrics,
     canvasMetrics,
     canvasRouteMetrics,
+    canvasBackMetrics,
   );
   await fs.writeFile(outputPath, image.toPNG());
   await fs.writeFile(
@@ -816,6 +911,7 @@ async function main() {
         chatCollapsedMetrics,
         canvasMetrics,
         canvasRouteMetrics,
+        canvasBackMetrics,
         messages,
         failures,
         outputPath,

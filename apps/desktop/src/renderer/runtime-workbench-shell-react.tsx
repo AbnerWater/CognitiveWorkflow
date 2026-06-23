@@ -796,21 +796,31 @@ function RuntimeWorkbenchShellVersionSnapshots(props: {
   );
 }
 
+interface RuntimeWorkbenchShellWorkflowCanvasSelectionState {
+  readonly selectedNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null;
+  readonly history: readonly RuntimeWorkbenchShellWorkflowCanvasNodeId[];
+}
+
 function RuntimeWorkbenchShellWorkflowCanvas(props: {
   readonly canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot;
   readonly surface: "focused" | "preview";
 }): ReactElement {
-  const [selectedNodeId, setSelectedNodeId] =
-    useState<RuntimeWorkbenchShellWorkflowCanvasNodeId | null>(null);
+  const [selectionState, setSelectionState] =
+    useState<RuntimeWorkbenchShellWorkflowCanvasSelectionState>({
+      history: [],
+      selectedNodeId: null,
+    });
   const selectable = props.surface === "focused";
   const selectedNode = useMemo(
     () =>
       selectRuntimeWorkbenchShellWorkflowCanvasNode(
         props.canvas,
-        selectedNodeId,
+        selectionState.selectedNodeId,
       ),
-    [props.canvas, selectedNodeId],
+    [props.canvas, selectionState.selectedNodeId],
   );
+  const previousSelectedNodeId =
+    selectionState.history[selectionState.history.length - 1] ?? null;
   const selectedIncomingEdges = useMemo(
     () =>
       selectedNode === null
@@ -829,15 +839,36 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
           ),
     [props.canvas.edges, selectedNode],
   );
+  const selectNode = useCallback(
+    (nodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId): void => {
+      setSelectionState((current) => {
+        const currentNode = selectRuntimeWorkbenchShellWorkflowCanvasNode(
+          props.canvas,
+          current.selectedNodeId,
+        );
+        if (currentNode?.nodeId === nodeId) {
+          return current;
+        }
+        return {
+          history:
+            currentNode === null
+              ? current.history
+              : [...current.history, currentNode.nodeId].slice(-8),
+          selectedNodeId: nodeId,
+        };
+      });
+    },
+    [props.canvas],
+  );
   const handleNodeSelectClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const nodeId = event.currentTarget.dataset.workflowCanvasNodeSelect;
       if (!isRuntimeWorkbenchShellWorkflowCanvasNodeId(props.canvas, nodeId)) {
         return;
       }
-      setSelectedNodeId(nodeId);
+      selectNode(nodeId);
     },
-    [props.canvas],
+    [props.canvas, selectNode],
   );
   const handleInspectorRouteSelectClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
@@ -845,10 +876,22 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
       if (!isRuntimeWorkbenchShellWorkflowCanvasNodeId(props.canvas, nodeId)) {
         return;
       }
-      setSelectedNodeId(nodeId);
+      selectNode(nodeId);
     },
-    [props.canvas],
+    [props.canvas, selectNode],
   );
+  const handleInspectorBackClick = useCallback((): void => {
+    setSelectionState((current) => {
+      const previousNodeId = current.history[current.history.length - 1];
+      if (previousNodeId === undefined) {
+        return current;
+      }
+      return {
+        history: current.history.slice(0, -1),
+        selectedNodeId: previousNodeId,
+      };
+    });
+  }, []);
 
   return (
     <section
@@ -885,10 +928,13 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
         <div className="cw-workbench__workflow-canvas-sidebar">
           {selectable && selectedNode !== null ? (
             <RuntimeWorkbenchShellWorkflowCanvasInspector
+              handleBackClick={handleInspectorBackClick}
               handleRouteSelectClick={handleInspectorRouteSelectClick}
+              historyDepth={selectionState.history.length}
               incomingEdges={selectedIncomingEdges}
               node={selectedNode}
               outgoingEdges={selectedOutgoingEdges}
+              previousNodeId={previousSelectedNodeId}
             />
           ) : null}
           <ol
@@ -1022,6 +1068,9 @@ function RuntimeWorkbenchShellWorkflowCanvasInspector(props: {
   readonly node: RuntimeWorkbenchShellWorkflowCanvasNode;
   readonly incomingEdges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
   readonly outgoingEdges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
+  readonly historyDepth: number;
+  readonly previousNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null;
+  readonly handleBackClick: () => void;
   readonly handleRouteSelectClick: (
     event: MouseEvent<HTMLButtonElement>,
   ) => void;
@@ -1030,9 +1079,23 @@ function RuntimeWorkbenchShellWorkflowCanvasInspector(props: {
     <aside
       aria-label="Canvas inspector"
       className="cw-workbench__workflow-canvas-inspector"
+      data-workflow-canvas-inspector-history-depth={props.historyDepth}
       data-workflow-canvas-inspector={props.node.nodeId}
     >
-      <h3>{props.node.title}</h3>
+      <div className="cw-workbench__workflow-canvas-inspector-heading">
+        <h3>{props.node.title}</h3>
+        {props.previousNodeId === null ? null : (
+          <button
+            className="cw-workbench__workflow-canvas-inspector-back"
+            data-workflow-canvas-inspector-back="true"
+            data-workflow-canvas-inspector-back-target={props.previousNodeId}
+            onClick={props.handleBackClick}
+            type="button"
+          >
+            Back to {props.previousNodeId}
+          </button>
+        )}
+      </div>
       <dl>
         <div>
           <dt>Type</dt>

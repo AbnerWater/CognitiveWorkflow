@@ -359,6 +359,14 @@ test("renderer runtime workbench React shell selects focused canvas node locally
       ).getAttribute("data-workflow-canvas-inspector"),
       "context_task",
     );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "0",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "0",
+    );
 
     await act(async () => {
       clickFakeRuntimeWorkbenchElement(
@@ -378,6 +386,22 @@ test("renderer runtime workbench React shell selects focused canvas node locally
         "repair_task",
       ).getAttribute("data-workflow-canvas-inspector"),
       "repair_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "1",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "context_task",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "context_task",
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -444,6 +468,22 @@ test("renderer runtime workbench React shell selects focused canvas node locally
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
         dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "2",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "2",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "repair_task",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "repair_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
         "workflowCanvasNodeSelected",
         "true",
       ).getAttribute("data-workflow-canvas-node"),
@@ -485,6 +525,22 @@ test("renderer runtime workbench React shell selects focused canvas node locally
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
         dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "3",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "3",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "review_task",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "review_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
         "workflowCanvasNodeSelected",
         "true",
       ).getAttribute("data-workflow-canvas-node"),
@@ -493,6 +549,42 @@ test("renderer runtime workbench React shell selects focused canvas node locally
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(dom.container),
       /End[\s\S]*Incoming[\s\S]*1[\s\S]*Outgoing[\s\S]*0[\s\S]*No outgoing edges/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "workflowCanvasInspectorBack",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(session.getSnapshot().activePanel, "canvas");
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "review_task",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "review_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "2",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "2",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasNodeSelected",
+        "true",
+      ).getAttribute("data-workflow-canvas-node"),
+      "review_task",
     );
 
     await act(async () => {

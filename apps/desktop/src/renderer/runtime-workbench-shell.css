@@ -449,6 +449,36 @@ button {
   font-size: 13px;
 }
 
+.cw-workbench__workflow-canvas-inspector-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.cw-workbench__workflow-canvas-inspector-back {
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid #c6d4e3;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1e3f67;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.cw-workbench__workflow-canvas-inspector-back:hover {
+  background: #eef5fb;
+}
+
+.cw-workbench__workflow-canvas-inspector-back:focus-visible {
+  outline: 2px solid #3d6fa7;
+  outline-offset: 2px;
+}
+
 .cw-workbench__workflow-canvas-inspector dl {
   display: grid;
   gap: 6px;
@@ -1775,6 +1805,7 @@ button {
   .cw-workbench__stream-metrics,
   .cw-workbench__version-snapshot-items,
   .cw-workbench__workflow-canvas-nodes,
+  .cw-workbench__workflow-canvas-inspector-heading,
   .cw-workbench__workflow-canvas-inspector dl > div,
   .cw-workbench__workflow-canvas-inspector-routes li,
   .cw-workbench__lifecycle-metrics,
