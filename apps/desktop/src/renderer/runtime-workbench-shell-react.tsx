@@ -2211,6 +2211,35 @@ function RuntimeWorkbenchShellTaskDrawerDetails(props: {
   );
 }
 
+type RuntimeWorkbenchShellChatDraftIntent = "ask" | "revise" | "repair";
+
+const RUNTIME_WORKBENCH_CHAT_DRAFT_INTENTS = Object.freeze([
+  "ask",
+  "revise",
+  "repair",
+] satisfies RuntimeWorkbenchShellChatDraftIntent[]);
+
+function isRuntimeWorkbenchShellChatDraftIntent(
+  value: string | undefined,
+): value is RuntimeWorkbenchShellChatDraftIntent {
+  return RUNTIME_WORKBENCH_CHAT_DRAFT_INTENTS.some(
+    (intent) => intent === value,
+  );
+}
+
+function runtimeWorkbenchShellChatDraftIntentLabel(
+  intent: RuntimeWorkbenchShellChatDraftIntent,
+): string {
+  switch (intent) {
+    case "ask":
+      return "Ask";
+    case "revise":
+      return "Revise";
+    case "repair":
+      return "Repair";
+  }
+}
+
 function runtimeWorkbenchShellChatDraftWordCount(draft: string): number {
   const trimmedDraft = draft.trim();
   if (trimmedDraft.length === 0) {
@@ -2226,8 +2255,12 @@ function RuntimeWorkbenchShellChatBox(props: {
     () => !props.chatBox.defaultCollapsed,
   );
   const [draft, setDraft] = useState("");
+  const [draftIntent, setDraftIntent] =
+    useState<RuntimeWorkbenchShellChatDraftIntent>("ask");
   const draftLength = draft.length;
   const draftWords = runtimeWorkbenchShellChatDraftWordCount(draft);
+  const draftIntentLabel =
+    runtimeWorkbenchShellChatDraftIntentLabel(draftIntent);
   const handleToggleClick = useCallback((): void => {
     setExpanded((current) => !current);
   }, []);
@@ -2240,6 +2273,16 @@ function RuntimeWorkbenchShellChatBox(props: {
   const handleDraftClearClick = useCallback((): void => {
     setDraft("");
   }, []);
+  const handleDraftIntentClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const intent = event.currentTarget.dataset.chatDraftIntent;
+      if (!isRuntimeWorkbenchShellChatDraftIntent(intent)) {
+        return;
+      }
+      setDraftIntent(intent);
+    },
+    [],
+  );
   return (
     <section
       aria-label={props.chatBox.title}
@@ -2270,6 +2313,33 @@ function RuntimeWorkbenchShellChatBox(props: {
       </div>
       {expanded ? (
         <>
+          <div
+            aria-label="Chat draft intent"
+            className="cw-workbench__chat-intents"
+            role="group"
+          >
+            {RUNTIME_WORKBENCH_CHAT_DRAFT_INTENTS.map((intent) => {
+              const active = intent === draftIntent;
+              return (
+                <button
+                  aria-pressed={active}
+                  className={[
+                    "cw-workbench__chat-intent",
+                    active ? "cw-workbench__chat-intent--active" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  data-chat-draft-intent={intent}
+                  data-chat-draft-intent-active={active ? "true" : "false"}
+                  key={intent}
+                  onClick={handleDraftIntentClick}
+                  type="button"
+                >
+                  {runtimeWorkbenchShellChatDraftIntentLabel(intent)}
+                </button>
+              );
+            })}
+          </div>
           <div className="cw-workbench__chat-compose">
             <textarea
               aria-label="Chat draft"
@@ -2305,6 +2375,8 @@ function RuntimeWorkbenchShellChatBox(props: {
             aria-label="Chat draft details"
             className="cw-workbench__chat-details"
             data-chat-draft-details="true"
+            data-chat-draft-intent={draftIntent}
+            data-chat-draft-intent-label={draftIntentLabel}
             data-chat-draft-length={String(draftLength)}
             data-chat-draft-send-enabled={
               props.chatBox.enabled && draftWords > 0 ? "true" : "false"
@@ -2325,6 +2397,10 @@ function RuntimeWorkbenchShellChatBox(props: {
               <div>
                 <dt>Status</dt>
                 <dd>{props.chatBox.statusLabel}</dd>
+              </div>
+              <div>
+                <dt>Intent</dt>
+                <dd>{draftIntentLabel}</dd>
               </div>
             </dl>
           </section>

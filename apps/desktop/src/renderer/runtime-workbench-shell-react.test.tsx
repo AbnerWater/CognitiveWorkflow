@@ -545,6 +545,22 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
         dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-intent"),
+      "ask",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftIntent",
+        "ask",
+      ).getAttribute("data-chat-draft-intent-active"),
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
         "chatDraftClear",
         "true",
       ).getAttribute("data-chat-draft-clear-disabled"),
@@ -557,6 +573,60 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         "true",
       ).getAttribute("data-chat-send-disabled"),
       "true",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatDraftIntent",
+          "revise",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-intent"),
+      "revise",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-intent-label"),
+      "Revise",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatDraftIntent",
+          "repair",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-intent"),
+      "repair",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-intent-label"),
+      "Repair",
     );
 
     await act(async () => {
@@ -598,7 +668,7 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
           "true",
         ),
       ),
-      /Draft[\s\S]*Characters[\s\S]*22[\s\S]*Words[\s\S]*4[\s\S]*Status[\s\S]*Idle/u,
+      /Draft[\s\S]*Characters[\s\S]*22[\s\S]*Words[\s\S]*4[\s\S]*Status[\s\S]*Idle[\s\S]*Intent[\s\S]*Repair/u,
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -679,6 +749,14 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         "true",
       ).getAttribute("data-chat-draft-words"),
       "0",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-intent"),
+      "repair",
     );
 
     await act(async () => {

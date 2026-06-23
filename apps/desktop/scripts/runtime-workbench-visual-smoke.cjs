@@ -254,10 +254,20 @@ async function readMetrics(window) {
         document.querySelector('.cw-workbench__chat')?.getAttribute('data-chat-box-expanded') ?? null,
       chatComposeControls:
         document.querySelectorAll('.cw-workbench__chat-compose textarea, .cw-workbench__chat-compose button').length,
+      chatDraftIntentButtons:
+        document.querySelectorAll('[data-chat-draft-intent][data-chat-draft-intent-active]').length,
+      activeChatDraftIntentButtons:
+        document.querySelectorAll('[data-chat-draft-intent-active="true"]').length,
+      activeChatDraftIntent:
+        document.querySelector('[data-chat-draft-intent-active="true"]')?.getAttribute('data-chat-draft-intent') ?? null,
       chatDraftInputs:
         document.querySelectorAll('[data-chat-draft-input="true"]').length,
       chatDraftValue:
         document.querySelector('[data-chat-draft-input="true"]')?.value ?? null,
+      chatDraftIntent:
+        document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-intent') ?? null,
+      chatDraftIntentLabel:
+        document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-intent-label') ?? null,
       chatDraftLength:
         document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-length') ?? null,
       chatDraftWords:
@@ -1071,6 +1081,58 @@ async function clearChatDraft(window) {
   }
 }
 
+async function clickChatDraftIntent(window, intent) {
+  const intentLiteral = JSON.stringify(intent);
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedIntent = ${intentLiteral};
+      const button = document.querySelector(
+        '[data-chat-draft-intent="' + expectedIntent + '"][data-chat-draft-intent-active]'
+      );
+      if (!(button instanceof HTMLButtonElement)) {
+        resolve({
+          ok: false,
+          message: 'Missing chat draft intent button: ' + expectedIntent,
+          intents: Array.from(
+            document.querySelectorAll('[data-chat-draft-intent][data-chat-draft-intent-active]'),
+            (element) => element.getAttribute('data-chat-draft-intent')
+          ),
+        });
+        return;
+      }
+      button.click();
+      const startedAt = Date.now();
+      const waitForIntent = () => {
+        const activeIntent = document
+          .querySelector('[data-chat-draft-intent-active="true"]')
+          ?.getAttribute('data-chat-draft-intent') ?? null;
+        const detailsIntent = document
+          .querySelector('[data-chat-draft-details="true"]')
+          ?.getAttribute('data-chat-draft-intent') ?? null;
+        if (activeIntent === expectedIntent && detailsIntent === expectedIntent) {
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Chat draft intent did not update',
+            activeIntent,
+            detailsIntent,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(waitForIntent);
+      };
+      waitForIntent();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
 async function clickChatBoxToggle(window) {
   await window.webContents.executeJavaScript(`
     (() => {
@@ -1107,6 +1169,7 @@ function collectVisualSmokeFailures(
   taskDrawerKeyboardMetrics,
   collapsedMetrics,
   chatCollapsedMetrics,
+  chatInitialMetrics,
   chatDraftMetrics,
   chatClearedMetrics,
   canvasMetrics,
@@ -2361,29 +2424,54 @@ function collectVisualSmokeFailures(
       `expected 3 chat compose controls, got ${metrics.chatComposeControls}`,
     );
   }
+  if (chatInitialMetrics.chatDraftIntentButtons !== 3) {
+    failures.push(
+      `expected 3 chat draft intent buttons, got ${chatInitialMetrics.chatDraftIntentButtons}`,
+    );
+  }
+  if (chatInitialMetrics.activeChatDraftIntentButtons !== 1) {
+    failures.push(
+      `expected one active chat draft intent, got ${chatInitialMetrics.activeChatDraftIntentButtons}`,
+    );
+  }
+  if (chatInitialMetrics.activeChatDraftIntent !== "ask") {
+    failures.push(
+      `expected initial active chat draft intent ask, got ${chatInitialMetrics.activeChatDraftIntent}`,
+    );
+  }
+  if (chatInitialMetrics.chatDraftIntent !== "ask") {
+    failures.push(
+      `expected initial chat draft details intent ask, got ${chatInitialMetrics.chatDraftIntent}`,
+    );
+  }
+  if (chatInitialMetrics.chatDraftIntentLabel !== "Ask") {
+    failures.push(
+      `expected initial chat draft details intent label Ask, got ${chatInitialMetrics.chatDraftIntentLabel}`,
+    );
+  }
   if (metrics.chatDraftInputs !== 1) {
     failures.push(
       `expected one chat draft input, got ${metrics.chatDraftInputs}`,
     );
   }
-  if (metrics.chatDraftLength !== "0") {
+  if (chatInitialMetrics.chatDraftLength !== "0") {
     failures.push(
-      `expected initial chat draft length 0, got ${metrics.chatDraftLength}`,
+      `expected initial chat draft length 0, got ${chatInitialMetrics.chatDraftLength}`,
     );
   }
-  if (metrics.chatDraftWords !== "0") {
+  if (chatInitialMetrics.chatDraftWords !== "0") {
     failures.push(
-      `expected initial chat draft words 0, got ${metrics.chatDraftWords}`,
+      `expected initial chat draft words 0, got ${chatInitialMetrics.chatDraftWords}`,
     );
   }
-  if (metrics.chatDraftStatus !== "Idle") {
+  if (chatInitialMetrics.chatDraftStatus !== "Idle") {
     failures.push(
-      `expected initial chat draft status Idle, got ${metrics.chatDraftStatus}`,
+      `expected initial chat draft status Idle, got ${chatInitialMetrics.chatDraftStatus}`,
     );
   }
-  if (metrics.chatDraftSendEnabled !== "false") {
+  if (chatInitialMetrics.chatDraftSendEnabled !== "false") {
     failures.push(
-      `expected initial chat draft send-enabled false, got ${metrics.chatDraftSendEnabled}`,
+      `expected initial chat draft send-enabled false, got ${chatInitialMetrics.chatDraftSendEnabled}`,
     );
   }
   if (metrics.chatSendDisabled !== true) {
@@ -2412,6 +2500,21 @@ function collectVisualSmokeFailures(
       `expected chat draft value Review repair plan now, got ${chatDraftMetrics.chatDraftValue}`,
     );
   }
+  if (chatDraftMetrics.activeChatDraftIntent !== "repair") {
+    failures.push(
+      `expected active chat draft intent repair after click, got ${chatDraftMetrics.activeChatDraftIntent}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftIntent !== "repair") {
+    failures.push(
+      `expected chat draft details intent repair, got ${chatDraftMetrics.chatDraftIntent}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftIntentLabel !== "Repair") {
+    failures.push(
+      `expected chat draft details intent label Repair, got ${chatDraftMetrics.chatDraftIntentLabel}`,
+    );
+  }
   if (chatDraftMetrics.chatDraftLength !== "22") {
     failures.push(
       `expected chat draft length 22, got ${chatDraftMetrics.chatDraftLength}`,
@@ -2436,10 +2539,12 @@ function collectVisualSmokeFailures(
     !chatDraftMetrics.chatDraftDetailsText?.includes("Characters") ||
     !chatDraftMetrics.chatDraftDetailsText?.includes("22") ||
     !chatDraftMetrics.chatDraftDetailsText?.includes("Words") ||
-    !chatDraftMetrics.chatDraftDetailsText?.includes("4")
+    !chatDraftMetrics.chatDraftDetailsText?.includes("4") ||
+    !chatDraftMetrics.chatDraftDetailsText?.includes("Intent") ||
+    !chatDraftMetrics.chatDraftDetailsText?.includes("Repair")
   ) {
     failures.push(
-      `expected chat draft visible details to include Characters 22 and Words 4, got ${chatDraftMetrics.chatDraftDetailsText}`,
+      `expected chat draft visible details to include Characters 22, Words 4, and Intent Repair, got ${chatDraftMetrics.chatDraftDetailsText}`,
     );
   }
   if (chatClearedMetrics.chatDraftValue !== "") {
@@ -2455,6 +2560,11 @@ function collectVisualSmokeFailures(
   if (chatClearedMetrics.chatDraftWords !== "0") {
     failures.push(
       `expected cleared chat draft words 0, got ${chatClearedMetrics.chatDraftWords}`,
+    );
+  }
+  if (chatClearedMetrics.chatDraftIntent !== "repair") {
+    failures.push(
+      `expected cleared chat draft intent to remain repair, got ${chatClearedMetrics.chatDraftIntent}`,
     );
   }
   if (metrics.timelineItems !== 5) {
@@ -2600,6 +2710,16 @@ async function main() {
     readMetrics(window),
   );
   await runSmokeStep("expand chat box", () => clickChatBoxToggle(window));
+  const chatInitialMetrics = await runSmokeStep(
+    "read initial chat draft metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("select revise chat draft intent", () =>
+    clickChatDraftIntent(window, "revise"),
+  );
+  await runSmokeStep("select repair chat draft intent", () =>
+    clickChatDraftIntent(window, "repair"),
+  );
   await runSmokeStep("input chat draft", () =>
     inputChatDraft(window, "Review repair plan now"),
   );
@@ -2743,6 +2863,7 @@ async function main() {
     taskDrawerKeyboardMetrics,
     collapsedMetrics,
     chatCollapsedMetrics,
+    chatInitialMetrics,
     chatDraftMetrics,
     chatClearedMetrics,
     canvasMetrics,
@@ -2777,6 +2898,7 @@ async function main() {
         taskDrawerKeyboardMetrics,
         collapsedMetrics,
         chatCollapsedMetrics,
+        chatInitialMetrics,
         chatDraftMetrics,
         chatClearedMetrics,
         canvasMetrics,

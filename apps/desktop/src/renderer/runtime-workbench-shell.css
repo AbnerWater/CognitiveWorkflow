@@ -1241,6 +1241,39 @@ button {
   font-weight: 700;
 }
 
+.cw-workbench__chat-intents {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.cw-workbench__chat-intent {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2c3a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__chat-intent:hover {
+  border-color: #3d6fa7;
+}
+
+.cw-workbench__chat-intent:focus-visible {
+  outline: 2px solid #3d6fa7;
+  outline-offset: 2px;
+}
+
+.cw-workbench__chat-intent--active {
+  border-color: #3d6fa7;
+  background: #eef5fb;
+  color: #1d4f7a;
+}
+
 .cw-workbench__chat-compose {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -1295,7 +1328,7 @@ button {
 
 .cw-workbench__chat-details dl {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
 }
@@ -2279,6 +2312,7 @@ button {
   .cw-workbench__dock,
   .cw-workbench__file-tree-node,
   .cw-workbench__chat-header,
+  .cw-workbench__chat-intents,
   .cw-workbench__chat-details dl,
   .cw-workbench__task-drawer-header,
   .cw-workbench__status-grid,
