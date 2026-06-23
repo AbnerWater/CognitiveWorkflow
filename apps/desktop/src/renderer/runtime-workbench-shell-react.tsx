@@ -4,6 +4,7 @@ import {
   useMemo,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   useSyncExternalStore,
   type MouseEvent,
   type ReactElement,
@@ -39,6 +40,7 @@ import type {
   RuntimeWorkbenchShellSnapshot,
   RuntimeWorkbenchShellTaskDrawerSnapshot,
   RuntimeWorkbenchShellVersionSnapshotsSnapshot,
+  RuntimeWorkbenchShellWorkflowCanvasSnapshot,
 } from "./runtime-workbench-shell-presenter.js";
 import type {
   RuntimeWorkbenchShellDomSession,
@@ -566,6 +568,10 @@ export function RuntimeWorkbenchShellReactView(
             snapshots={snapshot.chrome.versionSnapshots}
           />
 
+          <RuntimeWorkbenchShellWorkflowCanvas
+            canvas={snapshot.chrome.workflowCanvas}
+          />
+
           <section
             aria-live={snapshot.ariaLive}
             className="cw-workbench__content"
@@ -776,6 +782,74 @@ function RuntimeWorkbenchShellVersionSnapshots(props: {
           </li>
         ))}
       </ol>
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvas(props: {
+  readonly canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot;
+}): ReactElement {
+  return (
+    <section
+      aria-label={props.canvas.title}
+      className="cw-workbench__workflow-canvas"
+      data-workflow-canvas-status={props.canvas.statusLabel}
+    >
+      <div className="cw-workbench__workflow-canvas-header">
+        <div>
+          <h2>{props.canvas.title}</h2>
+          <p>{props.canvas.summary}</p>
+        </div>
+        <span>{props.canvas.statusLabel}</span>
+      </div>
+      <div className="cw-workbench__workflow-canvas-body">
+        <ol
+          aria-label="Workflow canvas nodes"
+          className="cw-workbench__workflow-canvas-nodes"
+        >
+          {props.canvas.nodes.map((node) => (
+            <li
+              className={[
+                "cw-workbench__workflow-canvas-node",
+                `cw-workbench__workflow-canvas-node--${node.tone}`,
+                node.active ? "cw-workbench__workflow-canvas-node--active" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              data-workflow-canvas-node={node.nodeId}
+              key={node.nodeId}
+              style={
+                {
+                  left: `${node.position.x}%`,
+                  top: `${node.position.y}%`,
+                } as CSSProperties
+              }
+            >
+              <span>{node.type}</span>
+              <strong>{node.title}</strong>
+              <small>{node.statusLabel}</small>
+            </li>
+          ))}
+        </ol>
+        <ol
+          aria-label="Workflow canvas edges"
+          className="cw-workbench__workflow-canvas-edges"
+        >
+          {props.canvas.edges.map((edge) => (
+            <li
+              className={`cw-workbench__workflow-canvas-edge cw-workbench__workflow-canvas-edge--${edge.tone}`}
+              data-workflow-canvas-edge={edge.edgeId}
+              key={edge.edgeId}
+            >
+              <span>{edge.type}</span>
+              <strong>
+                {edge.sourceNodeId} {" -> "} {edge.targetNodeId}
+              </strong>
+              <small>{edge.label}</small>
+            </li>
+          ))}
+        </ol>
+      </div>
     </section>
   );
 }

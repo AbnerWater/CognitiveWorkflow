@@ -155,6 +155,65 @@ export interface RuntimeWorkbenchShellVersionSnapshotsSnapshot {
   readonly items: readonly RuntimeWorkbenchShellVersionSnapshotItem[];
 }
 
+export type RuntimeWorkbenchShellWorkflowCanvasNodeId =
+  | "start"
+  | "context_task"
+  | "review_task"
+  | "repair_task"
+  | "end";
+
+export type RuntimeWorkbenchShellWorkflowCanvasNodeType =
+  | "start"
+  | "execution_task"
+  | "evaluation_task"
+  | "repair_task"
+  | "end";
+
+export type RuntimeWorkbenchShellWorkflowCanvasEdgeId =
+  | "start_to_context"
+  | "context_to_review"
+  | "review_to_end"
+  | "review_to_repair"
+  | "repair_to_context";
+
+export type RuntimeWorkbenchShellWorkflowCanvasEdgeType =
+  | "normal"
+  | "pass"
+  | "fail"
+  | "repair";
+
+export interface RuntimeWorkbenchShellWorkflowCanvasPosition {
+  readonly x: number;
+  readonly y: number;
+}
+
+export interface RuntimeWorkbenchShellWorkflowCanvasNode {
+  readonly nodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId;
+  readonly type: RuntimeWorkbenchShellWorkflowCanvasNodeType;
+  readonly title: string;
+  readonly statusLabel: string;
+  readonly position: RuntimeWorkbenchShellWorkflowCanvasPosition;
+  readonly active: boolean;
+  readonly tone: RuntimeWorkbenchShellTone;
+}
+
+export interface RuntimeWorkbenchShellWorkflowCanvasEdge {
+  readonly edgeId: RuntimeWorkbenchShellWorkflowCanvasEdgeId;
+  readonly sourceNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId;
+  readonly targetNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId;
+  readonly type: RuntimeWorkbenchShellWorkflowCanvasEdgeType;
+  readonly label: string;
+  readonly tone: RuntimeWorkbenchShellTone;
+}
+
+export interface RuntimeWorkbenchShellWorkflowCanvasSnapshot {
+  readonly title: string;
+  readonly summary: string;
+  readonly statusLabel: string;
+  readonly nodes: readonly RuntimeWorkbenchShellWorkflowCanvasNode[];
+  readonly edges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
+}
+
 export type RuntimeWorkbenchShellTaskDrawerItemId =
   | "active_panel"
   | "lifecycle_panel"
@@ -196,6 +255,7 @@ export interface RuntimeWorkbenchShellChromeSnapshot {
   readonly dockItems: readonly RuntimeWorkbenchShellDockItem[];
   readonly fileTree: RuntimeWorkbenchShellFileTreeSnapshot;
   readonly versionSnapshots: RuntimeWorkbenchShellVersionSnapshotsSnapshot;
+  readonly workflowCanvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot;
   readonly taskDrawer: RuntimeWorkbenchShellTaskDrawerSnapshot;
   readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
 }
@@ -684,6 +744,13 @@ function buildShellChrome(
         }),
       ],
     },
+    workflowCanvas: {
+      title: "Workflow Canvas",
+      summary: `${activePanelLabel} graph scaffold`,
+      statusLabel: disposed ? "Disposed" : "Read-only",
+      nodes: buildWorkflowCanvasNodes(host, disposed),
+      edges: buildWorkflowCanvasEdges(disposed),
+    },
     taskDrawer: {
       title: "Task Drawer",
       summary: `${activePanelLabel} focus`,
@@ -738,6 +805,108 @@ function buildShellChrome(
       collapseLabel: "Collapse chat",
     },
   });
+}
+
+function buildWorkflowCanvasNodes(
+  host: RuntimeWorkbenchHostSessionSnapshot,
+  disposed: boolean,
+): RuntimeWorkbenchShellWorkflowCanvasNode[] {
+  const activeLifecycleNode = host.activePanel === "lifecycle";
+  const activeStreamNode = host.activePanel === "stream";
+  return [
+    workflowCanvasNode({
+      nodeId: "start",
+      type: "start",
+      title: "Start",
+      statusLabel: "manual",
+      position: { x: 16, y: 44 },
+      active: false,
+      tone: disposed ? "danger" : "success",
+    }),
+    workflowCanvasNode({
+      nodeId: "context_task",
+      type: "execution_task",
+      title: "Collect context",
+      statusLabel: "execution_task",
+      position: { x: 32, y: 28 },
+      active: activeStreamNode,
+      tone: disposed ? "danger" : "accent",
+    }),
+    workflowCanvasNode({
+      nodeId: "review_task",
+      type: "evaluation_task",
+      title: "Review result",
+      statusLabel: "evaluation_task",
+      position: { x: 56, y: 44 },
+      active: activeLifecycleNode,
+      tone: disposed ? "danger" : "warning",
+    }),
+    workflowCanvasNode({
+      nodeId: "repair_task",
+      type: "repair_task",
+      title: "Repair loop",
+      statusLabel: "repair_task",
+      position: { x: 56, y: 78 },
+      active: false,
+      tone: disposed ? "danger" : "warning",
+    }),
+    workflowCanvasNode({
+      nodeId: "end",
+      type: "end",
+      title: "End",
+      statusLabel: "archive",
+      position: { x: 84, y: 44 },
+      active: false,
+      tone: disposed ? "danger" : "success",
+    }),
+  ];
+}
+
+function buildWorkflowCanvasEdges(
+  disposed: boolean,
+): RuntimeWorkbenchShellWorkflowCanvasEdge[] {
+  return [
+    workflowCanvasEdge({
+      edgeId: "start_to_context",
+      sourceNodeId: "start",
+      targetNodeId: "context_task",
+      type: "normal",
+      label: "start",
+      tone: disposed ? "danger" : "neutral",
+    }),
+    workflowCanvasEdge({
+      edgeId: "context_to_review",
+      sourceNodeId: "context_task",
+      targetNodeId: "review_task",
+      type: "normal",
+      label: "output",
+      tone: disposed ? "danger" : "accent",
+    }),
+    workflowCanvasEdge({
+      edgeId: "review_to_end",
+      sourceNodeId: "review_task",
+      targetNodeId: "end",
+      type: "pass",
+      label: "pass",
+      tone: disposed ? "danger" : "success",
+    }),
+    workflowCanvasEdge({
+      edgeId: "review_to_repair",
+      sourceNodeId: "review_task",
+      targetNodeId: "repair_task",
+      type: "fail",
+      label: "fail",
+      tone: disposed ? "danger" : "warning",
+    }),
+    workflowCanvasEdge({
+      edgeId: "repair_to_context",
+      sourceNodeId: "repair_task",
+      targetNodeId: "context_task",
+      type: "repair",
+      label: "repair",
+      tone: disposed ? "danger" : "warning",
+    }),
+  ];
 }
 
 function buildShellActions(
@@ -868,6 +1037,26 @@ function versionSnapshotItem(
   item: RuntimeWorkbenchShellVersionSnapshotItem,
 ): RuntimeWorkbenchShellVersionSnapshotItem {
   return Object.freeze({ ...item });
+}
+
+function workflowCanvasNode(
+  node: RuntimeWorkbenchShellWorkflowCanvasNode,
+): RuntimeWorkbenchShellWorkflowCanvasNode {
+  return Object.freeze({
+    nodeId: node.nodeId,
+    type: node.type,
+    title: node.title,
+    statusLabel: node.statusLabel,
+    position: Object.freeze({ ...node.position }),
+    active: node.active,
+    tone: node.tone,
+  });
+}
+
+function workflowCanvasEdge(
+  edge: RuntimeWorkbenchShellWorkflowCanvasEdge,
+): RuntimeWorkbenchShellWorkflowCanvasEdge {
+  return Object.freeze({ ...edge });
 }
 
 function taskDrawerItem(
@@ -1218,6 +1407,17 @@ function freezeRuntimeWorkbenchShellChrome(
       summary: chrome.versionSnapshots.summary,
       items: Object.freeze(
         chrome.versionSnapshots.items.map((item) => versionSnapshotItem(item)),
+      ),
+    }),
+    workflowCanvas: Object.freeze({
+      title: chrome.workflowCanvas.title,
+      summary: chrome.workflowCanvas.summary,
+      statusLabel: chrome.workflowCanvas.statusLabel,
+      nodes: Object.freeze(
+        chrome.workflowCanvas.nodes.map((node) => workflowCanvasNode(node)),
+      ),
+      edges: Object.freeze(
+        chrome.workflowCanvas.edges.map((edge) => workflowCanvasEdge(edge)),
       ),
     }),
     taskDrawer: Object.freeze({

@@ -317,6 +317,36 @@ function freezeChrome(
         ),
       ),
     }),
+    workflowCanvas: Object.freeze({
+      title: chrome.workflowCanvas.title,
+      summary: chrome.workflowCanvas.summary,
+      statusLabel: chrome.workflowCanvas.statusLabel,
+      nodes: Object.freeze(
+        chrome.workflowCanvas.nodes.map((node) =>
+          Object.freeze({
+            nodeId: node.nodeId,
+            type: node.type,
+            title: node.title,
+            statusLabel: node.statusLabel,
+            position: Object.freeze({ ...node.position }),
+            active: node.active,
+            tone: node.tone,
+          }),
+        ),
+      ),
+      edges: Object.freeze(
+        chrome.workflowCanvas.edges.map((edge) =>
+          Object.freeze({
+            edgeId: edge.edgeId,
+            sourceNodeId: edge.sourceNodeId,
+            targetNodeId: edge.targetNodeId,
+            type: edge.type,
+            label: edge.label,
+            tone: edge.tone,
+          }),
+        ),
+      ),
+    }),
     taskDrawer: Object.freeze({
       title: chrome.taskDrawer.title,
       summary: chrome.taskDrawer.summary,

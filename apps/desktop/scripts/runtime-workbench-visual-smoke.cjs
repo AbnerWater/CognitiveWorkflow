@@ -25,6 +25,8 @@ async function readMetrics(window) {
       hasFileTree: document.querySelector('.cw-workbench__file-tree') !== null,
       hasVersionSnapshots:
         document.querySelector('.cw-workbench__version-snapshots') !== null,
+      hasWorkflowCanvas:
+        document.querySelector('.cw-workbench__workflow-canvas') !== null,
       hasLifecyclePanel: document.querySelector('.cw-workbench__lifecycle-panel') !== null,
       hasTaskDrawer: document.querySelector('.cw-workbench__task-drawer') !== null,
       hasChatBox: document.querySelector('.cw-workbench__chat') !== null,
@@ -34,12 +36,20 @@ async function readMetrics(window) {
         document.querySelectorAll('.cw-workbench__version-snapshot-item').length,
       activeVersionSnapshotItems:
         document.querySelectorAll('.cw-workbench__version-snapshot-item--active').length,
+      workflowCanvasNodes:
+        document.querySelectorAll('.cw-workbench__workflow-canvas-node').length,
+      workflowCanvasEdges:
+        document.querySelectorAll('.cw-workbench__workflow-canvas-edge').length,
+      activeWorkflowCanvasNodes:
+        document.querySelectorAll('.cw-workbench__workflow-canvas-node--active').length,
       activeFileTreeNodes:
         document.querySelectorAll('.cw-workbench__file-tree-node--active').length,
       hasRuntimeStreamFileNode:
         document.querySelector('[data-file-tree-node="runtime_stream"]') !== null,
       hasGitSnapshotItem:
         document.querySelector('[data-version-snapshot="git_snapshot"]') !== null,
+      hasRepairCanvasEdge:
+        document.querySelector('[data-workflow-canvas-edge="repair_to_context"]') !== null,
       hasTaskDrawerToggle: document.querySelector('[data-task-drawer-toggle="true"]') !== null,
       hasChatBoxToggle: document.querySelector('[data-chat-box-toggle="true"]') !== null,
       taskDrawerExpanded:
@@ -134,6 +144,9 @@ function collectVisualSmokeFailures(
   if (metrics.hasVersionSnapshots !== true) {
     failures.push("missing version snapshots");
   }
+  if (metrics.hasWorkflowCanvas !== true) {
+    failures.push("missing workflow canvas");
+  }
   if (metrics.hasLifecyclePanel !== true) {
     failures.push("missing lifecycle panel");
   }
@@ -154,9 +167,24 @@ function collectVisualSmokeFailures(
       `expected 4 version snapshot items, got ${metrics.versionSnapshotItems}`,
     );
   }
+  if (metrics.workflowCanvasNodes !== 5) {
+    failures.push(
+      `expected 5 workflow canvas nodes, got ${metrics.workflowCanvasNodes}`,
+    );
+  }
+  if (metrics.workflowCanvasEdges !== 5) {
+    failures.push(
+      `expected 5 workflow canvas edges, got ${metrics.workflowCanvasEdges}`,
+    );
+  }
   if (metrics.activeVersionSnapshotItems !== 1) {
     failures.push(
       `expected one active version snapshot item, got ${metrics.activeVersionSnapshotItems}`,
+    );
+  }
+  if (metrics.activeWorkflowCanvasNodes !== 1) {
+    failures.push(
+      `expected one active workflow canvas node, got ${metrics.activeWorkflowCanvasNodes}`,
     );
   }
   if (metrics.activeFileTreeNodes !== 0) {
@@ -169,6 +197,9 @@ function collectVisualSmokeFailures(
   }
   if (metrics.hasGitSnapshotItem !== true) {
     failures.push("missing git snapshot scaffold item");
+  }
+  if (metrics.hasRepairCanvasEdge !== true) {
+    failures.push("missing repair workflow canvas edge");
   }
   if (metrics.hasTaskDrawerToggle !== true) {
     failures.push("missing task drawer toggle");

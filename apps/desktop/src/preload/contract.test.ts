@@ -5157,6 +5157,96 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["git_snapshot", "Not created", "Future", false, "neutral"],
     ],
   );
+  assert.equal(snapshot.chrome.workflowCanvas.title, "Workflow Canvas");
+  assert.equal(snapshot.chrome.workflowCanvas.summary, "Stream graph scaffold");
+  assert.equal(snapshot.chrome.workflowCanvas.statusLabel, "Read-only");
+  assert.deepEqual(
+    snapshot.chrome.workflowCanvas.nodes.map((node) => [
+      node.nodeId,
+      node.type,
+      node.title,
+      node.statusLabel,
+      node.position,
+      node.active,
+      node.tone,
+    ]),
+    [
+      ["start", "start", "Start", "manual", { x: 16, y: 44 }, false, "success"],
+      [
+        "context_task",
+        "execution_task",
+        "Collect context",
+        "execution_task",
+        { x: 32, y: 28 },
+        true,
+        "accent",
+      ],
+      [
+        "review_task",
+        "evaluation_task",
+        "Review result",
+        "evaluation_task",
+        { x: 56, y: 44 },
+        false,
+        "warning",
+      ],
+      [
+        "repair_task",
+        "repair_task",
+        "Repair loop",
+        "repair_task",
+        { x: 56, y: 78 },
+        false,
+        "warning",
+      ],
+      ["end", "end", "End", "archive", { x: 84, y: 44 }, false, "success"],
+    ],
+  );
+  assert.deepEqual(
+    snapshot.chrome.workflowCanvas.edges.map((edge) => [
+      edge.edgeId,
+      edge.sourceNodeId,
+      edge.targetNodeId,
+      edge.type,
+      edge.label,
+      edge.tone,
+    ]),
+    [
+      [
+        "start_to_context",
+        "start",
+        "context_task",
+        "normal",
+        "start",
+        "neutral",
+      ],
+      [
+        "context_to_review",
+        "context_task",
+        "review_task",
+        "normal",
+        "output",
+        "accent",
+      ],
+      ["review_to_end", "review_task", "end", "pass", "pass", "success"],
+      [
+        "review_to_repair",
+        "review_task",
+        "repair_task",
+        "fail",
+        "fail",
+        "warning",
+      ],
+      [
+        "repair_to_context",
+        "repair_task",
+        "context_task",
+        "repair",
+        "repair",
+        "warning",
+      ],
+    ],
+  );
   assert.equal(snapshot.chrome.taskDrawer.title, "Task Drawer");
   assert.equal(snapshot.chrome.taskDrawer.summary, "Stream focus");
   assert.equal(
@@ -5278,6 +5368,15 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     Object.isFrozen(snapshot.chrome.versionSnapshots.items[0]),
     true,
   );
+  assert.equal(Object.isFrozen(snapshot.chrome.workflowCanvas), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.workflowCanvas.nodes), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.workflowCanvas.nodes[0]), true);
+  assert.equal(
+    Object.isFrozen(snapshot.chrome.workflowCanvas.nodes[0]?.position),
+    true,
+  );
+  assert.equal(Object.isFrozen(snapshot.chrome.workflowCanvas.edges), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.workflowCanvas.edges[0]), true);
   assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer), true);
   assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer.items), true);
   assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer.items[0]), true);
@@ -5466,6 +5565,20 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["validation", "Disposed", "danger"],
       ["runtime", "Disposed", "danger"],
       ["git_snapshot", "Future", "danger"],
+    ],
+  );
+  assert.equal(disposedSnapshot.chrome.workflowCanvas.statusLabel, "Disposed");
+  assert.deepEqual(
+    disposedSnapshot.chrome.workflowCanvas.nodes.map((node) => [
+      node.nodeId,
+      node.tone,
+    ]),
+    [
+      ["start", "danger"],
+      ["context_task", "danger"],
+      ["review_task", "danger"],
+      ["repair_task", "danger"],
+      ["end", "danger"],
     ],
   );
   assert.equal(disposedSnapshot.chrome.chatBox.statusLabel, "Disposed");
