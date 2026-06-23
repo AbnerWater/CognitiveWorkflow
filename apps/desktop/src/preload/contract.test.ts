@@ -5137,6 +5137,14 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   );
   assert.equal(snapshot.chrome.chatBox.title, "Chat Box");
   assert.equal(snapshot.chrome.chatBox.enabled, false);
+  assert.equal(
+    snapshot.chrome.chatBox.collapsedSummary,
+    "Stream focus, chat idle",
+  );
+  assert.equal(snapshot.chrome.chatBox.collapsible, true);
+  assert.equal(snapshot.chrome.chatBox.defaultCollapsed, false);
+  assert.equal(snapshot.chrome.chatBox.expandLabel, "Expand chat");
+  assert.equal(snapshot.chrome.chatBox.collapseLabel, "Collapse chat");
   assert.equal(Object.hasOwn(snapshot.chrome, "host"), false);
   assert.equal(Object.hasOwn(snapshot.chrome, "workbench"), false);
   assert.equal(Object.hasOwn(snapshot.chrome, "interaction"), false);
@@ -5389,6 +5397,10 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(disposedSnapshot.shortcutHints[0]?.enabled, false);
   assert.equal(disposedSnapshot.ariaLive, "assertive");
   assert.equal(disposedSnapshot.chrome.chatBox.statusLabel, "Disposed");
+  assert.equal(
+    disposedSnapshot.chrome.chatBox.collapsedSummary,
+    "Lifecycle focus, chat disposed",
+  );
   assert.equal(disposedSnapshot.chrome.dockItems[1]?.enabled, false);
   assert.equal(disposedSnapshot.chrome.dockItems[1]?.status, "disposed");
 });

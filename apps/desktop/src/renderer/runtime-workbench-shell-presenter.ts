@@ -139,6 +139,11 @@ export interface RuntimeWorkbenchShellChatBoxSnapshot {
   readonly placeholder: string;
   readonly enabled: boolean;
   readonly statusLabel: string;
+  readonly collapsedSummary: string;
+  readonly collapsible: boolean;
+  readonly defaultCollapsed: boolean;
+  readonly expandLabel: string;
+  readonly collapseLabel: string;
 }
 
 export interface RuntimeWorkbenchShellChromeSnapshot {
@@ -589,6 +594,11 @@ function buildShellChrome(
       placeholder: "Ask about the active workflow",
       enabled: false,
       statusLabel: disposed ? "Disposed" : "Idle",
+      collapsedSummary: `${activePanelLabel} focus, chat ${disposed ? "disposed" : "idle"}`,
+      collapsible: true,
+      defaultCollapsed: false,
+      expandLabel: "Expand chat",
+      collapseLabel: "Collapse chat",
     },
   });
 }
@@ -1051,7 +1061,17 @@ function freezeRuntimeWorkbenchShellChrome(
         chrome.taskDrawer.items.map((item) => taskDrawerItem(item)),
       ),
     }),
-    chatBox: Object.freeze({ ...chrome.chatBox }),
+    chatBox: Object.freeze({
+      title: chrome.chatBox.title,
+      placeholder: chrome.chatBox.placeholder,
+      enabled: chrome.chatBox.enabled,
+      statusLabel: chrome.chatBox.statusLabel,
+      collapsedSummary: chrome.chatBox.collapsedSummary,
+      collapsible: chrome.chatBox.collapsible,
+      defaultCollapsed: chrome.chatBox.defaultCollapsed,
+      expandLabel: chrome.chatBox.expandLabel,
+      collapseLabel: chrome.chatBox.collapseLabel,
+    }),
   });
 }
 

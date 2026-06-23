@@ -27,11 +27,18 @@ async function readMetrics(window) {
       hasChatBox: document.querySelector('.cw-workbench__chat') !== null,
       dockItems: document.querySelectorAll('.cw-workbench__dock-item').length,
       hasTaskDrawerToggle: document.querySelector('[data-task-drawer-toggle="true"]') !== null,
+      hasChatBoxToggle: document.querySelector('[data-chat-box-toggle="true"]') !== null,
       taskDrawerExpanded:
         document.querySelector('.cw-workbench__task-drawer')?.getAttribute('data-task-drawer-expanded') ?? null,
       taskDrawerItems: document.querySelectorAll('.cw-workbench__task-drawer-item').length,
       taskDrawerCollapsedSummary:
         document.querySelector('.cw-workbench__task-drawer-collapsed')?.textContent ?? null,
+      chatBoxExpanded:
+        document.querySelector('.cw-workbench__chat')?.getAttribute('data-chat-box-expanded') ?? null,
+      chatComposeControls:
+        document.querySelectorAll('.cw-workbench__chat-compose textarea, .cw-workbench__chat-compose button').length,
+      chatCollapsedSummary:
+        document.querySelector('.cw-workbench__chat-collapsed')?.textContent ?? null,
       timelineItems: document.querySelectorAll('.cw-workbench__lifecycle-item').length,
       commandButtons: document.querySelectorAll('.cw-workbench__lifecycle-command').length,
       selectedText: document.querySelector('.cw-workbench__lifecycle-selected-item strong')?.textContent ?? null,
@@ -75,11 +82,24 @@ async function clickTaskDrawerToggle(window) {
   `);
 }
 
+async function clickChatBoxToggle(window) {
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const button = document.querySelector('[data-chat-box-toggle="true"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('Missing chat box toggle button');
+      }
+      button.click();
+    })()
+  `);
+}
+
 function collectVisualSmokeFailures(
   metrics,
   messages,
   requestedWidth,
   collapsedMetrics,
+  chatCollapsedMetrics,
 ) {
   const failures = [];
 
@@ -109,6 +129,9 @@ function collectVisualSmokeFailures(
   if (metrics.hasTaskDrawerToggle !== true) {
     failures.push("missing task drawer toggle");
   }
+  if (metrics.hasChatBoxToggle !== true) {
+    failures.push("missing chat box toggle");
+  }
   if (metrics.taskDrawerExpanded !== "true") {
     failures.push(
       `expected expanded task drawer, got ${metrics.taskDrawerExpanded}`,
@@ -134,6 +157,30 @@ function collectVisualSmokeFailures(
     collapsedMetrics.taskDrawerCollapsedSummary.length === 0
   ) {
     failures.push("missing collapsed task drawer summary");
+  }
+  if (metrics.chatBoxExpanded !== "true") {
+    failures.push(`expected expanded chat box, got ${metrics.chatBoxExpanded}`);
+  }
+  if (metrics.chatComposeControls !== 2) {
+    failures.push(
+      `expected 2 chat compose controls, got ${metrics.chatComposeControls}`,
+    );
+  }
+  if (chatCollapsedMetrics.chatBoxExpanded !== "false") {
+    failures.push(
+      `expected collapsed chat box during toggle check, got ${chatCollapsedMetrics.chatBoxExpanded}`,
+    );
+  }
+  if (chatCollapsedMetrics.chatComposeControls !== 0) {
+    failures.push(
+      `expected collapsed chat box to hide compose controls, got ${chatCollapsedMetrics.chatComposeControls}`,
+    );
+  }
+  if (
+    typeof chatCollapsedMetrics.chatCollapsedSummary !== "string" ||
+    chatCollapsedMetrics.chatCollapsedSummary.length === 0
+  ) {
+    failures.push("missing collapsed chat box summary");
   }
   if (metrics.timelineItems !== 5) {
     failures.push(`expected 5 timeline items, got ${metrics.timelineItems}`);
@@ -207,6 +254,9 @@ async function main() {
   await clickTaskDrawerToggle(window);
   const collapsedMetrics = await readMetrics(window);
   await clickTaskDrawerToggle(window);
+  await clickChatBoxToggle(window);
+  const chatCollapsedMetrics = await readMetrics(window);
+  await clickChatBoxToggle(window);
   if (scrollY > 0) {
     await window.webContents.executeJavaScript(
       `window.scrollTo(0, ${scrollY})`,
@@ -223,12 +273,20 @@ async function main() {
     messages,
     width,
     collapsedMetrics,
+    chatCollapsedMetrics,
   );
   await fs.writeFile(outputPath, image.toPNG());
   await fs.writeFile(
     `${outputPath}.json`,
     JSON.stringify(
-      { metrics, collapsedMetrics, messages, failures, outputPath },
+      {
+        metrics,
+        collapsedMetrics,
+        chatCollapsedMetrics,
+        messages,
+        failures,
+        outputPath,
+      },
       null,
       2,
     ),

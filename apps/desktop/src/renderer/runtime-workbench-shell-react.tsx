@@ -758,22 +758,56 @@ function RuntimeWorkbenchShellTaskDrawer(props: {
 function RuntimeWorkbenchShellChatBox(props: {
   readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
 }): ReactElement {
+  const [expanded, setExpanded] = useState(
+    () => !props.chatBox.defaultCollapsed,
+  );
+  const handleToggleClick = useCallback((): void => {
+    setExpanded((current) => !current);
+  }, []);
   return (
-    <section aria-label={props.chatBox.title} className="cw-workbench__chat">
+    <section
+      aria-label={props.chatBox.title}
+      className={[
+        "cw-workbench__chat",
+        expanded ? "" : "cw-workbench__chat--collapsed",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-chat-box-expanded={expanded ? "true" : "false"}
+    >
       <div className="cw-workbench__chat-header">
-        <h2>{props.chatBox.title}</h2>
-        <span>{props.chatBox.statusLabel}</span>
+        <div>
+          <h2>{props.chatBox.title}</h2>
+          <span>{props.chatBox.statusLabel}</span>
+        </div>
+        {props.chatBox.collapsible ? (
+          <button
+            aria-expanded={expanded}
+            className="cw-workbench__chat-toggle"
+            data-chat-box-toggle="true"
+            onClick={handleToggleClick}
+            type="button"
+          >
+            {expanded ? props.chatBox.collapseLabel : props.chatBox.expandLabel}
+          </button>
+        ) : null}
       </div>
-      <div className="cw-workbench__chat-compose">
-        <textarea
-          disabled={!props.chatBox.enabled}
-          placeholder={props.chatBox.placeholder}
-          rows={2}
-        />
-        <button disabled={!props.chatBox.enabled} type="button">
-          Send
-        </button>
-      </div>
+      {expanded ? (
+        <div className="cw-workbench__chat-compose">
+          <textarea
+            disabled={!props.chatBox.enabled}
+            placeholder={props.chatBox.placeholder}
+            rows={2}
+          />
+          <button disabled={!props.chatBox.enabled} type="button">
+            Send
+          </button>
+        </div>
+      ) : (
+        <p className="cw-workbench__chat-collapsed">
+          {props.chatBox.collapsedSummary}
+        </p>
+      )}
     </section>
   );
 }

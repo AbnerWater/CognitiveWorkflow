@@ -202,15 +202,45 @@ button {
 }
 
 .cw-workbench__chat-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
-  align-items: center;
+  align-items: start;
 }
 
 .cw-workbench__chat-header span {
   color: #657487;
   font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__chat-toggle {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2c3a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cw-workbench__chat-toggle:hover {
+  border-color: #3d6fa7;
+}
+
+.cw-workbench__chat-collapsed {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-left: 4px solid #77b28c;
+  border-radius: 6px;
+  background: #fbfcfd;
+  color: #526173;
+  overflow-wrap: anywhere;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -1186,6 +1216,7 @@ button {
 
 @media (max-width: 520px) {
   .cw-workbench__dock,
+  .cw-workbench__chat-header,
   .cw-workbench__task-drawer-header,
   .cw-workbench__status-grid,
   .cw-workbench__stream-metrics,

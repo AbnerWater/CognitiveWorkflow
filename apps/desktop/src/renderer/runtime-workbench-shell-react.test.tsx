@@ -60,6 +60,7 @@ test("renderer runtime workbench React shell renders server snapshot without DOM
   assert.match(markup, /Task Drawer/u);
   assert.match(markup, /Collapse drawer/u);
   assert.match(markup, /Chat Box/u);
+  assert.match(markup, /Collapse chat/u);
   assert.equal(session.serverSnapshotCount(), 1);
   assert.equal(session.listenerCount(), 0);
   assert.equal(session.bindKeyboardTargetCount(), 0);
@@ -219,6 +220,82 @@ test("renderer runtime workbench React shell toggles task drawer collapse", asyn
       fakeRuntimeWorkbenchNodeTextContent(dom.container),
       /Unread[\s\S]*1/u,
     );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench React shell toggles chat box collapse", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Chat Box Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatBoxExpanded",
+        "true",
+      ).getAttribute("data-chat-box-expanded"),
+      "true",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container),
+      /Chat Box[\s\S]*Collapse chat[\s\S]*Send/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Collapse chat"),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatBoxExpanded",
+        "false",
+      ).getAttribute("data-chat-box-expanded"),
+      "false",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container),
+      /Stream focus, chat idle/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Expand chat"),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatBoxExpanded",
+        "true",
+      ).getAttribute("data-chat-box-expanded"),
+      "true",
+    );
+    assert.match(fakeRuntimeWorkbenchNodeTextContent(dom.container), /Send/u);
 
     await act(async () => {
       root.unmount();

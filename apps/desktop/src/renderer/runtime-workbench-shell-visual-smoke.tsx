@@ -529,6 +529,11 @@ function buildVisualSmokeChromeSnapshot(
       placeholder: "Ask about the active workflow",
       enabled: false,
       statusLabel: disposed ? "Disposed" : "Idle",
+      collapsedSummary: `Lifecycle focus, chat ${disposed ? "disposed" : "idle"}`,
+      collapsible: true,
+      defaultCollapsed: false,
+      expandLabel: "Expand chat",
+      collapseLabel: "Collapse chat",
     }),
   });
 }

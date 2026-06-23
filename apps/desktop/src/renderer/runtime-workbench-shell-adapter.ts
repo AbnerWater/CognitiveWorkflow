@@ -296,7 +296,17 @@ function freezeChrome(
         chrome.taskDrawer.items.map((item) => Object.freeze({ ...item })),
       ),
     }),
-    chatBox: Object.freeze({ ...chrome.chatBox }),
+    chatBox: Object.freeze({
+      title: chrome.chatBox.title,
+      placeholder: chrome.chatBox.placeholder,
+      enabled: chrome.chatBox.enabled,
+      statusLabel: chrome.chatBox.statusLabel,
+      collapsedSummary: chrome.chatBox.collapsedSummary,
+      collapsible: chrome.chatBox.collapsible,
+      defaultCollapsed: chrome.chatBox.defaultCollapsed,
+      expandLabel: chrome.chatBox.expandLabel,
+      collapseLabel: chrome.chatBox.collapseLabel,
+    }),
   });
 }
 
