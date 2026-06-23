@@ -254,6 +254,24 @@ async function readMetrics(window) {
         document.querySelector('.cw-workbench__chat')?.getAttribute('data-chat-box-expanded') ?? null,
       chatComposeControls:
         document.querySelectorAll('.cw-workbench__chat-compose textarea, .cw-workbench__chat-compose button').length,
+      chatDraftInputs:
+        document.querySelectorAll('[data-chat-draft-input="true"]').length,
+      chatDraftValue:
+        document.querySelector('[data-chat-draft-input="true"]')?.value ?? null,
+      chatDraftLength:
+        document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-length') ?? null,
+      chatDraftWords:
+        document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-words') ?? null,
+      chatDraftStatus:
+        document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-status') ?? null,
+      chatDraftSendEnabled:
+        document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-send-enabled') ?? null,
+      chatDraftDetailsText:
+        document.querySelector('[data-chat-draft-details="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
+      chatDraftClearButtons:
+        document.querySelectorAll('[data-chat-draft-clear="true"]').length,
+      chatSendDisabled:
+        document.querySelector('[data-chat-send="true"]')?.disabled ?? null,
       chatCollapsedSummary:
         document.querySelector('.cw-workbench__chat-collapsed')?.textContent ?? null,
       timelineItems: document.querySelectorAll('.cw-workbench__lifecycle-item').length,
@@ -952,6 +970,107 @@ async function keyTaskDrawerItem(window, itemId, key) {
   }
 }
 
+async function inputChatDraft(window, draft) {
+  const draftLiteral = JSON.stringify(draft);
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedDraft = ${draftLiteral};
+      const expectedLength = String(expectedDraft.length);
+      const expectedWords = String(
+        expectedDraft.trim().length === 0
+          ? 0
+          : expectedDraft.trim().split(/\\s+/u).length
+      );
+      const input = document.querySelector('[data-chat-draft-input="true"]');
+      if (!(input instanceof HTMLTextAreaElement)) {
+        resolve({ ok: false, message: 'Missing chat draft input' });
+        return;
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value'
+      );
+      descriptor?.set?.call(input, expectedDraft);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const startedAt = Date.now();
+      const waitForDraft = () => {
+        const details = document.querySelector('[data-chat-draft-details="true"]');
+        const actualLength = details?.getAttribute('data-chat-draft-length') ?? null;
+        const actualWords = details?.getAttribute('data-chat-draft-words') ?? null;
+        if (
+          input.value === expectedDraft &&
+          actualLength === expectedLength &&
+          actualWords === expectedWords
+        ) {
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Chat draft did not update',
+            actualValue: input.value,
+            actualLength,
+            actualWords,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(waitForDraft);
+      };
+      waitForDraft();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
+async function clearChatDraft(window) {
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const button = document.querySelector('[data-chat-draft-clear="true"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        resolve({ ok: false, message: 'Missing chat draft clear button' });
+        return;
+      }
+      button.click();
+      const startedAt = Date.now();
+      const waitForClear = () => {
+        const input = document.querySelector('[data-chat-draft-input="true"]');
+        const details = document.querySelector('[data-chat-draft-details="true"]');
+        const actualLength = details?.getAttribute('data-chat-draft-length') ?? null;
+        const actualWords = details?.getAttribute('data-chat-draft-words') ?? null;
+        if (
+          input instanceof HTMLTextAreaElement &&
+          input.value === '' &&
+          actualLength === '0' &&
+          actualWords === '0'
+        ) {
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Chat draft did not clear',
+            actualValue: input instanceof HTMLTextAreaElement ? input.value : null,
+            actualLength,
+            actualWords,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(waitForClear);
+      };
+      waitForClear();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
 async function clickChatBoxToggle(window) {
   await window.webContents.executeJavaScript(`
     (() => {
@@ -988,6 +1107,8 @@ function collectVisualSmokeFailures(
   taskDrawerKeyboardMetrics,
   collapsedMetrics,
   chatCollapsedMetrics,
+  chatDraftMetrics,
+  chatClearedMetrics,
   canvasMetrics,
   canvasNodeTypeFocusMetrics,
   canvasNodeTypeFocusPreMatchMetrics,
@@ -2235,9 +2356,39 @@ function collectVisualSmokeFailures(
   if (metrics.chatBoxExpanded !== "true") {
     failures.push(`expected expanded chat box, got ${metrics.chatBoxExpanded}`);
   }
-  if (metrics.chatComposeControls !== 2) {
+  if (metrics.chatComposeControls !== 3) {
     failures.push(
-      `expected 2 chat compose controls, got ${metrics.chatComposeControls}`,
+      `expected 3 chat compose controls, got ${metrics.chatComposeControls}`,
+    );
+  }
+  if (metrics.chatDraftInputs !== 1) {
+    failures.push(
+      `expected one chat draft input, got ${metrics.chatDraftInputs}`,
+    );
+  }
+  if (metrics.chatDraftLength !== "0") {
+    failures.push(
+      `expected initial chat draft length 0, got ${metrics.chatDraftLength}`,
+    );
+  }
+  if (metrics.chatDraftWords !== "0") {
+    failures.push(
+      `expected initial chat draft words 0, got ${metrics.chatDraftWords}`,
+    );
+  }
+  if (metrics.chatDraftStatus !== "Idle") {
+    failures.push(
+      `expected initial chat draft status Idle, got ${metrics.chatDraftStatus}`,
+    );
+  }
+  if (metrics.chatDraftSendEnabled !== "false") {
+    failures.push(
+      `expected initial chat draft send-enabled false, got ${metrics.chatDraftSendEnabled}`,
+    );
+  }
+  if (metrics.chatSendDisabled !== true) {
+    failures.push(
+      `expected chat Send button disabled, got ${metrics.chatSendDisabled}`,
     );
   }
   if (chatCollapsedMetrics.chatBoxExpanded !== "false") {
@@ -2255,6 +2406,56 @@ function collectVisualSmokeFailures(
     chatCollapsedMetrics.chatCollapsedSummary.length === 0
   ) {
     failures.push("missing collapsed chat box summary");
+  }
+  if (chatDraftMetrics.chatDraftValue !== "Review repair plan now") {
+    failures.push(
+      `expected chat draft value Review repair plan now, got ${chatDraftMetrics.chatDraftValue}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftLength !== "22") {
+    failures.push(
+      `expected chat draft length 22, got ${chatDraftMetrics.chatDraftLength}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftWords !== "4") {
+    failures.push(
+      `expected chat draft words 4, got ${chatDraftMetrics.chatDraftWords}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftStatus !== "Idle") {
+    failures.push(
+      `expected chat draft status Idle, got ${chatDraftMetrics.chatDraftStatus}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftSendEnabled !== "false") {
+    failures.push(
+      `expected chat draft send-enabled false, got ${chatDraftMetrics.chatDraftSendEnabled}`,
+    );
+  }
+  if (
+    !chatDraftMetrics.chatDraftDetailsText?.includes("Characters") ||
+    !chatDraftMetrics.chatDraftDetailsText?.includes("22") ||
+    !chatDraftMetrics.chatDraftDetailsText?.includes("Words") ||
+    !chatDraftMetrics.chatDraftDetailsText?.includes("4")
+  ) {
+    failures.push(
+      `expected chat draft visible details to include Characters 22 and Words 4, got ${chatDraftMetrics.chatDraftDetailsText}`,
+    );
+  }
+  if (chatClearedMetrics.chatDraftValue !== "") {
+    failures.push(
+      `expected cleared chat draft value to be empty, got ${chatClearedMetrics.chatDraftValue}`,
+    );
+  }
+  if (chatClearedMetrics.chatDraftLength !== "0") {
+    failures.push(
+      `expected cleared chat draft length 0, got ${chatClearedMetrics.chatDraftLength}`,
+    );
+  }
+  if (chatClearedMetrics.chatDraftWords !== "0") {
+    failures.push(
+      `expected cleared chat draft words 0, got ${chatClearedMetrics.chatDraftWords}`,
+    );
   }
   if (metrics.timelineItems !== 5) {
     failures.push(`expected 5 timeline items, got ${metrics.timelineItems}`);
@@ -2399,6 +2600,17 @@ async function main() {
     readMetrics(window),
   );
   await runSmokeStep("expand chat box", () => clickChatBoxToggle(window));
+  await runSmokeStep("input chat draft", () =>
+    inputChatDraft(window, "Review repair plan now"),
+  );
+  const chatDraftMetrics = await runSmokeStep("read chat draft metrics", () =>
+    readMetrics(window),
+  );
+  await runSmokeStep("clear chat draft", () => clearChatDraft(window));
+  const chatClearedMetrics = await runSmokeStep(
+    "read cleared chat draft metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("show canvas panel", () => clickPanel(window, "canvas"));
   await runSmokeStep("select repair canvas node", () =>
     clickWorkflowCanvasNode(window, "repair_task"),
@@ -2531,6 +2743,8 @@ async function main() {
     taskDrawerKeyboardMetrics,
     collapsedMetrics,
     chatCollapsedMetrics,
+    chatDraftMetrics,
+    chatClearedMetrics,
     canvasMetrics,
     canvasNodeTypeFocusMetrics,
     canvasNodeTypeFocusPreMatchMetrics,
@@ -2563,6 +2777,8 @@ async function main() {
         taskDrawerKeyboardMetrics,
         collapsedMetrics,
         chatCollapsedMetrics,
+        chatDraftMetrics,
+        chatClearedMetrics,
         canvasMetrics,
         canvasNodeTypeFocusMetrics,
         canvasNodeTypeFocusPreMatchMetrics,

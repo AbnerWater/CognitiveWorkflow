@@ -2211,14 +2211,34 @@ function RuntimeWorkbenchShellTaskDrawerDetails(props: {
   );
 }
 
+function runtimeWorkbenchShellChatDraftWordCount(draft: string): number {
+  const trimmedDraft = draft.trim();
+  if (trimmedDraft.length === 0) {
+    return 0;
+  }
+  return trimmedDraft.split(/\s+/u).length;
+}
+
 function RuntimeWorkbenchShellChatBox(props: {
   readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
 }): ReactElement {
   const [expanded, setExpanded] = useState(
     () => !props.chatBox.defaultCollapsed,
   );
+  const [draft, setDraft] = useState("");
+  const draftLength = draft.length;
+  const draftWords = runtimeWorkbenchShellChatDraftWordCount(draft);
   const handleToggleClick = useCallback((): void => {
     setExpanded((current) => !current);
+  }, []);
+  const handleDraftChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>): void => {
+      setDraft(event.currentTarget.value);
+    },
+    [],
+  );
+  const handleDraftClearClick = useCallback((): void => {
+    setDraft("");
   }, []);
   return (
     <section
@@ -2249,16 +2269,66 @@ function RuntimeWorkbenchShellChatBox(props: {
         ) : null}
       </div>
       {expanded ? (
-        <div className="cw-workbench__chat-compose">
-          <textarea
-            disabled={!props.chatBox.enabled}
-            placeholder={props.chatBox.placeholder}
-            rows={2}
-          />
-          <button disabled={!props.chatBox.enabled} type="button">
-            Send
-          </button>
-        </div>
+        <>
+          <div className="cw-workbench__chat-compose">
+            <textarea
+              aria-label="Chat draft"
+              data-chat-draft-input="true"
+              onChange={handleDraftChange}
+              placeholder={props.chatBox.placeholder}
+              rows={2}
+              value={draft}
+            />
+            <button
+              data-chat-draft-clear="true"
+              data-chat-draft-clear-disabled={
+                draftLength === 0 ? "true" : "false"
+              }
+              disabled={draftLength === 0}
+              onClick={handleDraftClearClick}
+              type="button"
+            >
+              Clear
+            </button>
+            <button
+              data-chat-send="true"
+              data-chat-send-disabled={
+                !props.chatBox.enabled || draftWords === 0 ? "true" : "false"
+              }
+              disabled={!props.chatBox.enabled || draftWords === 0}
+              type="button"
+            >
+              Send
+            </button>
+          </div>
+          <section
+            aria-label="Chat draft details"
+            className="cw-workbench__chat-details"
+            data-chat-draft-details="true"
+            data-chat-draft-length={String(draftLength)}
+            data-chat-draft-send-enabled={
+              props.chatBox.enabled && draftWords > 0 ? "true" : "false"
+            }
+            data-chat-draft-status={props.chatBox.statusLabel}
+            data-chat-draft-words={String(draftWords)}
+          >
+            <h3>Draft</h3>
+            <dl>
+              <div>
+                <dt>Characters</dt>
+                <dd>{draftLength}</dd>
+              </div>
+              <div>
+                <dt>Words</dt>
+                <dd>{draftWords}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{props.chatBox.statusLabel}</dd>
+              </div>
+            </dl>
+          </section>
+        </>
       ) : (
         <p className="cw-workbench__chat-collapsed">
           {props.chatBox.collapsedSummary}

@@ -1243,7 +1243,7 @@ button {
 
 .cw-workbench__chat-compose {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
 }
 
@@ -1259,6 +1259,11 @@ button {
   font-size: 14px;
 }
 
+.cw-workbench__chat-compose textarea:focus-visible {
+  outline: 2px solid #3d6fa7;
+  outline-offset: 2px;
+}
+
 .cw-workbench__chat-compose button {
   min-width: 72px;
   min-height: 36px;
@@ -1270,10 +1275,48 @@ button {
   font-weight: 700;
 }
 
-.cw-workbench__chat-compose textarea:disabled,
 .cw-workbench__chat-compose button:disabled {
   cursor: not-allowed;
   opacity: 0.56;
+}
+
+.cw-workbench__chat-details {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.cw-workbench__chat-details h3 {
+  font-size: 13px;
+}
+
+.cw-workbench__chat-details dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.cw-workbench__chat-details dl > div {
+  min-width: 0;
+}
+
+.cw-workbench__chat-details dt {
+  color: #526173;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cw-workbench__chat-details dd {
+  min-width: 0;
+  margin: 0;
+  color: #223047;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .cw-workbench__header {
@@ -2236,6 +2279,7 @@ button {
   .cw-workbench__dock,
   .cw-workbench__file-tree-node,
   .cw-workbench__chat-header,
+  .cw-workbench__chat-details dl,
   .cw-workbench__task-drawer-header,
   .cw-workbench__status-grid,
   .cw-workbench__stream-metrics,

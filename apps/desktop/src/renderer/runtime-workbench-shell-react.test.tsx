@@ -491,6 +491,204 @@ test("renderer runtime workbench React shell toggles chat box collapse", async (
   }
 });
 
+test("renderer runtime workbench React shell drafts chat box text locally", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Chat Draft Runtime Workbench"
+        />,
+      );
+    });
+
+    const chatDraftInput = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftInput",
+      "true",
+    );
+    assert.equal(chatDraftInput.disabled, false);
+    assert.equal(chatDraftInput.value, "");
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-length"),
+      "0",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-words"),
+      "0",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-send-enabled"),
+      "false",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftClear",
+        "true",
+      ).getAttribute("data-chat-draft-clear-disabled"),
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSend",
+        "true",
+      ).getAttribute("data-chat-send-disabled"),
+      "true",
+    );
+
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(
+        chatDraftInput,
+        "Review repair plan now",
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-length"),
+      "22",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-words"),
+      "4",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-status"),
+      "Idle",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatDraftDetails",
+          "true",
+        ),
+      ),
+      /Draft[\s\S]*Characters[\s\S]*22[\s\S]*Words[\s\S]*4[\s\S]*Status[\s\S]*Idle/u,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftClear",
+        "true",
+      ).getAttribute("data-chat-draft-clear-disabled"),
+      "false",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSend",
+        "true",
+      ).getAttribute("data-chat-send-disabled"),
+      "true",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Collapse chat"),
+      );
+    });
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatBoxExpanded",
+        "false",
+      ).getAttribute("data-chat-box-expanded"),
+      "false",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Expand chat"),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftInput",
+        "true",
+      ).value,
+      "Review repair plan now",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatDraftClear",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftInput",
+        "true",
+      ).value,
+      "",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-length"),
+      "0",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-words"),
+      "0",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell selects file tree node locally", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {
