@@ -2215,11 +2215,22 @@ type RuntimeWorkbenchShellChatDraftIntent = "ask" | "revise" | "repair";
 
 type RuntimeWorkbenchShellChatDraftPreviewState = "empty" | "blocked" | "ready";
 
+type RuntimeWorkbenchShellChatDraftReadinessReason =
+  | "empty_draft"
+  | "chat_disabled"
+  | "ready";
+
 interface RuntimeWorkbenchShellChatDraftPreview {
   readonly state: RuntimeWorkbenchShellChatDraftPreviewState;
-  readonly reason: "empty_draft" | "chat_disabled" | "ready";
+  readonly reason: RuntimeWorkbenchShellChatDraftReadinessReason;
   readonly label: string;
   readonly reasonLabel: string;
+}
+
+interface RuntimeWorkbenchShellChatDraftSendGuard {
+  readonly enabled: boolean;
+  readonly reason: RuntimeWorkbenchShellChatDraftReadinessReason;
+  readonly label: string;
 }
 
 interface RuntimeWorkbenchShellChatDraftIntentContext {
@@ -2320,6 +2331,23 @@ function runtimeWorkbenchShellChatDraftPreview(
   };
 }
 
+function runtimeWorkbenchShellChatDraftSendGuard(
+  preview: RuntimeWorkbenchShellChatDraftPreview,
+): RuntimeWorkbenchShellChatDraftSendGuard {
+  if (preview.state === "ready") {
+    return {
+      enabled: true,
+      reason: preview.reason,
+      label: "Send ready",
+    };
+  }
+  return {
+    enabled: false,
+    reason: preview.reason,
+    label: `Send unavailable: ${preview.reasonLabel}`,
+  };
+}
+
 function RuntimeWorkbenchShellChatBox(props: {
   readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
 }): ReactElement {
@@ -2339,6 +2367,7 @@ function RuntimeWorkbenchShellChatBox(props: {
     props.chatBox.enabled,
     draftWords,
   );
+  const sendGuard = runtimeWorkbenchShellChatDraftSendGuard(draftPreview);
   const handleToggleClick = useCallback((): void => {
     setExpanded((current) => !current);
   }, []);
@@ -2439,16 +2468,25 @@ function RuntimeWorkbenchShellChatBox(props: {
               Clear
             </button>
             <button
+              aria-describedby="cw-workbench-chat-send-guard"
               data-chat-send="true"
-              data-chat-send-disabled={
-                !props.chatBox.enabled || draftWords === 0 ? "true" : "false"
-              }
-              disabled={!props.chatBox.enabled || draftWords === 0}
+              data-chat-send-disabled={sendGuard.enabled ? "false" : "true"}
+              data-chat-send-reason={sendGuard.reason}
+              disabled={!sendGuard.enabled}
               type="button"
             >
               Send
             </button>
           </div>
+          <p
+            className="cw-workbench__chat-send-guard"
+            data-chat-send-guard="true"
+            data-chat-send-guard-enabled={sendGuard.enabled ? "true" : "false"}
+            data-chat-send-guard-reason={sendGuard.reason}
+            id="cw-workbench-chat-send-guard"
+          >
+            {sendGuard.label}
+          </p>
           <RuntimeWorkbenchShellChatDraftPreview
             draft={draft}
             intentContext={draftIntentContext}
@@ -2463,9 +2501,8 @@ function RuntimeWorkbenchShellChatBox(props: {
             data-chat-draft-intent={draftIntent}
             data-chat-draft-intent-label={draftIntentLabel}
             data-chat-draft-length={String(draftLength)}
-            data-chat-draft-send-enabled={
-              props.chatBox.enabled && draftWords > 0 ? "true" : "false"
-            }
+            data-chat-draft-send-enabled={sendGuard.enabled ? "true" : "false"}
+            data-chat-draft-send-reason={sendGuard.reason}
             data-chat-draft-status={props.chatBox.statusLabel}
             data-chat-draft-words={String(draftWords)}
           >

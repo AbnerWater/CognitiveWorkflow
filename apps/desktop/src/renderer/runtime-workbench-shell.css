@@ -1313,6 +1313,14 @@ button {
   opacity: 0.56;
 }
 
+.cw-workbench__chat-send-guard {
+  margin: -2px 0 0;
+  color: #526173;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .cw-workbench__chat-preview {
   display: grid;
   gap: 8px;

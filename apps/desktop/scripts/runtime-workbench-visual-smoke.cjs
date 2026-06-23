@@ -276,6 +276,8 @@ async function readMetrics(window) {
         document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-status') ?? null,
       chatDraftSendEnabled:
         document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-send-enabled') ?? null,
+      chatDraftSendReason:
+        document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-send-reason') ?? null,
       chatDraftDetailsText:
         document.querySelector('[data-chat-draft-details="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       chatDraftPreviewState:
@@ -300,6 +302,14 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-chat-draft-clear="true"]').length,
       chatSendDisabled:
         document.querySelector('[data-chat-send="true"]')?.disabled ?? null,
+      chatSendReason:
+        document.querySelector('[data-chat-send="true"]')?.getAttribute('data-chat-send-reason') ?? null,
+      chatSendGuardEnabled:
+        document.querySelector('[data-chat-send-guard="true"]')?.getAttribute('data-chat-send-guard-enabled') ?? null,
+      chatSendGuardReason:
+        document.querySelector('[data-chat-send-guard="true"]')?.getAttribute('data-chat-send-guard-reason') ?? null,
+      chatSendGuardText:
+        document.querySelector('[data-chat-send-guard="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       chatCollapsedSummary:
         document.querySelector('.cw-workbench__chat-collapsed')?.textContent ?? null,
       timelineItems: document.querySelectorAll('.cw-workbench__lifecycle-item').length,
@@ -2540,9 +2550,36 @@ function collectVisualSmokeFailures(
       `expected initial chat draft send-enabled false, got ${chatInitialMetrics.chatDraftSendEnabled}`,
     );
   }
+  if (chatInitialMetrics.chatDraftSendReason !== "empty_draft") {
+    failures.push(
+      `expected initial chat draft send reason empty_draft, got ${chatInitialMetrics.chatDraftSendReason}`,
+    );
+  }
   if (metrics.chatSendDisabled !== true) {
     failures.push(
       `expected chat Send button disabled, got ${metrics.chatSendDisabled}`,
+    );
+  }
+  if (chatInitialMetrics.chatSendReason !== "empty_draft") {
+    failures.push(
+      `expected initial chat send reason empty_draft, got ${chatInitialMetrics.chatSendReason}`,
+    );
+  }
+  if (chatInitialMetrics.chatSendGuardEnabled !== "false") {
+    failures.push(
+      `expected initial chat send guard enabled false, got ${chatInitialMetrics.chatSendGuardEnabled}`,
+    );
+  }
+  if (chatInitialMetrics.chatSendGuardReason !== "empty_draft") {
+    failures.push(
+      `expected initial chat send guard reason empty_draft, got ${chatInitialMetrics.chatSendGuardReason}`,
+    );
+  }
+  if (
+    chatInitialMetrics.chatSendGuardText !== "Send unavailable: Draft is empty"
+  ) {
+    failures.push(
+      `expected initial chat send guard text for empty draft, got ${chatInitialMetrics.chatSendGuardText}`,
     );
   }
   if (chatCollapsedMetrics.chatBoxExpanded !== "false") {
@@ -2641,6 +2678,33 @@ function collectVisualSmokeFailures(
       `expected chat draft send-enabled false, got ${chatDraftMetrics.chatDraftSendEnabled}`,
     );
   }
+  if (chatDraftMetrics.chatDraftSendReason !== "chat_disabled") {
+    failures.push(
+      `expected chat draft send reason chat_disabled, got ${chatDraftMetrics.chatDraftSendReason}`,
+    );
+  }
+  if (chatDraftMetrics.chatSendReason !== "chat_disabled") {
+    failures.push(
+      `expected chat send reason chat_disabled after draft, got ${chatDraftMetrics.chatSendReason}`,
+    );
+  }
+  if (chatDraftMetrics.chatSendGuardEnabled !== "false") {
+    failures.push(
+      `expected chat send guard enabled false after draft, got ${chatDraftMetrics.chatSendGuardEnabled}`,
+    );
+  }
+  if (chatDraftMetrics.chatSendGuardReason !== "chat_disabled") {
+    failures.push(
+      `expected chat send guard reason chat_disabled after draft, got ${chatDraftMetrics.chatSendGuardReason}`,
+    );
+  }
+  if (
+    chatDraftMetrics.chatSendGuardText !== "Send unavailable: Chat disabled"
+  ) {
+    failures.push(
+      `expected chat send guard text for disabled chat, got ${chatDraftMetrics.chatSendGuardText}`,
+    );
+  }
   if (
     !chatDraftMetrics.chatDraftDetailsText?.includes("Characters") ||
     !chatDraftMetrics.chatDraftDetailsText?.includes("22") ||
@@ -2686,6 +2750,33 @@ function collectVisualSmokeFailures(
   if (chatClearedMetrics.chatDraftIntent !== "repair") {
     failures.push(
       `expected cleared chat draft intent to remain repair, got ${chatClearedMetrics.chatDraftIntent}`,
+    );
+  }
+  if (chatClearedMetrics.chatDraftSendReason !== "empty_draft") {
+    failures.push(
+      `expected cleared chat draft send reason empty_draft, got ${chatClearedMetrics.chatDraftSendReason}`,
+    );
+  }
+  if (chatClearedMetrics.chatSendReason !== "empty_draft") {
+    failures.push(
+      `expected cleared chat send reason empty_draft, got ${chatClearedMetrics.chatSendReason}`,
+    );
+  }
+  if (chatClearedMetrics.chatSendGuardEnabled !== "false") {
+    failures.push(
+      `expected cleared chat send guard enabled false, got ${chatClearedMetrics.chatSendGuardEnabled}`,
+    );
+  }
+  if (chatClearedMetrics.chatSendGuardReason !== "empty_draft") {
+    failures.push(
+      `expected cleared chat send guard reason empty_draft, got ${chatClearedMetrics.chatSendGuardReason}`,
+    );
+  }
+  if (
+    chatClearedMetrics.chatSendGuardText !== "Send unavailable: Draft is empty"
+  ) {
+    failures.push(
+      `expected cleared chat send guard text for empty draft, got ${chatClearedMetrics.chatSendGuardText}`,
     );
   }
   if (chatClearedMetrics.chatDraftPreviewState !== "empty") {

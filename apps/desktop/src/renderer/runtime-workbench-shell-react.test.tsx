@@ -547,6 +547,14 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         dom.container,
         "chatDraftDetails",
         "true",
+      ).getAttribute("data-chat-draft-send-reason"),
+      "empty_draft",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
       ).getAttribute("data-chat-draft-intent"),
       "ask",
     );
@@ -573,6 +581,46 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         "true",
       ).getAttribute("data-chat-send-disabled"),
       "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSend",
+        "true",
+      ).getAttribute("data-chat-send-reason"),
+      "empty_draft",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSend",
+        "true",
+      ).getAttribute("aria-describedby"),
+      "cw-workbench-chat-send-guard",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSendGuard",
+        "true",
+      ).getAttribute("data-chat-send-guard-enabled"),
+      "false",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSendGuard",
+        "true",
+      ).getAttribute("data-chat-send-guard-reason"),
+      "empty_draft",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSendGuard",
+        "true",
+      ).textContent,
+      "Send unavailable: Draft is empty",
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -765,6 +813,30 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
         dom.container,
+        "chatSend",
+        "true",
+      ).getAttribute("data-chat-send-reason"),
+      "chat_disabled",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-send-reason"),
+      "chat_disabled",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSendGuard",
+        "true",
+      ).textContent,
+      "Send unavailable: Chat disabled",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
         "chatDraftPreview",
         "true",
       ).getAttribute("data-chat-draft-preview-state"),
@@ -889,6 +961,14 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         dom.container,
         "chatDraftDetails",
         "true",
+      ).getAttribute("data-chat-draft-send-reason"),
+      "empty_draft",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
       ).getAttribute("data-chat-draft-intent"),
       "repair",
     );
@@ -931,6 +1011,126 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         "empty",
       ).textContent,
       "No draft text",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSendGuard",
+        "true",
+      ).getAttribute("data-chat-send-guard-reason"),
+      "empty_draft",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench React shell marks chat send guard ready locally", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactChatEnabledSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Chat Send Guard Runtime Workbench"
+        />,
+      );
+    });
+
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatDraftInput",
+          "true",
+        ),
+        "Ask the workflow status",
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSend",
+        "true",
+      ).getAttribute("data-chat-send-disabled"),
+      "false",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSend",
+        "true",
+      ).getAttribute("data-chat-send-reason"),
+      "ready",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSend",
+        "true",
+      ).disabled,
+      false,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSendGuard",
+        "true",
+      ).getAttribute("data-chat-send-guard-enabled"),
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSendGuard",
+        "true",
+      ).getAttribute("data-chat-send-guard-reason"),
+      "ready",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatSendGuard",
+        "true",
+      ).textContent,
+      "Send ready",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-send-enabled"),
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-send-reason"),
+      "ready",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-state"),
+      "ready",
     );
 
     await act(async () => {
@@ -3109,6 +3309,22 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
     ),
     lastHandledShortcutId: null,
     disposed: false,
+  });
+}
+
+function createRuntimeWorkbenchShellReactChatEnabledSnapshot(): RuntimeWorkbenchShellSnapshot {
+  const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+  return Object.freeze({
+    ...snapshot,
+    chrome: Object.freeze({
+      ...snapshot.chrome,
+      chatBox: Object.freeze({
+        ...snapshot.chrome.chatBox,
+        enabled: true,
+        statusLabel: "Ready",
+        collapsedSummary: "Stream focus, chat ready",
+      }),
+    }),
   });
 }
 
