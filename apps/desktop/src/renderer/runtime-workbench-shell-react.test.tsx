@@ -367,6 +367,87 @@ test("renderer runtime workbench React shell selects focused canvas node locally
       ).getAttribute("data-workflow-canvas-inspector-history-depth"),
       "0",
     );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasSummary === "true",
+      ),
+      1,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasSummaryMetric",
+        "nodes",
+      ).getAttribute("data-workflow-canvas-summary-value"),
+      "5",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasSummaryMetric",
+        "edges",
+      ).getAttribute("data-workflow-canvas-summary-value"),
+      "5",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasSummaryMetric",
+        "active_nodes",
+      ).getAttribute("data-workflow-canvas-summary-value"),
+      "1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasSummaryMetric",
+        "entry_nodes",
+      ).getAttribute("data-workflow-canvas-summary-value"),
+      "1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasSummaryMetric",
+        "terminal_nodes",
+      ).getAttribute("data-workflow-canvas-summary-value"),
+      "1",
+    );
+    for (const nodeType of [
+      "start",
+      "execution_task",
+      "evaluation_task",
+      "repair_task",
+      "end",
+    ]) {
+      assert.equal(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "workflowCanvasSummaryNodeType",
+          nodeType,
+        ).getAttribute("data-workflow-canvas-summary-count"),
+        "1",
+      );
+    }
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasSummaryEdgeType",
+        "normal",
+      ).getAttribute("data-workflow-canvas-summary-count"),
+      "2",
+    );
+    for (const edgeType of ["pass", "fail", "repair"]) {
+      assert.equal(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "workflowCanvasSummaryEdgeType",
+          edgeType,
+        ).getAttribute("data-workflow-canvas-summary-count"),
+        "1",
+      );
+    }
 
     await act(async () => {
       clickFakeRuntimeWorkbenchElement(

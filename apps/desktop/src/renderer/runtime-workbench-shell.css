@@ -433,6 +433,95 @@ button {
   min-width: 0;
 }
 
+.cw-workbench__workflow-canvas-summary {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #c6d4e3;
+  border-left: 4px solid #77b28c;
+  border-radius: 6px;
+  background: #f8fbf6;
+}
+
+.cw-workbench__workflow-canvas-summary h3 {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.cw-workbench__workflow-canvas-summary h4 {
+  color: #526173;
+  font-size: 12px;
+}
+
+.cw-workbench__workflow-canvas-summary dl {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  margin: 0;
+}
+
+.cw-workbench__workflow-canvas-summary dl > div,
+.cw-workbench__workflow-canvas-summary li {
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__workflow-canvas-summary dt {
+  color: #657487;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.cw-workbench__workflow-canvas-summary dd {
+  margin: 0;
+  color: #1f4d7c;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.cw-workbench__workflow-canvas-summary section {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cw-workbench__workflow-canvas-summary ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cw-workbench__workflow-canvas-summary li {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.cw-workbench__workflow-canvas-summary span,
+.cw-workbench__workflow-canvas-summary strong {
+  overflow-wrap: anywhere;
+}
+
+.cw-workbench__workflow-canvas-summary span {
+  color: #526173;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cw-workbench__workflow-canvas-summary strong {
+  color: #1f4d7c;
+  font-size: 12px;
+}
+
 .cw-workbench__workflow-canvas-inspector {
   display: grid;
   gap: 8px;
@@ -1842,6 +1931,7 @@ button {
 
   .cw-workbench__status-grid,
   .cw-workbench__stream-metrics,
+  .cw-workbench__workflow-canvas-summary dl,
   .cw-workbench__version-snapshot-items,
   .cw-workbench__lifecycle-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1873,6 +1963,8 @@ button {
   .cw-workbench__stream-metrics,
   .cw-workbench__version-snapshot-items,
   .cw-workbench__workflow-canvas-nodes,
+  .cw-workbench__workflow-canvas-summary dl,
+  .cw-workbench__workflow-canvas-summary li,
   .cw-workbench__workflow-canvas-inspector-heading,
   .cw-workbench__workflow-canvas-inspector dl > div,
   .cw-workbench__workflow-canvas-inspector-routes li,

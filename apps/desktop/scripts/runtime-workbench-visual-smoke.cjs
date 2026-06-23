@@ -54,6 +54,34 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-workflow-canvas-surface="preview"]').length,
       focusedWorkflowCanvasSurfaces:
         document.querySelectorAll('[data-workflow-canvas-surface="focused"]').length,
+      workflowCanvasSummaries:
+        document.querySelectorAll('[data-workflow-canvas-summary="true"]').length,
+      workflowCanvasSummaryNodes:
+        document.querySelector('[data-workflow-canvas-summary="true"]')?.getAttribute('data-workflow-canvas-summary-nodes') ?? null,
+      workflowCanvasSummaryEdges:
+        document.querySelector('[data-workflow-canvas-summary="true"]')?.getAttribute('data-workflow-canvas-summary-edges') ?? null,
+      workflowCanvasSummaryActiveNodes:
+        document.querySelector('[data-workflow-canvas-summary="true"]')?.getAttribute('data-workflow-canvas-summary-active-nodes') ?? null,
+      workflowCanvasSummaryEntryNodes:
+        document.querySelector('[data-workflow-canvas-summary="true"]')?.getAttribute('data-workflow-canvas-summary-entry-nodes') ?? null,
+      workflowCanvasSummaryTerminalNodes:
+        document.querySelector('[data-workflow-canvas-summary="true"]')?.getAttribute('data-workflow-canvas-summary-terminal-nodes') ?? null,
+      workflowCanvasSummaryNodeTypes:
+        Array.from(
+          document.querySelectorAll('[data-workflow-canvas-summary-node-type]'),
+          (element) =>
+            (element.getAttribute('data-workflow-canvas-summary-node-type') ?? '') +
+            ':' +
+            (element.getAttribute('data-workflow-canvas-summary-count') ?? '')
+        ).filter(Boolean).sort(),
+      workflowCanvasSummaryEdgeTypes:
+        Array.from(
+          document.querySelectorAll('[data-workflow-canvas-summary-edge-type]'),
+          (element) =>
+            (element.getAttribute('data-workflow-canvas-summary-edge-type') ?? '') +
+            ':' +
+            (element.getAttribute('data-workflow-canvas-summary-count') ?? '')
+        ).filter(Boolean).sort(),
       activeWorkflowCanvasNodes:
         document.querySelectorAll('.cw-workbench__workflow-canvas-node--active').length,
       selectedWorkflowCanvasNodes:
@@ -618,6 +646,11 @@ function collectVisualSmokeFailures(
       `expected no focused workflow canvas surface in lifecycle smoke, got ${metrics.focusedWorkflowCanvasSurfaces}`,
     );
   }
+  if (metrics.workflowCanvasSummaries !== 0) {
+    failures.push(
+      `expected no focused canvas summary in lifecycle smoke, got ${metrics.workflowCanvasSummaries}`,
+    );
+  }
   if (metrics.selectedWorkflowCanvasEdges !== 0) {
     failures.push(
       `expected no selected workflow canvas edges in lifecycle smoke, got ${metrics.selectedWorkflowCanvasEdges}`,
@@ -647,6 +680,59 @@ function collectVisualSmokeFailures(
   if (canvasMetrics.selectableWorkflowCanvasNodes !== 5) {
     failures.push(
       `expected 5 selectable focused canvas nodes, got ${canvasMetrics.selectableWorkflowCanvasNodes}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasSummaries !== 1) {
+    failures.push(
+      `expected one focused canvas summary, got ${canvasMetrics.workflowCanvasSummaries}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasSummaryNodes !== "5") {
+    failures.push(
+      `expected focused canvas summary nodes 5, got ${canvasMetrics.workflowCanvasSummaryNodes}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasSummaryEdges !== "5") {
+    failures.push(
+      `expected focused canvas summary edges 5, got ${canvasMetrics.workflowCanvasSummaryEdges}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasSummaryActiveNodes !== "1") {
+    failures.push(
+      `expected focused canvas summary active nodes 1, got ${canvasMetrics.workflowCanvasSummaryActiveNodes}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasSummaryEntryNodes !== "1") {
+    failures.push(
+      `expected focused canvas summary entry nodes 1, got ${canvasMetrics.workflowCanvasSummaryEntryNodes}`,
+    );
+  }
+  if (canvasMetrics.workflowCanvasSummaryTerminalNodes !== "1") {
+    failures.push(
+      `expected focused canvas summary terminal nodes 1, got ${canvasMetrics.workflowCanvasSummaryTerminalNodes}`,
+    );
+  }
+  const workflowCanvasSummaryNodeTypes = Array.isArray(
+    canvasMetrics.workflowCanvasSummaryNodeTypes,
+  )
+    ? canvasMetrics.workflowCanvasSummaryNodeTypes.join(",")
+    : "";
+  if (
+    workflowCanvasSummaryNodeTypes !==
+    "end:1,evaluation_task:1,execution_task:1,repair_task:1,start:1"
+  ) {
+    failures.push(
+      `expected focused canvas summary node types end/evaluation/execution/repair/start, got ${workflowCanvasSummaryNodeTypes}`,
+    );
+  }
+  const workflowCanvasSummaryEdgeTypes = Array.isArray(
+    canvasMetrics.workflowCanvasSummaryEdgeTypes,
+  )
+    ? canvasMetrics.workflowCanvasSummaryEdgeTypes.join(",")
+    : "";
+  if (workflowCanvasSummaryEdgeTypes !== "fail:1,normal:2,pass:1,repair:1") {
+    failures.push(
+      `expected focused canvas summary edge types fail/normal/pass/repair, got ${workflowCanvasSummaryEdgeTypes}`,
     );
   }
   if (canvasMetrics.selectedWorkflowCanvasNodes !== 1) {

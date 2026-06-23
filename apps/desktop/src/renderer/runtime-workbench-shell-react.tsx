@@ -803,6 +803,27 @@ interface RuntimeWorkbenchShellWorkflowCanvasSelectionState {
   readonly history: readonly RuntimeWorkbenchShellWorkflowCanvasNodeId[];
 }
 
+interface RuntimeWorkbenchShellWorkflowCanvasSummary {
+  readonly nodeCount: number;
+  readonly edgeCount: number;
+  readonly activeNodeCount: number;
+  readonly entryNodeCount: number;
+  readonly terminalNodeCount: number;
+  readonly nodeTypes: readonly RuntimeWorkbenchShellWorkflowCanvasSummaryItem[];
+  readonly edgeTypes: readonly RuntimeWorkbenchShellWorkflowCanvasSummaryItem[];
+}
+
+interface RuntimeWorkbenchShellWorkflowCanvasSummaryItem {
+  readonly label: string;
+  readonly count: number;
+}
+
+const RUNTIME_WORKBENCH_SHELL_WORKFLOW_CANVAS_NODE_TYPE_ORDER: readonly RuntimeWorkbenchShellWorkflowCanvasNode["type"][] =
+  ["start", "execution_task", "evaluation_task", "repair_task", "end"];
+
+const RUNTIME_WORKBENCH_SHELL_WORKFLOW_CANVAS_EDGE_TYPE_ORDER: readonly RuntimeWorkbenchShellWorkflowCanvasEdge["type"][] =
+  ["normal", "pass", "fail", "repair"];
+
 function RuntimeWorkbenchShellWorkflowCanvas(props: {
   readonly canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot;
   readonly surface: "focused" | "preview";
@@ -826,6 +847,10 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
   );
   const previousSelectedNodeId =
     selectionState.history[selectionState.history.length - 1] ?? null;
+  const canvasSummary = useMemo(
+    () => runtimeWorkbenchShellWorkflowCanvasSummary(props.canvas),
+    [props.canvas],
+  );
   const selectedIncomingEdges = useMemo(
     () =>
       selectedNode === null
@@ -982,6 +1007,11 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
           ))}
         </ol>
         <div className="cw-workbench__workflow-canvas-sidebar">
+          {selectable ? (
+            <RuntimeWorkbenchShellWorkflowCanvasSummaryPanel
+              summary={canvasSummary}
+            />
+          ) : null}
           {selectable && selectedNode !== null ? (
             <RuntimeWorkbenchShellWorkflowCanvasInspector
               handleBackClick={handleInspectorBackClick}
@@ -1016,6 +1046,109 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
           </ol>
         </div>
       </div>
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasSummaryPanel(props: {
+  readonly summary: RuntimeWorkbenchShellWorkflowCanvasSummary;
+}): ReactElement {
+  return (
+    <aside
+      aria-label="Canvas graph summary"
+      className="cw-workbench__workflow-canvas-summary"
+      data-workflow-canvas-summary="true"
+      data-workflow-canvas-summary-active-nodes={props.summary.activeNodeCount}
+      data-workflow-canvas-summary-edges={props.summary.edgeCount}
+      data-workflow-canvas-summary-entry-nodes={props.summary.entryNodeCount}
+      data-workflow-canvas-summary-nodes={props.summary.nodeCount}
+      data-workflow-canvas-summary-terminal-nodes={
+        props.summary.terminalNodeCount
+      }
+    >
+      <h3>Graph summary</h3>
+      <dl>
+        <RuntimeWorkbenchShellWorkflowCanvasSummaryMetric
+          label="Nodes"
+          metric="nodes"
+          value={props.summary.nodeCount}
+        />
+        <RuntimeWorkbenchShellWorkflowCanvasSummaryMetric
+          label="Edges"
+          metric="edges"
+          value={props.summary.edgeCount}
+        />
+        <RuntimeWorkbenchShellWorkflowCanvasSummaryMetric
+          label="Active"
+          metric="active_nodes"
+          value={props.summary.activeNodeCount}
+        />
+        <RuntimeWorkbenchShellWorkflowCanvasSummaryMetric
+          label="Entry"
+          metric="entry_nodes"
+          value={props.summary.entryNodeCount}
+        />
+        <RuntimeWorkbenchShellWorkflowCanvasSummaryMetric
+          label="Terminal"
+          metric="terminal_nodes"
+          value={props.summary.terminalNodeCount}
+        />
+      </dl>
+      <RuntimeWorkbenchShellWorkflowCanvasSummaryList
+        items={props.summary.nodeTypes}
+        title="Node types"
+        type="node"
+      />
+      <RuntimeWorkbenchShellWorkflowCanvasSummaryList
+        items={props.summary.edgeTypes}
+        title="Edge types"
+        type="edge"
+      />
+    </aside>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasSummaryMetric(props: {
+  readonly label: string;
+  readonly metric: string;
+  readonly value: number;
+}): ReactElement {
+  return (
+    <div
+      data-workflow-canvas-summary-metric={props.metric}
+      data-workflow-canvas-summary-value={props.value}
+    >
+      <dt>{props.label}</dt>
+      <dd>{props.value}</dd>
+    </div>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasSummaryList(props: {
+  readonly title: string;
+  readonly type: "node" | "edge";
+  readonly items: readonly RuntimeWorkbenchShellWorkflowCanvasSummaryItem[];
+}): ReactElement {
+  return (
+    <section>
+      <h4>{props.title}</h4>
+      <ol>
+        {props.items.map((item) => (
+          <li
+            data-workflow-canvas-summary-count={item.count}
+            data-workflow-canvas-summary-edge-type={
+              props.type === "edge" ? item.label : undefined
+            }
+            data-workflow-canvas-summary-node-type={
+              props.type === "node" ? item.label : undefined
+            }
+            key={item.label}
+          >
+            <span>{item.label}</span>
+            <strong>{item.count}</strong>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
@@ -1352,6 +1485,64 @@ function runtimeWorkbenchShellWorkflowCanvasAdjacentNodeId(
     return edge.targetNodeId;
   }
   return null;
+}
+
+function runtimeWorkbenchShellWorkflowCanvasSummary(
+  canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot,
+): RuntimeWorkbenchShellWorkflowCanvasSummary {
+  const nodeTypeCounts = new Map<
+    RuntimeWorkbenchShellWorkflowCanvasNode["type"],
+    number
+  >();
+  const edgeTypeCounts = new Map<
+    RuntimeWorkbenchShellWorkflowCanvasEdge["type"],
+    number
+  >();
+  for (const type of RUNTIME_WORKBENCH_SHELL_WORKFLOW_CANVAS_NODE_TYPE_ORDER) {
+    nodeTypeCounts.set(type, 0);
+  }
+  for (const type of RUNTIME_WORKBENCH_SHELL_WORKFLOW_CANVAS_EDGE_TYPE_ORDER) {
+    edgeTypeCounts.set(type, 0);
+  }
+
+  let activeNodeCount = 0;
+  let entryNodeCount = 0;
+  let terminalNodeCount = 0;
+  for (const node of canvas.nodes) {
+    nodeTypeCounts.set(node.type, (nodeTypeCounts.get(node.type) ?? 0) + 1);
+    if (node.active) {
+      activeNodeCount += 1;
+    }
+    if (node.type === "start") {
+      entryNodeCount += 1;
+    }
+    if (node.type === "end") {
+      terminalNodeCount += 1;
+    }
+  }
+  for (const edge of canvas.edges) {
+    edgeTypeCounts.set(edge.type, (edgeTypeCounts.get(edge.type) ?? 0) + 1);
+  }
+
+  return {
+    activeNodeCount,
+    edgeCount: canvas.edges.length,
+    edgeTypes: RUNTIME_WORKBENCH_SHELL_WORKFLOW_CANVAS_EDGE_TYPE_ORDER.map(
+      (type) => ({
+        count: edgeTypeCounts.get(type) ?? 0,
+        label: type,
+      }),
+    ).filter((item) => item.count > 0),
+    entryNodeCount,
+    nodeCount: canvas.nodes.length,
+    nodeTypes: RUNTIME_WORKBENCH_SHELL_WORKFLOW_CANVAS_NODE_TYPE_ORDER.map(
+      (type) => ({
+        count: nodeTypeCounts.get(type) ?? 0,
+        label: type,
+      }),
+    ).filter((item) => item.count > 0),
+    terminalNodeCount,
+  };
 }
 
 function runtimeWorkbenchShellWorkflowCanvasKeyboardTargetNodeId(
