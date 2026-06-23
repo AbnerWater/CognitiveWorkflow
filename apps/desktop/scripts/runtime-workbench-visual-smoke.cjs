@@ -60,6 +60,10 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-workflow-canvas-node-selected="true"]').length,
       selectedWorkflowCanvasNodeId:
         document.querySelector('[data-workflow-canvas-node-selected="true"]')?.getAttribute('data-workflow-canvas-node') ?? null,
+      focusedWorkflowCanvasNodeId:
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement.getAttribute('data-workflow-canvas-node-select')
+          : null,
       selectableWorkflowCanvasNodes:
         document.querySelectorAll('[data-workflow-canvas-node-select]').length,
       selectedWorkflowCanvasEdges:
@@ -287,6 +291,93 @@ async function clickWorkflowCanvasInspectorBack(window, nodeId) {
   }
 }
 
+async function keyWorkflowCanvasSelectedNode(window, key, expectedNodeId) {
+  const keyLiteral = JSON.stringify(key);
+  const expectedNodeLiteral = JSON.stringify(expectedNodeId);
+  const keyCode = runtimeWorkbenchVisualSmokeElectronKeyCode(key);
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedKey = ${keyLiteral};
+      const startedAt = Date.now();
+      const focusSelectedNode = () => {
+        const button = document.querySelector('[data-workflow-canvas-node-selected="true"] [data-workflow-canvas-node-select]');
+        if (button instanceof HTMLButtonElement) {
+          button.focus({ preventScroll: true });
+          resolve({
+            ok: document.activeElement === button,
+            focusedNode: document.activeElement instanceof HTMLElement
+              ? document.activeElement.getAttribute('data-workflow-canvas-node-select')
+              : null,
+          });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing selected workflow canvas node button for key ' + expectedKey,
+            selectedNode: document.querySelector('[data-workflow-canvas-node-selected="true"]')?.getAttribute('data-workflow-canvas-node') ?? null,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(focusSelectedNode);
+      };
+      focusSelectedNode();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+  window.webContents.sendInputEvent({ keyCode, type: "keyDown" });
+  window.webContents.sendInputEvent({ keyCode, type: "keyUp" });
+  const waitResult = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedNodeId = ${expectedNodeLiteral};
+      const startedAt = Date.now();
+      const waitForSelection = () => {
+        const selectedNode = document.querySelector('[data-workflow-canvas-node-selected="true"]')?.getAttribute('data-workflow-canvas-node') ?? null;
+        const focusedNode = document.activeElement instanceof HTMLElement
+          ? document.activeElement.getAttribute('data-workflow-canvas-node-select')
+          : null;
+        if (selectedNode === expectedNodeId && focusedNode === expectedNodeId) {
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Keyboard traversal did not select and focus ' + expectedNodeId,
+            selectedNode,
+            focusedNode,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(waitForSelection);
+      };
+      waitForSelection();
+    })
+  `);
+  if (waitResult?.ok !== true) {
+    throw new Error(JSON.stringify(waitResult));
+  }
+}
+
+function runtimeWorkbenchVisualSmokeElectronKeyCode(key) {
+  switch (key) {
+    case "ArrowDown":
+      return "Down";
+    case "ArrowLeft":
+      return "Left";
+    case "ArrowRight":
+      return "Right";
+    case "ArrowUp":
+      return "Up";
+    default:
+      return key;
+  }
+}
+
 async function clickTaskDrawerToggle(window) {
   await window.webContents.executeJavaScript(`
     (() => {
@@ -329,6 +420,11 @@ function collectVisualSmokeFailures(
   canvasMetrics,
   canvasRouteMetrics,
   canvasBackMetrics,
+  canvasKeyboardNextMetrics,
+  canvasKeyboardNoopMetrics,
+  canvasKeyboardPreviousMetrics,
+  canvasKeyboardUpMetrics,
+  canvasKeyboardDownMetrics,
 ) {
   const failures = [];
   const selectedWorkflowCanvasEdgeIds = Array.isArray(
@@ -692,6 +788,132 @@ function collectVisualSmokeFailures(
       `expected back navigation target context_task, got ${canvasBackMetrics.workflowCanvasInspectorBackTarget}`,
     );
   }
+  if (canvasKeyboardNextMetrics.selectedWorkflowCanvasNodeId !== "end") {
+    failures.push(
+      `expected keyboard ArrowRight to select end, got ${canvasKeyboardNextMetrics.selectedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasKeyboardNextMetrics.workflowCanvasInspectorNodeId !== "end") {
+    failures.push(
+      `expected keyboard ArrowRight inspector end, got ${canvasKeyboardNextMetrics.workflowCanvasInspectorNodeId}`,
+    );
+  }
+  if (canvasKeyboardNextMetrics.focusedWorkflowCanvasNodeId !== "end") {
+    failures.push(
+      `expected keyboard ArrowRight focus end, got ${canvasKeyboardNextMetrics.focusedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasKeyboardNextMetrics.workflowCanvasInspectorHistoryDepth !== "2") {
+    failures.push(
+      `expected keyboard ArrowRight history depth 2, got ${canvasKeyboardNextMetrics.workflowCanvasInspectorHistoryDepth}`,
+    );
+  }
+  if (
+    canvasKeyboardNextMetrics.workflowCanvasInspectorBackTarget !==
+    "repair_task"
+  ) {
+    failures.push(
+      `expected keyboard ArrowRight back target repair_task, got ${canvasKeyboardNextMetrics.workflowCanvasInspectorBackTarget}`,
+    );
+  }
+  if (canvasKeyboardNoopMetrics.selectedWorkflowCanvasNodeId !== "end") {
+    failures.push(
+      `expected keyboard same-target ArrowRight to keep end, got ${canvasKeyboardNoopMetrics.selectedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasKeyboardNoopMetrics.focusedWorkflowCanvasNodeId !== "end") {
+    failures.push(
+      `expected keyboard same-target ArrowRight focus end, got ${canvasKeyboardNoopMetrics.focusedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasKeyboardNoopMetrics.workflowCanvasInspectorHistoryDepth !== "2") {
+    failures.push(
+      `expected keyboard same-target ArrowRight history depth 2, got ${canvasKeyboardNoopMetrics.workflowCanvasInspectorHistoryDepth}`,
+    );
+  }
+  if (
+    canvasKeyboardNoopMetrics.workflowCanvasInspectorBackTarget !==
+    "repair_task"
+  ) {
+    failures.push(
+      `expected keyboard same-target ArrowRight back target repair_task, got ${canvasKeyboardNoopMetrics.workflowCanvasInspectorBackTarget}`,
+    );
+  }
+  if (
+    canvasKeyboardPreviousMetrics.selectedWorkflowCanvasNodeId !== "repair_task"
+  ) {
+    failures.push(
+      `expected keyboard ArrowLeft to select repair_task, got ${canvasKeyboardPreviousMetrics.selectedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (
+    canvasKeyboardPreviousMetrics.focusedWorkflowCanvasNodeId !== "repair_task"
+  ) {
+    failures.push(
+      `expected keyboard ArrowLeft focus repair_task, got ${canvasKeyboardPreviousMetrics.focusedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (
+    canvasKeyboardPreviousMetrics.workflowCanvasInspectorHistoryDepth !== "3"
+  ) {
+    failures.push(
+      `expected keyboard ArrowLeft history depth 3, got ${canvasKeyboardPreviousMetrics.workflowCanvasInspectorHistoryDepth}`,
+    );
+  }
+  if (
+    canvasKeyboardPreviousMetrics.workflowCanvasInspectorBackTarget !== "end"
+  ) {
+    failures.push(
+      `expected keyboard ArrowLeft back target end, got ${canvasKeyboardPreviousMetrics.workflowCanvasInspectorBackTarget}`,
+    );
+  }
+  if (canvasKeyboardUpMetrics.selectedWorkflowCanvasNodeId !== "review_task") {
+    failures.push(
+      `expected keyboard ArrowUp to select review_task, got ${canvasKeyboardUpMetrics.selectedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasKeyboardUpMetrics.focusedWorkflowCanvasNodeId !== "review_task") {
+    failures.push(
+      `expected keyboard ArrowUp focus review_task, got ${canvasKeyboardUpMetrics.focusedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasKeyboardUpMetrics.workflowCanvasInspectorHistoryDepth !== "4") {
+    failures.push(
+      `expected keyboard ArrowUp history depth 4, got ${canvasKeyboardUpMetrics.workflowCanvasInspectorHistoryDepth}`,
+    );
+  }
+  if (
+    canvasKeyboardUpMetrics.workflowCanvasInspectorBackTarget !== "repair_task"
+  ) {
+    failures.push(
+      `expected keyboard ArrowUp back target repair_task, got ${canvasKeyboardUpMetrics.workflowCanvasInspectorBackTarget}`,
+    );
+  }
+  if (
+    canvasKeyboardDownMetrics.selectedWorkflowCanvasNodeId !== "repair_task"
+  ) {
+    failures.push(
+      `expected keyboard ArrowDown to select repair_task, got ${canvasKeyboardDownMetrics.selectedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasKeyboardDownMetrics.focusedWorkflowCanvasNodeId !== "repair_task") {
+    failures.push(
+      `expected keyboard ArrowDown focus repair_task, got ${canvasKeyboardDownMetrics.focusedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasKeyboardDownMetrics.workflowCanvasInspectorHistoryDepth !== "5") {
+    failures.push(
+      `expected keyboard ArrowDown history depth 5, got ${canvasKeyboardDownMetrics.workflowCanvasInspectorHistoryDepth}`,
+    );
+  }
+  if (
+    canvasKeyboardDownMetrics.workflowCanvasInspectorBackTarget !==
+    "review_task"
+  ) {
+    failures.push(
+      `expected keyboard ArrowDown back target review_task, got ${canvasKeyboardDownMetrics.workflowCanvasInspectorBackTarget}`,
+    );
+  }
   if (metrics.activeFileTreeNodes !== 0) {
     failures.push(
       `expected no active file tree node in lifecycle smoke, got ${metrics.activeFileTreeNodes}`,
@@ -875,6 +1097,41 @@ async function main() {
   const canvasBackMetrics = await runSmokeStep("read canvas back metrics", () =>
     readMetrics(window),
   );
+  await runSmokeStep("select next canvas node by keyboard", () =>
+    keyWorkflowCanvasSelectedNode(window, "ArrowRight", "end"),
+  );
+  const canvasKeyboardNextMetrics = await runSmokeStep(
+    "read canvas keyboard next metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("keep edge canvas node by keyboard", () =>
+    keyWorkflowCanvasSelectedNode(window, "ArrowRight", "end"),
+  );
+  const canvasKeyboardNoopMetrics = await runSmokeStep(
+    "read canvas keyboard no-op metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("select previous canvas node by keyboard", () =>
+    keyWorkflowCanvasSelectedNode(window, "ArrowLeft", "repair_task"),
+  );
+  const canvasKeyboardPreviousMetrics = await runSmokeStep(
+    "read canvas keyboard previous metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("select upward canvas node by keyboard", () =>
+    keyWorkflowCanvasSelectedNode(window, "ArrowUp", "review_task"),
+  );
+  const canvasKeyboardUpMetrics = await runSmokeStep(
+    "read canvas keyboard up metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("select downward canvas node by keyboard", () =>
+    keyWorkflowCanvasSelectedNode(window, "ArrowDown", "repair_task"),
+  );
+  const canvasKeyboardDownMetrics = await runSmokeStep(
+    "read canvas keyboard down metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("show lifecycle panel", () =>
     clickPanel(window, "lifecycle"),
   );
@@ -900,6 +1157,11 @@ async function main() {
     canvasMetrics,
     canvasRouteMetrics,
     canvasBackMetrics,
+    canvasKeyboardNextMetrics,
+    canvasKeyboardNoopMetrics,
+    canvasKeyboardPreviousMetrics,
+    canvasKeyboardUpMetrics,
+    canvasKeyboardDownMetrics,
   );
   await fs.writeFile(outputPath, image.toPNG());
   await fs.writeFile(
@@ -912,6 +1174,11 @@ async function main() {
         canvasMetrics,
         canvasRouteMetrics,
         canvasBackMetrics,
+        canvasKeyboardNextMetrics,
+        canvasKeyboardNoopMetrics,
+        canvasKeyboardPreviousMetrics,
+        canvasKeyboardUpMetrics,
+        canvasKeyboardDownMetrics,
         messages,
         failures,
         outputPath,

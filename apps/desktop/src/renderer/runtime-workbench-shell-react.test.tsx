@@ -588,6 +588,286 @@ test("renderer runtime workbench React shell selects focused canvas node locally
     );
 
     await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(
+          requireFakeRuntimeWorkbenchElementByData(
+            dom.container,
+            "workflowCanvasNodeSelect",
+            "review_task",
+          ),
+          "ArrowRight",
+        ),
+        false,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "repair_task",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "repair_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "3",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "3",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "review_task",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "review_task",
+    );
+    assertFakeRuntimeWorkbenchFocusedNode(dom.container, "repair_task");
+
+    await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(
+          requireFakeRuntimeWorkbenchElementByData(
+            dom.container,
+            "workflowCanvasNodeSelect",
+            "repair_task",
+          ),
+          "ArrowDown",
+        ),
+        false,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "end",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "end",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "4",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "4",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "repair_task",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "repair_task",
+    );
+    assertFakeRuntimeWorkbenchFocusedNode(dom.container, "end");
+
+    await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(
+          requireFakeRuntimeWorkbenchElementByData(
+            dom.container,
+            "workflowCanvasNodeSelect",
+            "end",
+          ),
+          "ArrowRight",
+        ),
+        false,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "end",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "end",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "4",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "4",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "repair_task",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "repair_task",
+    );
+    assertFakeRuntimeWorkbenchFocusedNode(dom.container, "end");
+
+    await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(
+          requireFakeRuntimeWorkbenchElementByData(
+            dom.container,
+            "workflowCanvasNodeSelect",
+            "end",
+          ),
+          "ArrowLeft",
+        ),
+        false,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "repair_task",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "repair_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "5",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "5",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "end",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "end",
+    );
+    assertFakeRuntimeWorkbenchFocusedNode(dom.container, "repair_task");
+
+    await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(
+          requireFakeRuntimeWorkbenchElementByData(
+            dom.container,
+            "workflowCanvasNodeSelect",
+            "repair_task",
+          ),
+          "ArrowUp",
+        ),
+        false,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "review_task",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "review_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "6",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "6",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "repair_task",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "repair_task",
+    );
+    assertFakeRuntimeWorkbenchFocusedNode(dom.container, "review_task");
+
+    await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(
+          requireFakeRuntimeWorkbenchElementByData(
+            dom.container,
+            "workflowCanvasNodeSelect",
+            "review_task",
+          ),
+          "Home",
+        ),
+        false,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "start",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "start",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "7",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "7",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "review_task",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "review_task",
+    );
+    assertFakeRuntimeWorkbenchFocusedNode(dom.container, "start");
+
+    await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(
+          requireFakeRuntimeWorkbenchElementByData(
+            dom.container,
+            "workflowCanvasNodeSelect",
+            "start",
+          ),
+          "End",
+        ),
+        false,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "end",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "end",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "8",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "8",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "start",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "start",
+    );
+    assertFakeRuntimeWorkbenchFocusedNode(dom.container, "end");
+
+    await act(async () => {
       root.unmount();
     });
   } finally {
@@ -1966,6 +2246,12 @@ class FakeRuntimeWorkbenchElement extends FakeRuntimeWorkbenchNode {
       delete this.dataset[dataAttributeNameToProperty(name)];
     }
   }
+
+  focus(_options?: FocusOptions): void {
+    if (this.ownerDocument !== null) {
+      this.ownerDocument.activeElement = this;
+    }
+  }
 }
 
 class FakeRuntimeWorkbenchTextNode extends FakeRuntimeWorkbenchNode {
@@ -2135,6 +2421,33 @@ function clickFakeRuntimeWorkbenchElement(
   assert.equal(element.disabled, false);
   element.dispatchEvent(
     new Event("click", { bubbles: true, cancelable: true }),
+  );
+}
+
+function keydownFakeRuntimeWorkbenchElement(
+  element: FakeRuntimeWorkbenchElement,
+  key: string,
+): boolean {
+  assert.equal(element.disabled, false);
+  const event = new Event("keydown", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "key", {
+    configurable: true,
+    value: key,
+  });
+  return element.dispatchEvent(event);
+}
+
+function assertFakeRuntimeWorkbenchFocusedNode(
+  root: FakeRuntimeWorkbenchElement,
+  nodeId: string,
+): void {
+  const ownerDocument = root.ownerDocument;
+  if (ownerDocument === null) {
+    throw new Error("Expected fake DOM root to have an owner document");
+  }
+  assert.equal(
+    ownerDocument.activeElement?.dataset.workflowCanvasNodeSelect,
+    nodeId,
   );
 }
 

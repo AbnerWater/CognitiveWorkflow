@@ -5,6 +5,8 @@ import {
   useState,
   type ChangeEvent,
   type CSSProperties,
+  type KeyboardEvent,
+  useRef,
   useSyncExternalStore,
   type MouseEvent,
   type ReactElement,
@@ -810,6 +812,9 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
       history: [],
       selectedNodeId: null,
     });
+  const nodeButtonRefs = useRef(
+    new Map<RuntimeWorkbenchShellWorkflowCanvasNodeId, HTMLButtonElement>(),
+  );
   const selectable = props.surface === "focused";
   const selectedNode = useMemo(
     () =>
@@ -870,6 +875,22 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
     },
     [props.canvas, selectNode],
   );
+  const handleNodeSelectKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>): void => {
+      const nodeId = runtimeWorkbenchShellWorkflowCanvasKeyboardTargetNodeId(
+        props.canvas,
+        selectedNode?.nodeId ?? null,
+        event.key,
+      );
+      if (nodeId === null) {
+        return;
+      }
+      event.preventDefault();
+      selectNode(nodeId);
+      nodeButtonRefs.current.get(nodeId)?.focus({ preventScroll: true });
+    },
+    [props.canvas, selectNode, selectedNode],
+  );
   const handleInspectorRouteSelectClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const nodeId = event.currentTarget.dataset.workflowCanvasRouteSelect;
@@ -918,8 +939,16 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
           {props.canvas.nodes.map((node) => (
             <RuntimeWorkbenchShellWorkflowCanvasNodeItem
               handleNodeSelectClick={handleNodeSelectClick}
+              handleNodeSelectKeyDown={handleNodeSelectKeyDown}
               key={node.nodeId}
               node={node}
+              nodeButtonRef={(element) => {
+                if (element === null) {
+                  nodeButtonRefs.current.delete(node.nodeId);
+                  return;
+                }
+                nodeButtonRefs.current.set(node.nodeId, element);
+              }}
               selected={selectable && selectedNode?.nodeId === node.nodeId}
               selectable={selectable}
             />
@@ -969,6 +998,10 @@ function RuntimeWorkbenchShellWorkflowCanvasNodeItem(props: {
   readonly handleNodeSelectClick: (
     event: MouseEvent<HTMLButtonElement>,
   ) => void;
+  readonly handleNodeSelectKeyDown: (
+    event: KeyboardEvent<HTMLButtonElement>,
+  ) => void;
+  readonly nodeButtonRef: (element: HTMLButtonElement | null) => void;
 }): ReactElement {
   return (
     <li
@@ -995,6 +1028,8 @@ function RuntimeWorkbenchShellWorkflowCanvasNodeItem(props: {
           className="cw-workbench__workflow-canvas-node-button"
           data-workflow-canvas-node-select={props.node.nodeId}
           onClick={props.handleNodeSelectClick}
+          onKeyDown={props.handleNodeSelectKeyDown}
+          ref={props.nodeButtonRef}
           type="button"
         >
           <RuntimeWorkbenchShellWorkflowCanvasNodeContent node={props.node} />
@@ -1241,6 +1276,39 @@ function runtimeWorkbenchShellWorkflowCanvasAdjacentNodeId(
     return edge.targetNodeId;
   }
   return null;
+}
+
+function runtimeWorkbenchShellWorkflowCanvasKeyboardTargetNodeId(
+  canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot,
+  selectedNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null,
+  key: string,
+): RuntimeWorkbenchShellWorkflowCanvasNodeId | null {
+  const nodeCount = canvas.nodes.length;
+  if (nodeCount === 0) {
+    return null;
+  }
+  const currentIndex =
+    selectedNodeId === null
+      ? -1
+      : canvas.nodes.findIndex((node) => node.nodeId === selectedNodeId);
+  switch (key) {
+    case "ArrowDown":
+    case "ArrowRight":
+      return (
+        canvas.nodes[
+          Math.min(currentIndex < 0 ? 0 : currentIndex + 1, nodeCount - 1)
+        ]?.nodeId ?? null
+      );
+    case "ArrowLeft":
+    case "ArrowUp":
+      return canvas.nodes[Math.max(currentIndex - 1, 0)]?.nodeId ?? null;
+    case "End":
+      return canvas.nodes[nodeCount - 1]?.nodeId ?? null;
+    case "Home":
+      return canvas.nodes[0]?.nodeId ?? null;
+    default:
+      return null;
+  }
 }
 
 function RuntimeWorkbenchShellTaskDrawer(props: {
