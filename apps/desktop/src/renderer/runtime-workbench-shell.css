@@ -1994,6 +1994,13 @@ button {
   align-items: start;
 }
 
+.cw-workbench__stream-panel-title {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  min-width: 0;
+}
+
 .cw-workbench__stream-panel-header h2 {
   margin-bottom: 6px;
   font-size: 18px;
@@ -2051,6 +2058,7 @@ button {
 .cw-workbench__stream-full-reload button,
 .cw-workbench__stream-controls button,
 .cw-workbench__stream-event-actions button,
+.cw-workbench__stream-panel-title button,
 .cw-workbench__stream-selected-event button {
   min-height: 30px;
   padding: 0 9px;
@@ -2066,9 +2074,22 @@ button {
 .cw-workbench__stream-full-reload button:disabled,
 .cw-workbench__stream-controls button:disabled,
 .cw-workbench__stream-event-actions button:disabled,
+.cw-workbench__stream-panel-title button:disabled,
 .cw-workbench__stream-selected-event button:disabled {
   cursor: not-allowed;
   opacity: 0.48;
+}
+
+.cw-workbench__stream-collapsed {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #fbfcfd;
+  color: #526173;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .cw-workbench__stream-controls {

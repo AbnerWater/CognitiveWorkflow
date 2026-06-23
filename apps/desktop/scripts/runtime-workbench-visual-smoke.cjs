@@ -38,6 +38,27 @@ async function readMetrics(window) {
       canvasDockActive:
         document.querySelector('.cw-workbench__dock-item[data-panel="canvas"][aria-current="page"]') !== null,
       hasLifecyclePanel: document.querySelector('.cw-workbench__lifecycle-panel') !== null,
+      hasStreamPanel: document.querySelector('.cw-workbench__stream-panel') !== null,
+      streamPanelExpanded:
+        document.querySelector('.cw-workbench__stream-panel')?.getAttribute('data-stream-panel-expanded') ?? null,
+      streamPanelToggleButtons:
+        document.querySelectorAll('[data-stream-panel-toggle="true"]').length,
+      streamPanelToggleExpanded:
+        document.querySelector('[data-stream-panel-toggle="true"]')?.getAttribute('aria-expanded') ?? null,
+      streamPanelControls:
+        document.querySelectorAll('.cw-workbench__stream-controls').length,
+      streamPanelBodies:
+        document.querySelectorAll('.cw-workbench__stream-panel-body').length,
+      streamFullReloads:
+        document.querySelectorAll('.cw-workbench__stream-full-reload').length,
+      streamEventSelectButtons:
+        document.querySelectorAll('[data-stream-event-id]').length,
+      streamPanelCollapsedSummary:
+        document.querySelector('[data-stream-panel-collapsed-summary="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
+      streamPanelCollapsedVisible:
+        document.querySelector('[data-stream-panel-collapsed-summary="true"]')?.getAttribute('data-stream-panel-collapsed-visible') ?? null,
+      streamPanelCollapsedUnread:
+        document.querySelector('[data-stream-panel-collapsed-summary="true"]')?.getAttribute('data-stream-panel-collapsed-unread') ?? null,
       hasTaskDrawer: document.querySelector('.cw-workbench__task-drawer') !== null,
       hasChatBox: document.querySelector('.cw-workbench__chat') !== null,
       dockItems: document.querySelectorAll('.cw-workbench__dock-item').length,
@@ -1173,6 +1194,18 @@ async function clickChatBoxToggle(window) {
   `);
 }
 
+async function clickStreamPanelToggle(window) {
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const button = document.querySelector('[data-stream-panel-toggle="true"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('Missing stream panel toggle button');
+      }
+      button.click();
+    })()
+  `);
+}
+
 async function runSmokeStep(label, action) {
   try {
     return await action();
@@ -1186,6 +1219,9 @@ function collectVisualSmokeFailures(
   metrics,
   messages,
   requestedWidth,
+  initialStreamMetrics,
+  streamCollapsedMetrics,
+  streamExpandedMetrics,
   initialFileTreeMetrics,
   fileTreeSelectMetrics,
   initialVersionSnapshotMetrics,
@@ -1331,6 +1367,102 @@ function collectVisualSmokeFailures(
   }
   if (metrics.hasDock !== true) {
     failures.push("missing shell dock");
+  }
+  if (initialStreamMetrics.hasStreamPanel !== true) {
+    failures.push("missing runtime stream panel");
+  }
+  if (initialStreamMetrics.streamPanelExpanded !== "true") {
+    failures.push(
+      `expected initial stream panel expanded, got ${initialStreamMetrics.streamPanelExpanded}`,
+    );
+  }
+  if (initialStreamMetrics.streamPanelToggleButtons !== 1) {
+    failures.push(
+      `expected one stream panel toggle button, got ${initialStreamMetrics.streamPanelToggleButtons}`,
+    );
+  }
+  if (initialStreamMetrics.streamPanelToggleExpanded !== "true") {
+    failures.push(
+      `expected initial stream panel toggle aria-expanded true, got ${initialStreamMetrics.streamPanelToggleExpanded}`,
+    );
+  }
+  if (initialStreamMetrics.streamPanelControls !== 1) {
+    failures.push(
+      `expected initial stream panel controls, got ${initialStreamMetrics.streamPanelControls}`,
+    );
+  }
+  if (initialStreamMetrics.streamPanelBodies !== 1) {
+    failures.push(
+      `expected initial stream panel body, got ${initialStreamMetrics.streamPanelBodies}`,
+    );
+  }
+  if (initialStreamMetrics.streamFullReloads !== 1) {
+    failures.push(
+      `expected initial stream full reload banner, got ${initialStreamMetrics.streamFullReloads}`,
+    );
+  }
+  if (streamCollapsedMetrics.streamPanelExpanded !== "false") {
+    failures.push(
+      `expected collapsed stream panel expanded false, got ${streamCollapsedMetrics.streamPanelExpanded}`,
+    );
+  }
+  if (streamCollapsedMetrics.streamPanelToggleExpanded !== "false") {
+    failures.push(
+      `expected collapsed stream panel toggle aria-expanded false, got ${streamCollapsedMetrics.streamPanelToggleExpanded}`,
+    );
+  }
+  if (streamCollapsedMetrics.streamPanelControls !== 0) {
+    failures.push(
+      `expected collapsed stream panel controls hidden, got ${streamCollapsedMetrics.streamPanelControls}`,
+    );
+  }
+  if (streamCollapsedMetrics.streamPanelBodies !== 0) {
+    failures.push(
+      `expected collapsed stream panel body hidden, got ${streamCollapsedMetrics.streamPanelBodies}`,
+    );
+  }
+  if (streamCollapsedMetrics.streamFullReloads !== 0) {
+    failures.push(
+      `expected collapsed stream full reload hidden, got ${streamCollapsedMetrics.streamFullReloads}`,
+    );
+  }
+  if (streamCollapsedMetrics.streamEventSelectButtons !== 0) {
+    failures.push(
+      `expected collapsed stream event actions hidden, got ${streamCollapsedMetrics.streamEventSelectButtons}`,
+    );
+  }
+  if (
+    streamCollapsedMetrics.streamPanelCollapsedSummary !==
+    "Run run_live_smoke, 1 visible, 1 unread"
+  ) {
+    failures.push(
+      `expected collapsed stream summary, got ${streamCollapsedMetrics.streamPanelCollapsedSummary}`,
+    );
+  }
+  if (streamCollapsedMetrics.streamPanelCollapsedVisible !== "1") {
+    failures.push(
+      `expected collapsed stream visible count 1, got ${streamCollapsedMetrics.streamPanelCollapsedVisible}`,
+    );
+  }
+  if (streamCollapsedMetrics.streamPanelCollapsedUnread !== "1") {
+    failures.push(
+      `expected collapsed stream unread count 1, got ${streamCollapsedMetrics.streamPanelCollapsedUnread}`,
+    );
+  }
+  if (streamExpandedMetrics.streamPanelExpanded !== "true") {
+    failures.push(
+      `expected re-expanded stream panel expanded true, got ${streamExpandedMetrics.streamPanelExpanded}`,
+    );
+  }
+  if (streamExpandedMetrics.streamPanelControls !== 1) {
+    failures.push(
+      `expected re-expanded stream panel controls, got ${streamExpandedMetrics.streamPanelControls}`,
+    );
+  }
+  if (streamExpandedMetrics.streamPanelBodies !== 1) {
+    failures.push(
+      `expected re-expanded stream panel body, got ${streamExpandedMetrics.streamPanelBodies}`,
+    );
   }
   if (metrics.hasFileTree !== true) {
     failures.push("missing file tree");
@@ -2885,6 +3017,28 @@ async function main() {
     }
   });
   await runSmokeStep("load renderer", () => window.loadURL(targetUrl));
+  await runSmokeStep("show stream panel", () => clickPanel(window, "stream"));
+  const initialStreamMetrics = await runSmokeStep(
+    "read initial stream panel metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("collapse stream panel", () =>
+    clickStreamPanelToggle(window),
+  );
+  const streamCollapsedMetrics = await runSmokeStep(
+    "read collapsed stream panel metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("expand stream panel", () =>
+    clickStreamPanelToggle(window),
+  );
+  const streamExpandedMetrics = await runSmokeStep(
+    "read expanded stream panel metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("show lifecycle panel", () =>
+    clickPanel(window, "lifecycle"),
+  );
   const initialFileTreeMetrics = await runSmokeStep(
     "read initial file tree metrics",
     () => readMetrics(window),
@@ -3105,6 +3259,9 @@ async function main() {
     metrics,
     messages,
     width,
+    initialStreamMetrics,
+    streamCollapsedMetrics,
+    streamExpandedMetrics,
     initialFileTreeMetrics,
     fileTreeSelectMetrics,
     initialVersionSnapshotMetrics,
@@ -3140,6 +3297,9 @@ async function main() {
     JSON.stringify(
       {
         metrics,
+        initialStreamMetrics,
+        streamCollapsedMetrics,
+        streamExpandedMetrics,
         initialFileTreeMetrics,
         fileTreeSelectMetrics,
         initialVersionSnapshotMetrics,

@@ -3008,11 +3008,15 @@ function RuntimeWorkbenchShellStreamPanel(props: {
   ) => void;
 }): ReactElement {
   const panel = props.snapshot.runtimeStreamPanel;
+  const [expanded, setExpanded] = useState(true);
+  const handlePanelToggleClick = useCallback((): void => {
+    setExpanded((current) => !current);
+  }, []);
   if (panel === null) {
     return (
       <div className="cw-workbench__stream-panel cw-workbench__stream-panel--empty">
         <div className="cw-workbench__stream-panel-header">
-          <div>
+          <div className="cw-workbench__stream-panel-title">
             <h2>Runtime stream</h2>
             <p>
               {props.snapshot.runtimeStreamChannelLabel ??
@@ -3024,62 +3028,108 @@ function RuntimeWorkbenchShellStreamPanel(props: {
     );
   }
 
+  const collapsedSummary = runtimeWorkbenchShellStreamPanelCollapsedSummary(
+    props.snapshot,
+    panel,
+  );
+
   return (
-    <div className="cw-workbench__stream-panel">
+    <div
+      className={[
+        "cw-workbench__stream-panel",
+        expanded ? "" : "cw-workbench__stream-panel--collapsed",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-stream-panel-expanded={expanded ? "true" : "false"}
+    >
       <div className="cw-workbench__stream-panel-header">
-        <div>
+        <div className="cw-workbench__stream-panel-title">
           <h2>Runtime stream</h2>
           <p>{props.snapshot.runtimeStreamChannelLabel ?? panel.status}</p>
+          <button
+            aria-expanded={expanded}
+            data-stream-panel-toggle="true"
+            onClick={handlePanelToggleClick}
+            type="button"
+          >
+            {expanded ? "Collapse stream" : "Expand stream"}
+          </button>
         </div>
         <RuntimeWorkbenchShellStreamPanelMetrics panel={panel} />
       </div>
 
-      {panel.fullReload === null ? null : (
-        <div className="cw-workbench__stream-full-reload">
-          <strong>Full reload required</strong>
-          <span>{panel.fullReload.reason}</span>
-          {panel.fullReload.acknowledged ? (
-            <small>Acknowledged</small>
-          ) : (
-            <button onClick={props.onAcknowledgeFullReloadClick} type="button">
-              Acknowledge
-            </button>
+      {expanded ? (
+        <>
+          {panel.fullReload === null ? null : (
+            <div className="cw-workbench__stream-full-reload">
+              <strong>Full reload required</strong>
+              <span>{panel.fullReload.reason}</span>
+              {panel.fullReload.acknowledged ? (
+                <small>Acknowledged</small>
+              ) : (
+                <button
+                  onClick={props.onAcknowledgeFullReloadClick}
+                  type="button"
+                >
+                  Acknowledge
+                </button>
+              )}
+            </div>
           )}
-        </div>
+
+          <RuntimeWorkbenchShellStreamControls
+            onClearSearchClick={props.onClearSearchClick}
+            onMarkReadClick={props.onMarkReadClick}
+            onNextSearchClick={props.onNextSearchClick}
+            onPreviousSearchClick={props.onPreviousSearchClick}
+            onSearchChange={props.onSearchChange}
+            onSelectSearchClick={props.onSelectSearchClick}
+            panel={panel}
+          />
+
+          <div className="cw-workbench__stream-panel-body">
+            <div className="cw-workbench__stream-event-groups">
+              <RuntimeWorkbenchShellStreamEventGroup
+                events={panel.summaryItems}
+                onSelectEventClick={props.onSelectEventClick}
+                onToggleExpandedClick={props.onToggleExpandedClick}
+                title="Summary"
+              />
+              <RuntimeWorkbenchShellStreamEventGroup
+                events={panel.timelineItems}
+                onSelectEventClick={props.onSelectEventClick}
+                onToggleExpandedClick={props.onToggleExpandedClick}
+                title="Timeline"
+              />
+            </div>
+            <RuntimeWorkbenchShellStreamSelection
+              onClearSelectionClick={props.onClearSelectionClick}
+              panel={panel}
+            />
+          </div>
+        </>
+      ) : (
+        <p
+          className="cw-workbench__stream-collapsed"
+          data-stream-panel-collapsed-summary="true"
+          data-stream-panel-collapsed-unread={String(panel.read.unreadCount)}
+          data-stream-panel-collapsed-visible={String(panel.visibleEventCount)}
+        >
+          {collapsedSummary}
+        </p>
       )}
-
-      <RuntimeWorkbenchShellStreamControls
-        onClearSearchClick={props.onClearSearchClick}
-        onMarkReadClick={props.onMarkReadClick}
-        onNextSearchClick={props.onNextSearchClick}
-        onPreviousSearchClick={props.onPreviousSearchClick}
-        onSearchChange={props.onSearchChange}
-        onSelectSearchClick={props.onSelectSearchClick}
-        panel={panel}
-      />
-
-      <div className="cw-workbench__stream-panel-body">
-        <div className="cw-workbench__stream-event-groups">
-          <RuntimeWorkbenchShellStreamEventGroup
-            events={panel.summaryItems}
-            onSelectEventClick={props.onSelectEventClick}
-            onToggleExpandedClick={props.onToggleExpandedClick}
-            title="Summary"
-          />
-          <RuntimeWorkbenchShellStreamEventGroup
-            events={panel.timelineItems}
-            onSelectEventClick={props.onSelectEventClick}
-            onToggleExpandedClick={props.onToggleExpandedClick}
-            title="Timeline"
-          />
-        </div>
-        <RuntimeWorkbenchShellStreamSelection
-          onClearSelectionClick={props.onClearSelectionClick}
-          panel={panel}
-        />
-      </div>
     </div>
   );
+}
+
+function runtimeWorkbenchShellStreamPanelCollapsedSummary(
+  snapshot: RuntimeWorkbenchShellSnapshot,
+  panel: RuntimeWorkbenchShellRuntimeStreamPanelSnapshot,
+): string {
+  return `${
+    snapshot.runtimeStreamChannelLabel ?? panel.status
+  }, ${panel.visibleEventCount} visible, ${panel.read.unreadCount} unread`;
 }
 
 function RuntimeWorkbenchShellStreamControls(props: {

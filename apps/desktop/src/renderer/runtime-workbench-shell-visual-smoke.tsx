@@ -10,6 +10,7 @@ import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-work
 import type {
   RuntimeWorkbenchShellActionId,
   RuntimeWorkbenchShellChromeSnapshot,
+  RuntimeWorkbenchShellRuntimeStreamPanelSnapshot,
   RuntimeWorkbenchShellSnapshot,
 } from "./runtime-workbench-shell-presenter.js";
 import { RuntimeWorkbenchShellReactView } from "./runtime-workbench-shell-react.js";
@@ -189,6 +190,10 @@ function buildVisualSmokeSnapshot(
           (item) => item.id === state.selectedTimelineItemId,
         ) ?? null);
   const activePanelLabel = visualSmokePanelLabel(state.activePanel);
+  const runtimeStreamPanel =
+    state.activePanel === "stream" && !disposed
+      ? buildVisualSmokeRuntimeStreamPanelSnapshot()
+      : null;
   return Object.freeze({
     activePanel: state.activePanel,
     activePanelLabel,
@@ -311,9 +316,10 @@ function buildVisualSmokeSnapshot(
           canActivateFocusedCommand: true,
           canSelectFocusedTimelineItem: true,
         }),
-    runtimeStreamStatus: "empty",
-    runtimeStreamChannelLabel: null,
-    runtimeStreamPanel: null,
+    runtimeStreamStatus: runtimeStreamPanel === null ? "empty" : "active",
+    runtimeStreamChannelLabel:
+      runtimeStreamPanel === null ? null : "Run run_live_smoke",
+    runtimeStreamPanel,
     lastHandledShortcutLabel: state.lastHandledShortcutLabel,
     panels: Object.freeze([
       Object.freeze({
@@ -342,9 +348,9 @@ function buildVisualSmokeSnapshot(
         title: "Show runtime stream panel.",
         active: state.activePanel === "stream",
         enabled: !disposed,
-        status: "empty",
-        badgeLabel: null,
-        tone: "neutral",
+        status: runtimeStreamPanel === null ? "empty" : "active",
+        badgeLabel: runtimeStreamPanel === null ? null : "1 unread",
+        tone: runtimeStreamPanel === null ? "neutral" : "warning",
       }),
     ]),
     actions: Object.freeze([
@@ -456,6 +462,54 @@ function buildVisualSmokeSnapshot(
     disposed,
     ariaLive: disposed ? "assertive" : "polite",
     emptyState: null,
+  });
+}
+
+function buildVisualSmokeRuntimeStreamPanelSnapshot(): RuntimeWorkbenchShellRuntimeStreamPanelSnapshot {
+  const event = Object.freeze({
+    id: "evt_visual_stream",
+    seq: 12,
+    type: "model.text_delta",
+    category: "model",
+    displayLevel: "default",
+    severity: "info",
+    title: "Visual stream delta",
+    summary: "delta summary",
+    content: "delta content",
+    expandable: true,
+    expanded: false,
+    childCount: 0,
+    children: Object.freeze([]),
+    createdAt: "2026-06-23T00:00:00.000Z",
+  } satisfies RuntimeWorkbenchShellRuntimeStreamPanelSnapshot["timelineItems"][number]);
+  return Object.freeze({
+    status: "full_reload_required",
+    totalEvents: 3,
+    bufferedEventCount: 3,
+    matchingEventCount: 1,
+    visibleEventCount: 1,
+    hiddenEventCount: 2,
+    foldedChildCount: 0,
+    read: Object.freeze({
+      lastSeenTotalEvents: 2,
+      unreadCount: 1,
+    }),
+    search: Object.freeze({
+      query: "delta",
+      matchCount: 1,
+      activeMatchIndex: 0,
+      activeEventId: event.id,
+    }),
+    summaryItems: Object.freeze([]),
+    timelineItems: Object.freeze([event]),
+    selectedEvent: event,
+    fullReload: Object.freeze({
+      acknowledged: false,
+      lastEventId: "evt_old",
+      reason: "Replay point expired",
+      status: 412,
+      errorCode: "SE_SSE_REPLAY_NOT_FOUND",
+    }),
   });
 }
 
