@@ -534,6 +534,47 @@ function buildVisualSmokeChromeSnapshot(
         }),
       ]),
     }),
+    versionSnapshots: Object.freeze({
+      title: "Version Snapshots",
+      summary:
+        state.activePanel === "lifecycle"
+          ? "Lifecycle scaffold history"
+          : "Stream scaffold history",
+      items: Object.freeze([
+        Object.freeze({
+          id: "draft",
+          label: "Draft",
+          value: "v0",
+          statusLabel: "Read-only",
+          active: false,
+          tone: "neutral",
+        }),
+        Object.freeze({
+          id: "validation",
+          label: "Validation",
+          value: `${VISUAL_SMOKE_TIMELINE_ITEMS.length} visible`,
+          statusLabel: disposed ? "Disposed" : "Active",
+          active: state.activePanel === "lifecycle",
+          tone: disposed ? "danger" : "success",
+        }),
+        Object.freeze({
+          id: "runtime",
+          label: "Runtime",
+          value: disposed ? "Disposed" : "No active stream",
+          statusLabel: disposed ? "Disposed" : "Idle",
+          active: state.activePanel === "stream",
+          tone: disposed ? "danger" : "neutral",
+        }),
+        Object.freeze({
+          id: "git_snapshot",
+          label: "Git snapshot",
+          value: "Not created",
+          statusLabel: "Future",
+          active: false,
+          tone: disposed ? "danger" : "neutral",
+        }),
+      ]),
+    }),
     taskDrawer: Object.freeze({
       title: "Task Drawer",
       summary:

@@ -38,6 +38,7 @@ import type {
   RuntimeWorkbenchShellRuntimeStreamPanelSnapshot,
   RuntimeWorkbenchShellSnapshot,
   RuntimeWorkbenchShellTaskDrawerSnapshot,
+  RuntimeWorkbenchShellVersionSnapshotsSnapshot,
 } from "./runtime-workbench-shell-presenter.js";
 import type {
   RuntimeWorkbenchShellDomSession,
@@ -561,6 +562,10 @@ export function RuntimeWorkbenchShellReactView(
             ))}
           </nav>
 
+          <RuntimeWorkbenchShellVersionSnapshots
+            snapshots={snapshot.chrome.versionSnapshots}
+          />
+
           <section
             aria-live={snapshot.ariaLive}
             className="cw-workbench__content"
@@ -737,6 +742,41 @@ function RuntimeWorkbenchShellFileTree(props: {
         ))}
       </ul>
     </aside>
+  );
+}
+
+function RuntimeWorkbenchShellVersionSnapshots(props: {
+  readonly snapshots: RuntimeWorkbenchShellVersionSnapshotsSnapshot;
+}): ReactElement {
+  return (
+    <section
+      aria-label={props.snapshots.title}
+      className="cw-workbench__version-snapshots"
+    >
+      <div className="cw-workbench__version-snapshots-header">
+        <h2>{props.snapshots.title}</h2>
+        <p>{props.snapshots.summary}</p>
+      </div>
+      <ol className="cw-workbench__version-snapshot-items">
+        {props.snapshots.items.map((item) => (
+          <li
+            className={[
+              "cw-workbench__version-snapshot-item",
+              `cw-workbench__version-snapshot-item--${item.tone}`,
+              item.active ? "cw-workbench__version-snapshot-item--active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            data-version-snapshot={item.id}
+            key={item.id}
+          >
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <small>{item.statusLabel}</small>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

@@ -301,6 +301,22 @@ function freezeChrome(
         ),
       ),
     }),
+    versionSnapshots: Object.freeze({
+      title: chrome.versionSnapshots.title,
+      summary: chrome.versionSnapshots.summary,
+      items: Object.freeze(
+        chrome.versionSnapshots.items.map((item) =>
+          Object.freeze({
+            id: item.id,
+            label: item.label,
+            value: item.value,
+            statusLabel: item.statusLabel,
+            active: item.active,
+            tone: item.tone,
+          }),
+        ),
+      ),
+    }),
     taskDrawer: Object.freeze({
       title: chrome.taskDrawer.title,
       summary: chrome.taskDrawer.summary,

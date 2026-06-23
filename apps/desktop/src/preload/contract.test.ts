@@ -5137,6 +5137,26 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["accepted_specs", "specs", "Read-only", 1, false, "neutral"],
     ],
   );
+  assert.equal(snapshot.chrome.versionSnapshots.title, "Version Snapshots");
+  assert.equal(
+    snapshot.chrome.versionSnapshots.summary,
+    "Stream scaffold history",
+  );
+  assert.deepEqual(
+    snapshot.chrome.versionSnapshots.items.map((item) => [
+      item.id,
+      item.value,
+      item.statusLabel,
+      item.active,
+      item.tone,
+    ]),
+    [
+      ["draft", "v0", "Read-only", false, "neutral"],
+      ["validation", "1 visible", "Active", false, "success"],
+      ["runtime", "Run run_shell", "Active", true, "success"],
+      ["git_snapshot", "Not created", "Future", false, "neutral"],
+    ],
+  );
   assert.equal(snapshot.chrome.taskDrawer.title, "Task Drawer");
   assert.equal(snapshot.chrome.taskDrawer.summary, "Stream focus");
   assert.equal(
@@ -5252,6 +5272,12 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(Object.isFrozen(snapshot.chrome.fileTree), true);
   assert.equal(Object.isFrozen(snapshot.chrome.fileTree.nodes), true);
   assert.equal(Object.isFrozen(snapshot.chrome.fileTree.nodes[0]), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.versionSnapshots), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.versionSnapshots.items), true);
+  assert.equal(
+    Object.isFrozen(snapshot.chrome.versionSnapshots.items[0]),
+    true,
+  );
   assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer), true);
   assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer.items), true);
   assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer.items[0]), true);
@@ -5428,6 +5454,19 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(
     disposedSnapshot.chrome.fileTree.nodes[0]?.statusLabel,
     "Disposed",
+  );
+  assert.deepEqual(
+    disposedSnapshot.chrome.versionSnapshots.items.map((item) => [
+      item.id,
+      item.statusLabel,
+      item.tone,
+    ]),
+    [
+      ["draft", "Read-only", "neutral"],
+      ["validation", "Disposed", "danger"],
+      ["runtime", "Disposed", "danger"],
+      ["git_snapshot", "Future", "danger"],
+    ],
   );
   assert.equal(disposedSnapshot.chrome.chatBox.statusLabel, "Disposed");
   assert.equal(

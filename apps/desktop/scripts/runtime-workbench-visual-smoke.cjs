@@ -23,15 +23,23 @@ async function readMetrics(window) {
       hasRoot: document.querySelector('.cw-workbench') !== null,
       hasDock: document.querySelector('.cw-workbench__dock') !== null,
       hasFileTree: document.querySelector('.cw-workbench__file-tree') !== null,
+      hasVersionSnapshots:
+        document.querySelector('.cw-workbench__version-snapshots') !== null,
       hasLifecyclePanel: document.querySelector('.cw-workbench__lifecycle-panel') !== null,
       hasTaskDrawer: document.querySelector('.cw-workbench__task-drawer') !== null,
       hasChatBox: document.querySelector('.cw-workbench__chat') !== null,
       dockItems: document.querySelectorAll('.cw-workbench__dock-item').length,
       fileTreeNodes: document.querySelectorAll('.cw-workbench__file-tree-node').length,
+      versionSnapshotItems:
+        document.querySelectorAll('.cw-workbench__version-snapshot-item').length,
+      activeVersionSnapshotItems:
+        document.querySelectorAll('.cw-workbench__version-snapshot-item--active').length,
       activeFileTreeNodes:
         document.querySelectorAll('.cw-workbench__file-tree-node--active').length,
       hasRuntimeStreamFileNode:
         document.querySelector('[data-file-tree-node="runtime_stream"]') !== null,
+      hasGitSnapshotItem:
+        document.querySelector('[data-version-snapshot="git_snapshot"]') !== null,
       hasTaskDrawerToggle: document.querySelector('[data-task-drawer-toggle="true"]') !== null,
       hasChatBoxToggle: document.querySelector('[data-chat-box-toggle="true"]') !== null,
       taskDrawerExpanded:
@@ -123,6 +131,9 @@ function collectVisualSmokeFailures(
   if (metrics.hasFileTree !== true) {
     failures.push("missing file tree");
   }
+  if (metrics.hasVersionSnapshots !== true) {
+    failures.push("missing version snapshots");
+  }
   if (metrics.hasLifecyclePanel !== true) {
     failures.push("missing lifecycle panel");
   }
@@ -138,6 +149,16 @@ function collectVisualSmokeFailures(
   if (metrics.fileTreeNodes !== 5) {
     failures.push(`expected 5 file tree nodes, got ${metrics.fileTreeNodes}`);
   }
+  if (metrics.versionSnapshotItems !== 4) {
+    failures.push(
+      `expected 4 version snapshot items, got ${metrics.versionSnapshotItems}`,
+    );
+  }
+  if (metrics.activeVersionSnapshotItems !== 1) {
+    failures.push(
+      `expected one active version snapshot item, got ${metrics.activeVersionSnapshotItems}`,
+    );
+  }
   if (metrics.activeFileTreeNodes !== 0) {
     failures.push(
       `expected no active file tree node in lifecycle smoke, got ${metrics.activeFileTreeNodes}`,
@@ -145,6 +166,9 @@ function collectVisualSmokeFailures(
   }
   if (metrics.hasRuntimeStreamFileNode !== true) {
     failures.push("missing runtime stream file tree node");
+  }
+  if (metrics.hasGitSnapshotItem !== true) {
+    failures.push("missing git snapshot scaffold item");
   }
   if (metrics.hasTaskDrawerToggle !== true) {
     failures.push("missing task drawer toggle");

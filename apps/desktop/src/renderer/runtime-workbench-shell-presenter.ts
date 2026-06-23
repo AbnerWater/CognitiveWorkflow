@@ -134,6 +134,27 @@ export interface RuntimeWorkbenchShellFileTreeSnapshot {
   readonly nodes: readonly RuntimeWorkbenchShellFileTreeNode[];
 }
 
+export type RuntimeWorkbenchShellVersionSnapshotId =
+  | "draft"
+  | "validation"
+  | "runtime"
+  | "git_snapshot";
+
+export interface RuntimeWorkbenchShellVersionSnapshotItem {
+  readonly id: RuntimeWorkbenchShellVersionSnapshotId;
+  readonly label: string;
+  readonly value: string;
+  readonly statusLabel: string;
+  readonly active: boolean;
+  readonly tone: RuntimeWorkbenchShellTone;
+}
+
+export interface RuntimeWorkbenchShellVersionSnapshotsSnapshot {
+  readonly title: string;
+  readonly summary: string;
+  readonly items: readonly RuntimeWorkbenchShellVersionSnapshotItem[];
+}
+
 export type RuntimeWorkbenchShellTaskDrawerItemId =
   | "active_panel"
   | "lifecycle_panel"
@@ -174,6 +195,7 @@ export interface RuntimeWorkbenchShellChatBoxSnapshot {
 export interface RuntimeWorkbenchShellChromeSnapshot {
   readonly dockItems: readonly RuntimeWorkbenchShellDockItem[];
   readonly fileTree: RuntimeWorkbenchShellFileTreeSnapshot;
+  readonly versionSnapshots: RuntimeWorkbenchShellVersionSnapshotsSnapshot;
   readonly taskDrawer: RuntimeWorkbenchShellTaskDrawerSnapshot;
   readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
 }
@@ -624,6 +646,44 @@ function buildShellChrome(
         }),
       ],
     },
+    versionSnapshots: {
+      title: "Version Snapshots",
+      summary: `${activePanelLabel} scaffold history`,
+      items: [
+        versionSnapshotItem({
+          id: "draft",
+          label: "Draft",
+          value: "v0",
+          statusLabel: "Read-only",
+          active: false,
+          tone: "neutral",
+        }),
+        versionSnapshotItem({
+          id: "validation",
+          label: "Validation",
+          value: visibleItems === 0 ? "0 visible" : `${visibleItems} visible`,
+          statusLabel: panelStatusLabel(lifecyclePanelStatus),
+          active: host.activePanel === "lifecycle",
+          tone: panelStatusTone(lifecyclePanelStatus),
+        }),
+        versionSnapshotItem({
+          id: "runtime",
+          label: "Runtime",
+          value: runtimeStreamChannelLabel ?? "No active stream",
+          statusLabel: panelStatusLabel(runtimeStreamStatus),
+          active: host.activePanel === "stream",
+          tone: panelStatusTone(runtimeStreamStatus),
+        }),
+        versionSnapshotItem({
+          id: "git_snapshot",
+          label: "Git snapshot",
+          value: "Not created",
+          statusLabel: "Future",
+          active: false,
+          tone: disposed ? "danger" : "neutral",
+        }),
+      ],
+    },
     taskDrawer: {
       title: "Task Drawer",
       summary: `${activePanelLabel} focus`,
@@ -802,6 +862,12 @@ function fileTreeNode(
     active: node.active,
     tone: node.tone,
   });
+}
+
+function versionSnapshotItem(
+  item: RuntimeWorkbenchShellVersionSnapshotItem,
+): RuntimeWorkbenchShellVersionSnapshotItem {
+  return Object.freeze({ ...item });
 }
 
 function taskDrawerItem(
@@ -1145,6 +1211,13 @@ function freezeRuntimeWorkbenchShellChrome(
       summary: chrome.fileTree.summary,
       nodes: Object.freeze(
         chrome.fileTree.nodes.map((node) => fileTreeNode(node)),
+      ),
+    }),
+    versionSnapshots: Object.freeze({
+      title: chrome.versionSnapshots.title,
+      summary: chrome.versionSnapshots.summary,
+      items: Object.freeze(
+        chrome.versionSnapshots.items.map((item) => versionSnapshotItem(item)),
       ),
     }),
     taskDrawer: Object.freeze({
