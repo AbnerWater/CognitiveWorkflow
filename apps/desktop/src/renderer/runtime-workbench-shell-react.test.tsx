@@ -468,6 +468,170 @@ test("renderer runtime workbench React shell toggles stream event groups locally
   }
 });
 
+test("renderer runtime workbench React shell toggles stream selection locally", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Stream Selection Collapse Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectionExpanded",
+        "true",
+      ).getAttribute("data-stream-selection-selected-id"),
+      "evt_react_stream",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectionToggle",
+        "true",
+      ).getAttribute("aria-expanded"),
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectedEvent",
+        "true",
+      ).getAttribute("data-stream-selected-event-id"),
+      "evt_react_stream",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamSelectionToggle",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectionExpanded",
+        "false",
+      ).getAttribute("data-stream-selection-selected-id"),
+      "evt_react_stream",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectionToggle",
+        "true",
+      ).getAttribute("aria-expanded"),
+      "false",
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamSelectionCollapsedSummary",
+          "true",
+        ),
+      ),
+      "Model delta, model.text_delta",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectionCollapsedSummary",
+        "true",
+      ).getAttribute("data-stream-selection-collapsed-selected-id"),
+      "evt_react_stream",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectionCollapsedSummary",
+        "true",
+      ).getAttribute("data-stream-selection-collapsed-selected-type"),
+      "model.text_delta",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.streamSelectedEvent === "true",
+      ),
+      0,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamPanelExpanded",
+        "true",
+      ).dataset.streamPanelExpanded,
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamEventGroup",
+        "timeline",
+      ).dataset.streamEventGroupExpanded,
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamEventId",
+        "evt_react_stream",
+      ).textContent,
+      "Select",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamSelectionToggle",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectionExpanded",
+        "true",
+      ).dataset.streamSelectionExpanded,
+      "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "streamSelectedEvent",
+        "true",
+      ).getAttribute("data-stream-selected-event-id"),
+      "evt_react_stream",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell renders lifecycle panel events", () => {
   const snapshot = createRuntimeWorkbenchShellReactLifecycleSnapshot();
   const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);

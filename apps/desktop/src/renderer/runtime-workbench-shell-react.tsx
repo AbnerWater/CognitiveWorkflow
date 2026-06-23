@@ -3362,19 +3362,59 @@ function RuntimeWorkbenchShellStreamSelection(props: {
   readonly onClearSelectionClick: () => void;
 }): ReactElement {
   const selected = props.panel.selectedEvent;
+  const [expanded, setExpanded] = useState(true);
+  const handleSelectionToggleClick = useCallback((): void => {
+    setExpanded((current) => !current);
+  }, []);
+  const collapsedSummary =
+    selected === null
+      ? "No event selected"
+      : `${selected.title}, ${selected.type}`;
   return (
-    <aside className="cw-workbench__stream-selection">
-      <h3>Selection</h3>
+    <aside
+      className={[
+        "cw-workbench__stream-selection",
+        expanded ? "" : "cw-workbench__stream-selection--collapsed",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-stream-selection-expanded={expanded ? "true" : "false"}
+      data-stream-selection-selected-id={selected?.id ?? ""}
+    >
+      <div className="cw-workbench__stream-selection-header">
+        <h3>Selection</h3>
+        <button
+          aria-expanded={expanded}
+          data-stream-selection-toggle="true"
+          onClick={handleSelectionToggleClick}
+          type="button"
+        >
+          {expanded ? "Collapse selection" : "Expand selection"}
+        </button>
+      </div>
       {props.panel.search.query.length === 0 ? null : (
         <p>
           Search "{props.panel.search.query}" - {props.panel.search.matchCount}{" "}
           matches
         </p>
       )}
-      {selected === null ? (
+      {!expanded ? (
+        <p
+          className="cw-workbench__stream-selection-collapsed"
+          data-stream-selection-collapsed-selected-id={selected?.id ?? ""}
+          data-stream-selection-collapsed-selected-type={selected?.type ?? ""}
+          data-stream-selection-collapsed-summary="true"
+        >
+          {collapsedSummary}
+        </p>
+      ) : selected === null ? (
         <p className="cw-workbench__stream-muted">No event selected</p>
       ) : (
-        <div className="cw-workbench__stream-selected-event">
+        <div
+          className="cw-workbench__stream-selected-event"
+          data-stream-selected-event="true"
+          data-stream-selected-event-id={selected.id ?? ""}
+        >
           <button onClick={props.onClearSelectionClick} type="button">
             Clear selection
           </button>

@@ -2060,6 +2060,7 @@ button {
 .cw-workbench__stream-event-actions button,
 .cw-workbench__stream-event-group-header button,
 .cw-workbench__stream-panel-title button,
+.cw-workbench__stream-selection-header button,
 .cw-workbench__stream-selected-event button {
   min-height: 30px;
   padding: 0 9px;
@@ -2077,6 +2078,7 @@ button {
 .cw-workbench__stream-event-actions button:disabled,
 .cw-workbench__stream-event-group-header button:disabled,
 .cw-workbench__stream-panel-title button:disabled,
+.cw-workbench__stream-selection-header button:disabled,
 .cw-workbench__stream-selected-event button:disabled {
   cursor: not-allowed;
   opacity: 0.48;
@@ -2293,10 +2295,30 @@ button {
   font-size: 15px;
 }
 
+.cw-workbench__stream-selection-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
 .cw-workbench__stream-selection p,
+.cw-workbench__stream-selection-collapsed,
 .cw-workbench__stream-selected-event span,
 .cw-workbench__stream-selected-event strong {
   overflow-wrap: anywhere;
+}
+
+.cw-workbench__stream-selection-collapsed {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #526173;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .cw-workbench__stream-selected-event {
