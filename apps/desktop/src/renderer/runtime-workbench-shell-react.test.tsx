@@ -59,6 +59,7 @@ test("renderer runtime workbench React shell renders server snapshot without DOM
   assert.match(markup, /Stream/u);
   assert.match(markup, /File Tree/u);
   assert.match(markup, /Accepted specs/u);
+  assert.match(markup, /Status[\s\S]*Open[\s\S]*Path[\s\S]*workspace root/u);
   assert.match(markup, /Version Snapshots/u);
   assert.match(markup, /Git snapshot/u);
   assert.match(markup, /Workflow Canvas/u);
@@ -303,6 +304,173 @@ test("renderer runtime workbench React shell toggles chat box collapse", async (
       "true",
     );
     assert.match(fakeRuntimeWorkbenchNodeTextContent(dom.container), /Send/u);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench React shell selects file tree node locally", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="File Tree Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeNodeSelected",
+        "true",
+      ).getAttribute("data-file-tree-node"),
+      "workspace_root",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeDetails",
+        "workspace_root",
+      ).getAttribute("data-file-tree-details-path"),
+      "workspace root",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeDetails",
+        "workspace_root",
+      ).getAttribute("data-file-tree-details-status"),
+      "Open",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "fileTreeNodeSelect",
+          "workflow_graph",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeNodeSelected",
+        "true",
+      ).getAttribute("data-file-tree-node"),
+      "workflow_graph",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeDetails",
+        "workflow_graph",
+      ).getAttribute("data-file-tree-details-path"),
+      "specs/schemas/workflow_graph.md",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeDetails",
+        "workflow_graph",
+      ).getAttribute("data-file-tree-details-status"),
+      "Spec",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.fileTreeNodeSelected === "true",
+      ),
+      1,
+    );
+
+    await act(async () => {
+      keydownFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "fileTreeNodeSelect",
+          "runtime_stream",
+        ),
+        " ",
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeNodeSelected",
+        "true",
+      ).getAttribute("data-file-tree-node"),
+      "runtime_stream",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeDetails",
+        "runtime_stream",
+      ).getAttribute("data-file-tree-details-path"),
+      "No active stream",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeDetails",
+        "runtime_stream",
+      ).getAttribute("data-file-tree-details-status"),
+      "Idle",
+    );
+
+    await act(async () => {
+      keydownFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "fileTreeNodeSelect",
+          "accepted_specs",
+        ),
+        "Enter",
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeNodeSelected",
+        "true",
+      ).getAttribute("data-file-tree-node"),
+      "accepted_specs",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeDetails",
+        "accepted_specs",
+      ).getAttribute("data-file-tree-details-path"),
+      "specs",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "fileTreeDetails",
+        "accepted_specs",
+      ).getAttribute("data-file-tree-details-status"),
+      "Read-only",
+    );
 
     await act(async () => {
       root.unmount();

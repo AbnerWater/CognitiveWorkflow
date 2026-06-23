@@ -35,6 +35,8 @@ import type {
   RuntimeWorkbenchShellActionId,
   RuntimeWorkbenchShellChatBoxSnapshot,
   RuntimeWorkbenchShellDockItem,
+  RuntimeWorkbenchShellFileTreeNode,
+  RuntimeWorkbenchShellFileTreeNodeId,
   RuntimeWorkbenchShellFileTreeSnapshot,
   RuntimeWorkbenchShellLifecyclePanelSnapshot,
   RuntimeWorkbenchShellRuntimeStreamEventSnapshot,
@@ -728,6 +730,48 @@ function RuntimeWorkbenchShellDock(props: {
 function RuntimeWorkbenchShellFileTree(props: {
   readonly fileTree: RuntimeWorkbenchShellFileTreeSnapshot;
 }): ReactElement {
+  const [selectedNodeId, setSelectedNodeId] =
+    useState<RuntimeWorkbenchShellFileTreeNodeId | null>(
+      props.fileTree.nodes[0]?.id ?? null,
+    );
+  const selectedNode = useMemo(
+    () =>
+      props.fileTree.nodes.find((node) => node.id === selectedNodeId) ??
+      props.fileTree.nodes[0] ??
+      null,
+    [props.fileTree.nodes, selectedNodeId],
+  );
+  const handleNodeSelect = useCallback(
+    (nodeId: RuntimeWorkbenchShellFileTreeNodeId): void => {
+      setSelectedNodeId(nodeId);
+    },
+    [],
+  );
+  const handleNodeClick = useCallback(
+    (event: MouseEvent<HTMLLIElement>): void => {
+      const nodeId = event.currentTarget.dataset.fileTreeNodeSelect;
+      if (!isRuntimeWorkbenchShellFileTreeNodeId(props.fileTree, nodeId)) {
+        return;
+      }
+      handleNodeSelect(nodeId);
+    },
+    [handleNodeSelect, props.fileTree],
+  );
+  const handleNodeKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLLIElement>): void => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      const nodeId = event.currentTarget.dataset.fileTreeNodeSelect;
+      if (!isRuntimeWorkbenchShellFileTreeNodeId(props.fileTree, nodeId)) {
+        return;
+      }
+      event.preventDefault();
+      handleNodeSelect(nodeId);
+    },
+    [handleNodeSelect, props.fileTree],
+  );
+
   return (
     <aside
       aria-label={props.fileTree.title}
@@ -738,28 +782,68 @@ function RuntimeWorkbenchShellFileTree(props: {
         <p>{props.fileTree.summary}</p>
       </div>
       <ul className="cw-workbench__file-tree-nodes" role="tree">
-        {props.fileTree.nodes.map((node) => (
-          <li
-            aria-selected={node.active}
-            className={[
-              "cw-workbench__file-tree-node",
-              `cw-workbench__file-tree-node--depth-${node.depth}`,
-              `cw-workbench__file-tree-node--${node.tone}`,
-              node.active ? "cw-workbench__file-tree-node--active" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            data-file-tree-node={node.id}
-            key={node.id}
-            role="treeitem"
-          >
-            <span>{node.label}</span>
-            <small>{node.statusLabel}</small>
-            <code>{node.pathLabel}</code>
-          </li>
-        ))}
+        {props.fileTree.nodes.map((node) => {
+          const selected = selectedNode?.id === node.id;
+          return (
+            <li
+              aria-selected={selected}
+              className={[
+                "cw-workbench__file-tree-node",
+                `cw-workbench__file-tree-node--depth-${node.depth}`,
+                `cw-workbench__file-tree-node--${node.tone}`,
+                node.active ? "cw-workbench__file-tree-node--active" : "",
+                selected ? "cw-workbench__file-tree-node--selected" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              data-file-tree-node={node.id}
+              data-file-tree-node-active={node.active ? "true" : undefined}
+              data-file-tree-node-select={node.id}
+              data-file-tree-node-selected={selected ? "true" : undefined}
+              key={node.id}
+              onClick={handleNodeClick}
+              onKeyDown={handleNodeKeyDown}
+              role="treeitem"
+              tabIndex={0}
+            >
+              <span>{node.label}</span>
+              <small>{node.statusLabel}</small>
+              <code>{node.pathLabel}</code>
+            </li>
+          );
+        })}
       </ul>
+      {selectedNode === null ? null : (
+        <RuntimeWorkbenchShellFileTreeDetails node={selectedNode} />
+      )}
     </aside>
+  );
+}
+
+function RuntimeWorkbenchShellFileTreeDetails(props: {
+  readonly node: RuntimeWorkbenchShellFileTreeNode;
+}): ReactElement {
+  return (
+    <section
+      aria-label="File tree selection details"
+      className="cw-workbench__file-tree-details"
+      data-file-tree-details={props.node.id}
+      data-file-tree-details-depth={props.node.depth}
+      data-file-tree-details-path={props.node.pathLabel}
+      data-file-tree-details-status={props.node.statusLabel}
+    >
+      <h3>{props.node.label}</h3>
+      <dl>
+        <div>
+          <dt>Status</dt>
+          <dd>{props.node.statusLabel}</dd>
+        </div>
+        <div>
+          <dt>Path</dt>
+          <dd>{props.node.pathLabel}</dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 
@@ -1715,6 +1799,15 @@ function selectRuntimeWorkbenchShellWorkflowCanvasNode(
     canvas.nodes.find((node) => node.active) ??
     canvas.nodes[0] ??
     null
+  );
+}
+
+function isRuntimeWorkbenchShellFileTreeNodeId(
+  fileTree: RuntimeWorkbenchShellFileTreeSnapshot,
+  value: string | undefined,
+): value is RuntimeWorkbenchShellFileTreeNodeId {
+  return (
+    value !== undefined && fileTree.nodes.some((node) => node.id === value)
   );
 }
 

@@ -42,6 +42,20 @@ async function readMetrics(window) {
       hasChatBox: document.querySelector('.cw-workbench__chat') !== null,
       dockItems: document.querySelectorAll('.cw-workbench__dock-item').length,
       fileTreeNodes: document.querySelectorAll('.cw-workbench__file-tree-node').length,
+      fileTreeSelectableNodes:
+        document.querySelectorAll('[data-file-tree-node-select]').length,
+      selectedFileTreeNodes:
+        document.querySelectorAll('[data-file-tree-node-selected="true"]').length,
+      selectedFileTreeNodeId:
+        document.querySelector('[data-file-tree-node-selected="true"]')?.getAttribute('data-file-tree-node') ?? null,
+      fileTreeDetailsNodeId:
+        document.querySelector('[data-file-tree-details]')?.getAttribute('data-file-tree-details') ?? null,
+      fileTreeDetailsPath:
+        document.querySelector('[data-file-tree-details]')?.getAttribute('data-file-tree-details-path') ?? null,
+      fileTreeDetailsStatus:
+        document.querySelector('[data-file-tree-details]')?.getAttribute('data-file-tree-details-status') ?? null,
+      fileTreeDetailsDepth:
+        document.querySelector('[data-file-tree-details]')?.getAttribute('data-file-tree-details-depth') ?? null,
       versionSnapshotItems:
         document.querySelectorAll('.cw-workbench__version-snapshot-item').length,
       activeVersionSnapshotItems:
@@ -227,6 +241,43 @@ async function readMetrics(window) {
       viewport: { width: window.innerWidth, height: window.innerHeight },
     }))()
   `);
+}
+
+async function clickFileTreeNode(window, nodeId) {
+  const nodeLiteral = JSON.stringify(nodeId);
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedNodeId = ${nodeLiteral};
+      const startedAt = Date.now();
+      const selectFileTreeNode = () => {
+        const node = document.querySelector(
+          '[data-file-tree-node-select="' + expectedNodeId + '"]'
+        );
+        if (node instanceof HTMLElement) {
+          node.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing file tree node: ' + expectedNodeId,
+            nodes: Array.from(
+              document.querySelectorAll('[data-file-tree-node-select]'),
+              (element) => element.getAttribute('data-file-tree-node-select')
+            ),
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(selectFileTreeNode);
+      };
+      selectFileTreeNode();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
 }
 
 async function clickLifecycleCommand(window, command) {
@@ -652,6 +703,8 @@ function collectVisualSmokeFailures(
   metrics,
   messages,
   requestedWidth,
+  initialFileTreeMetrics,
+  fileTreeSelectMetrics,
   collapsedMetrics,
   chatCollapsedMetrics,
   canvasMetrics,
@@ -822,6 +875,64 @@ function collectVisualSmokeFailures(
   }
   if (metrics.fileTreeNodes !== 5) {
     failures.push(`expected 5 file tree nodes, got ${metrics.fileTreeNodes}`);
+  }
+  if (initialFileTreeMetrics.fileTreeSelectableNodes !== 5) {
+    failures.push(
+      `expected 5 selectable file tree nodes, got ${initialFileTreeMetrics.fileTreeSelectableNodes}`,
+    );
+  }
+  if (initialFileTreeMetrics.selectedFileTreeNodes !== 1) {
+    failures.push(
+      `expected one selected file tree node initially, got ${initialFileTreeMetrics.selectedFileTreeNodes}`,
+    );
+  }
+  if (initialFileTreeMetrics.selectedFileTreeNodeId !== "workspace_root") {
+    failures.push(
+      `expected initial file tree selection workspace_root, got ${initialFileTreeMetrics.selectedFileTreeNodeId}`,
+    );
+  }
+  if (initialFileTreeMetrics.fileTreeDetailsNodeId !== "workspace_root") {
+    failures.push(
+      `expected initial file tree details workspace_root, got ${initialFileTreeMetrics.fileTreeDetailsNodeId}`,
+    );
+  }
+  if (initialFileTreeMetrics.fileTreeDetailsPath !== "workspace root") {
+    failures.push(
+      `expected initial file tree details path workspace root, got ${initialFileTreeMetrics.fileTreeDetailsPath}`,
+    );
+  }
+  if (fileTreeSelectMetrics.selectedFileTreeNodes !== 1) {
+    failures.push(
+      `expected one selected file tree node after click, got ${fileTreeSelectMetrics.selectedFileTreeNodes}`,
+    );
+  }
+  if (fileTreeSelectMetrics.selectedFileTreeNodeId !== "workflow_graph") {
+    failures.push(
+      `expected workflow_graph file tree selection after click, got ${fileTreeSelectMetrics.selectedFileTreeNodeId}`,
+    );
+  }
+  if (fileTreeSelectMetrics.fileTreeDetailsNodeId !== "workflow_graph") {
+    failures.push(
+      `expected workflow_graph file tree details after click, got ${fileTreeSelectMetrics.fileTreeDetailsNodeId}`,
+    );
+  }
+  if (
+    fileTreeSelectMetrics.fileTreeDetailsPath !==
+    "specs/schemas/workflow_graph.md"
+  ) {
+    failures.push(
+      `expected workflow_graph file tree details path specs/schemas/workflow_graph.md, got ${fileTreeSelectMetrics.fileTreeDetailsPath}`,
+    );
+  }
+  if (fileTreeSelectMetrics.fileTreeDetailsStatus !== "Spec") {
+    failures.push(
+      `expected workflow_graph file tree details status Spec, got ${fileTreeSelectMetrics.fileTreeDetailsStatus}`,
+    );
+  }
+  if (fileTreeSelectMetrics.fileTreeDetailsDepth !== "1") {
+    failures.push(
+      `expected workflow_graph file tree details depth 1, got ${fileTreeSelectMetrics.fileTreeDetailsDepth}`,
+    );
   }
   if (metrics.versionSnapshotItems !== 4) {
     failures.push(
@@ -1690,6 +1801,17 @@ async function main() {
     }
   });
   await runSmokeStep("load renderer", () => window.loadURL(targetUrl));
+  const initialFileTreeMetrics = await runSmokeStep(
+    "read initial file tree metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("select workflow graph file tree node", () =>
+    clickFileTreeNode(window, "workflow_graph"),
+  );
+  const fileTreeSelectMetrics = await runSmokeStep(
+    "read selected file tree metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("focus next lifecycle item", () =>
     clickLifecycleCommand(window, "focus_next_timeline_item"),
   );
@@ -1835,6 +1957,8 @@ async function main() {
     metrics,
     messages,
     width,
+    initialFileTreeMetrics,
+    fileTreeSelectMetrics,
     collapsedMetrics,
     chatCollapsedMetrics,
     canvasMetrics,
@@ -1858,6 +1982,8 @@ async function main() {
     JSON.stringify(
       {
         metrics,
+        initialFileTreeMetrics,
+        fileTreeSelectMetrics,
         collapsedMetrics,
         chatCollapsedMetrics,
         canvasMetrics,
