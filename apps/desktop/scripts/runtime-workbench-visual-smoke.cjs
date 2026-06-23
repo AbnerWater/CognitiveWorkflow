@@ -21,7 +21,11 @@ async function readMetrics(window) {
   return window.webContents.executeJavaScript(`
     (() => ({
       hasRoot: document.querySelector('.cw-workbench') !== null,
+      hasDock: document.querySelector('.cw-workbench__dock') !== null,
       hasLifecyclePanel: document.querySelector('.cw-workbench__lifecycle-panel') !== null,
+      hasTaskDrawer: document.querySelector('.cw-workbench__task-drawer') !== null,
+      hasChatBox: document.querySelector('.cw-workbench__chat') !== null,
+      dockItems: document.querySelectorAll('.cw-workbench__dock-item').length,
       timelineItems: document.querySelectorAll('.cw-workbench__lifecycle-item').length,
       commandButtons: document.querySelectorAll('.cw-workbench__lifecycle-command').length,
       selectedText: document.querySelector('.cw-workbench__lifecycle-selected-item strong')?.textContent ?? null,
@@ -53,7 +57,7 @@ async function clickLifecycleCommand(window, command) {
   `);
 }
 
-function collectVisualSmokeFailures(metrics, messages) {
+function collectVisualSmokeFailures(metrics, messages, requestedWidth) {
   const failures = [];
 
   if (messages.length > 0) {
@@ -64,8 +68,20 @@ function collectVisualSmokeFailures(metrics, messages) {
   if (metrics.hasRoot !== true) {
     failures.push("missing .cw-workbench root");
   }
+  if (metrics.hasDock !== true) {
+    failures.push("missing shell dock");
+  }
   if (metrics.hasLifecyclePanel !== true) {
     failures.push("missing lifecycle panel");
+  }
+  if (metrics.hasTaskDrawer !== true) {
+    failures.push("missing task drawer");
+  }
+  if (metrics.hasChatBox !== true) {
+    failures.push("missing chat box");
+  }
+  if (metrics.dockItems !== 4) {
+    failures.push(`expected 4 dock items, got ${metrics.dockItems}`);
   }
   if (metrics.timelineItems !== 5) {
     failures.push(`expected 5 timeline items, got ${metrics.timelineItems}`);
@@ -100,6 +116,11 @@ function collectVisualSmokeFailures(metrics, messages) {
       `invalid viewport ${metrics.viewport.width}x${metrics.viewport.height}`,
     );
   }
+  if (requestedWidth >= 1000 && metrics.viewport.width < 1000) {
+    failures.push(
+      `expected desktop viewport, got ${metrics.viewport.width}x${metrics.viewport.height}`,
+    );
+  }
 
   return failures;
 }
@@ -110,6 +131,9 @@ async function main() {
   const window = new BrowserWindow({
     width,
     height,
+    minWidth: width,
+    minHeight: height,
+    useContentSize: true,
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -117,6 +141,7 @@ async function main() {
       sandbox: true,
     },
   });
+  window.setContentSize(width, height);
   window.webContents.on("console-message", (details) => {
     if (details.level === "warning" || details.level === "error") {
       messages.push(details.message);
@@ -138,7 +163,7 @@ async function main() {
   if (image.isEmpty()) {
     throw new Error("Electron visual smoke capture returned an empty image");
   }
-  const failures = collectVisualSmokeFailures(metrics, messages);
+  const failures = collectVisualSmokeFailures(metrics, messages, width);
   await fs.writeFile(outputPath, image.toPNG());
   await fs.writeFile(
     `${outputPath}.json`,

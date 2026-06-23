@@ -5072,6 +5072,66 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(Object.hasOwn(snapshot, "interaction"), false);
   assert.equal(Object.hasOwn(snapshot, "shortcuts"), false);
   assert.equal(Object.hasOwn(snapshot, "delegatedCommandIds"), false);
+  assert.deepEqual(
+    snapshot.chrome.dockItems.map((item) => ({
+      id: item.id,
+      active: item.active,
+      enabled: item.enabled,
+      status: item.status,
+      targetPanel: item.targetPanel,
+    })),
+    [
+      {
+        id: "workflow_canvas",
+        active: false,
+        enabled: false,
+        status: "empty",
+        targetPanel: null,
+      },
+      {
+        id: "lifecycle_panel",
+        active: false,
+        enabled: true,
+        status: "active",
+        targetPanel: "lifecycle",
+      },
+      {
+        id: "runtime_stream",
+        active: true,
+        enabled: true,
+        status: "active",
+        targetPanel: "stream",
+      },
+      {
+        id: "task_drawer",
+        active: false,
+        enabled: false,
+        status: "active",
+        targetPanel: null,
+      },
+    ],
+  );
+  assert.equal(snapshot.chrome.taskDrawer.title, "Task Drawer");
+  assert.equal(snapshot.chrome.taskDrawer.summary, "Stream focus");
+  assert.deepEqual(
+    snapshot.chrome.taskDrawer.items.map((item) => [
+      item.id,
+      item.value,
+      item.tone,
+    ]),
+    [
+      ["active_panel", "Stream", "neutral"],
+      ["lifecycle_panel", "Active", "success"],
+      ["runtime_stream", "Run run_shell", "success"],
+      ["visible_items", "1", "neutral"],
+      ["unread_events", "1", "accent"],
+    ],
+  );
+  assert.equal(snapshot.chrome.chatBox.title, "Chat Box");
+  assert.equal(snapshot.chrome.chatBox.enabled, false);
+  assert.equal(Object.hasOwn(snapshot.chrome, "host"), false);
+  assert.equal(Object.hasOwn(snapshot.chrome, "workbench"), false);
+  assert.equal(Object.hasOwn(snapshot.chrome, "interaction"), false);
   assert.equal(Object.hasOwn(snapshot, "lifecyclePanel"), true);
   assert.equal(snapshot.lifecyclePanel, null);
   assert.equal(
@@ -5144,6 +5204,13 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(Object.isFrozen(snapshot.shortcutHints[0]), true);
   assert.equal(Object.isFrozen(snapshot.shortcutHints[0]?.keys), true);
   assert.equal(Object.isFrozen(snapshot.statusItems), true);
+  assert.equal(Object.isFrozen(snapshot.chrome), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.dockItems), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.dockItems[0]), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer.items), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer.items[0]), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.chatBox), true);
   assert.equal(Object.isFrozen(snapshot.runtimeStreamPanel), true);
   assert.equal(Object.isFrozen(snapshot.runtimeStreamPanel?.read), true);
   assert.equal(Object.isFrozen(snapshot.runtimeStreamPanel?.search), true);
@@ -5313,6 +5380,9 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   );
   assert.equal(disposedSnapshot.shortcutHints[0]?.enabled, false);
   assert.equal(disposedSnapshot.ariaLive, "assertive");
+  assert.equal(disposedSnapshot.chrome.chatBox.statusLabel, "Disposed");
+  assert.equal(disposedSnapshot.chrome.dockItems[1]?.enabled, false);
+  assert.equal(disposedSnapshot.chrome.dockItems[1]?.status, "disposed");
 });
 
 test("renderer runtime workbench shell presenter composes host actions", async () => {

@@ -54,8 +54,11 @@ test("renderer runtime workbench React shell renders server snapshot without DOM
   );
 
   assert.match(markup, /Test Runtime Workbench/u);
+  assert.match(markup, /Canvas/u);
   assert.match(markup, /Lifecycle/u);
   assert.match(markup, /Stream/u);
+  assert.match(markup, /Task Drawer/u);
+  assert.match(markup, /Chat Box/u);
   assert.equal(session.serverSnapshotCount(), 1);
   assert.equal(session.listenerCount(), 0);
   assert.equal(session.bindKeyboardTargetCount(), 0);
@@ -103,6 +106,8 @@ test("renderer runtime workbench React shell renders active stream panel events"
   assert.match(markup, /Full reload required/u);
   assert.match(markup, /Replay point expired/u);
   assert.match(markup, /Selection/u);
+  assert.match(markup, /Task Drawer[\s\S]*Run run_react_stream/u);
+  assert.match(markup, /Unread[\s\S]*1/u);
   assert.match(markup, /model.text_delta/u);
   assert.match(markup, /Search events/u);
   assert.match(markup, /Previous/u);

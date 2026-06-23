@@ -91,6 +91,57 @@ export interface RuntimeWorkbenchShellStatusItem {
   readonly tone: RuntimeWorkbenchShellTone;
 }
 
+export type RuntimeWorkbenchShellDockItemId =
+  | "workflow_canvas"
+  | "lifecycle_panel"
+  | "runtime_stream"
+  | "task_drawer";
+
+export interface RuntimeWorkbenchShellDockItem {
+  readonly id: RuntimeWorkbenchShellDockItemId;
+  readonly label: string;
+  readonly title: string;
+  readonly active: boolean;
+  readonly enabled: boolean;
+  readonly status: RuntimeWorkbenchShellPanelStatus;
+  readonly badgeLabel: string | null;
+  readonly tone: RuntimeWorkbenchShellTone;
+  readonly targetPanel: RuntimeWorkbenchPanelId | null;
+}
+
+export type RuntimeWorkbenchShellTaskDrawerItemId =
+  | "active_panel"
+  | "lifecycle_panel"
+  | "runtime_stream"
+  | "visible_items"
+  | "unread_events";
+
+export interface RuntimeWorkbenchShellTaskDrawerItem {
+  readonly id: RuntimeWorkbenchShellTaskDrawerItemId;
+  readonly label: string;
+  readonly value: string;
+  readonly tone: RuntimeWorkbenchShellTone;
+}
+
+export interface RuntimeWorkbenchShellTaskDrawerSnapshot {
+  readonly title: string;
+  readonly summary: string;
+  readonly items: readonly RuntimeWorkbenchShellTaskDrawerItem[];
+}
+
+export interface RuntimeWorkbenchShellChatBoxSnapshot {
+  readonly title: string;
+  readonly placeholder: string;
+  readonly enabled: boolean;
+  readonly statusLabel: string;
+}
+
+export interface RuntimeWorkbenchShellChromeSnapshot {
+  readonly dockItems: readonly RuntimeWorkbenchShellDockItem[];
+  readonly taskDrawer: RuntimeWorkbenchShellTaskDrawerSnapshot;
+  readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
+}
+
 export interface RuntimeWorkbenchShellEmptyState {
   readonly title: string;
   readonly summary: string;
@@ -121,6 +172,7 @@ export interface RuntimeWorkbenchShellSnapshot {
   readonly actions: readonly RuntimeWorkbenchShellAction[];
   readonly shortcutHints: readonly RuntimeWorkbenchShellShortcutHint[];
   readonly statusItems: readonly RuntimeWorkbenchShellStatusItem[];
+  readonly chrome: RuntimeWorkbenchShellChromeSnapshot;
   readonly availableActionIds: readonly RuntimeWorkbenchShellActionId[];
   readonly enabledActionIds: readonly RuntimeWorkbenchShellActionId[];
   readonly disposed: boolean;
@@ -385,6 +437,13 @@ export function buildRuntimeWorkbenchShellSnapshot(
       lastHandledShortcutLabel,
       disposed,
     ),
+    chrome: buildShellChrome(
+      host,
+      lifecyclePanelStatus,
+      runtimeStreamStatus,
+      runtimeStreamChannelLabel,
+      disposed,
+    ),
     availableActionIds: Object.freeze(availableActionIds),
     enabledActionIds: Object.freeze(enabledActionIds),
     disposed,
@@ -427,6 +486,101 @@ function buildPanelTabs(
       status: runtimeStreamStatus,
     }),
   ];
+}
+
+function buildShellChrome(
+  host: RuntimeWorkbenchHostSessionSnapshot,
+  lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus,
+  runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus,
+  runtimeStreamChannelLabel: string | null,
+  disposed: boolean,
+): RuntimeWorkbenchShellChromeSnapshot {
+  const activePanelLabel = panelLabel(host.activePanel);
+  const visibleItems = visibleTaskItemCount(host);
+  const unreadEvents = host.runtimeStreamPanel?.read.unreadCount ?? 0;
+  return freezeRuntimeWorkbenchShellChrome({
+    dockItems: [
+      dockItem({
+        id: "workflow_canvas",
+        label: "Canvas",
+        title: "Workflow canvas.",
+        active: false,
+        enabled: false,
+        status: "empty",
+        targetPanel: null,
+      }),
+      dockItem({
+        id: "lifecycle_panel",
+        label: "Lifecycle",
+        title: "Runtime lifecycle panel.",
+        active: host.activePanel === "lifecycle",
+        enabled: !disposed,
+        status: lifecyclePanelStatus,
+        targetPanel: "lifecycle",
+      }),
+      dockItem({
+        id: "runtime_stream",
+        label: "Stream",
+        title: "Runtime stream panel.",
+        active: host.activePanel === "stream",
+        enabled: !disposed,
+        status: runtimeStreamStatus,
+        targetPanel: "stream",
+      }),
+      dockItem({
+        id: "task_drawer",
+        label: "Tasks",
+        title: "Task drawer.",
+        active: false,
+        enabled: false,
+        status: disposed ? "disposed" : "active",
+        targetPanel: null,
+      }),
+    ],
+    taskDrawer: {
+      title: "Task Drawer",
+      summary: `${activePanelLabel} focus`,
+      items: [
+        taskDrawerItem({
+          id: "active_panel",
+          label: "Active panel",
+          value: activePanelLabel,
+          tone: disposed ? "danger" : "neutral",
+        }),
+        taskDrawerItem({
+          id: "lifecycle_panel",
+          label: "Lifecycle",
+          value: panelStatusLabel(lifecyclePanelStatus),
+          tone: panelStatusTone(lifecyclePanelStatus),
+        }),
+        taskDrawerItem({
+          id: "runtime_stream",
+          label: "Stream",
+          value:
+            runtimeStreamChannelLabel ?? panelStatusLabel(runtimeStreamStatus),
+          tone: panelStatusTone(runtimeStreamStatus),
+        }),
+        taskDrawerItem({
+          id: "visible_items",
+          label: "Visible",
+          value: String(visibleItems),
+          tone: "neutral",
+        }),
+        taskDrawerItem({
+          id: "unread_events",
+          label: "Unread",
+          value: String(unreadEvents),
+          tone: unreadEvents > 0 ? "accent" : "neutral",
+        }),
+      ],
+    },
+    chatBox: {
+      title: "Chat Box",
+      placeholder: "Ask about the active workflow",
+      enabled: false,
+      statusLabel: disposed ? "Disposed" : "Idle",
+    },
+  });
 }
 
 function buildShellActions(
@@ -496,6 +650,18 @@ function buildStatusItems(
   ];
 }
 
+function visibleTaskItemCount(
+  host: RuntimeWorkbenchHostSessionSnapshot,
+): number {
+  if (host.activePanel === "stream") {
+    return host.runtimeStreamPanel?.visibleEventCount ?? 0;
+  }
+  return (
+    host.lifecyclePanel.activeSession?.interaction.view
+      .visibleTimelineItemCount ?? 0
+  );
+}
+
 function panelTab(options: {
   readonly id: RuntimeWorkbenchPanelId;
   readonly label: string;
@@ -509,6 +675,28 @@ function panelTab(options: {
     badgeLabel: panelBadgeLabel(options.status),
     tone: panelStatusTone(options.status),
   });
+}
+
+function dockItem(options: {
+  readonly id: RuntimeWorkbenchShellDockItemId;
+  readonly label: string;
+  readonly title: string;
+  readonly active: boolean;
+  readonly enabled: boolean;
+  readonly status: RuntimeWorkbenchShellPanelStatus;
+  readonly targetPanel: RuntimeWorkbenchPanelId | null;
+}): RuntimeWorkbenchShellDockItem {
+  return Object.freeze({
+    ...options,
+    badgeLabel: panelBadgeLabel(options.status),
+    tone: panelStatusTone(options.status),
+  });
+}
+
+function taskDrawerItem(
+  item: RuntimeWorkbenchShellTaskDrawerItem,
+): RuntimeWorkbenchShellTaskDrawerItem {
+  return Object.freeze({ ...item });
 }
 
 function shellAction(options: {
@@ -804,6 +992,7 @@ function freezeRuntimeWorkbenchShellSnapshot(
     statusItems: Object.freeze(
       snapshot.statusItems.map((item) => Object.freeze({ ...item })),
     ),
+    chrome: freezeRuntimeWorkbenchShellChrome(snapshot.chrome),
     runtimeStreamPanel:
       snapshot.runtimeStreamPanel === null
         ? null
@@ -820,6 +1009,34 @@ function freezeRuntimeWorkbenchShellSnapshot(
       snapshot.emptyState === null
         ? null
         : Object.freeze({ ...snapshot.emptyState }),
+  });
+}
+
+function freezeRuntimeWorkbenchShellChrome(
+  chrome: RuntimeWorkbenchShellChromeSnapshot,
+): RuntimeWorkbenchShellChromeSnapshot {
+  return Object.freeze({
+    dockItems: Object.freeze(
+      chrome.dockItems.map((item) =>
+        dockItem({
+          id: item.id,
+          label: item.label,
+          title: item.title,
+          active: item.active,
+          enabled: item.enabled,
+          status: item.status,
+          targetPanel: item.targetPanel,
+        }),
+      ),
+    ),
+    taskDrawer: Object.freeze({
+      title: chrome.taskDrawer.title,
+      summary: chrome.taskDrawer.summary,
+      items: Object.freeze(
+        chrome.taskDrawer.items.map((item) => taskDrawerItem(item)),
+      ),
+    }),
+    chatBox: Object.freeze({ ...chrome.chatBox }),
   });
 }
 

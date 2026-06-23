@@ -7,7 +7,10 @@ import type { RuntimeWorkbenchShortcutKeyEvent } from "./runtime-workbench-short
 import type { RuntimeWorkbenchPanelId } from "./runtime-workbench-session.js";
 import type { RuntimeWorkbenchShellDomSession } from "./runtime-workbench-shell-dom-session.js";
 import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-workbench-shell-keyboard-dom-adapter.js";
-import type { RuntimeWorkbenchShellSnapshot } from "./runtime-workbench-shell-presenter.js";
+import type {
+  RuntimeWorkbenchShellChromeSnapshot,
+  RuntimeWorkbenchShellSnapshot,
+} from "./runtime-workbench-shell-presenter.js";
 import { RuntimeWorkbenchShellReactView } from "./runtime-workbench-shell-react.js";
 import "./runtime-workbench-shell.css";
 
@@ -410,6 +413,7 @@ function buildVisualSmokeSnapshot(
         tone: "neutral",
       }),
     ]),
+    chrome: buildVisualSmokeChromeSnapshot(state, disposed),
     availableActionIds: Object.freeze([
       "show_lifecycle_panel",
       "show_stream_panel",
@@ -422,6 +426,103 @@ function buildVisualSmokeSnapshot(
     disposed,
     ariaLive: disposed ? "assertive" : "polite",
     emptyState: null,
+  });
+}
+
+function buildVisualSmokeChromeSnapshot(
+  state: VisualSmokeState,
+  disposed: boolean,
+): RuntimeWorkbenchShellChromeSnapshot {
+  return Object.freeze({
+    dockItems: Object.freeze([
+      Object.freeze({
+        id: "workflow_canvas",
+        label: "Canvas",
+        title: "Workflow canvas.",
+        active: false,
+        enabled: false,
+        status: "empty",
+        badgeLabel: null,
+        tone: "neutral",
+        targetPanel: null,
+      }),
+      Object.freeze({
+        id: "lifecycle_panel",
+        label: "Lifecycle",
+        title: "Runtime lifecycle panel.",
+        active: state.activePanel === "lifecycle",
+        enabled: !disposed,
+        status: disposed ? "disposed" : "active",
+        badgeLabel: disposed ? "Disposed" : "Active",
+        tone: disposed ? "danger" : "success",
+        targetPanel: "lifecycle",
+      }),
+      Object.freeze({
+        id: "runtime_stream",
+        label: "Stream",
+        title: "Runtime stream panel.",
+        active: state.activePanel === "stream",
+        enabled: !disposed,
+        status: disposed ? "disposed" : "empty",
+        badgeLabel: disposed ? "Disposed" : null,
+        tone: disposed ? "danger" : "neutral",
+        targetPanel: "stream",
+      }),
+      Object.freeze({
+        id: "task_drawer",
+        label: "Tasks",
+        title: "Task drawer.",
+        active: false,
+        enabled: false,
+        status: disposed ? "disposed" : "active",
+        badgeLabel: disposed ? "Disposed" : "Active",
+        tone: disposed ? "danger" : "success",
+        targetPanel: null,
+      }),
+    ]),
+    taskDrawer: Object.freeze({
+      title: "Task Drawer",
+      summary:
+        state.activePanel === "lifecycle" ? "Lifecycle focus" : "Stream focus",
+      items: Object.freeze([
+        Object.freeze({
+          id: "active_panel",
+          label: "Active panel",
+          value: state.activePanel === "lifecycle" ? "Lifecycle" : "Stream",
+          tone: disposed ? "danger" : "neutral",
+        }),
+        Object.freeze({
+          id: "lifecycle_panel",
+          label: "Lifecycle",
+          value: disposed ? "Disposed" : "Active",
+          tone: disposed ? "danger" : "success",
+        }),
+        Object.freeze({
+          id: "runtime_stream",
+          label: "Stream",
+          value: disposed ? "Disposed" : "Idle",
+          tone: disposed ? "danger" : "neutral",
+        }),
+        Object.freeze({
+          id: "visible_items",
+          label: "Visible",
+          value: String(VISUAL_SMOKE_TIMELINE_ITEMS.length),
+          tone: "neutral",
+        }),
+        Object.freeze({
+          id: "unread_events",
+          label: "Unread",
+          value: "0",
+          tone: "neutral",
+        }),
+      ]),
+    }),
+    chatBox: Object.freeze({
+      title: "Chat Box",
+      placeholder: "Ask about the active workflow",
+      enabled: false,
+      statusLabel: disposed ? "Disposed" : "Idle",
+    }),
   });
 }
 

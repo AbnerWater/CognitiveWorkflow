@@ -30,10 +30,13 @@ import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-work
 import type {
   RuntimeWorkbenchShellAction,
   RuntimeWorkbenchShellActionId,
+  RuntimeWorkbenchShellChatBoxSnapshot,
+  RuntimeWorkbenchShellDockItem,
   RuntimeWorkbenchShellLifecyclePanelSnapshot,
   RuntimeWorkbenchShellRuntimeStreamEventSnapshot,
   RuntimeWorkbenchShellRuntimeStreamPanelSnapshot,
   RuntimeWorkbenchShellSnapshot,
+  RuntimeWorkbenchShellTaskDrawerSnapshot,
 } from "./runtime-workbench-shell-presenter.js";
 import type {
   RuntimeWorkbenchShellDomSession,
@@ -524,109 +527,130 @@ export function RuntimeWorkbenchShellReactView(
         </dl>
       </header>
 
-      <nav aria-label="Runtime workbench panels" className="cw-workbench__tabs">
-        {snapshot.panels.map((panel) => (
-          <button
-            aria-current={panel.active ? "page" : undefined}
-            className={`cw-workbench__tab cw-workbench__tab--${panel.tone}`}
-            data-panel={panel.id satisfies RuntimeWorkbenchPanelId}
-            disabled={!panel.enabled}
-            key={panel.id}
-            onClick={handlePanelClick}
-            title={panel.title}
-            type="button"
+      <div className="cw-workbench__shell">
+        <RuntimeWorkbenchShellDock
+          items={snapshot.chrome.dockItems}
+          onPanelClick={handlePanelClick}
+        />
+
+        <div className="cw-workbench__workspace">
+          <nav
+            aria-label="Runtime workbench panels"
+            className="cw-workbench__tabs"
           >
-            <span>{panel.label}</span>
-            {panel.badgeLabel === null ? null : (
-              <small>{panel.badgeLabel}</small>
+            {snapshot.panels.map((panel) => (
+              <button
+                aria-current={panel.active ? "page" : undefined}
+                className={`cw-workbench__tab cw-workbench__tab--${panel.tone}`}
+                data-panel={panel.id satisfies RuntimeWorkbenchPanelId}
+                disabled={!panel.enabled}
+                key={panel.id}
+                onClick={handlePanelClick}
+                title={panel.title}
+                type="button"
+              >
+                <span>{panel.label}</span>
+                {panel.badgeLabel === null ? null : (
+                  <small>{panel.badgeLabel}</small>
+                )}
+              </button>
+            ))}
+          </nav>
+
+          <section
+            aria-live={snapshot.ariaLive}
+            className="cw-workbench__content"
+          >
+            {snapshot.emptyState === null ? (
+              snapshot.activePanel === "stream" ? (
+                <RuntimeWorkbenchShellStreamPanel
+                  onAcknowledgeFullReloadClick={
+                    handleStreamPanelAcknowledgeFullReloadClick
+                  }
+                  onClearSearchClick={handleStreamPanelClearSearchClick}
+                  onClearSelectionClick={handleStreamPanelClearSelectionClick}
+                  onMarkReadClick={handleStreamPanelMarkReadClick}
+                  onNextSearchClick={handleStreamPanelNextSearchClick}
+                  onPreviousSearchClick={handleStreamPanelPreviousSearchClick}
+                  onSearchChange={handleStreamPanelSearchChange}
+                  onSelectEventClick={handleStreamPanelSelectEventClick}
+                  onSelectSearchClick={handleStreamPanelSelectSearchClick}
+                  onToggleExpandedClick={handleStreamPanelToggleExpandedClick}
+                  snapshot={snapshot}
+                />
+              ) : snapshot.lifecyclePanel === null ? (
+                <RuntimeWorkbenchShellPanelSummary snapshot={snapshot} />
+              ) : (
+                <RuntimeWorkbenchShellLifecyclePanel
+                  onCommandClick={handleLifecyclePanelCommandClick}
+                  onNavigationClick={handleLifecyclePanelNavigationClick}
+                  panel={snapshot.lifecyclePanel}
+                />
+              )
+            ) : (
+              <div className="cw-workbench__empty">
+                <h2>{snapshot.emptyState.title}</h2>
+                <p>{snapshot.emptyState.summary}</p>
+              </div>
             )}
-          </button>
-        ))}
-      </nav>
+          </section>
 
-      <section aria-live={snapshot.ariaLive} className="cw-workbench__content">
-        {snapshot.emptyState === null ? (
-          snapshot.activePanel === "stream" ? (
-            <RuntimeWorkbenchShellStreamPanel
-              onAcknowledgeFullReloadClick={
-                handleStreamPanelAcknowledgeFullReloadClick
-              }
-              onClearSearchClick={handleStreamPanelClearSearchClick}
-              onClearSelectionClick={handleStreamPanelClearSelectionClick}
-              onMarkReadClick={handleStreamPanelMarkReadClick}
-              onNextSearchClick={handleStreamPanelNextSearchClick}
-              onPreviousSearchClick={handleStreamPanelPreviousSearchClick}
-              onSearchChange={handleStreamPanelSearchChange}
-              onSelectEventClick={handleStreamPanelSelectEventClick}
-              onSelectSearchClick={handleStreamPanelSelectSearchClick}
-              onToggleExpandedClick={handleStreamPanelToggleExpandedClick}
-              snapshot={snapshot}
-            />
-          ) : snapshot.lifecyclePanel === null ? (
-            <RuntimeWorkbenchShellPanelSummary snapshot={snapshot} />
-          ) : (
-            <RuntimeWorkbenchShellLifecyclePanel
-              onCommandClick={handleLifecyclePanelCommandClick}
-              onNavigationClick={handleLifecyclePanelNavigationClick}
-              panel={snapshot.lifecyclePanel}
-            />
-          )
-        ) : (
-          <div className="cw-workbench__empty">
-            <h2>{snapshot.emptyState.title}</h2>
-            <p>{snapshot.emptyState.summary}</p>
-          </div>
-        )}
-      </section>
+          <RuntimeWorkbenchShellStreamOptionsForm
+            onCategoryChange={handleStreamCategoryChange}
+            onChannelKindClick={handleStreamChannelKindClick}
+            onDisplayLevelClick={handleStreamDisplayLevelClick}
+            onTextInputChange={handleStreamTextInputChange}
+            optionsReady={runtimeStreamSessionOptions !== null}
+            state={streamOptionsForm}
+          />
 
-      <RuntimeWorkbenchShellStreamOptionsForm
-        onCategoryChange={handleStreamCategoryChange}
-        onChannelKindClick={handleStreamChannelKindClick}
-        onDisplayLevelClick={handleStreamDisplayLevelClick}
-        onTextInputChange={handleStreamTextInputChange}
-        optionsReady={runtimeStreamSessionOptions !== null}
-        state={streamOptionsForm}
-      />
-
-      <section
-        aria-label="Runtime workbench actions"
-        className="cw-workbench__actions"
-      >
-        {snapshot.actions.map((action) => (
-          <button
-            className={`cw-workbench__action cw-workbench__action--${action.slot} cw-workbench__action--${action.tone}`}
-            data-action-id={
-              action.id satisfies RuntimeWorkbenchInteractionCommandId
-            }
-            disabled={
-              !isRuntimeWorkbenchShellReactActionEnabled(action, actionOptions)
-            }
-            key={action.id}
-            onClick={handleActionClick}
-            title={action.title}
-            type="button"
+          <section
+            aria-label="Runtime workbench actions"
+            className="cw-workbench__actions"
           >
-            {action.label}
-          </button>
-        ))}
-      </section>
+            {snapshot.actions.map((action) => (
+              <button
+                className={`cw-workbench__action cw-workbench__action--${action.slot} cw-workbench__action--${action.tone}`}
+                data-action-id={
+                  action.id satisfies RuntimeWorkbenchInteractionCommandId
+                }
+                disabled={
+                  !isRuntimeWorkbenchShellReactActionEnabled(
+                    action,
+                    actionOptions,
+                  )
+                }
+                key={action.id}
+                onClick={handleActionClick}
+                title={action.title}
+                type="button"
+              >
+                {action.label}
+              </button>
+            ))}
+          </section>
 
-      <footer className="cw-workbench__shortcuts">
-        {snapshot.shortcutHints.map((shortcut) => (
-          <span
-            className={
-              shortcut.enabled
-                ? "cw-workbench__shortcut"
-                : "cw-workbench__shortcut cw-workbench__shortcut--disabled"
-            }
-            key={shortcut.id}
-            title={shortcut.title}
-          >
-            <span>{shortcut.label}</span>
-            <kbd>{shortcut.keys.join("+")}</kbd>
-          </span>
-        ))}
-      </footer>
+          <footer className="cw-workbench__shortcuts">
+            {snapshot.shortcutHints.map((shortcut) => (
+              <span
+                className={
+                  shortcut.enabled
+                    ? "cw-workbench__shortcut"
+                    : "cw-workbench__shortcut cw-workbench__shortcut--disabled"
+                }
+                key={shortcut.id}
+                title={shortcut.title}
+              >
+                <span>{shortcut.label}</span>
+                <kbd>{shortcut.keys.join("+")}</kbd>
+              </span>
+            ))}
+          </footer>
+        </div>
+
+        <RuntimeWorkbenchShellTaskDrawer drawer={snapshot.chrome.taskDrawer} />
+        <RuntimeWorkbenchShellChatBox chatBox={snapshot.chrome.chatBox} />
+      </div>
     </main>
   );
 }
@@ -647,6 +671,78 @@ function runtimeWorkbenchShellLifecycleCommandIdToInteractionCommand(
     case "none":
       return null;
   }
+}
+
+function RuntimeWorkbenchShellDock(props: {
+  readonly items: readonly RuntimeWorkbenchShellDockItem[];
+  readonly onPanelClick: (event: MouseEvent<HTMLButtonElement>) => void;
+}): ReactElement {
+  return (
+    <aside aria-label="Runtime workspace dock" className="cw-workbench__dock">
+      {props.items.map((item) => (
+        <button
+          aria-current={item.active ? "page" : undefined}
+          className={`cw-workbench__dock-item cw-workbench__dock-item--${item.tone}`}
+          data-panel={item.targetPanel ?? undefined}
+          disabled={!item.enabled || item.targetPanel === null}
+          key={item.id}
+          onClick={props.onPanelClick}
+          title={item.title}
+          type="button"
+        >
+          <span>{item.label}</span>
+          {item.badgeLabel === null ? null : <small>{item.badgeLabel}</small>}
+        </button>
+      ))}
+    </aside>
+  );
+}
+
+function RuntimeWorkbenchShellTaskDrawer(props: {
+  readonly drawer: RuntimeWorkbenchShellTaskDrawerSnapshot;
+}): ReactElement {
+  return (
+    <aside className="cw-workbench__task-drawer">
+      <div className="cw-workbench__task-drawer-header">
+        <h2>{props.drawer.title}</h2>
+        <p>{props.drawer.summary}</p>
+      </div>
+      <dl className="cw-workbench__task-drawer-items">
+        {props.drawer.items.map((item) => (
+          <div
+            className={`cw-workbench__task-drawer-item cw-workbench__task-drawer-item--${item.tone}`}
+            key={item.id}
+          >
+            <dt>{item.label}</dt>
+            <dd>{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </aside>
+  );
+}
+
+function RuntimeWorkbenchShellChatBox(props: {
+  readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
+}): ReactElement {
+  return (
+    <section aria-label={props.chatBox.title} className="cw-workbench__chat">
+      <div className="cw-workbench__chat-header">
+        <h2>{props.chatBox.title}</h2>
+        <span>{props.chatBox.statusLabel}</span>
+      </div>
+      <div className="cw-workbench__chat-compose">
+        <textarea
+          disabled={!props.chatBox.enabled}
+          placeholder={props.chatBox.placeholder}
+          rows={2}
+        />
+        <button disabled={!props.chatBox.enabled} type="button">
+          Send
+        </button>
+      </div>
+    </section>
+  );
 }
 
 function RuntimeWorkbenchShellStreamOptionsForm(props: {

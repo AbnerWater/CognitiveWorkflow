@@ -4,6 +4,7 @@ import type { RuntimeWorkbenchInteractionCommand } from "./runtime-workbench-int
 import type { RuntimeWorkbenchShortcutKeyEvent } from "./runtime-workbench-shortcuts.js";
 import type {
   RuntimeWorkbenchShellAction,
+  RuntimeWorkbenchShellChromeSnapshot,
   RuntimeWorkbenchShellEmptyState,
   RuntimeWorkbenchShellPanelTab,
   RuntimeWorkbenchShellPresenter,
@@ -232,6 +233,7 @@ function freezeRuntimeWorkbenchShellAdapterSnapshot(
       snapshot.shortcutHints.map(freezeShortcutHint),
     ),
     statusItems: Object.freeze(snapshot.statusItems.map(freezeStatusItem)),
+    chrome: freezeChrome(snapshot.chrome),
     availableActionIds: Object.freeze([...snapshot.availableActionIds]),
     enabledActionIds: Object.freeze([...snapshot.enabledActionIds]),
     emptyState:
@@ -269,6 +271,28 @@ function freezeStatusItem(
   item: RuntimeWorkbenchShellStatusItem,
 ): RuntimeWorkbenchShellStatusItem {
   return Object.freeze({ ...item });
+}
+
+function freezeChrome(
+  chrome: RuntimeWorkbenchShellChromeSnapshot,
+): RuntimeWorkbenchShellChromeSnapshot {
+  return Object.freeze({
+    dockItems: Object.freeze(
+      chrome.dockItems.map((item) =>
+        Object.freeze({
+          ...item,
+        }),
+      ),
+    ),
+    taskDrawer: Object.freeze({
+      title: chrome.taskDrawer.title,
+      summary: chrome.taskDrawer.summary,
+      items: Object.freeze(
+        chrome.taskDrawer.items.map((item) => Object.freeze({ ...item })),
+      ),
+    }),
+    chatBox: Object.freeze({ ...chrome.chatBox }),
+  });
 }
 
 function freezeEmptyState(

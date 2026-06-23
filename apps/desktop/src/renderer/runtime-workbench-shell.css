@@ -23,9 +23,198 @@ button {
 .cw-workbench {
   min-height: 100vh;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   padding: 20px;
+}
+
+.cw-workbench__shell {
+  display: grid;
+  grid-template-columns: 156px minmax(0, 1fr) minmax(240px, 300px);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "dock workspace drawer"
+    "dock chat drawer";
+  gap: 12px;
+  min-width: 0;
+}
+
+.cw-workbench__workspace {
+  grid-area: workspace;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cw-workbench__dock {
+  grid-area: dock;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__dock-item {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  min-height: 48px;
+  padding: 8px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2c3a;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cw-workbench__dock-item[aria-current="page"] {
+  border-color: #3d6fa7;
+  background: #eaf2fb;
+}
+
+.cw-workbench__dock-item small {
+  color: #526173;
+  font-size: 11px;
+}
+
+.cw-workbench__dock-item--danger {
+  border-color: #c56b6b;
+}
+
+.cw-workbench__dock-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.cw-workbench__task-drawer {
+  grid-area: drawer;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__task-drawer-header {
+  display: grid;
+  gap: 4px;
+}
+
+.cw-workbench__task-drawer-header h2,
+.cw-workbench__chat-header h2 {
+  font-size: 16px;
+}
+
+.cw-workbench__task-drawer-header p {
+  color: #657487;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.cw-workbench__task-drawer-items {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.cw-workbench__task-drawer-item {
+  padding: 8px;
+  border: 1px solid #d7dde5;
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.cw-workbench__task-drawer-item--success {
+  border-left-color: #77b28c;
+}
+
+.cw-workbench__task-drawer-item--accent {
+  border-left-color: #4f8cc9;
+}
+
+.cw-workbench__task-drawer-item--danger {
+  border-left-color: #c56b6b;
+}
+
+.cw-workbench__task-drawer-item dt {
+  color: #657487;
+  font-size: 11px;
+}
+
+.cw-workbench__task-drawer-item dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cw-workbench__chat {
+  grid-area: chat;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__chat-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.cw-workbench__chat-header span {
+  color: #657487;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__chat-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.cw-workbench__chat-compose textarea {
+  width: 100%;
+  min-height: 52px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  color: #17202a;
+  font: inherit;
+  font-size: 14px;
+}
+
+.cw-workbench__chat-compose button {
+  min-width: 72px;
+  min-height: 36px;
+  align-self: end;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2c3a;
+  font-weight: 700;
+}
+
+.cw-workbench__chat-compose textarea:disabled,
+.cw-workbench__chat-compose button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
 }
 
 .cw-workbench__header {
@@ -915,12 +1104,36 @@ button {
   opacity: 0.52;
 }
 
+@media (max-width: 1120px) {
+  .cw-workbench__shell {
+    grid-template-columns: 132px minmax(0, 1fr);
+    grid-template-areas:
+      "dock workspace"
+      "drawer workspace"
+      "chat chat";
+  }
+}
+
 @media (max-width: 860px) {
   .cw-workbench {
     padding: 14px;
   }
 
+  .cw-workbench__shell {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "dock"
+      "workspace"
+      "drawer"
+      "chat";
+  }
+
+  .cw-workbench__dock {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .cw-workbench__header,
+  .cw-workbench__chat-compose,
   .cw-workbench__stream-options,
   .cw-workbench__stream-controls,
   .cw-workbench__stream-panel-header,
@@ -940,6 +1153,7 @@ button {
 }
 
 @media (max-width: 520px) {
+  .cw-workbench__dock,
   .cw-workbench__status-grid,
   .cw-workbench__stream-metrics,
   .cw-workbench__lifecycle-metrics,
