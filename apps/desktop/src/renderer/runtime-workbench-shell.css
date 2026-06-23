@@ -1313,6 +1313,76 @@ button {
   opacity: 0.56;
 }
 
+.cw-workbench__chat-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-left: 4px solid #8aa6bd;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.cw-workbench__chat-preview--blocked {
+  border-left-color: #b98572;
+}
+
+.cw-workbench__chat-preview--ready {
+  border-left-color: #77b28c;
+}
+
+.cw-workbench__chat-preview-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cw-workbench__chat-preview-header h3 {
+  font-size: 13px;
+}
+
+.cw-workbench__chat-preview-header span {
+  color: #526173;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cw-workbench__chat-preview-body {
+  min-height: 24px;
+  padding: 8px;
+  border: 1px solid #e1e6ed;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2c3a;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.cw-workbench__chat-preview dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.cw-workbench__chat-preview dt {
+  color: #526173;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cw-workbench__chat-preview dd {
+  min-width: 0;
+  margin: 0;
+  color: #223047;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .cw-workbench__chat-details {
   display: grid;
   gap: 6px;
@@ -2313,6 +2383,7 @@ button {
   .cw-workbench__file-tree-node,
   .cw-workbench__chat-header,
   .cw-workbench__chat-intents,
+  .cw-workbench__chat-preview dl,
   .cw-workbench__chat-details dl,
   .cw-workbench__task-drawer-header,
   .cw-workbench__status-grid,

@@ -2213,6 +2213,15 @@ function RuntimeWorkbenchShellTaskDrawerDetails(props: {
 
 type RuntimeWorkbenchShellChatDraftIntent = "ask" | "revise" | "repair";
 
+type RuntimeWorkbenchShellChatDraftPreviewState = "empty" | "blocked" | "ready";
+
+interface RuntimeWorkbenchShellChatDraftPreview {
+  readonly state: RuntimeWorkbenchShellChatDraftPreviewState;
+  readonly reason: "empty_draft" | "chat_disabled" | "ready";
+  readonly label: string;
+  readonly reasonLabel: string;
+}
+
 const RUNTIME_WORKBENCH_CHAT_DRAFT_INTENTS = Object.freeze([
   "ask",
   "revise",
@@ -2248,6 +2257,34 @@ function runtimeWorkbenchShellChatDraftWordCount(draft: string): number {
   return trimmedDraft.split(/\s+/u).length;
 }
 
+function runtimeWorkbenchShellChatDraftPreview(
+  chatBoxEnabled: boolean,
+  draftWords: number,
+): RuntimeWorkbenchShellChatDraftPreview {
+  if (draftWords === 0) {
+    return {
+      state: "empty",
+      reason: "empty_draft",
+      label: "Empty",
+      reasonLabel: "Draft is empty",
+    };
+  }
+  if (!chatBoxEnabled) {
+    return {
+      state: "blocked",
+      reason: "chat_disabled",
+      label: "Blocked",
+      reasonLabel: "Chat disabled",
+    };
+  }
+  return {
+    state: "ready",
+    reason: "ready",
+    label: "Ready",
+    reasonLabel: "Ready to send",
+  };
+}
+
 function RuntimeWorkbenchShellChatBox(props: {
   readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
 }): ReactElement {
@@ -2261,6 +2298,10 @@ function RuntimeWorkbenchShellChatBox(props: {
   const draftWords = runtimeWorkbenchShellChatDraftWordCount(draft);
   const draftIntentLabel =
     runtimeWorkbenchShellChatDraftIntentLabel(draftIntent);
+  const draftPreview = runtimeWorkbenchShellChatDraftPreview(
+    props.chatBox.enabled,
+    draftWords,
+  );
   const handleToggleClick = useCallback((): void => {
     setExpanded((current) => !current);
   }, []);
@@ -2371,6 +2412,12 @@ function RuntimeWorkbenchShellChatBox(props: {
               Send
             </button>
           </div>
+          <RuntimeWorkbenchShellChatDraftPreview
+            draft={draft}
+            intent={draftIntent}
+            intentLabel={draftIntentLabel}
+            preview={draftPreview}
+          />
           <section
             aria-label="Chat draft details"
             className="cw-workbench__chat-details"
@@ -2410,6 +2457,53 @@ function RuntimeWorkbenchShellChatBox(props: {
           {props.chatBox.collapsedSummary}
         </p>
       )}
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellChatDraftPreview(props: {
+  readonly draft: string;
+  readonly intent: RuntimeWorkbenchShellChatDraftIntent;
+  readonly intentLabel: string;
+  readonly preview: RuntimeWorkbenchShellChatDraftPreview;
+}): ReactElement {
+  const hasDraft = props.draft.trim().length > 0;
+  return (
+    <section
+      aria-label="Chat draft preview"
+      className={[
+        "cw-workbench__chat-preview",
+        `cw-workbench__chat-preview--${props.preview.state}`,
+      ].join(" ")}
+      data-chat-draft-preview="true"
+      data-chat-draft-preview-intent={props.intent}
+      data-chat-draft-preview-intent-label={props.intentLabel}
+      data-chat-draft-preview-ready={
+        props.preview.state === "ready" ? "true" : "false"
+      }
+      data-chat-draft-preview-reason={props.preview.reason}
+      data-chat-draft-preview-state={props.preview.state}
+    >
+      <div className="cw-workbench__chat-preview-header">
+        <h3>Preview</h3>
+        <span>{props.preview.label}</span>
+      </div>
+      <p
+        className="cw-workbench__chat-preview-body"
+        data-chat-draft-preview-body={hasDraft ? "draft" : "empty"}
+      >
+        {hasDraft ? props.draft : "No draft text"}
+      </p>
+      <dl>
+        <div>
+          <dt>Intent</dt>
+          <dd>{props.intentLabel}</dd>
+        </div>
+        <div>
+          <dt>Reason</dt>
+          <dd>{props.preview.reasonLabel}</dd>
+        </div>
+      </dl>
     </section>
   );
 }

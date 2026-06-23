@@ -278,6 +278,20 @@ async function readMetrics(window) {
         document.querySelector('[data-chat-draft-details="true"]')?.getAttribute('data-chat-draft-send-enabled') ?? null,
       chatDraftDetailsText:
         document.querySelector('[data-chat-draft-details="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
+      chatDraftPreviewState:
+        document.querySelector('[data-chat-draft-preview="true"]')?.getAttribute('data-chat-draft-preview-state') ?? null,
+      chatDraftPreviewReason:
+        document.querySelector('[data-chat-draft-preview="true"]')?.getAttribute('data-chat-draft-preview-reason') ?? null,
+      chatDraftPreviewReady:
+        document.querySelector('[data-chat-draft-preview="true"]')?.getAttribute('data-chat-draft-preview-ready') ?? null,
+      chatDraftPreviewIntent:
+        document.querySelector('[data-chat-draft-preview="true"]')?.getAttribute('data-chat-draft-preview-intent') ?? null,
+      chatDraftPreviewIntentLabel:
+        document.querySelector('[data-chat-draft-preview="true"]')?.getAttribute('data-chat-draft-preview-intent-label') ?? null,
+      chatDraftPreviewBody:
+        document.querySelector('[data-chat-draft-preview-body]')?.getAttribute('data-chat-draft-preview-body') ?? null,
+      chatDraftPreviewText:
+        document.querySelector('[data-chat-draft-preview="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       chatDraftClearButtons:
         document.querySelectorAll('[data-chat-draft-clear="true"]').length,
       chatSendDisabled:
@@ -2449,6 +2463,42 @@ function collectVisualSmokeFailures(
       `expected initial chat draft details intent label Ask, got ${chatInitialMetrics.chatDraftIntentLabel}`,
     );
   }
+  if (chatInitialMetrics.chatDraftPreviewState !== "empty") {
+    failures.push(
+      `expected initial chat draft preview state empty, got ${chatInitialMetrics.chatDraftPreviewState}`,
+    );
+  }
+  if (chatInitialMetrics.chatDraftPreviewReason !== "empty_draft") {
+    failures.push(
+      `expected initial chat draft preview reason empty_draft, got ${chatInitialMetrics.chatDraftPreviewReason}`,
+    );
+  }
+  if (chatInitialMetrics.chatDraftPreviewReady !== "false") {
+    failures.push(
+      `expected initial chat draft preview ready false, got ${chatInitialMetrics.chatDraftPreviewReady}`,
+    );
+  }
+  if (chatInitialMetrics.chatDraftPreviewIntent !== "ask") {
+    failures.push(
+      `expected initial chat draft preview intent ask, got ${chatInitialMetrics.chatDraftPreviewIntent}`,
+    );
+  }
+  if (chatInitialMetrics.chatDraftPreviewBody !== "empty") {
+    failures.push(
+      `expected initial chat draft preview body empty, got ${chatInitialMetrics.chatDraftPreviewBody}`,
+    );
+  }
+  if (
+    !chatInitialMetrics.chatDraftPreviewText?.includes("Preview") ||
+    !chatInitialMetrics.chatDraftPreviewText?.includes("Empty") ||
+    !chatInitialMetrics.chatDraftPreviewText?.includes("No draft text") ||
+    !chatInitialMetrics.chatDraftPreviewText?.includes("Ask") ||
+    !chatInitialMetrics.chatDraftPreviewText?.includes("Draft is empty")
+  ) {
+    failures.push(
+      `expected initial chat draft preview text to include empty Ask preview, got ${chatInitialMetrics.chatDraftPreviewText}`,
+    );
+  }
   if (metrics.chatDraftInputs !== 1) {
     failures.push(
       `expected one chat draft input, got ${metrics.chatDraftInputs}`,
@@ -2515,6 +2565,36 @@ function collectVisualSmokeFailures(
       `expected chat draft details intent label Repair, got ${chatDraftMetrics.chatDraftIntentLabel}`,
     );
   }
+  if (chatDraftMetrics.chatDraftPreviewState !== "blocked") {
+    failures.push(
+      `expected chat draft preview state blocked, got ${chatDraftMetrics.chatDraftPreviewState}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftPreviewReason !== "chat_disabled") {
+    failures.push(
+      `expected chat draft preview reason chat_disabled, got ${chatDraftMetrics.chatDraftPreviewReason}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftPreviewReady !== "false") {
+    failures.push(
+      `expected chat draft preview ready false, got ${chatDraftMetrics.chatDraftPreviewReady}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftPreviewIntent !== "repair") {
+    failures.push(
+      `expected chat draft preview intent repair, got ${chatDraftMetrics.chatDraftPreviewIntent}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftPreviewIntentLabel !== "Repair") {
+    failures.push(
+      `expected chat draft preview intent label Repair, got ${chatDraftMetrics.chatDraftPreviewIntentLabel}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftPreviewBody !== "draft") {
+    failures.push(
+      `expected chat draft preview body draft, got ${chatDraftMetrics.chatDraftPreviewBody}`,
+    );
+  }
   if (chatDraftMetrics.chatDraftLength !== "22") {
     failures.push(
       `expected chat draft length 22, got ${chatDraftMetrics.chatDraftLength}`,
@@ -2547,6 +2627,19 @@ function collectVisualSmokeFailures(
       `expected chat draft visible details to include Characters 22, Words 4, and Intent Repair, got ${chatDraftMetrics.chatDraftDetailsText}`,
     );
   }
+  if (
+    !chatDraftMetrics.chatDraftPreviewText?.includes("Preview") ||
+    !chatDraftMetrics.chatDraftPreviewText?.includes("Blocked") ||
+    !chatDraftMetrics.chatDraftPreviewText?.includes(
+      "Review repair plan now",
+    ) ||
+    !chatDraftMetrics.chatDraftPreviewText?.includes("Repair") ||
+    !chatDraftMetrics.chatDraftPreviewText?.includes("Chat disabled")
+  ) {
+    failures.push(
+      `expected chat draft preview text to include blocked Repair preview, got ${chatDraftMetrics.chatDraftPreviewText}`,
+    );
+  }
   if (chatClearedMetrics.chatDraftValue !== "") {
     failures.push(
       `expected cleared chat draft value to be empty, got ${chatClearedMetrics.chatDraftValue}`,
@@ -2565,6 +2658,35 @@ function collectVisualSmokeFailures(
   if (chatClearedMetrics.chatDraftIntent !== "repair") {
     failures.push(
       `expected cleared chat draft intent to remain repair, got ${chatClearedMetrics.chatDraftIntent}`,
+    );
+  }
+  if (chatClearedMetrics.chatDraftPreviewState !== "empty") {
+    failures.push(
+      `expected cleared chat draft preview state empty, got ${chatClearedMetrics.chatDraftPreviewState}`,
+    );
+  }
+  if (chatClearedMetrics.chatDraftPreviewReason !== "empty_draft") {
+    failures.push(
+      `expected cleared chat draft preview reason empty_draft, got ${chatClearedMetrics.chatDraftPreviewReason}`,
+    );
+  }
+  if (chatClearedMetrics.chatDraftPreviewIntent !== "repair") {
+    failures.push(
+      `expected cleared chat draft preview intent repair, got ${chatClearedMetrics.chatDraftPreviewIntent}`,
+    );
+  }
+  if (chatClearedMetrics.chatDraftPreviewBody !== "empty") {
+    failures.push(
+      `expected cleared chat draft preview body empty, got ${chatClearedMetrics.chatDraftPreviewBody}`,
+    );
+  }
+  if (
+    !chatClearedMetrics.chatDraftPreviewText?.includes("No draft text") ||
+    !chatClearedMetrics.chatDraftPreviewText?.includes("Repair") ||
+    !chatClearedMetrics.chatDraftPreviewText?.includes("Draft is empty")
+  ) {
+    failures.push(
+      `expected cleared chat draft preview text to include empty Repair preview, got ${chatClearedMetrics.chatDraftPreviewText}`,
     );
   }
   if (metrics.timelineItems !== 5) {
