@@ -53,6 +53,22 @@ async function readMetrics(window) {
         document.querySelectorAll('.cw-workbench__stream-full-reload').length,
       streamEventSelectButtons:
         document.querySelectorAll('[data-stream-event-id]').length,
+      streamEventGroups:
+        document.querySelectorAll('[data-stream-event-group]').length,
+      streamEventGroupToggleButtons:
+        document.querySelectorAll('[data-stream-event-group-toggle]').length,
+      streamSummaryGroupExpanded:
+        document.querySelector('[data-stream-event-group="summary"]')?.getAttribute('data-stream-event-group-expanded') ?? null,
+      streamTimelineGroupExpanded:
+        document.querySelector('[data-stream-event-group="timeline"]')?.getAttribute('data-stream-event-group-expanded') ?? null,
+      streamTimelineGroupCount:
+        document.querySelector('[data-stream-event-group="timeline"]')?.getAttribute('data-stream-event-group-count') ?? null,
+      streamTimelineGroupToggleExpanded:
+        document.querySelector('[data-stream-event-group-toggle="timeline"]')?.getAttribute('aria-expanded') ?? null,
+      streamTimelineGroupCollapsedSummary:
+        document.querySelector('[data-stream-event-group-collapsed-summary="timeline"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
+      streamTimelineGroupCollapsedCount:
+        document.querySelector('[data-stream-event-group-collapsed-summary="timeline"]')?.getAttribute('data-stream-event-group-collapsed-count') ?? null,
       streamPanelCollapsedSummary:
         document.querySelector('[data-stream-panel-collapsed-summary="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       streamPanelCollapsedVisible:
@@ -1206,6 +1222,18 @@ async function clickStreamPanelToggle(window) {
   `);
 }
 
+async function clickStreamEventGroupToggle(window, groupId) {
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const button = document.querySelector('[data-stream-event-group-toggle="${groupId}"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('Missing stream event group toggle button: ${groupId}');
+      }
+      button.click();
+    })()
+  `);
+}
+
 async function runSmokeStep(label, action) {
   try {
     return await action();
@@ -1220,6 +1248,8 @@ function collectVisualSmokeFailures(
   messages,
   requestedWidth,
   initialStreamMetrics,
+  streamGroupCollapsedMetrics,
+  streamGroupExpandedMetrics,
   streamCollapsedMetrics,
   streamExpandedMetrics,
   initialFileTreeMetrics,
@@ -1399,6 +1429,81 @@ function collectVisualSmokeFailures(
   if (initialStreamMetrics.streamFullReloads !== 1) {
     failures.push(
       `expected initial stream full reload banner, got ${initialStreamMetrics.streamFullReloads}`,
+    );
+  }
+  if (initialStreamMetrics.streamEventGroups !== 2) {
+    failures.push(
+      `expected two initial stream event groups, got ${initialStreamMetrics.streamEventGroups}`,
+    );
+  }
+  if (initialStreamMetrics.streamEventGroupToggleButtons !== 2) {
+    failures.push(
+      `expected two initial stream event group toggles, got ${initialStreamMetrics.streamEventGroupToggleButtons}`,
+    );
+  }
+  if (initialStreamMetrics.streamSummaryGroupExpanded !== "true") {
+    failures.push(
+      `expected initial summary stream group expanded true, got ${initialStreamMetrics.streamSummaryGroupExpanded}`,
+    );
+  }
+  if (initialStreamMetrics.streamTimelineGroupExpanded !== "true") {
+    failures.push(
+      `expected initial timeline stream group expanded true, got ${initialStreamMetrics.streamTimelineGroupExpanded}`,
+    );
+  }
+  if (initialStreamMetrics.streamTimelineGroupCount !== "1") {
+    failures.push(
+      `expected initial timeline stream group count 1, got ${initialStreamMetrics.streamTimelineGroupCount}`,
+    );
+  }
+  if (streamGroupCollapsedMetrics.streamPanelExpanded !== "true") {
+    failures.push(
+      `expected stream panel to stay expanded while group is collapsed, got ${streamGroupCollapsedMetrics.streamPanelExpanded}`,
+    );
+  }
+  if (streamGroupCollapsedMetrics.streamSummaryGroupExpanded !== "true") {
+    failures.push(
+      `expected summary stream group to remain expanded, got ${streamGroupCollapsedMetrics.streamSummaryGroupExpanded}`,
+    );
+  }
+  if (streamGroupCollapsedMetrics.streamTimelineGroupExpanded !== "false") {
+    failures.push(
+      `expected collapsed timeline stream group expanded false, got ${streamGroupCollapsedMetrics.streamTimelineGroupExpanded}`,
+    );
+  }
+  if (
+    streamGroupCollapsedMetrics.streamTimelineGroupToggleExpanded !== "false"
+  ) {
+    failures.push(
+      `expected collapsed timeline stream group toggle aria-expanded false, got ${streamGroupCollapsedMetrics.streamTimelineGroupToggleExpanded}`,
+    );
+  }
+  if (
+    streamGroupCollapsedMetrics.streamTimelineGroupCollapsedSummary !==
+    "Timeline hidden, 1 event"
+  ) {
+    failures.push(
+      `expected collapsed timeline stream group summary, got ${streamGroupCollapsedMetrics.streamTimelineGroupCollapsedSummary}`,
+    );
+  }
+  if (streamGroupCollapsedMetrics.streamTimelineGroupCollapsedCount !== "1") {
+    failures.push(
+      `expected collapsed timeline stream group count 1, got ${streamGroupCollapsedMetrics.streamTimelineGroupCollapsedCount}`,
+    );
+  }
+  if (streamGroupCollapsedMetrics.streamEventSelectButtons !== 0) {
+    failures.push(
+      `expected collapsed timeline stream group to hide event actions, got ${streamGroupCollapsedMetrics.streamEventSelectButtons}`,
+    );
+  }
+  if (streamGroupExpandedMetrics.streamTimelineGroupExpanded !== "true") {
+    failures.push(
+      `expected re-expanded timeline stream group expanded true, got ${streamGroupExpandedMetrics.streamTimelineGroupExpanded}`,
+    );
+  }
+  if (streamGroupExpandedMetrics.streamEventSelectButtons !== 2) {
+    failures.push(
+      `expected re-expanded timeline stream group event actions, got ${streamGroupExpandedMetrics.streamEventSelectButtons}`,
     );
   }
   if (streamCollapsedMetrics.streamPanelExpanded !== "false") {
@@ -3022,6 +3127,20 @@ async function main() {
     "read initial stream panel metrics",
     () => readMetrics(window),
   );
+  await runSmokeStep("collapse timeline stream event group", () =>
+    clickStreamEventGroupToggle(window, "timeline"),
+  );
+  const streamGroupCollapsedMetrics = await runSmokeStep(
+    "read collapsed stream event group metrics",
+    () => readMetrics(window),
+  );
+  await runSmokeStep("expand timeline stream event group", () =>
+    clickStreamEventGroupToggle(window, "timeline"),
+  );
+  const streamGroupExpandedMetrics = await runSmokeStep(
+    "read expanded stream event group metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("collapse stream panel", () =>
     clickStreamPanelToggle(window),
   );
@@ -3260,6 +3379,8 @@ async function main() {
     messages,
     width,
     initialStreamMetrics,
+    streamGroupCollapsedMetrics,
+    streamGroupExpandedMetrics,
     streamCollapsedMetrics,
     streamExpandedMetrics,
     initialFileTreeMetrics,
@@ -3298,6 +3419,8 @@ async function main() {
       {
         metrics,
         initialStreamMetrics,
+        streamGroupCollapsedMetrics,
+        streamGroupExpandedMetrics,
         streamCollapsedMetrics,
         streamExpandedMetrics,
         initialFileTreeMetrics,

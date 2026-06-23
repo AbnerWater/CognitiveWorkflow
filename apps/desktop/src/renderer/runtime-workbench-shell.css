@@ -2058,6 +2058,7 @@ button {
 .cw-workbench__stream-full-reload button,
 .cw-workbench__stream-controls button,
 .cw-workbench__stream-event-actions button,
+.cw-workbench__stream-event-group-header button,
 .cw-workbench__stream-panel-title button,
 .cw-workbench__stream-selected-event button {
   min-height: 30px;
@@ -2074,6 +2075,7 @@ button {
 .cw-workbench__stream-full-reload button:disabled,
 .cw-workbench__stream-controls button:disabled,
 .cw-workbench__stream-event-actions button:disabled,
+.cw-workbench__stream-event-group-header button:disabled,
 .cw-workbench__stream-panel-title button:disabled,
 .cw-workbench__stream-selected-event button:disabled {
   cursor: not-allowed;
@@ -2168,6 +2170,7 @@ button {
 
 .cw-workbench__stream-event-group-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
   align-items: center;
@@ -2179,6 +2182,18 @@ button {
 
 .cw-workbench__stream-event-group-header span {
   color: #657487;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__stream-event-group-collapsed {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #fbfcfd;
+  color: #526173;
+  overflow-wrap: anywhere;
   font-size: 12px;
   font-weight: 700;
 }

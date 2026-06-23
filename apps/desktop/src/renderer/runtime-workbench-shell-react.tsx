@@ -3092,12 +3092,14 @@ function RuntimeWorkbenchShellStreamPanel(props: {
             <div className="cw-workbench__stream-event-groups">
               <RuntimeWorkbenchShellStreamEventGroup
                 events={panel.summaryItems}
+                groupId="summary"
                 onSelectEventClick={props.onSelectEventClick}
                 onToggleExpandedClick={props.onToggleExpandedClick}
                 title="Summary"
               />
               <RuntimeWorkbenchShellStreamEventGroup
                 events={panel.timelineItems}
+                groupId="timeline"
                 onSelectEventClick={props.onSelectEventClick}
                 onToggleExpandedClick={props.onToggleExpandedClick}
                 title="Timeline"
@@ -3224,6 +3226,7 @@ function RuntimeWorkbenchShellStreamPanelMetrics(props: {
 }
 
 function RuntimeWorkbenchShellStreamEventGroup(props: {
+  readonly groupId: "summary" | "timeline";
   readonly title: string;
   readonly events: readonly RuntimeWorkbenchShellRuntimeStreamEventSnapshot[];
   readonly onSelectEventClick: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -3231,13 +3234,45 @@ function RuntimeWorkbenchShellStreamEventGroup(props: {
     event: MouseEvent<HTMLButtonElement>,
   ) => void;
 }): ReactElement {
+  const [expanded, setExpanded] = useState(true);
+  const handleGroupToggleClick = useCallback((): void => {
+    setExpanded((current) => !current);
+  }, []);
+  const eventLabel = props.events.length === 1 ? "event" : "events";
   return (
-    <section className="cw-workbench__stream-event-group">
+    <section
+      className={[
+        "cw-workbench__stream-event-group",
+        expanded ? "" : "cw-workbench__stream-event-group--collapsed",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-stream-event-group={props.groupId}
+      data-stream-event-group-count={String(props.events.length)}
+      data-stream-event-group-expanded={expanded ? "true" : "false"}
+    >
       <div className="cw-workbench__stream-event-group-header">
         <h3>{props.title}</h3>
         <span>{props.events.length}</span>
+        <button
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${props.title} stream group`}
+          data-stream-event-group-toggle={props.groupId}
+          onClick={handleGroupToggleClick}
+          type="button"
+        >
+          {expanded ? "Collapse" : "Expand"}
+        </button>
       </div>
-      {props.events.length === 0 ? (
+      {!expanded ? (
+        <p
+          className="cw-workbench__stream-event-group-collapsed"
+          data-stream-event-group-collapsed-count={String(props.events.length)}
+          data-stream-event-group-collapsed-summary={props.groupId}
+        >
+          {props.title} hidden, {props.events.length} {eventLabel}
+        </p>
+      ) : props.events.length === 0 ? (
         <p className="cw-workbench__stream-muted">No visible events</p>
       ) : (
         <ol className="cw-workbench__stream-events">
