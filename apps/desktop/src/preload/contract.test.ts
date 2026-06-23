@@ -3801,6 +3801,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
   const initialSnapshot = interaction.getSnapshot();
   assert.equal(initialSnapshot.activePanel, "lifecycle");
   assert.deepEqual(initialSnapshot.availableCommandIds, [
+    "show_canvas_panel",
     "show_lifecycle_panel",
     "show_stream_panel",
     "open_lifecycle_panel_session",
@@ -3811,6 +3812,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "dispatch_runtime_stream",
   ]);
   assert.deepEqual(initialSnapshot.enabledCommandIds, [
+    "show_canvas_panel",
     "show_stream_panel",
     "open_lifecycle_panel_session",
     "open_runtime_stream_session",
@@ -3900,6 +3902,21 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     streamOpened.enabledCommandIds.includes("dispatch_runtime_stream"),
     true,
   );
+
+  const canvasShown = await interaction.dispatch({
+    type: "show_canvas_panel",
+  });
+  assert.equal(canvasShown.activePanel, "canvas");
+  assert.deepEqual(
+    canvasShown.enabledCommandIds.filter((commandId) =>
+      commandId.startsWith("show_"),
+    ),
+    ["show_lifecycle_panel", "show_stream_panel"],
+  );
+  const streamReopened = await interaction.dispatch({
+    type: "show_stream_panel",
+  });
+  assert.equal(streamReopened.activePanel, "stream");
 
   const activeStreamSession = runtimeStreamController.activeSession();
   assert.ok(activeStreamSession !== null);
@@ -4216,12 +4233,19 @@ test("renderer runtime workbench shortcuts map key events to commands", async ()
     initialSnapshot.availableShortcutIds.includes("show_stream_panel"),
     true,
   );
-  assert.deepEqual(initialSnapshot.enabledShortcutIds, ["show_stream_panel"]);
+  assert.deepEqual(initialSnapshot.enabledShortcutIds, [
+    "show_canvas_panel",
+    "show_stream_panel",
+  ]);
   assert.equal(Object.isFrozen(initialSnapshot), true);
   assert.equal(Object.isFrozen(initialSnapshot.availableShortcutIds), true);
   assert.equal(Object.isFrozen(initialSnapshot.enabledShortcutIds), true);
   assert.strictEqual(shortcuts.getServerSnapshot(), initialSnapshot);
   assert.strictEqual(shortcuts.snapshot(), initialSnapshot);
+  assert.equal(
+    shortcuts.resolveKeyEvent(key({ key: "0", ctrlKey: true }))?.shortcutId,
+    "show_canvas_panel",
+  );
   assert.equal(
     shortcuts.resolveKeyEvent(key({ key: "2", ctrlKey: true }))?.shortcutId,
     "show_stream_panel",
@@ -4231,13 +4255,21 @@ test("renderer runtime workbench shortcuts map key events to commands", async ()
     observed.push(snapshot);
   });
 
+  const canvasShown = await shortcuts.handleKeyEvent(
+    key({ key: "0", ctrlKey: true }),
+  );
+  assert.equal(canvasShown.workbench.activePanel, "canvas");
+  assert.equal(canvasShown.lastHandledShortcutId, "show_canvas_panel");
+  assert.equal(preventDefaultCount, 1);
+  assert.equal(observed.length, 1);
+
   const streamShown = await shortcuts.handleKeyEvent(
     key({ key: "2", ctrlKey: true }),
   );
   assert.equal(streamShown.workbench.activePanel, "stream");
   assert.equal(streamShown.lastHandledShortcutId, "show_stream_panel");
-  assert.equal(preventDefaultCount, 1);
-  assert.equal(observed.length, 1);
+  assert.equal(preventDefaultCount, 2);
+  assert.equal(observed.length, 2);
 
   const beforeIgnoredRepeatCount = observed.length;
   const beforeIgnoredRepeatSnapshot = shortcuts.getSnapshot();
@@ -4246,7 +4278,7 @@ test("renderer runtime workbench shortcuts map key events to commands", async ()
   );
   assert.strictEqual(ignoredRepeat, beforeIgnoredRepeatSnapshot);
   assert.equal(observed.length, beforeIgnoredRepeatCount);
-  assert.equal(preventDefaultCount, 1);
+  assert.equal(preventDefaultCount, 2);
 
   const beforeEditableCount = observed.length;
   const beforeEditableSnapshot = shortcuts.getSnapshot();
@@ -4259,21 +4291,21 @@ test("renderer runtime workbench shortcuts map key events to commands", async ()
   );
   assert.strictEqual(ignoredEditable, beforeEditableSnapshot);
   assert.equal(observed.length, beforeEditableCount);
-  assert.equal(preventDefaultCount, 1);
+  assert.equal(preventDefaultCount, 2);
 
   const lifecycleShown = await shortcuts.handleKeyEvent(
     key({ key: "1", ctrlKey: true }),
   );
   assert.equal(lifecycleShown.workbench.activePanel, "lifecycle");
   assert.equal(lifecycleShown.lastHandledShortcutId, "show_lifecycle_panel");
-  assert.equal(preventDefaultCount, 2);
-  assert.equal(observed.length, 2);
+  assert.equal(preventDefaultCount, 3);
+  assert.equal(observed.length, 3);
 
   await interaction.dispatch({
     type: "open_lifecycle_panel_session",
     options: { timelineFilter: "startup" },
   });
-  assert.equal(observed.length, 3);
+  assert.equal(observed.length, 4);
   assert.equal(
     shortcuts
       .snapshot()
@@ -4547,11 +4579,15 @@ test("renderer runtime workbench host session composes interaction and shortcuts
     disposed: false,
   });
   assert.deepEqual(initialSnapshot.enabledCommandIds, [
+    "show_canvas_panel",
     "show_stream_panel",
     "open_lifecycle_panel_session",
     "open_runtime_stream_session",
   ]);
-  assert.deepEqual(initialSnapshot.enabledShortcutIds, ["show_stream_panel"]);
+  assert.deepEqual(initialSnapshot.enabledShortcutIds, [
+    "show_canvas_panel",
+    "show_stream_panel",
+  ]);
   assert.equal(Object.isFrozen(initialSnapshot), true);
   assert.equal(Object.isFrozen(initialSnapshot.lifecyclePanel), true);
   assert.equal(Object.isFrozen(initialSnapshot.runtimeStream), true);
@@ -4559,6 +4595,10 @@ test("renderer runtime workbench host session composes interaction and shortcuts
   assert.equal(Object.isFrozen(initialSnapshot.enabledShortcutIds), true);
   assert.strictEqual(host.getServerSnapshot(), initialSnapshot);
   assert.strictEqual(host.snapshot(), initialSnapshot);
+  assert.equal(
+    host.resolveKeyEvent(key({ key: "0", ctrlKey: true }))?.shortcutId,
+    "show_canvas_panel",
+  );
   assert.equal(
     host.resolveKeyEvent(key({ key: "2", ctrlKey: true }))?.shortcutId,
     "show_stream_panel",
@@ -4570,13 +4610,21 @@ test("renderer runtime workbench host session composes interaction and shortcuts
   assert.equal(lifecyclePanelController.listenerCount(), 1);
   assert.equal(runtimeStreamController.listenerCount(), 1);
 
+  const canvasShown = await host.handleKeyEvent(
+    key({ key: "0", ctrlKey: true }),
+  );
+  assert.equal(canvasShown.activePanel, "canvas");
+  assert.equal(canvasShown.lastHandledShortcutId, "show_canvas_panel");
+  assert.equal(preventDefaultCount, 1);
+  assert.equal(observed.length, 1);
+
   const streamShown = await host.handleKeyEvent(
     key({ key: "2", ctrlKey: true }),
   );
   assert.equal(streamShown.activePanel, "stream");
   assert.equal(streamShown.lastHandledShortcutId, "show_stream_panel");
-  assert.equal(preventDefaultCount, 1);
-  assert.equal(observed.length, 1);
+  assert.equal(preventDefaultCount, 2);
+  assert.equal(observed.length, 2);
 
   const beforeIgnoredRepeatCount = observed.length;
   const beforeIgnoredRepeatSnapshot = host.getSnapshot();
@@ -4585,7 +4633,7 @@ test("renderer runtime workbench host session composes interaction and shortcuts
   );
   assert.strictEqual(ignoredRepeat, beforeIgnoredRepeatSnapshot);
   assert.equal(observed.length, beforeIgnoredRepeatCount);
-  assert.equal(preventDefaultCount, 1);
+  assert.equal(preventDefaultCount, 2);
 
   const beforeEditableCount = observed.length;
   const beforeEditableSnapshot = host.getSnapshot();
@@ -4598,15 +4646,15 @@ test("renderer runtime workbench host session composes interaction and shortcuts
   );
   assert.strictEqual(ignoredEditable, beforeEditableSnapshot);
   assert.equal(observed.length, beforeEditableCount);
-  assert.equal(preventDefaultCount, 1);
+  assert.equal(preventDefaultCount, 2);
 
   const lifecycleShown = await host.handleKeyEvent(
     key({ key: "1", ctrlKey: true }),
   );
   assert.equal(lifecycleShown.activePanel, "lifecycle");
   assert.equal(lifecycleShown.lastHandledShortcutId, "show_lifecycle_panel");
-  assert.equal(preventDefaultCount, 2);
-  assert.equal(observed.length, 2);
+  assert.equal(preventDefaultCount, 3);
+  assert.equal(observed.length, 3);
 
   const lifecycleOpened = await host.dispatch({
     type: "open_lifecycle_panel_session",
@@ -4625,7 +4673,7 @@ test("renderer runtime workbench host session composes interaction and shortcuts
     ),
     true,
   );
-  assert.equal(observed.length, 3);
+  assert.equal(observed.length, 4);
 
   const primaryFocused = await host.handleKeyEvent(
     key({ key: "Home", altKey: true }),
@@ -4916,6 +4964,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       canSelectFocusedTimelineItem: true,
     });
   const availableCommandIds: RuntimeWorkbenchInteractionCommandId[] = [
+    "show_canvas_panel",
     "show_lifecycle_panel",
     "show_stream_panel",
     "open_lifecycle_panel_session",
@@ -4926,6 +4975,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     "dispatch_runtime_stream",
   ];
   const availableShortcutIds: RuntimeWorkbenchShortcutId[] = [
+    "show_canvas_panel",
     "show_lifecycle_panel",
     "show_stream_panel",
     "dispose_runtime_stream_session",
@@ -4999,6 +5049,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     },
     availableCommandIds,
     enabledCommandIds: [
+      "show_canvas_panel",
       "show_lifecycle_panel",
       "open_lifecycle_panel_session",
       "open_runtime_stream_session",
@@ -5008,6 +5059,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     ],
     availableShortcutIds,
     enabledShortcutIds: [
+      "show_canvas_panel",
       "show_lifecycle_panel",
       "dispose_runtime_stream_session",
     ],
@@ -5084,9 +5136,9 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       {
         id: "workflow_canvas",
         active: false,
-        enabled: false,
-        status: "empty",
-        targetPanel: null,
+        enabled: true,
+        status: "active",
+        targetPanel: "canvas",
       },
       {
         id: "lifecycle_panel",
@@ -5300,6 +5352,12 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     })),
     [
       {
+        id: "canvas",
+        active: false,
+        status: "active",
+        badgeLabel: "Active",
+      },
+      {
         id: "lifecycle",
         active: false,
         status: "active",
@@ -5314,6 +5372,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     ],
   );
   assert.deepEqual(snapshot.enabledActionIds, [
+    "show_canvas_panel",
     "show_lifecycle_panel",
     "open_lifecycle_panel_session",
     "open_runtime_stream_session",
@@ -5334,6 +5393,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     "dispose_runtime_stream_session",
   ]);
   assert.deepEqual(shortcutById("show_lifecycle_panel").keys, ["Ctrl", "1"]);
+  assert.deepEqual(shortcutById("show_canvas_panel").keys, ["Ctrl", "0"]);
   assert.equal(shortcutById("show_stream_panel").enabled, false);
   assert.deepEqual(
     snapshot.statusItems.map((item) => [item.id, item.value, item.tone]),
@@ -5400,10 +5460,10 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     lifecyclePanel: { active: false, disposed: false, activeSession: null },
     runtimeStream: { active: false, activeChannel: null, disposed: false },
     runtimeStreamPanel: null,
-    availableCommandIds: ["show_stream_panel"],
-    enabledCommandIds: ["show_stream_panel"],
-    availableShortcutIds: ["show_stream_panel"],
-    enabledShortcutIds: ["show_stream_panel"],
+    availableCommandIds: ["show_canvas_panel", "show_stream_panel"],
+    enabledCommandIds: ["show_canvas_panel", "show_stream_panel"],
+    availableShortcutIds: ["show_canvas_panel", "show_stream_panel"],
+    enabledShortcutIds: ["show_canvas_panel", "show_stream_panel"],
     lastHandledShortcutId: null,
     disposed: false,
   });
@@ -5422,10 +5482,18 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     },
     runtimeStream: { active: false, activeChannel: null, disposed: false },
     runtimeStreamPanel: null,
-    availableCommandIds: ["show_lifecycle_panel", "dispatch_lifecycle_panel"],
-    enabledCommandIds: ["show_lifecycle_panel", "dispatch_lifecycle_panel"],
-    availableShortcutIds: ["show_lifecycle_panel"],
-    enabledShortcutIds: ["show_lifecycle_panel"],
+    availableCommandIds: [
+      "show_canvas_panel",
+      "show_lifecycle_panel",
+      "dispatch_lifecycle_panel",
+    ],
+    enabledCommandIds: [
+      "show_canvas_panel",
+      "show_lifecycle_panel",
+      "dispatch_lifecycle_panel",
+    ],
+    availableShortcutIds: ["show_canvas_panel", "show_lifecycle_panel"],
+    enabledShortcutIds: ["show_canvas_panel", "show_lifecycle_panel"],
     lastHandledShortcutId: null,
     disposed: false,
   });
@@ -5512,10 +5580,10 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       lifecyclePanel: { active: false, disposed: true, activeSession: null },
       runtimeStream: { active: false, activeChannel: null, disposed: true },
       runtimeStreamPanel: null,
-      availableCommandIds: ["show_stream_panel"],
-      enabledCommandIds: ["show_stream_panel"],
-      availableShortcutIds: ["show_stream_panel"],
-      enabledShortcutIds: ["show_stream_panel"],
+      availableCommandIds: ["show_canvas_panel", "show_stream_panel"],
+      enabledCommandIds: ["show_canvas_panel", "show_stream_panel"],
+      availableShortcutIds: ["show_canvas_panel", "show_stream_panel"],
+      enabledShortcutIds: ["show_canvas_panel", "show_stream_panel"],
       lastHandledShortcutId: null,
       disposed: true,
     },
@@ -5529,6 +5597,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       status: panel.status,
     })),
     [
+      { id: "canvas", enabled: false, status: "disposed" },
       { id: "lifecycle", enabled: false, status: "disposed" },
       { id: "stream", enabled: false, status: "disposed" },
     ],
@@ -5742,6 +5811,7 @@ test("renderer runtime workbench shell presenter composes host actions", async (
       status: panel.status,
     })),
     [
+      { id: "canvas", enabled: false, status: "disposed" },
       { id: "lifecycle", enabled: false, status: "disposed" },
       { id: "stream", enabled: false, status: "disposed" },
     ],
@@ -6279,6 +6349,17 @@ test("renderer runtime workbench shell keyboard binding routes target events", a
 
   assert.equal(target.listenerCount("keydown"), 1);
   await target.emit("keydown", {
+    key: "0",
+    ctrlKey: true,
+    preventDefault: () => {
+      preventDefaultCount += 1;
+    },
+  });
+  assert.equal(harness.adapter.getSnapshot().activePanel, "canvas");
+  assert.deepEqual(observed, ["canvas"]);
+  assert.equal(preventDefaultCount, 1);
+
+  await target.emit("keydown", {
     key: "2",
     ctrlKey: true,
     preventDefault: () => {
@@ -6286,8 +6367,8 @@ test("renderer runtime workbench shell keyboard binding routes target events", a
     },
   });
   assert.equal(harness.adapter.getSnapshot().activePanel, "stream");
-  assert.deepEqual(observed, ["stream"]);
-  assert.equal(preventDefaultCount, 1);
+  assert.deepEqual(observed, ["canvas", "stream"]);
+  assert.equal(preventDefaultCount, 2);
 
   await target.emit("keydown", {
     key: "1",
@@ -6298,8 +6379,8 @@ test("renderer runtime workbench shell keyboard binding routes target events", a
     },
   });
   assert.equal(harness.adapter.getSnapshot().activePanel, "stream");
-  assert.deepEqual(observed, ["stream"]);
-  assert.equal(preventDefaultCount, 1);
+  assert.deepEqual(observed, ["canvas", "stream"]);
+  assert.equal(preventDefaultCount, 2);
 
   assert.equal(unbind(), true);
   assert.equal(target.listenerCount("keydown"), 0);

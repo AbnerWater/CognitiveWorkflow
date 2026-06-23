@@ -16,7 +16,7 @@ import type {
 } from "./runtime-stream-session.js";
 import type { RuntimeStreamInteractionCommand } from "./runtime-stream-interaction.js";
 
-export type RuntimeWorkbenchPanelId = "lifecycle" | "stream";
+export type RuntimeWorkbenchPanelId = "canvas" | "lifecycle" | "stream";
 
 export interface RuntimeWorkbenchSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
@@ -356,6 +356,7 @@ function requireRuntimeWorkbenchPanelId(
   panel: string,
 ): RuntimeWorkbenchPanelId {
   switch (panel) {
+    case "canvas":
     case "lifecycle":
     case "stream":
       return panel;

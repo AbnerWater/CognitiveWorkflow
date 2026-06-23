@@ -380,6 +380,10 @@ test("renderer runtime workbench React shell keyboard binding helper owns target
 
 test("renderer runtime workbench React shell maps actions to commands", () => {
   const snapshot = createRuntimeWorkbenchShellReactSnapshot();
+  const showCanvas = requireRuntimeWorkbenchShellReactAction(
+    snapshot,
+    "show_canvas_panel",
+  );
   const showStream = requireRuntimeWorkbenchShellReactAction(
     snapshot,
     "show_stream_panel",
@@ -394,6 +398,9 @@ test("renderer runtime workbench React shell maps actions to commands", () => {
 
   assert.deepEqual(runtimeWorkbenchShellActionToCommand(showStream), {
     type: "show_stream_panel",
+  });
+  assert.deepEqual(runtimeWorkbenchShellActionToCommand(showCanvas), {
+    type: "show_canvas_panel",
   });
   assert.equal(isRuntimeWorkbenchShellReactActionEnabled(openStream), false);
   assert.equal(runtimeWorkbenchShellActionToCommand(openStream), null);

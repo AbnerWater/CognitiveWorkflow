@@ -207,6 +207,7 @@ export function runtimeWorkbenchShellActionToCommand(
   options: RuntimeWorkbenchShellReactActionOptions = {},
 ): RuntimeWorkbenchInteractionCommand | null {
   switch (action.id) {
+    case "show_canvas_panel":
     case "show_lifecycle_panel":
     case "show_stream_panel":
     case "open_lifecycle_panel_session":
@@ -283,7 +284,7 @@ export function RuntimeWorkbenchShellReactView(
   const handlePanelClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const panel = event.currentTarget.dataset.panel;
-      if (panel !== "lifecycle" && panel !== "stream") {
+      if (panel !== "canvas" && panel !== "lifecycle" && panel !== "stream") {
         return;
       }
       try {
@@ -570,6 +571,7 @@ export function RuntimeWorkbenchShellReactView(
 
           <RuntimeWorkbenchShellWorkflowCanvas
             canvas={snapshot.chrome.workflowCanvas}
+            surface="preview"
           />
 
           <section
@@ -577,7 +579,12 @@ export function RuntimeWorkbenchShellReactView(
             className="cw-workbench__content"
           >
             {snapshot.emptyState === null ? (
-              snapshot.activePanel === "stream" ? (
+              snapshot.activePanel === "canvas" ? (
+                <RuntimeWorkbenchShellWorkflowCanvas
+                  canvas={snapshot.chrome.workflowCanvas}
+                  surface="focused"
+                />
+              ) : snapshot.activePanel === "stream" ? (
                 <RuntimeWorkbenchShellStreamPanel
                   onAcknowledgeFullReloadClick={
                     handleStreamPanelAcknowledgeFullReloadClick
@@ -788,11 +795,16 @@ function RuntimeWorkbenchShellVersionSnapshots(props: {
 
 function RuntimeWorkbenchShellWorkflowCanvas(props: {
   readonly canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot;
+  readonly surface: "focused" | "preview";
 }): ReactElement {
   return (
     <section
       aria-label={props.canvas.title}
-      className="cw-workbench__workflow-canvas"
+      className={[
+        "cw-workbench__workflow-canvas",
+        `cw-workbench__workflow-canvas--${props.surface}`,
+      ].join(" ")}
+      data-workflow-canvas-surface={props.surface}
       data-workflow-canvas-status={props.canvas.statusLabel}
     >
       <div className="cw-workbench__workflow-canvas-header">

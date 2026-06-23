@@ -285,6 +285,17 @@ button {
   background: #ffffff;
 }
 
+.cw-workbench__workflow-canvas--focused {
+  min-height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.cw-workbench__workflow-canvas--focused .cw-workbench__workflow-canvas-nodes {
+  min-height: 300px;
+}
+
 .cw-workbench__workflow-canvas-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -8,6 +8,7 @@ import type { RuntimeWorkbenchPanelId } from "./runtime-workbench-session.js";
 import type { RuntimeWorkbenchShellDomSession } from "./runtime-workbench-shell-dom-session.js";
 import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-workbench-shell-keyboard-dom-adapter.js";
 import type {
+  RuntimeWorkbenchShellActionId,
   RuntimeWorkbenchShellChromeSnapshot,
   RuntimeWorkbenchShellSnapshot,
 } from "./runtime-workbench-shell-presenter.js";
@@ -187,10 +188,10 @@ function buildVisualSmokeSnapshot(
       : (VISUAL_SMOKE_TIMELINE_ITEMS.find(
           (item) => item.id === state.selectedTimelineItemId,
         ) ?? null);
+  const activePanelLabel = visualSmokePanelLabel(state.activePanel);
   return Object.freeze({
     activePanel: state.activePanel,
-    activePanelLabel:
-      state.activePanel === "lifecycle" ? "Lifecycle" : "Stream",
+    activePanelLabel,
     lifecyclePanelStatus: disposed ? "disposed" : "active",
     lifecyclePanel: disposed
       ? null
@@ -316,6 +317,16 @@ function buildVisualSmokeSnapshot(
     lastHandledShortcutLabel: state.lastHandledShortcutLabel,
     panels: Object.freeze([
       Object.freeze({
+        id: "canvas",
+        label: "Canvas",
+        title: "Show workflow canvas panel.",
+        active: state.activePanel === "canvas",
+        enabled: !disposed,
+        status: disposed ? "disposed" : "active",
+        badgeLabel: disposed ? "Disposed" : "Active",
+        tone: disposed ? "danger" : "success",
+      }),
+      Object.freeze({
         id: "lifecycle",
         label: "Lifecycle",
         title: "Show runtime lifecycle panel.",
@@ -338,13 +349,24 @@ function buildVisualSmokeSnapshot(
     ]),
     actions: Object.freeze([
       Object.freeze({
+        id: "show_canvas_panel",
+        label: "Canvas",
+        title: "Show workflow canvas panel.",
+        slot: "navigation",
+        tone: "neutral",
+        targetPanel: "canvas",
+        enabled: !disposed && state.activePanel !== "canvas",
+        requiresOptions: false,
+        shortcutIds: Object.freeze(["show_canvas_panel"] as const),
+      }),
+      Object.freeze({
         id: "show_lifecycle_panel",
         label: "Lifecycle",
         title: "Show runtime lifecycle panel.",
         slot: "navigation",
         tone: "neutral",
         targetPanel: "lifecycle",
-        enabled: !disposed,
+        enabled: !disposed && state.activePanel !== "lifecycle",
         requiresOptions: false,
         shortcutIds: Object.freeze(["show_lifecycle_panel"] as const),
       }),
@@ -355,7 +377,7 @@ function buildVisualSmokeSnapshot(
         slot: "navigation",
         tone: "neutral",
         targetPanel: "stream",
-        enabled: !disposed,
+        enabled: !disposed && state.activePanel !== "stream",
         requiresOptions: false,
         shortcutIds: Object.freeze(["show_stream_panel"] as const),
       }),
@@ -373,25 +395,32 @@ function buildVisualSmokeSnapshot(
     ]),
     shortcutHints: Object.freeze([
       Object.freeze({
+        id: "show_canvas_panel",
+        label: "Canvas",
+        title: "Show workflow canvas panel.",
+        keys: Object.freeze(["Ctrl", "0"]),
+        enabled: !disposed && state.activePanel !== "canvas",
+      }),
+      Object.freeze({
         id: "show_lifecycle_panel",
         label: "Lifecycle",
         title: "Show runtime lifecycle panel.",
         keys: Object.freeze(["Ctrl", "1"]),
-        enabled: !disposed,
+        enabled: !disposed && state.activePanel !== "lifecycle",
       }),
       Object.freeze({
         id: "show_stream_panel",
         label: "Stream",
         title: "Show runtime stream panel.",
         keys: Object.freeze(["Ctrl", "2"]),
-        enabled: !disposed,
+        enabled: !disposed && state.activePanel !== "stream",
       }),
     ]),
     statusItems: Object.freeze([
       Object.freeze({
         id: "active_panel",
         label: "Panel",
-        value: state.activePanel === "lifecycle" ? "Lifecycle" : "Stream",
+        value: activePanelLabel,
         tone: "neutral",
       }),
       Object.freeze({
@@ -415,14 +444,15 @@ function buildVisualSmokeSnapshot(
     ]),
     chrome: buildVisualSmokeChromeSnapshot(state, disposed),
     availableActionIds: Object.freeze([
+      "show_canvas_panel",
       "show_lifecycle_panel",
       "show_stream_panel",
       "open_lifecycle_panel_session",
     ] as const),
-    enabledActionIds: Object.freeze([
-      "show_lifecycle_panel",
-      "show_stream_panel",
-    ] as const),
+    enabledActionIds: buildVisualSmokeEnabledActionIds(
+      state.activePanel,
+      disposed,
+    ),
     disposed,
     ariaLive: disposed ? "assertive" : "polite",
     emptyState: null,
@@ -433,18 +463,19 @@ function buildVisualSmokeChromeSnapshot(
   state: VisualSmokeState,
   disposed: boolean,
 ): RuntimeWorkbenchShellChromeSnapshot {
+  const activePanelLabel = visualSmokePanelLabel(state.activePanel);
   return Object.freeze({
     dockItems: Object.freeze([
       Object.freeze({
         id: "workflow_canvas",
         label: "Canvas",
         title: "Workflow canvas.",
-        active: false,
-        enabled: false,
-        status: "empty",
-        badgeLabel: null,
-        tone: "neutral",
-        targetPanel: null,
+        active: state.activePanel === "canvas",
+        enabled: !disposed,
+        status: disposed ? "disposed" : "active",
+        badgeLabel: disposed ? "Disposed" : "Active",
+        tone: disposed ? "danger" : "success",
+        targetPanel: "canvas",
       }),
       Object.freeze({
         id: "lifecycle_panel",
@@ -482,10 +513,7 @@ function buildVisualSmokeChromeSnapshot(
     ]),
     fileTree: Object.freeze({
       title: "File Tree",
-      summary:
-        state.activePanel === "lifecycle"
-          ? "Lifecycle focus anchors"
-          : "Stream focus anchors",
+      summary: `${activePanelLabel} focus anchors`,
       nodes: Object.freeze([
         Object.freeze({
           id: "workspace_root",
@@ -502,7 +530,7 @@ function buildVisualSmokeChromeSnapshot(
           pathLabel: "specs/schemas/workflow_graph.md",
           statusLabel: "Spec",
           depth: 1,
-          active: false,
+          active: state.activePanel === "canvas",
           tone: "neutral",
         }),
         Object.freeze({
@@ -536,17 +564,14 @@ function buildVisualSmokeChromeSnapshot(
     }),
     versionSnapshots: Object.freeze({
       title: "Version Snapshots",
-      summary:
-        state.activePanel === "lifecycle"
-          ? "Lifecycle scaffold history"
-          : "Stream scaffold history",
+      summary: `${activePanelLabel} scaffold history`,
       items: Object.freeze([
         Object.freeze({
           id: "draft",
           label: "Draft",
           value: "v0",
           statusLabel: "Read-only",
-          active: false,
+          active: state.activePanel === "canvas",
           tone: "neutral",
         }),
         Object.freeze({
@@ -577,10 +602,7 @@ function buildVisualSmokeChromeSnapshot(
     }),
     workflowCanvas: Object.freeze({
       title: "Workflow Canvas",
-      summary:
-        state.activePanel === "lifecycle"
-          ? "Lifecycle graph scaffold"
-          : "Stream graph scaffold",
+      summary: `${activePanelLabel} graph scaffold`,
       statusLabel: disposed ? "Disposed" : "Read-only",
       nodes: Object.freeze([
         Object.freeze({
@@ -598,7 +620,8 @@ function buildVisualSmokeChromeSnapshot(
           title: "Collect context",
           statusLabel: "execution_task",
           position: Object.freeze({ x: 32, y: 28 }),
-          active: state.activePanel === "stream",
+          active:
+            state.activePanel === "canvas" || state.activePanel === "stream",
           tone: disposed ? "danger" : "accent",
         }),
         Object.freeze({
@@ -674,11 +697,8 @@ function buildVisualSmokeChromeSnapshot(
     }),
     taskDrawer: Object.freeze({
       title: "Task Drawer",
-      summary:
-        state.activePanel === "lifecycle" ? "Lifecycle focus" : "Stream focus",
-      collapsedSummary: `${
-        state.activePanel === "lifecycle" ? "Lifecycle" : "Stream"
-      } focus, ${VISUAL_SMOKE_TIMELINE_ITEMS.length} visible, 0 unread`,
+      summary: `${activePanelLabel} focus`,
+      collapsedSummary: `${activePanelLabel} focus, ${VISUAL_SMOKE_TIMELINE_ITEMS.length} visible, 0 unread`,
       collapsible: true,
       defaultCollapsed: false,
       expandLabel: "Expand drawer",
@@ -687,7 +707,7 @@ function buildVisualSmokeChromeSnapshot(
         Object.freeze({
           id: "active_panel",
           label: "Active panel",
-          value: state.activePanel === "lifecycle" ? "Lifecycle" : "Stream",
+          value: activePanelLabel,
           tone: disposed ? "danger" : "neutral",
         }),
         Object.freeze({
@@ -721,13 +741,44 @@ function buildVisualSmokeChromeSnapshot(
       placeholder: "Ask about the active workflow",
       enabled: false,
       statusLabel: disposed ? "Disposed" : "Idle",
-      collapsedSummary: `Lifecycle focus, chat ${disposed ? "disposed" : "idle"}`,
+      collapsedSummary: `${activePanelLabel} focus, chat ${disposed ? "disposed" : "idle"}`,
       collapsible: true,
       defaultCollapsed: false,
       expandLabel: "Expand chat",
       collapseLabel: "Collapse chat",
     }),
   });
+}
+
+function visualSmokePanelLabel(panel: RuntimeWorkbenchPanelId): string {
+  switch (panel) {
+    case "canvas":
+      return "Canvas";
+    case "lifecycle":
+      return "Lifecycle";
+    case "stream":
+      return "Stream";
+  }
+}
+
+function buildVisualSmokeEnabledActionIds(
+  activePanel: RuntimeWorkbenchPanelId,
+  disposed: boolean,
+): readonly RuntimeWorkbenchShellActionId[] {
+  if (disposed) {
+    return Object.freeze([]);
+  }
+  const enabledActionIds: RuntimeWorkbenchShellActionId[] = [];
+  if (activePanel !== "canvas") {
+    enabledActionIds.push("show_canvas_panel");
+  }
+  if (activePanel !== "lifecycle") {
+    enabledActionIds.push("show_lifecycle_panel");
+  }
+  if (activePanel !== "stream") {
+    enabledActionIds.push("show_stream_panel");
+  }
+  return Object.freeze(enabledActionIds);
 }
 
 const VISUAL_SMOKE_TIMELINE_ITEMS: readonly RuntimeLifecyclePanelTimelineItem[] =

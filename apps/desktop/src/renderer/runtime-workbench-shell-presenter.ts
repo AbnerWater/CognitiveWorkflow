@@ -38,6 +38,7 @@ export type RuntimeWorkbenchShellActionSlot =
   | "destructive";
 
 export const RUNTIME_WORKBENCH_SHELL_ACTION_IDS = [
+  "show_canvas_panel",
   "show_lifecycle_panel",
   "show_stream_panel",
   "open_lifecycle_panel_session",
@@ -541,6 +542,7 @@ export function buildRuntimeWorkbenchShellSnapshot(
     lastHandledShortcutLabel,
     panels: buildPanelTabs(
       host,
+      disposed ? "disposed" : "active",
       lifecyclePanelStatus,
       runtimeStreamStatus,
       disposed,
@@ -571,7 +573,9 @@ export function buildRuntimeWorkbenchShellSnapshot(
       runtimeStreamStatus,
     ),
     emptyState:
-      lifecyclePanelStatus === "empty" && runtimeStreamStatus === "empty"
+      host.activePanel !== "canvas" &&
+      lifecyclePanelStatus === "empty" &&
+      runtimeStreamStatus === "empty"
         ? {
             title: "No active session",
             summary: "Runtime activity will appear after a session opens.",
@@ -582,11 +586,20 @@ export function buildRuntimeWorkbenchShellSnapshot(
 
 function buildPanelTabs(
   host: RuntimeWorkbenchHostSessionSnapshot,
+  canvasPanelStatus: RuntimeWorkbenchShellPanelStatus,
   lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus,
   runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus,
   disposed: boolean,
 ): RuntimeWorkbenchShellPanelTab[] {
   return [
+    panelTab({
+      id: "canvas",
+      label: "Canvas",
+      title: "Workflow canvas panel",
+      active: host.activePanel === "canvas",
+      enabled: !disposed,
+      status: canvasPanelStatus,
+    }),
     panelTab({
       id: "lifecycle",
       label: "Lifecycle",
@@ -622,10 +635,10 @@ function buildShellChrome(
         id: "workflow_canvas",
         label: "Canvas",
         title: "Workflow canvas.",
-        active: false,
-        enabled: false,
-        status: "empty",
-        targetPanel: null,
+        active: host.activePanel === "canvas",
+        enabled: !disposed,
+        status: disposed ? "disposed" : "active",
+        targetPanel: "canvas",
       }),
       dockItem({
         id: "lifecycle_panel",
@@ -674,7 +687,7 @@ function buildShellChrome(
           pathLabel: "specs/schemas/workflow_graph.md",
           statusLabel: "Spec",
           depth: 1,
-          active: false,
+          active: host.activePanel === "canvas",
           tone: "neutral",
         }),
         fileTreeNode({
@@ -715,7 +728,7 @@ function buildShellChrome(
           label: "Draft",
           value: "v0",
           statusLabel: "Read-only",
-          active: false,
+          active: host.activePanel === "canvas",
           tone: "neutral",
         }),
         versionSnapshotItem({
@@ -813,6 +826,7 @@ function buildWorkflowCanvasNodes(
 ): RuntimeWorkbenchShellWorkflowCanvasNode[] {
   const activeLifecycleNode = host.activePanel === "lifecycle";
   const activeStreamNode = host.activePanel === "stream";
+  const activeCanvasNode = host.activePanel === "canvas";
   return [
     workflowCanvasNode({
       nodeId: "start",
@@ -829,7 +843,7 @@ function buildWorkflowCanvasNodes(
       title: "Collect context",
       statusLabel: "execution_task",
       position: { x: 32, y: 28 },
-      active: activeStreamNode,
+      active: activeCanvasNode || activeStreamNode,
       tone: disposed ? "danger" : "accent",
     }),
     workflowCanvasNode({
@@ -1109,6 +1123,15 @@ function shellActionMetadata(
   activePanel: RuntimeWorkbenchPanelId,
 ): Omit<RuntimeWorkbenchShellAction, "id" | "enabled" | "shortcutIds"> {
   switch (actionId) {
+    case "show_canvas_panel":
+      return {
+        label: "Canvas",
+        title: "Show workflow canvas panel.",
+        slot: "navigation",
+        tone: "neutral",
+        targetPanel: "canvas",
+        requiresOptions: false,
+      };
     case "show_lifecycle_panel":
       return {
         label: "Lifecycle",
@@ -1179,6 +1202,7 @@ function shortcutIdsForAction(
 const DEFAULT_SHELL_ACTION_SHORTCUT_IDS: Readonly<
   Record<RuntimeWorkbenchShellActionId, readonly RuntimeWorkbenchShortcutId[]>
 > = {
+  show_canvas_panel: ["show_canvas_panel"],
   show_lifecycle_panel: ["show_lifecycle_panel"],
   show_stream_panel: ["show_stream_panel"],
   open_lifecycle_panel_session: [],
@@ -1230,6 +1254,8 @@ function panelStatusTone(
 
 function panelLabel(panel: RuntimeWorkbenchPanelId): string {
   switch (panel) {
+    case "canvas":
+      return "Canvas";
     case "lifecycle":
       return "Lifecycle";
     case "stream":
@@ -1249,6 +1275,8 @@ function formatRuntimeStreamChannelLabel(
 
 function shortcutLabel(shortcutId: RuntimeWorkbenchShortcutId): string {
   switch (shortcutId) {
+    case "show_canvas_panel":
+      return "Show canvas";
     case "show_lifecycle_panel":
       return "Show lifecycle";
     case "show_stream_panel":
@@ -1288,6 +1316,8 @@ function shortcutTitle(shortcutId: RuntimeWorkbenchShortcutId): string {
 
 function shortcutKeys(shortcutId: RuntimeWorkbenchShortcutId): string[] {
   switch (shortcutId) {
+    case "show_canvas_panel":
+      return ["Ctrl", "0"];
     case "show_lifecycle_panel":
       return ["Ctrl", "1"];
     case "show_stream_panel":

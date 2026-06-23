@@ -11,6 +11,7 @@ import type {
 } from "./runtime-workbench-session.js";
 
 export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
+  "show_canvas_panel",
   "show_lifecycle_panel",
   "show_stream_panel",
   "open_lifecycle_panel_session",
@@ -25,6 +26,9 @@ export type RuntimeWorkbenchInteractionCommandId =
   (typeof RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS)[number];
 
 export type RuntimeWorkbenchInteractionCommand =
+  | {
+      readonly type: "show_canvas_panel";
+    }
   | {
       readonly type: "show_lifecycle_panel";
     }
@@ -198,6 +202,8 @@ export function createRuntimeWorkbenchInteraction(
     assertActive();
     const safeCommand = requireRuntimeWorkbenchInteractionCommand(command);
     switch (safeCommand.type) {
+      case "show_canvas_panel":
+        return setActivePanel("canvas");
       case "show_lifecycle_panel":
         return setActivePanel("lifecycle");
       case "show_stream_panel":
@@ -277,6 +283,9 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
   const availableCommandIds = [...RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS];
   const enabledCommandIds: RuntimeWorkbenchInteractionCommandId[] = [];
   if (!disposed) {
+    if (workbench.activePanel !== "canvas") {
+      enabledCommandIds.push("show_canvas_panel");
+    }
     if (workbench.activePanel !== "lifecycle") {
       enabledCommandIds.push("show_lifecycle_panel");
     }
@@ -318,6 +327,7 @@ function requireRuntimeWorkbenchInteractionCommand(
   }
   const commandType = command.type;
   switch (commandType) {
+    case "show_canvas_panel":
     case "show_lifecycle_panel":
     case "show_stream_panel":
     case "dispose_lifecycle_panel_session":
@@ -356,6 +366,7 @@ function requireRuntimeWorkbenchPanelId(
   panel: string,
 ): RuntimeWorkbenchPanelId {
   switch (panel) {
+    case "canvas":
     case "lifecycle":
     case "stream":
       return panel;

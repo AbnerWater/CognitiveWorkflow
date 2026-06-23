@@ -27,6 +27,16 @@ async function readMetrics(window) {
         document.querySelector('.cw-workbench__version-snapshots') !== null,
       hasWorkflowCanvas:
         document.querySelector('.cw-workbench__workflow-canvas') !== null,
+      activePanelText:
+        document.querySelector('.cw-workbench__status dd')?.textContent ?? null,
+      activePanelTabs:
+        document.querySelectorAll('.cw-workbench__tab[aria-current="page"]').length,
+      canvasTabActive:
+        document.querySelector('.cw-workbench__tab[data-panel="canvas"][aria-current="page"]') !== null,
+      lifecycleTabActive:
+        document.querySelector('.cw-workbench__tab[data-panel="lifecycle"][aria-current="page"]') !== null,
+      canvasDockActive:
+        document.querySelector('.cw-workbench__dock-item[data-panel="canvas"][aria-current="page"]') !== null,
       hasLifecyclePanel: document.querySelector('.cw-workbench__lifecycle-panel') !== null,
       hasTaskDrawer: document.querySelector('.cw-workbench__task-drawer') !== null,
       hasChatBox: document.querySelector('.cw-workbench__chat') !== null,
@@ -40,6 +50,10 @@ async function readMetrics(window) {
         document.querySelectorAll('.cw-workbench__workflow-canvas-node').length,
       workflowCanvasEdges:
         document.querySelectorAll('.cw-workbench__workflow-canvas-edge').length,
+      previewWorkflowCanvasSurfaces:
+        document.querySelectorAll('[data-workflow-canvas-surface="preview"]').length,
+      focusedWorkflowCanvasSurfaces:
+        document.querySelectorAll('[data-workflow-canvas-surface="focused"]').length,
       activeWorkflowCanvasNodes:
         document.querySelectorAll('.cw-workbench__workflow-canvas-node--active').length,
       activeFileTreeNodes:
@@ -94,6 +108,18 @@ async function clickLifecycleCommand(window, command) {
   `);
 }
 
+async function clickPanel(window, panel) {
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const button = document.querySelector('.cw-workbench__dock-item[data-panel="${panel}"], .cw-workbench__tab[data-panel="${panel}"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('Missing workbench panel button: ${panel}');
+      }
+      button.click();
+    })()
+  `);
+}
+
 async function clickTaskDrawerToggle(window) {
   await window.webContents.executeJavaScript(`
     (() => {
@@ -124,6 +150,7 @@ function collectVisualSmokeFailures(
   requestedWidth,
   collapsedMetrics,
   chatCollapsedMetrics,
+  canvasMetrics,
 ) {
   const failures = [];
 
@@ -146,6 +173,19 @@ function collectVisualSmokeFailures(
   }
   if (metrics.hasWorkflowCanvas !== true) {
     failures.push("missing workflow canvas");
+  }
+  if (metrics.activePanelText !== "Lifecycle") {
+    failures.push(
+      `expected Lifecycle active panel, got ${metrics.activePanelText}`,
+    );
+  }
+  if (metrics.activePanelTabs !== 1) {
+    failures.push(
+      `expected one active panel tab, got ${metrics.activePanelTabs}`,
+    );
+  }
+  if (metrics.lifecycleTabActive !== true) {
+    failures.push("missing active lifecycle tab after smoke reset");
   }
   if (metrics.hasLifecyclePanel !== true) {
     failures.push("missing lifecycle panel");
@@ -185,6 +225,37 @@ function collectVisualSmokeFailures(
   if (metrics.activeWorkflowCanvasNodes !== 1) {
     failures.push(
       `expected one active workflow canvas node, got ${metrics.activeWorkflowCanvasNodes}`,
+    );
+  }
+  if (metrics.previewWorkflowCanvasSurfaces !== 1) {
+    failures.push(
+      `expected one preview workflow canvas surface, got ${metrics.previewWorkflowCanvasSurfaces}`,
+    );
+  }
+  if (metrics.focusedWorkflowCanvasSurfaces !== 0) {
+    failures.push(
+      `expected no focused workflow canvas surface in lifecycle smoke, got ${metrics.focusedWorkflowCanvasSurfaces}`,
+    );
+  }
+  if (canvasMetrics.activePanelText !== "Canvas") {
+    failures.push(
+      `expected Canvas active panel, got ${canvasMetrics.activePanelText}`,
+    );
+  }
+  if (canvasMetrics.canvasTabActive !== true) {
+    failures.push("missing active canvas tab after canvas click");
+  }
+  if (canvasMetrics.canvasDockActive !== true) {
+    failures.push("missing active canvas dock item after canvas click");
+  }
+  if (canvasMetrics.previewWorkflowCanvasSurfaces !== 1) {
+    failures.push(
+      `expected one preview canvas surface after canvas click, got ${canvasMetrics.previewWorkflowCanvasSurfaces}`,
+    );
+  }
+  if (canvasMetrics.focusedWorkflowCanvasSurfaces !== 1) {
+    failures.push(
+      `expected one focused canvas surface after canvas click, got ${canvasMetrics.focusedWorkflowCanvasSurfaces}`,
     );
   }
   if (metrics.activeFileTreeNodes !== 0) {
@@ -332,6 +403,9 @@ async function main() {
   await clickChatBoxToggle(window);
   const chatCollapsedMetrics = await readMetrics(window);
   await clickChatBoxToggle(window);
+  await clickPanel(window, "canvas");
+  const canvasMetrics = await readMetrics(window);
+  await clickPanel(window, "lifecycle");
   if (scrollY > 0) {
     await window.webContents.executeJavaScript(
       `window.scrollTo(0, ${scrollY})`,
@@ -349,6 +423,7 @@ async function main() {
     width,
     collapsedMetrics,
     chatCollapsedMetrics,
+    canvasMetrics,
   );
   await fs.writeFile(outputPath, image.toPNG());
   await fs.writeFile(
@@ -358,6 +433,7 @@ async function main() {
         metrics,
         collapsedMetrics,
         chatCollapsedMetrics,
+        canvasMetrics,
         messages,
         failures,
         outputPath,

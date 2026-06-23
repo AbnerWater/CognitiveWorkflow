@@ -9,6 +9,7 @@ import type {
 } from "./runtime-workbench-interaction.js";
 
 export type RuntimeWorkbenchShortcutId =
+  | "show_canvas_panel"
   | "show_lifecycle_panel"
   | "show_stream_panel"
   | "focus_lifecycle_primary_command"
@@ -105,6 +106,12 @@ export interface CreateRuntimeWorkbenchShortcutControllerOptions {
 
 export const DEFAULT_RUNTIME_WORKBENCH_SHORTCUT_BINDINGS: readonly RuntimeWorkbenchShortcutBinding[] =
   Object.freeze([
+    runtimeWorkbenchShortcutBinding({
+      id: "show_canvas_panel",
+      key: "0",
+      ctrlKey: true,
+      command: { type: "show_canvas_panel" },
+    }),
     runtimeWorkbenchShortcutBinding({
       id: "show_lifecycle_panel",
       key: "1",
@@ -455,6 +462,7 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
   }
   const command = binding.command;
   switch (command.type) {
+    case "show_canvas_panel":
     case "show_lifecycle_panel":
     case "show_stream_panel":
       return snapshot.enabledCommandIds.includes(command.type);
@@ -620,6 +628,7 @@ function cloneRuntimeWorkbenchInteractionCommand(
   command: RuntimeWorkbenchInteractionCommand,
 ): RuntimeWorkbenchInteractionCommand {
   switch (command.type) {
+    case "show_canvas_panel":
     case "show_lifecycle_panel":
     case "show_stream_panel":
     case "dispose_lifecycle_panel_session":
