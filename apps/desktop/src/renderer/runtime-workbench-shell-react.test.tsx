@@ -408,9 +408,91 @@ test("renderer runtime workbench React shell selects focused canvas node locally
       ),
       1,
     );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasRouteSelect !== undefined,
+      ),
+      2,
+    );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(dom.container),
       /Repair loop[\s\S]*Type[\s\S]*repair_task[\s\S]*Incoming[\s\S]*1[\s\S]*Outgoing[\s\S]*1[\s\S]*Incoming edges[\s\S]*review_task[\s\S]*repair_task[\s\S]*Outgoing edges[\s\S]*repair_task[\s\S]*context_task/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElement(
+          dom.container,
+          (element) =>
+            element.dataset.workflowCanvasInspectorEdgeRoute ===
+              "review_to_repair" &&
+            element.dataset.workflowCanvasRouteSelect === "review_task",
+          "incoming repair route select",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "review_task",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "review_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasNodeSelected",
+        "true",
+      ).getAttribute("data-workflow-canvas-node"),
+      "review_task",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasEdgeSelected === "true",
+      ),
+      3,
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container),
+      /Review result[\s\S]*Incoming[\s\S]*1[\s\S]*Outgoing[\s\S]*2[\s\S]*context_task[\s\S]*review_task[\s\S]*review_task[\s\S]*end[\s\S]*review_task[\s\S]*repair_task/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElement(
+          dom.container,
+          (element) =>
+            element.dataset.workflowCanvasInspectorEdgeRoute ===
+              "review_to_end" &&
+            element.dataset.workflowCanvasRouteSelect === "end",
+          "outgoing review route select",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "end",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "end",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasNodeSelected",
+        "true",
+      ).getAttribute("data-workflow-canvas-node"),
+      "end",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container),
+      /End[\s\S]*Incoming[\s\S]*1[\s\S]*Outgoing[\s\S]*0[\s\S]*No outgoing edges/u,
     );
 
     await act(async () => {

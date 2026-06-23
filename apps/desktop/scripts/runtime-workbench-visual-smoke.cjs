@@ -94,6 +94,13 @@ async function readMetrics(window) {
           document.querySelectorAll('[data-workflow-canvas-inspector-edge]'),
           (element) => element.getAttribute('data-workflow-canvas-inspector-edge')
         ).filter(Boolean).sort(),
+      workflowCanvasInspectorRouteButtons:
+        document.querySelectorAll('[data-workflow-canvas-route-select]').length,
+      workflowCanvasInspectorRouteSelectNodeIds:
+        Array.from(
+          document.querySelectorAll('[data-workflow-canvas-route-select]'),
+          (element) => element.getAttribute('data-workflow-canvas-route-select')
+        ).filter(Boolean).sort(),
       activeFileTreeNodes:
         document.querySelectorAll('.cw-workbench__file-tree-node--active').length,
       hasRuntimeStreamFileNode:
@@ -206,6 +213,43 @@ async function clickWorkflowCanvasNode(window, nodeId) {
   }
 }
 
+async function clickWorkflowCanvasInspectorRoute(window, edgeId, nodeId) {
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const startedAt = Date.now();
+      const selectRoute = () => {
+        const button = document.querySelector('[data-workflow-canvas-inspector-edge-route="${edgeId}"][data-workflow-canvas-route-select="${nodeId}"]');
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing workflow canvas inspector route button: ${edgeId} -> ${nodeId}',
+            inspectorEdges: Array.from(
+              document.querySelectorAll('[data-workflow-canvas-inspector-edge]'),
+              (element) => element.getAttribute('data-workflow-canvas-inspector-edge')
+            ),
+            routeTargets: Array.from(
+              document.querySelectorAll('[data-workflow-canvas-route-select]'),
+              (element) => element.getAttribute('data-workflow-canvas-route-select')
+            ),
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(selectRoute);
+      };
+      selectRoute();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
 async function clickTaskDrawerToggle(window) {
   await window.webContents.executeJavaScript(`
     (() => {
@@ -246,6 +290,7 @@ function collectVisualSmokeFailures(
   collapsedMetrics,
   chatCollapsedMetrics,
   canvasMetrics,
+  canvasRouteMetrics,
 ) {
   const failures = [];
   const selectedWorkflowCanvasEdgeIds = Array.isArray(
@@ -267,6 +312,36 @@ function collectVisualSmokeFailures(
     canvasMetrics.workflowCanvasInspectorEdgeIds,
   )
     ? canvasMetrics.workflowCanvasInspectorEdgeIds.join(",")
+    : "";
+  const workflowCanvasInspectorRouteSelectNodeIds = Array.isArray(
+    canvasMetrics.workflowCanvasInspectorRouteSelectNodeIds,
+  )
+    ? canvasMetrics.workflowCanvasInspectorRouteSelectNodeIds.join(",")
+    : "";
+  const routeWorkflowCanvasEdgeIds = Array.isArray(
+    canvasRouteMetrics.selectedWorkflowCanvasEdgeIds,
+  )
+    ? canvasRouteMetrics.selectedWorkflowCanvasEdgeIds.join(",")
+    : "";
+  const routeIncomingWorkflowCanvasEdgeIds = Array.isArray(
+    canvasRouteMetrics.incomingWorkflowCanvasEdgeIds,
+  )
+    ? canvasRouteMetrics.incomingWorkflowCanvasEdgeIds.join(",")
+    : "";
+  const routeOutgoingWorkflowCanvasEdgeIds = Array.isArray(
+    canvasRouteMetrics.outgoingWorkflowCanvasEdgeIds,
+  )
+    ? canvasRouteMetrics.outgoingWorkflowCanvasEdgeIds.join(",")
+    : "";
+  const routeWorkflowCanvasInspectorEdgeIds = Array.isArray(
+    canvasRouteMetrics.workflowCanvasInspectorEdgeIds,
+  )
+    ? canvasRouteMetrics.workflowCanvasInspectorEdgeIds.join(",")
+    : "";
+  const routeWorkflowCanvasInspectorRouteSelectNodeIds = Array.isArray(
+    canvasRouteMetrics.workflowCanvasInspectorRouteSelectNodeIds,
+  )
+    ? canvasRouteMetrics.workflowCanvasInspectorRouteSelectNodeIds.join(",")
     : "";
 
   if (messages.length > 0) {
@@ -443,6 +518,92 @@ function collectVisualSmokeFailures(
       `expected repair_task inspector edge rows repair_to_context,review_to_repair, got ${workflowCanvasInspectorEdgeIds}`,
     );
   }
+  if (canvasMetrics.workflowCanvasInspectorRouteButtons !== 2) {
+    failures.push(
+      `expected 2 repair_task inspector route buttons, got ${canvasMetrics.workflowCanvasInspectorRouteButtons}`,
+    );
+  }
+  if (
+    workflowCanvasInspectorRouteSelectNodeIds !== "context_task,review_task"
+  ) {
+    failures.push(
+      `expected repair_task inspector route targets context_task,review_task, got ${workflowCanvasInspectorRouteSelectNodeIds}`,
+    );
+  }
+  if (canvasRouteMetrics.selectedWorkflowCanvasNodeId !== "review_task") {
+    failures.push(
+      `expected route navigation to select review_task, got ${canvasRouteMetrics.selectedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasRouteMetrics.workflowCanvasInspectorNodeId !== "review_task") {
+    failures.push(
+      `expected route navigation inspector review_task, got ${canvasRouteMetrics.workflowCanvasInspectorNodeId}`,
+    );
+  }
+  if (canvasRouteMetrics.workflowCanvasInspectorTitle !== "Review result") {
+    failures.push(
+      `expected route navigation inspector title Review result, got ${canvasRouteMetrics.workflowCanvasInspectorTitle}`,
+    );
+  }
+  if (canvasRouteMetrics.selectedWorkflowCanvasEdges !== 3) {
+    failures.push(
+      `expected 3 selected review_task canvas edges, got ${canvasRouteMetrics.selectedWorkflowCanvasEdges}`,
+    );
+  }
+  if (
+    routeWorkflowCanvasEdgeIds !==
+    "context_to_review,review_to_end,review_to_repair"
+  ) {
+    failures.push(
+      `expected selected review_task canvas edges context_to_review,review_to_end,review_to_repair, got ${routeWorkflowCanvasEdgeIds}`,
+    );
+  }
+  if (canvasRouteMetrics.incomingWorkflowCanvasEdges !== 1) {
+    failures.push(
+      `expected 1 incoming review_task canvas edge, got ${canvasRouteMetrics.incomingWorkflowCanvasEdges}`,
+    );
+  }
+  if (routeIncomingWorkflowCanvasEdgeIds !== "context_to_review") {
+    failures.push(
+      `expected incoming review_task canvas edge context_to_review, got ${routeIncomingWorkflowCanvasEdgeIds}`,
+    );
+  }
+  if (canvasRouteMetrics.outgoingWorkflowCanvasEdges !== 2) {
+    failures.push(
+      `expected 2 outgoing review_task canvas edges, got ${canvasRouteMetrics.outgoingWorkflowCanvasEdges}`,
+    );
+  }
+  if (routeOutgoingWorkflowCanvasEdgeIds !== "review_to_end,review_to_repair") {
+    failures.push(
+      `expected outgoing review_task canvas edges review_to_end,review_to_repair, got ${routeOutgoingWorkflowCanvasEdgeIds}`,
+    );
+  }
+  if (canvasRouteMetrics.workflowCanvasInspectorEdges !== 3) {
+    failures.push(
+      `expected 3 review_task inspector edge rows, got ${canvasRouteMetrics.workflowCanvasInspectorEdges}`,
+    );
+  }
+  if (
+    routeWorkflowCanvasInspectorEdgeIds !==
+    "context_to_review,review_to_end,review_to_repair"
+  ) {
+    failures.push(
+      `expected review_task inspector edge rows context_to_review,review_to_end,review_to_repair, got ${routeWorkflowCanvasInspectorEdgeIds}`,
+    );
+  }
+  if (canvasRouteMetrics.workflowCanvasInspectorRouteButtons !== 3) {
+    failures.push(
+      `expected 3 review_task inspector route buttons, got ${canvasRouteMetrics.workflowCanvasInspectorRouteButtons}`,
+    );
+  }
+  if (
+    routeWorkflowCanvasInspectorRouteSelectNodeIds !==
+    "context_task,end,repair_task"
+  ) {
+    failures.push(
+      `expected review_task inspector route targets context_task,end,repair_task, got ${routeWorkflowCanvasInspectorRouteSelectNodeIds}`,
+    );
+  }
   if (metrics.activeFileTreeNodes !== 0) {
     failures.push(
       `expected no active file tree node in lifecycle smoke, got ${metrics.activeFileTreeNodes}`,
@@ -609,6 +770,17 @@ async function main() {
   const canvasMetrics = await runSmokeStep("read canvas metrics", () =>
     readMetrics(window),
   );
+  await runSmokeStep("select incoming repair route", () =>
+    clickWorkflowCanvasInspectorRoute(
+      window,
+      "review_to_repair",
+      "review_task",
+    ),
+  );
+  const canvasRouteMetrics = await runSmokeStep(
+    "read canvas route metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("show lifecycle panel", () =>
     clickPanel(window, "lifecycle"),
   );
@@ -632,6 +804,7 @@ async function main() {
     collapsedMetrics,
     chatCollapsedMetrics,
     canvasMetrics,
+    canvasRouteMetrics,
   );
   await fs.writeFile(outputPath, image.toPNG());
   await fs.writeFile(
@@ -642,6 +815,7 @@ async function main() {
         collapsedMetrics,
         chatCollapsedMetrics,
         canvasMetrics,
+        canvasRouteMetrics,
         messages,
         failures,
         outputPath,

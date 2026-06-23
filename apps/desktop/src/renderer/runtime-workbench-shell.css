@@ -507,6 +507,39 @@ button {
   background: #ffffff;
 }
 
+.cw-workbench__workflow-canvas-inspector-routes li {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.cw-workbench__workflow-canvas-inspector-route-content {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cw-workbench__workflow-canvas-inspector-route-button {
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid #c6d4e3;
+  border-radius: 6px;
+  background: #eef5fb;
+  color: #1e3f67;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.cw-workbench__workflow-canvas-inspector-route-button:hover {
+  background: #e1edf8;
+}
+
+.cw-workbench__workflow-canvas-inspector-route-button:focus-visible {
+  outline: 2px solid #3d6fa7;
+  outline-offset: 2px;
+}
+
 .cw-workbench__workflow-canvas-inspector-routes p {
   color: #657487;
   font-size: 11px;
@@ -1743,6 +1776,7 @@ button {
   .cw-workbench__version-snapshot-items,
   .cw-workbench__workflow-canvas-nodes,
   .cw-workbench__workflow-canvas-inspector dl > div,
+  .cw-workbench__workflow-canvas-inspector-routes li,
   .cw-workbench__lifecycle-metrics,
   .cw-workbench__stream-selected-event dl,
   .cw-workbench__lifecycle-selected-item dl {

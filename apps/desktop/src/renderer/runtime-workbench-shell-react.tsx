@@ -839,6 +839,16 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
     },
     [props.canvas],
   );
+  const handleInspectorRouteSelectClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const nodeId = event.currentTarget.dataset.workflowCanvasRouteSelect;
+      if (!isRuntimeWorkbenchShellWorkflowCanvasNodeId(props.canvas, nodeId)) {
+        return;
+      }
+      setSelectedNodeId(nodeId);
+    },
+    [props.canvas],
+  );
 
   return (
     <section
@@ -875,6 +885,7 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
         <div className="cw-workbench__workflow-canvas-sidebar">
           {selectable && selectedNode !== null ? (
             <RuntimeWorkbenchShellWorkflowCanvasInspector
+              handleRouteSelectClick={handleInspectorRouteSelectClick}
               incomingEdges={selectedIncomingEdges}
               node={selectedNode}
               outgoingEdges={selectedOutgoingEdges}
@@ -1011,6 +1022,9 @@ function RuntimeWorkbenchShellWorkflowCanvasInspector(props: {
   readonly node: RuntimeWorkbenchShellWorkflowCanvasNode;
   readonly incomingEdges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
   readonly outgoingEdges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
+  readonly handleRouteSelectClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 }): ReactElement {
   return (
     <aside
@@ -1038,13 +1052,17 @@ function RuntimeWorkbenchShellWorkflowCanvasInspector(props: {
         </div>
       </dl>
       <RuntimeWorkbenchShellWorkflowCanvasInspectorEdgeList
+        currentNodeId={props.node.nodeId}
         edges={props.incomingEdges}
         emptyLabel="No incoming edges"
+        handleRouteSelectClick={props.handleRouteSelectClick}
         title="Incoming edges"
       />
       <RuntimeWorkbenchShellWorkflowCanvasInspectorEdgeList
+        currentNodeId={props.node.nodeId}
         edges={props.outgoingEdges}
         emptyLabel="No outgoing edges"
+        handleRouteSelectClick={props.handleRouteSelectClick}
         title="Outgoing edges"
       />
     </aside>
@@ -1054,7 +1072,11 @@ function RuntimeWorkbenchShellWorkflowCanvasInspector(props: {
 function RuntimeWorkbenchShellWorkflowCanvasInspectorEdgeList(props: {
   readonly title: string;
   readonly emptyLabel: string;
+  readonly currentNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId;
   readonly edges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
+  readonly handleRouteSelectClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 }): ReactElement {
   return (
     <section className="cw-workbench__workflow-canvas-inspector-routes">
@@ -1064,16 +1086,48 @@ function RuntimeWorkbenchShellWorkflowCanvasInspectorEdgeList(props: {
       ) : (
         <ol>
           {props.edges.map((edge) => (
-            <li
-              data-workflow-canvas-inspector-edge={edge.edgeId}
+            <RuntimeWorkbenchShellWorkflowCanvasInspectorEdgeItem
+              currentNodeId={props.currentNodeId}
+              edge={edge}
+              handleRouteSelectClick={props.handleRouteSelectClick}
               key={edge.edgeId}
-            >
-              <RuntimeWorkbenchShellWorkflowCanvasEdgeContent edge={edge} />
-            </li>
+            />
           ))}
         </ol>
       )}
     </section>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasInspectorEdgeItem(props: {
+  readonly currentNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId;
+  readonly edge: RuntimeWorkbenchShellWorkflowCanvasEdge;
+  readonly handleRouteSelectClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
+}): ReactElement {
+  const adjacentNodeId = runtimeWorkbenchShellWorkflowCanvasAdjacentNodeId(
+    props.edge,
+    props.currentNodeId,
+  );
+  return (
+    <li data-workflow-canvas-inspector-edge={props.edge.edgeId}>
+      <div className="cw-workbench__workflow-canvas-inspector-route-content">
+        <RuntimeWorkbenchShellWorkflowCanvasEdgeContent edge={props.edge} />
+      </div>
+      {adjacentNodeId === null ? null : (
+        <button
+          aria-label={`Select ${adjacentNodeId}`}
+          className="cw-workbench__workflow-canvas-inspector-route-button"
+          data-workflow-canvas-inspector-edge-route={props.edge.edgeId}
+          data-workflow-canvas-route-select={adjacentNodeId}
+          onClick={props.handleRouteSelectClick}
+          type="button"
+        >
+          {adjacentNodeId}
+        </button>
+      )}
+    </li>
   );
 }
 
@@ -1109,6 +1163,19 @@ function runtimeWorkbenchShellWorkflowCanvasEdgeDirection(
   }
   if (edge.sourceNodeId === selectedNodeId) {
     return "outgoing";
+  }
+  return null;
+}
+
+function runtimeWorkbenchShellWorkflowCanvasAdjacentNodeId(
+  edge: RuntimeWorkbenchShellWorkflowCanvasEdge,
+  selectedNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId,
+): RuntimeWorkbenchShellWorkflowCanvasNodeId | null {
+  if (edge.targetNodeId === selectedNodeId) {
+    return edge.sourceNodeId;
+  }
+  if (edge.sourceNodeId === selectedNodeId) {
+    return edge.targetNodeId;
   }
   return null;
 }
