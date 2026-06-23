@@ -284,6 +284,23 @@ function freezeChrome(
         }),
       ),
     ),
+    fileTree: Object.freeze({
+      title: chrome.fileTree.title,
+      summary: chrome.fileTree.summary,
+      nodes: Object.freeze(
+        chrome.fileTree.nodes.map((node) =>
+          Object.freeze({
+            id: node.id,
+            label: node.label,
+            pathLabel: node.pathLabel,
+            statusLabel: node.statusLabel,
+            depth: node.depth,
+            active: node.active,
+            tone: node.tone,
+          }),
+        ),
+      ),
+    }),
     taskDrawer: Object.freeze({
       title: chrome.taskDrawer.title,
       summary: chrome.taskDrawer.summary,

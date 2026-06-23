@@ -480,6 +480,60 @@ function buildVisualSmokeChromeSnapshot(
         targetPanel: null,
       }),
     ]),
+    fileTree: Object.freeze({
+      title: "File Tree",
+      summary:
+        state.activePanel === "lifecycle"
+          ? "Lifecycle focus anchors"
+          : "Stream focus anchors",
+      nodes: Object.freeze([
+        Object.freeze({
+          id: "workspace_root",
+          label: "Workspace",
+          pathLabel: "workspace root",
+          statusLabel: disposed ? "Disposed" : "Open",
+          depth: 0,
+          active: false,
+          tone: disposed ? "danger" : "success",
+        }),
+        Object.freeze({
+          id: "workflow_graph",
+          label: "Graph spec",
+          pathLabel: "specs/schemas/workflow_graph.md",
+          statusLabel: "Spec",
+          depth: 1,
+          active: false,
+          tone: "neutral",
+        }),
+        Object.freeze({
+          id: "runtime_stream",
+          label: "Runtime stream",
+          pathLabel: disposed ? "Disposed" : "No active stream",
+          statusLabel: disposed ? "Disposed" : "Idle",
+          depth: 1,
+          active: state.activePanel === "stream",
+          tone: disposed ? "danger" : "neutral",
+        }),
+        Object.freeze({
+          id: "reviews",
+          label: "Review reports",
+          pathLabel: "docs/reviews",
+          statusLabel: "M1.5",
+          depth: 1,
+          active: false,
+          tone: "accent",
+        }),
+        Object.freeze({
+          id: "accepted_specs",
+          label: "Accepted specs",
+          pathLabel: "specs",
+          statusLabel: "Read-only",
+          depth: 1,
+          active: false,
+          tone: "neutral",
+        }),
+      ]),
+    }),
     taskDrawer: Object.freeze({
       title: "Task Drawer",
       summary:

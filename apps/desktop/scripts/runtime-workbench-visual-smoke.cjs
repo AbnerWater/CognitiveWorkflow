@@ -22,10 +22,16 @@ async function readMetrics(window) {
     (() => ({
       hasRoot: document.querySelector('.cw-workbench') !== null,
       hasDock: document.querySelector('.cw-workbench__dock') !== null,
+      hasFileTree: document.querySelector('.cw-workbench__file-tree') !== null,
       hasLifecyclePanel: document.querySelector('.cw-workbench__lifecycle-panel') !== null,
       hasTaskDrawer: document.querySelector('.cw-workbench__task-drawer') !== null,
       hasChatBox: document.querySelector('.cw-workbench__chat') !== null,
       dockItems: document.querySelectorAll('.cw-workbench__dock-item').length,
+      fileTreeNodes: document.querySelectorAll('.cw-workbench__file-tree-node').length,
+      activeFileTreeNodes:
+        document.querySelectorAll('.cw-workbench__file-tree-node--active').length,
+      hasRuntimeStreamFileNode:
+        document.querySelector('[data-file-tree-node="runtime_stream"]') !== null,
       hasTaskDrawerToggle: document.querySelector('[data-task-drawer-toggle="true"]') !== null,
       hasChatBoxToggle: document.querySelector('[data-chat-box-toggle="true"]') !== null,
       taskDrawerExpanded:
@@ -114,6 +120,9 @@ function collectVisualSmokeFailures(
   if (metrics.hasDock !== true) {
     failures.push("missing shell dock");
   }
+  if (metrics.hasFileTree !== true) {
+    failures.push("missing file tree");
+  }
   if (metrics.hasLifecyclePanel !== true) {
     failures.push("missing lifecycle panel");
   }
@@ -125,6 +134,17 @@ function collectVisualSmokeFailures(
   }
   if (metrics.dockItems !== 4) {
     failures.push(`expected 4 dock items, got ${metrics.dockItems}`);
+  }
+  if (metrics.fileTreeNodes !== 5) {
+    failures.push(`expected 5 file tree nodes, got ${metrics.fileTreeNodes}`);
+  }
+  if (metrics.activeFileTreeNodes !== 0) {
+    failures.push(
+      `expected no active file tree node in lifecycle smoke, got ${metrics.activeFileTreeNodes}`,
+    );
+  }
+  if (metrics.hasRuntimeStreamFileNode !== true) {
+    failures.push("missing runtime stream file tree node");
   }
   if (metrics.hasTaskDrawerToggle !== true) {
     failures.push("missing task drawer toggle");

@@ -5111,6 +5111,32 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       },
     ],
   );
+  assert.equal(snapshot.chrome.fileTree.title, "File Tree");
+  assert.equal(snapshot.chrome.fileTree.summary, "Stream focus anchors");
+  assert.deepEqual(
+    snapshot.chrome.fileTree.nodes.map((node) => [
+      node.id,
+      node.pathLabel,
+      node.statusLabel,
+      node.depth,
+      node.active,
+      node.tone,
+    ]),
+    [
+      ["workspace_root", "workspace root", "Open", 0, false, "success"],
+      [
+        "workflow_graph",
+        "specs/schemas/workflow_graph.md",
+        "Spec",
+        1,
+        false,
+        "neutral",
+      ],
+      ["runtime_stream", "Run run_shell", "Active", 1, true, "success"],
+      ["reviews", "docs/reviews", "M1.5", 1, false, "accent"],
+      ["accepted_specs", "specs", "Read-only", 1, false, "neutral"],
+    ],
+  );
   assert.equal(snapshot.chrome.taskDrawer.title, "Task Drawer");
   assert.equal(snapshot.chrome.taskDrawer.summary, "Stream focus");
   assert.equal(
@@ -5223,6 +5249,9 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(Object.isFrozen(snapshot.chrome), true);
   assert.equal(Object.isFrozen(snapshot.chrome.dockItems), true);
   assert.equal(Object.isFrozen(snapshot.chrome.dockItems[0]), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.fileTree), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.fileTree.nodes), true);
+  assert.equal(Object.isFrozen(snapshot.chrome.fileTree.nodes[0]), true);
   assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer), true);
   assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer.items), true);
   assert.equal(Object.isFrozen(snapshot.chrome.taskDrawer.items[0]), true);
@@ -5396,6 +5425,10 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   );
   assert.equal(disposedSnapshot.shortcutHints[0]?.enabled, false);
   assert.equal(disposedSnapshot.ariaLive, "assertive");
+  assert.equal(
+    disposedSnapshot.chrome.fileTree.nodes[0]?.statusLabel,
+    "Disposed",
+  );
   assert.equal(disposedSnapshot.chrome.chatBox.statusLabel, "Disposed");
   assert.equal(
     disposedSnapshot.chrome.chatBox.collapsedSummary,

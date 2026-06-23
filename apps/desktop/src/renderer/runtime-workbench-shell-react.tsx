@@ -32,6 +32,7 @@ import type {
   RuntimeWorkbenchShellActionId,
   RuntimeWorkbenchShellChatBoxSnapshot,
   RuntimeWorkbenchShellDockItem,
+  RuntimeWorkbenchShellFileTreeSnapshot,
   RuntimeWorkbenchShellLifecyclePanelSnapshot,
   RuntimeWorkbenchShellRuntimeStreamEventSnapshot,
   RuntimeWorkbenchShellRuntimeStreamPanelSnapshot,
@@ -528,10 +529,13 @@ export function RuntimeWorkbenchShellReactView(
       </header>
 
       <div className="cw-workbench__shell">
-        <RuntimeWorkbenchShellDock
-          items={snapshot.chrome.dockItems}
-          onPanelClick={handlePanelClick}
-        />
+        <div className="cw-workbench__left-rail">
+          <RuntimeWorkbenchShellDock
+            items={snapshot.chrome.dockItems}
+            onPanelClick={handlePanelClick}
+          />
+          <RuntimeWorkbenchShellFileTree fileTree={snapshot.chrome.fileTree} />
+        </div>
 
         <div className="cw-workbench__workspace">
           <nav
@@ -694,6 +698,44 @@ function RuntimeWorkbenchShellDock(props: {
           {item.badgeLabel === null ? null : <small>{item.badgeLabel}</small>}
         </button>
       ))}
+    </aside>
+  );
+}
+
+function RuntimeWorkbenchShellFileTree(props: {
+  readonly fileTree: RuntimeWorkbenchShellFileTreeSnapshot;
+}): ReactElement {
+  return (
+    <aside
+      aria-label={props.fileTree.title}
+      className="cw-workbench__file-tree"
+    >
+      <div className="cw-workbench__file-tree-header">
+        <h2>{props.fileTree.title}</h2>
+        <p>{props.fileTree.summary}</p>
+      </div>
+      <ul className="cw-workbench__file-tree-nodes" role="tree">
+        {props.fileTree.nodes.map((node) => (
+          <li
+            aria-selected={node.active}
+            className={[
+              "cw-workbench__file-tree-node",
+              `cw-workbench__file-tree-node--depth-${node.depth}`,
+              `cw-workbench__file-tree-node--${node.tone}`,
+              node.active ? "cw-workbench__file-tree-node--active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            data-file-tree-node={node.id}
+            key={node.id}
+            role="treeitem"
+          >
+            <span>{node.label}</span>
+            <small>{node.statusLabel}</small>
+            <code>{node.pathLabel}</code>
+          </li>
+        ))}
+      </ul>
     </aside>
   );
 }

@@ -57,6 +57,8 @@ test("renderer runtime workbench React shell renders server snapshot without DOM
   assert.match(markup, /Canvas/u);
   assert.match(markup, /Lifecycle/u);
   assert.match(markup, /Stream/u);
+  assert.match(markup, /File Tree/u);
+  assert.match(markup, /Accepted specs/u);
   assert.match(markup, /Task Drawer/u);
   assert.match(markup, /Collapse drawer/u);
   assert.match(markup, /Chat Box/u);

@@ -30,7 +30,7 @@ button {
 
 .cw-workbench__shell {
   display: grid;
-  grid-template-columns: 156px minmax(0, 1fr) minmax(240px, 300px);
+  grid-template-columns: 176px minmax(0, 1fr) minmax(240px, 300px);
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas:
     "dock workspace drawer"
@@ -47,8 +47,15 @@ button {
   min-width: 0;
 }
 
-.cw-workbench__dock {
+.cw-workbench__left-rail {
   grid-area: dock;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cw-workbench__dock {
   display: grid;
   align-content: start;
   gap: 8px;
@@ -90,6 +97,89 @@ button {
 .cw-workbench__dock-item:disabled {
   cursor: not-allowed;
   opacity: 0.56;
+}
+
+.cw-workbench__file-tree {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__file-tree-header h2 {
+  font-size: 15px;
+}
+
+.cw-workbench__file-tree-header p {
+  margin: 2px 0 0;
+  color: #657487;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.cw-workbench__file-tree-nodes {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cw-workbench__file-tree-node {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 6px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #d7dde5;
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.cw-workbench__file-tree-node--depth-1 {
+  margin-left: 10px;
+}
+
+.cw-workbench__file-tree-node--success {
+  border-left-color: #77b28c;
+}
+
+.cw-workbench__file-tree-node--accent {
+  border-left-color: #4f8cc9;
+}
+
+.cw-workbench__file-tree-node--danger {
+  border-left-color: #c56b6b;
+}
+
+.cw-workbench__file-tree-node--active {
+  background: #eaf2fb;
+}
+
+.cw-workbench__file-tree-node span {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cw-workbench__file-tree-node small {
+  color: #526173;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cw-workbench__file-tree-node code {
+  grid-column: 1 / -1;
+  color: #657487;
+  overflow-wrap: anywhere;
+  font-family:
+    ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
 }
 
 .cw-workbench__task-drawer {
@@ -1168,7 +1258,7 @@ button {
 
 @media (max-width: 1120px) {
   .cw-workbench__shell {
-    grid-template-columns: 132px minmax(0, 1fr);
+    grid-template-columns: 150px minmax(0, 1fr);
     grid-template-areas:
       "dock workspace"
       "drawer workspace"
@@ -1216,6 +1306,7 @@ button {
 
 @media (max-width: 520px) {
   .cw-workbench__dock,
+  .cw-workbench__file-tree-node,
   .cw-workbench__chat-header,
   .cw-workbench__task-drawer-header,
   .cw-workbench__status-grid,

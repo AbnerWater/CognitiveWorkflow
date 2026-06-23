@@ -109,6 +109,31 @@ export interface RuntimeWorkbenchShellDockItem {
   readonly targetPanel: RuntimeWorkbenchPanelId | null;
 }
 
+export type RuntimeWorkbenchShellFileTreeNodeId =
+  | "workspace_root"
+  | "workflow_graph"
+  | "runtime_stream"
+  | "reviews"
+  | "accepted_specs";
+
+export type RuntimeWorkbenchShellFileTreeNodeDepth = 0 | 1;
+
+export interface RuntimeWorkbenchShellFileTreeNode {
+  readonly id: RuntimeWorkbenchShellFileTreeNodeId;
+  readonly label: string;
+  readonly pathLabel: string;
+  readonly statusLabel: string;
+  readonly depth: RuntimeWorkbenchShellFileTreeNodeDepth;
+  readonly active: boolean;
+  readonly tone: RuntimeWorkbenchShellTone;
+}
+
+export interface RuntimeWorkbenchShellFileTreeSnapshot {
+  readonly title: string;
+  readonly summary: string;
+  readonly nodes: readonly RuntimeWorkbenchShellFileTreeNode[];
+}
+
 export type RuntimeWorkbenchShellTaskDrawerItemId =
   | "active_panel"
   | "lifecycle_panel"
@@ -148,6 +173,7 @@ export interface RuntimeWorkbenchShellChatBoxSnapshot {
 
 export interface RuntimeWorkbenchShellChromeSnapshot {
   readonly dockItems: readonly RuntimeWorkbenchShellDockItem[];
+  readonly fileTree: RuntimeWorkbenchShellFileTreeSnapshot;
   readonly taskDrawer: RuntimeWorkbenchShellTaskDrawerSnapshot;
   readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
 }
@@ -547,6 +573,57 @@ function buildShellChrome(
         targetPanel: null,
       }),
     ],
+    fileTree: {
+      title: "File Tree",
+      summary: `${activePanelLabel} focus anchors`,
+      nodes: [
+        fileTreeNode({
+          id: "workspace_root",
+          label: "Workspace",
+          pathLabel: "workspace root",
+          statusLabel: disposed ? "Disposed" : "Open",
+          depth: 0,
+          active: false,
+          tone: disposed ? "danger" : "success",
+        }),
+        fileTreeNode({
+          id: "workflow_graph",
+          label: "Graph spec",
+          pathLabel: "specs/schemas/workflow_graph.md",
+          statusLabel: "Spec",
+          depth: 1,
+          active: false,
+          tone: "neutral",
+        }),
+        fileTreeNode({
+          id: "runtime_stream",
+          label: "Runtime stream",
+          pathLabel: runtimeStreamChannelLabel ?? "No active stream",
+          statusLabel: panelStatusLabel(runtimeStreamStatus),
+          depth: 1,
+          active: host.activePanel === "stream",
+          tone: panelStatusTone(runtimeStreamStatus),
+        }),
+        fileTreeNode({
+          id: "reviews",
+          label: "Review reports",
+          pathLabel: "docs/reviews",
+          statusLabel: "M1.5",
+          depth: 1,
+          active: false,
+          tone: "accent",
+        }),
+        fileTreeNode({
+          id: "accepted_specs",
+          label: "Accepted specs",
+          pathLabel: "specs",
+          statusLabel: "Read-only",
+          depth: 1,
+          active: false,
+          tone: "neutral",
+        }),
+      ],
+    },
     taskDrawer: {
       title: "Task Drawer",
       summary: `${activePanelLabel} focus`,
@@ -710,6 +787,20 @@ function dockItem(options: {
     ...options,
     badgeLabel: panelBadgeLabel(options.status),
     tone: panelStatusTone(options.status),
+  });
+}
+
+function fileTreeNode(
+  node: RuntimeWorkbenchShellFileTreeNode,
+): RuntimeWorkbenchShellFileTreeNode {
+  return Object.freeze({
+    id: node.id,
+    label: node.label,
+    pathLabel: node.pathLabel,
+    statusLabel: node.statusLabel,
+    depth: node.depth,
+    active: node.active,
+    tone: node.tone,
   });
 }
 
@@ -1049,6 +1140,13 @@ function freezeRuntimeWorkbenchShellChrome(
         }),
       ),
     ),
+    fileTree: Object.freeze({
+      title: chrome.fileTree.title,
+      summary: chrome.fileTree.summary,
+      nodes: Object.freeze(
+        chrome.fileTree.nodes.map((node) => fileTreeNode(node)),
+      ),
+    }),
     taskDrawer: Object.freeze({
       title: chrome.taskDrawer.title,
       summary: chrome.taskDrawer.summary,
