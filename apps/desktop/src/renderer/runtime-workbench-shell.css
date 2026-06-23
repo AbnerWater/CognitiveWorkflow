@@ -505,6 +505,74 @@ button {
   font-weight: 700;
 }
 
+.cw-workbench__workflow-canvas-history {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cw-workbench__workflow-canvas-history h4 {
+  color: #526173;
+  font-size: 12px;
+}
+
+.cw-workbench__workflow-canvas-history ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cw-workbench__workflow-canvas-history li {
+  min-width: 0;
+}
+
+.cw-workbench__workflow-canvas-history-button {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px;
+  align-items: center;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 1px solid #c6d4e3;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1e3f67;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.cw-workbench__workflow-canvas-history-button:hover {
+  background: #eef5fb;
+}
+
+.cw-workbench__workflow-canvas-history-button:focus-visible {
+  outline: 2px solid #3d6fa7;
+  outline-offset: 2px;
+}
+
+.cw-workbench__workflow-canvas-history-button span {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 18px;
+  min-height: 18px;
+  border-radius: 999px;
+  background: #eaf2fb;
+  color: #1f4d7c;
+  font-size: 10px;
+}
+
+.cw-workbench__workflow-canvas-history-button strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .cw-workbench__workflow-canvas-inspector-routes {
   display: grid;
   gap: 6px;

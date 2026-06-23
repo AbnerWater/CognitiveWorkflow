@@ -867,6 +867,67 @@ test("renderer runtime workbench React shell selects focused canvas node locally
     );
     assertFakeRuntimeWorkbenchFocusedNode(dom.container, "end");
 
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasHistorySelect !== undefined,
+      ),
+      8,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElement(
+          dom.container,
+          (element) =>
+            element.dataset.workflowCanvasHistoryIndex === "2" &&
+            element.dataset.workflowCanvasHistorySelect === "review_task",
+          "canvas history trail review_task item",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspector",
+        "review_task",
+      ).getAttribute("data-workflow-canvas-inspector"),
+      "review_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "2",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "2",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorBackTarget",
+        "repair_task",
+      ).getAttribute("data-workflow-canvas-inspector-back-target"),
+      "repair_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasNodeSelected",
+        "true",
+      ).getAttribute("data-workflow-canvas-node"),
+      "review_task",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.workflowCanvasHistorySelect !== undefined,
+      ),
+      2,
+    );
+    assertFakeRuntimeWorkbenchFocusedNode(dom.container, "review_task");
+
     await act(async () => {
       root.unmount();
     });

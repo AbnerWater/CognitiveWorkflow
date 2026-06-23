@@ -913,6 +913,33 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
       };
     });
   }, []);
+  const handleInspectorHistorySelectClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const nodeId = event.currentTarget.dataset.workflowCanvasHistorySelect;
+      const rawIndex = event.currentTarget.dataset.workflowCanvasHistoryIndex;
+      if (
+        !isRuntimeWorkbenchShellWorkflowCanvasNodeId(props.canvas, nodeId) ||
+        rawIndex === undefined
+      ) {
+        return;
+      }
+      const historyIndex = Number(rawIndex);
+      if (!Number.isSafeInteger(historyIndex) || historyIndex < 0) {
+        return;
+      }
+      setSelectionState((current) => {
+        if (current.history[historyIndex] !== nodeId) {
+          return current;
+        }
+        return {
+          history: current.history.slice(0, historyIndex),
+          selectedNodeId: nodeId,
+        };
+      });
+      nodeButtonRefs.current.get(nodeId)?.focus({ preventScroll: true });
+    },
+    [props.canvas],
+  );
 
   return (
     <section
@@ -958,7 +985,9 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
           {selectable && selectedNode !== null ? (
             <RuntimeWorkbenchShellWorkflowCanvasInspector
               handleBackClick={handleInspectorBackClick}
+              handleHistorySelectClick={handleInspectorHistorySelectClick}
               handleRouteSelectClick={handleInspectorRouteSelectClick}
+              history={selectionState.history}
               historyDepth={selectionState.history.length}
               incomingEdges={selectedIncomingEdges}
               node={selectedNode}
@@ -1103,9 +1132,13 @@ function RuntimeWorkbenchShellWorkflowCanvasInspector(props: {
   readonly node: RuntimeWorkbenchShellWorkflowCanvasNode;
   readonly incomingEdges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
   readonly outgoingEdges: readonly RuntimeWorkbenchShellWorkflowCanvasEdge[];
+  readonly history: readonly RuntimeWorkbenchShellWorkflowCanvasNodeId[];
   readonly historyDepth: number;
   readonly previousNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null;
   readonly handleBackClick: () => void;
+  readonly handleHistorySelectClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
   readonly handleRouteSelectClick: (
     event: MouseEvent<HTMLButtonElement>,
   ) => void;
@@ -1149,6 +1182,10 @@ function RuntimeWorkbenchShellWorkflowCanvasInspector(props: {
           <dd>{props.outgoingEdges.length}</dd>
         </div>
       </dl>
+      <RuntimeWorkbenchShellWorkflowCanvasHistoryTrail
+        handleHistorySelectClick={props.handleHistorySelectClick}
+        history={props.history}
+      />
       <RuntimeWorkbenchShellWorkflowCanvasInspectorEdgeList
         currentNodeId={props.node.nodeId}
         edges={props.incomingEdges}
@@ -1164,6 +1201,45 @@ function RuntimeWorkbenchShellWorkflowCanvasInspector(props: {
         title="Outgoing edges"
       />
     </aside>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasHistoryTrail(props: {
+  readonly history: readonly RuntimeWorkbenchShellWorkflowCanvasNodeId[];
+  readonly handleHistorySelectClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
+}): ReactElement | null {
+  if (props.history.length === 0) {
+    return null;
+  }
+  return (
+    <section
+      aria-label="Canvas history trail"
+      className="cw-workbench__workflow-canvas-history"
+      data-workflow-canvas-history-trail="true"
+    >
+      <h4>History</h4>
+      <ol>
+        {props.history.map((nodeId, index) => (
+          <li
+            data-workflow-canvas-history-item={nodeId}
+            key={`${index}-${nodeId}`}
+          >
+            <button
+              className="cw-workbench__workflow-canvas-history-button"
+              data-workflow-canvas-history-index={index}
+              data-workflow-canvas-history-select={nodeId}
+              onClick={props.handleHistorySelectClick}
+              type="button"
+            >
+              <span>{index + 1}</span>
+              <strong>{nodeId}</strong>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

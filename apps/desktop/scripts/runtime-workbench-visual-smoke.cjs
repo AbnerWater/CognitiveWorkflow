@@ -97,6 +97,16 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-workflow-canvas-inspector-back="true"]').length,
       workflowCanvasInspectorBackTarget:
         document.querySelector('[data-workflow-canvas-inspector-back="true"]')?.getAttribute('data-workflow-canvas-inspector-back-target') ?? null,
+      workflowCanvasHistoryTrailItems:
+        document.querySelectorAll('[data-workflow-canvas-history-select]').length,
+      workflowCanvasHistoryTrailNodeIds:
+        Array.from(
+          document.querySelectorAll('[data-workflow-canvas-history-select]'),
+          (element) =>
+            (element.getAttribute('data-workflow-canvas-history-index') ?? '') +
+            ':' +
+            (element.getAttribute('data-workflow-canvas-history-select') ?? '')
+        ).filter(Boolean),
       workflowCanvasInspectorEdges:
         document.querySelectorAll('[data-workflow-canvas-inspector-edge]').length,
       workflowCanvasInspectorEdgeIds:
@@ -291,6 +301,52 @@ async function clickWorkflowCanvasInspectorBack(window, nodeId) {
   }
 }
 
+async function clickWorkflowCanvasHistoryTrail(window, nodeId, index) {
+  const nodeLiteral = JSON.stringify(nodeId);
+  const indexLiteral = JSON.stringify(String(index));
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedNodeId = ${nodeLiteral};
+      const expectedIndex = ${indexLiteral};
+      const startedAt = Date.now();
+      const selectHistory = () => {
+        const button = document.querySelector(
+          '[data-workflow-canvas-history-select="' +
+            expectedNodeId +
+            '"][data-workflow-canvas-history-index="' +
+            expectedIndex +
+            '"]'
+        );
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Missing workflow canvas history item: ' + expectedIndex + ':' + expectedNodeId,
+            historyItems: Array.from(
+              document.querySelectorAll('[data-workflow-canvas-history-select]'),
+              (element) =>
+                (element.getAttribute('data-workflow-canvas-history-index') ?? '') +
+                ':' +
+                (element.getAttribute('data-workflow-canvas-history-select') ?? '')
+            ),
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(selectHistory);
+      };
+      selectHistory();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
 async function keyWorkflowCanvasSelectedNode(window, key, expectedNodeId) {
   const keyLiteral = JSON.stringify(key);
   const expectedNodeLiteral = JSON.stringify(expectedNodeId);
@@ -425,6 +481,7 @@ function collectVisualSmokeFailures(
   canvasKeyboardPreviousMetrics,
   canvasKeyboardUpMetrics,
   canvasKeyboardDownMetrics,
+  canvasHistorySelectMetrics,
 ) {
   const failures = [];
   const selectedWorkflowCanvasEdgeIds = Array.isArray(
@@ -914,6 +971,67 @@ function collectVisualSmokeFailures(
       `expected keyboard ArrowDown back target review_task, got ${canvasKeyboardDownMetrics.workflowCanvasInspectorBackTarget}`,
     );
   }
+  if (canvasKeyboardDownMetrics.workflowCanvasHistoryTrailItems !== 5) {
+    failures.push(
+      `expected keyboard ArrowDown history trail count 5, got ${canvasKeyboardDownMetrics.workflowCanvasHistoryTrailItems}`,
+    );
+  }
+  const canvasKeyboardDownHistoryTrail = Array.isArray(
+    canvasKeyboardDownMetrics.workflowCanvasHistoryTrailNodeIds,
+  )
+    ? canvasKeyboardDownMetrics.workflowCanvasHistoryTrailNodeIds.join(",")
+    : "";
+  if (
+    canvasKeyboardDownHistoryTrail !==
+    "0:context_task,1:repair_task,2:end,3:repair_task,4:review_task"
+  ) {
+    failures.push(
+      `expected keyboard ArrowDown history trail context_task,repair_task,end,repair_task,review_task, got ${canvasKeyboardDownHistoryTrail}`,
+    );
+  }
+  if (canvasHistorySelectMetrics.selectedWorkflowCanvasNodeId !== "end") {
+    failures.push(
+      `expected history trail checkpoint to select end, got ${canvasHistorySelectMetrics.selectedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasHistorySelectMetrics.workflowCanvasInspectorNodeId !== "end") {
+    failures.push(
+      `expected history trail checkpoint inspector end, got ${canvasHistorySelectMetrics.workflowCanvasInspectorNodeId}`,
+    );
+  }
+  if (canvasHistorySelectMetrics.focusedWorkflowCanvasNodeId !== "end") {
+    failures.push(
+      `expected history trail checkpoint focus end, got ${canvasHistorySelectMetrics.focusedWorkflowCanvasNodeId}`,
+    );
+  }
+  if (canvasHistorySelectMetrics.workflowCanvasInspectorHistoryDepth !== "2") {
+    failures.push(
+      `expected history trail checkpoint history depth 2, got ${canvasHistorySelectMetrics.workflowCanvasInspectorHistoryDepth}`,
+    );
+  }
+  if (
+    canvasHistorySelectMetrics.workflowCanvasInspectorBackTarget !==
+    "repair_task"
+  ) {
+    failures.push(
+      `expected history trail checkpoint back target repair_task, got ${canvasHistorySelectMetrics.workflowCanvasInspectorBackTarget}`,
+    );
+  }
+  if (canvasHistorySelectMetrics.workflowCanvasHistoryTrailItems !== 2) {
+    failures.push(
+      `expected history trail checkpoint trail count 2, got ${canvasHistorySelectMetrics.workflowCanvasHistoryTrailItems}`,
+    );
+  }
+  const canvasHistorySelectTrail = Array.isArray(
+    canvasHistorySelectMetrics.workflowCanvasHistoryTrailNodeIds,
+  )
+    ? canvasHistorySelectMetrics.workflowCanvasHistoryTrailNodeIds.join(",")
+    : "";
+  if (canvasHistorySelectTrail !== "0:context_task,1:repair_task") {
+    failures.push(
+      `expected history trail checkpoint trail context_task,repair_task, got ${canvasHistorySelectTrail}`,
+    );
+  }
   if (metrics.activeFileTreeNodes !== 0) {
     failures.push(
       `expected no active file tree node in lifecycle smoke, got ${metrics.activeFileTreeNodes}`,
@@ -1132,6 +1250,13 @@ async function main() {
     "read canvas keyboard down metrics",
     () => readMetrics(window),
   );
+  await runSmokeStep("select canvas history checkpoint", () =>
+    clickWorkflowCanvasHistoryTrail(window, "end", 2),
+  );
+  const canvasHistorySelectMetrics = await runSmokeStep(
+    "read canvas history select metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("show lifecycle panel", () =>
     clickPanel(window, "lifecycle"),
   );
@@ -1162,6 +1287,7 @@ async function main() {
     canvasKeyboardPreviousMetrics,
     canvasKeyboardUpMetrics,
     canvasKeyboardDownMetrics,
+    canvasHistorySelectMetrics,
   );
   await fs.writeFile(outputPath, image.toPNG());
   await fs.writeFile(
@@ -1179,6 +1305,7 @@ async function main() {
         canvasKeyboardPreviousMetrics,
         canvasKeyboardUpMetrics,
         canvasKeyboardDownMetrics,
+        canvasHistorySelectMetrics,
         messages,
         failures,
         outputPath,
