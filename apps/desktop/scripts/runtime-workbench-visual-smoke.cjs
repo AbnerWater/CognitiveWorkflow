@@ -288,6 +288,10 @@ async function readMetrics(window) {
         document.querySelector('[data-chat-draft-preview="true"]')?.getAttribute('data-chat-draft-preview-intent') ?? null,
       chatDraftPreviewIntentLabel:
         document.querySelector('[data-chat-draft-preview="true"]')?.getAttribute('data-chat-draft-preview-intent-label') ?? null,
+      chatDraftPreviewTarget:
+        document.querySelector('[data-chat-draft-preview="true"]')?.getAttribute('data-chat-draft-preview-target') ?? null,
+      chatDraftPreviewAction:
+        document.querySelector('[data-chat-draft-preview="true"]')?.getAttribute('data-chat-draft-preview-action') ?? null,
       chatDraftPreviewBody:
         document.querySelector('[data-chat-draft-preview-body]')?.getAttribute('data-chat-draft-preview-body') ?? null,
       chatDraftPreviewText:
@@ -2488,15 +2492,27 @@ function collectVisualSmokeFailures(
       `expected initial chat draft preview body empty, got ${chatInitialMetrics.chatDraftPreviewBody}`,
     );
   }
+  if (chatInitialMetrics.chatDraftPreviewTarget !== "workflow") {
+    failures.push(
+      `expected initial chat draft preview target workflow, got ${chatInitialMetrics.chatDraftPreviewTarget}`,
+    );
+  }
+  if (chatInitialMetrics.chatDraftPreviewAction !== "question") {
+    failures.push(
+      `expected initial chat draft preview action question, got ${chatInitialMetrics.chatDraftPreviewAction}`,
+    );
+  }
   if (
     !chatInitialMetrics.chatDraftPreviewText?.includes("Preview") ||
     !chatInitialMetrics.chatDraftPreviewText?.includes("Empty") ||
     !chatInitialMetrics.chatDraftPreviewText?.includes("No draft text") ||
     !chatInitialMetrics.chatDraftPreviewText?.includes("Ask") ||
+    !chatInitialMetrics.chatDraftPreviewText?.includes("Current workflow") ||
+    !chatInitialMetrics.chatDraftPreviewText?.includes("Question") ||
     !chatInitialMetrics.chatDraftPreviewText?.includes("Draft is empty")
   ) {
     failures.push(
-      `expected initial chat draft preview text to include empty Ask preview, got ${chatInitialMetrics.chatDraftPreviewText}`,
+      `expected initial chat draft preview text to include empty Ask context preview, got ${chatInitialMetrics.chatDraftPreviewText}`,
     );
   }
   if (metrics.chatDraftInputs !== 1) {
@@ -2595,6 +2611,16 @@ function collectVisualSmokeFailures(
       `expected chat draft preview body draft, got ${chatDraftMetrics.chatDraftPreviewBody}`,
     );
   }
+  if (chatDraftMetrics.chatDraftPreviewTarget !== "repair") {
+    failures.push(
+      `expected chat draft preview target repair, got ${chatDraftMetrics.chatDraftPreviewTarget}`,
+    );
+  }
+  if (chatDraftMetrics.chatDraftPreviewAction !== "repair_review") {
+    failures.push(
+      `expected chat draft preview action repair_review, got ${chatDraftMetrics.chatDraftPreviewAction}`,
+    );
+  }
   if (chatDraftMetrics.chatDraftLength !== "22") {
     failures.push(
       `expected chat draft length 22, got ${chatDraftMetrics.chatDraftLength}`,
@@ -2634,10 +2660,12 @@ function collectVisualSmokeFailures(
       "Review repair plan now",
     ) ||
     !chatDraftMetrics.chatDraftPreviewText?.includes("Repair") ||
+    !chatDraftMetrics.chatDraftPreviewText?.includes("Repair plan") ||
+    !chatDraftMetrics.chatDraftPreviewText?.includes("Repair review") ||
     !chatDraftMetrics.chatDraftPreviewText?.includes("Chat disabled")
   ) {
     failures.push(
-      `expected chat draft preview text to include blocked Repair preview, got ${chatDraftMetrics.chatDraftPreviewText}`,
+      `expected chat draft preview text to include blocked Repair context preview, got ${chatDraftMetrics.chatDraftPreviewText}`,
     );
   }
   if (chatClearedMetrics.chatDraftValue !== "") {
@@ -2680,13 +2708,25 @@ function collectVisualSmokeFailures(
       `expected cleared chat draft preview body empty, got ${chatClearedMetrics.chatDraftPreviewBody}`,
     );
   }
+  if (chatClearedMetrics.chatDraftPreviewTarget !== "repair") {
+    failures.push(
+      `expected cleared chat draft preview target repair, got ${chatClearedMetrics.chatDraftPreviewTarget}`,
+    );
+  }
+  if (chatClearedMetrics.chatDraftPreviewAction !== "repair_review") {
+    failures.push(
+      `expected cleared chat draft preview action repair_review, got ${chatClearedMetrics.chatDraftPreviewAction}`,
+    );
+  }
   if (
     !chatClearedMetrics.chatDraftPreviewText?.includes("No draft text") ||
     !chatClearedMetrics.chatDraftPreviewText?.includes("Repair") ||
+    !chatClearedMetrics.chatDraftPreviewText?.includes("Repair plan") ||
+    !chatClearedMetrics.chatDraftPreviewText?.includes("Repair review") ||
     !chatClearedMetrics.chatDraftPreviewText?.includes("Draft is empty")
   ) {
     failures.push(
-      `expected cleared chat draft preview text to include empty Repair preview, got ${chatClearedMetrics.chatDraftPreviewText}`,
+      `expected cleared chat draft preview text to include empty Repair context preview, got ${chatClearedMetrics.chatDraftPreviewText}`,
     );
   }
   if (metrics.timelineItems !== 5) {

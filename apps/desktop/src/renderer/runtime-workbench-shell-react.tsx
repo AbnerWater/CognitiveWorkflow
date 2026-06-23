@@ -2222,6 +2222,13 @@ interface RuntimeWorkbenchShellChatDraftPreview {
   readonly reasonLabel: string;
 }
 
+interface RuntimeWorkbenchShellChatDraftIntentContext {
+  readonly target: "workflow" | "draft" | "repair";
+  readonly targetLabel: string;
+  readonly action: "question" | "change_request" | "repair_review";
+  readonly actionLabel: string;
+}
+
 const RUNTIME_WORKBENCH_CHAT_DRAFT_INTENTS = Object.freeze([
   "ask",
   "revise",
@@ -2246,6 +2253,34 @@ function runtimeWorkbenchShellChatDraftIntentLabel(
       return "Revise";
     case "repair":
       return "Repair";
+  }
+}
+
+function runtimeWorkbenchShellChatDraftIntentContext(
+  intent: RuntimeWorkbenchShellChatDraftIntent,
+): RuntimeWorkbenchShellChatDraftIntentContext {
+  switch (intent) {
+    case "ask":
+      return {
+        target: "workflow",
+        targetLabel: "Current workflow",
+        action: "question",
+        actionLabel: "Question",
+      };
+    case "revise":
+      return {
+        target: "draft",
+        targetLabel: "Workflow draft",
+        action: "change_request",
+        actionLabel: "Change request",
+      };
+    case "repair":
+      return {
+        target: "repair",
+        targetLabel: "Repair plan",
+        action: "repair_review",
+        actionLabel: "Repair review",
+      };
   }
 }
 
@@ -2298,6 +2333,8 @@ function RuntimeWorkbenchShellChatBox(props: {
   const draftWords = runtimeWorkbenchShellChatDraftWordCount(draft);
   const draftIntentLabel =
     runtimeWorkbenchShellChatDraftIntentLabel(draftIntent);
+  const draftIntentContext =
+    runtimeWorkbenchShellChatDraftIntentContext(draftIntent);
   const draftPreview = runtimeWorkbenchShellChatDraftPreview(
     props.chatBox.enabled,
     draftWords,
@@ -2414,6 +2451,7 @@ function RuntimeWorkbenchShellChatBox(props: {
           </div>
           <RuntimeWorkbenchShellChatDraftPreview
             draft={draft}
+            intentContext={draftIntentContext}
             intent={draftIntent}
             intentLabel={draftIntentLabel}
             preview={draftPreview}
@@ -2463,6 +2501,7 @@ function RuntimeWorkbenchShellChatBox(props: {
 
 function RuntimeWorkbenchShellChatDraftPreview(props: {
   readonly draft: string;
+  readonly intentContext: RuntimeWorkbenchShellChatDraftIntentContext;
   readonly intent: RuntimeWorkbenchShellChatDraftIntent;
   readonly intentLabel: string;
   readonly preview: RuntimeWorkbenchShellChatDraftPreview;
@@ -2476,6 +2515,7 @@ function RuntimeWorkbenchShellChatDraftPreview(props: {
         `cw-workbench__chat-preview--${props.preview.state}`,
       ].join(" ")}
       data-chat-draft-preview="true"
+      data-chat-draft-preview-action={props.intentContext.action}
       data-chat-draft-preview-intent={props.intent}
       data-chat-draft-preview-intent-label={props.intentLabel}
       data-chat-draft-preview-ready={
@@ -2483,6 +2523,7 @@ function RuntimeWorkbenchShellChatDraftPreview(props: {
       }
       data-chat-draft-preview-reason={props.preview.reason}
       data-chat-draft-preview-state={props.preview.state}
+      data-chat-draft-preview-target={props.intentContext.target}
     >
       <div className="cw-workbench__chat-preview-header">
         <h3>Preview</h3>
@@ -2498,6 +2539,14 @@ function RuntimeWorkbenchShellChatDraftPreview(props: {
         <div>
           <dt>Intent</dt>
           <dd>{props.intentLabel}</dd>
+        </div>
+        <div>
+          <dt>Target</dt>
+          <dd>{props.intentContext.targetLabel}</dd>
+        </div>
+        <div>
+          <dt>Action</dt>
+          <dd>{props.intentContext.actionLabel}</dd>
         </div>
         <div>
           <dt>Reason</dt>

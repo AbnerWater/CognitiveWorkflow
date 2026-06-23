@@ -598,6 +598,22 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
       ).getAttribute("data-chat-draft-preview-ready"),
       "false",
     );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-target"),
+      "workflow",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-action"),
+      "question",
+    );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(
         requireFakeRuntimeWorkbenchElementByData(
@@ -606,7 +622,7 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
           "true",
         ),
       ),
-      /Preview[\s\S]*Empty[\s\S]*No draft text[\s\S]*Intent[\s\S]*Ask[\s\S]*Reason[\s\S]*Draft is empty/u,
+      /Preview[\s\S]*Empty[\s\S]*No draft text[\s\S]*Intent[\s\S]*Ask[\s\S]*Target[\s\S]*Current workflow[\s\S]*Action[\s\S]*Question[\s\S]*Reason[\s\S]*Draft is empty/u,
     );
 
     await act(async () => {
@@ -634,6 +650,32 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         "true",
       ).getAttribute("data-chat-draft-intent-label"),
       "Revise",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-target"),
+      "draft",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-action"),
+      "change_request",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatDraftPreview",
+          "true",
+        ),
+      ),
+      /Target[\s\S]*Workflow draft[\s\S]*Action[\s\S]*Change request/u,
     );
 
     await act(async () => {
@@ -752,6 +794,22 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
       ).getAttribute("data-chat-draft-preview-intent-label"),
       "Repair",
     );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-target"),
+      "repair",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-action"),
+      "repair_review",
+    );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(
         requireFakeRuntimeWorkbenchElementByData(
@@ -760,7 +818,7 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
           "true",
         ),
       ),
-      /Preview[\s\S]*Blocked[\s\S]*Review repair plan now[\s\S]*Intent[\s\S]*Repair[\s\S]*Reason[\s\S]*Chat disabled/u,
+      /Preview[\s\S]*Blocked[\s\S]*Review repair plan now[\s\S]*Intent[\s\S]*Repair[\s\S]*Target[\s\S]*Repair plan[\s\S]*Action[\s\S]*Repair review[\s\S]*Reason[\s\S]*Chat disabled/u,
     );
 
     await act(async () => {
@@ -849,6 +907,22 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         "true",
       ).getAttribute("data-chat-draft-preview-intent"),
       "repair",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-target"),
+      "repair",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-action"),
+      "repair_review",
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
