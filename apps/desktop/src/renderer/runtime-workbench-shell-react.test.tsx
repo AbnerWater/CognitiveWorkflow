@@ -499,6 +499,58 @@ test("renderer runtime workbench React shell selects focused canvas node locally
       ),
       0,
     );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasTypeFocusDetails",
+        "node",
+      ).getAttribute("data-workflow-canvas-type-focus-details-value"),
+      "repair_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasTypeFocusDetails",
+        "node",
+      ).getAttribute("data-workflow-canvas-type-focus-match-count"),
+      "1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasTypeFocusNodeMatch",
+        "repair_task",
+      ).getAttribute("data-workflow-canvas-type-focus-node-match"),
+      "repair_task",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "workflowCanvasTypeFocusNodeSelect",
+          "repair_task",
+        ),
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasNodeSelected",
+        "true",
+      ).getAttribute("data-workflow-canvas-node"),
+      "repair_task",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasInspectorHistoryDepth",
+        "1",
+      ).getAttribute("data-workflow-canvas-inspector-history-depth"),
+      "1",
+    );
+    assertFakeRuntimeWorkbenchFocusedNode(dom.container, "repair_task");
 
     await act(async () => {
       clickFakeRuntimeWorkbenchElement(
@@ -543,6 +595,22 @@ test("renderer runtime workbench React shell selects focused canvas node locally
       2,
     );
     assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasTypeFocusDetails",
+        "edge",
+      ).getAttribute("data-workflow-canvas-type-focus-details-value"),
+      "normal",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasTypeFocusDetails",
+        "edge",
+      ).getAttribute("data-workflow-canvas-type-focus-match-count"),
+      "2",
+    );
+    assert.equal(
       requireFakeRuntimeWorkbenchElement(
         dom.container,
         (element) =>
@@ -561,6 +629,22 @@ test("renderer runtime workbench React shell selects focused canvas node locally
         "focused start_to_context normal edge",
       ).getAttribute("data-workflow-canvas-edge-type-focused"),
       "true",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasTypeFocusEdgeMatch",
+        "context_to_review",
+      ).getAttribute("data-workflow-canvas-type-focus-edge-match"),
+      "context_to_review",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "workflowCanvasTypeFocusEdgeMatch",
+        "start_to_context",
+      ).getAttribute("data-workflow-canvas-type-focus-edge-match"),
+      "start_to_context",
     );
 
     await act(async () => {
@@ -591,6 +675,14 @@ test("renderer runtime workbench React shell selects focused canvas node locally
       countFakeRuntimeWorkbenchElements(
         dom.container,
         (element) => element.dataset.workflowCanvasEdgeTypeFocused === "true",
+      ),
+      0,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) =>
+          element.dataset.workflowCanvasTypeFocusDetails !== undefined,
       ),
       0,
     );

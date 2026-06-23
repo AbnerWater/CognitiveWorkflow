@@ -567,8 +567,50 @@ button {
   background: #eef7f7;
 }
 
+.cw-workbench__workflow-canvas-type-focus-details {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 2px;
+  border-top: 1px solid #d7dde5;
+}
+
+.cw-workbench__workflow-canvas-type-focus-details ol {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.cw-workbench__workflow-canvas-type-focus-match-button,
+.cw-workbench__workflow-canvas-type-focus-match-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.cw-workbench__workflow-canvas-type-focus-match-button {
+  cursor: pointer;
+}
+
+.cw-workbench__workflow-canvas-type-focus-match-button:hover {
+  background: #eef7f7;
+}
+
+.cw-workbench__workflow-canvas-type-focus-match-button:focus-visible {
+  outline: 2px solid #2f6f73;
+  outline-offset: 2px;
+}
+
 .cw-workbench__workflow-canvas-summary span,
-.cw-workbench__workflow-canvas-summary strong {
+.cw-workbench__workflow-canvas-summary strong,
+.cw-workbench__workflow-canvas-summary small {
   overflow-wrap: anywhere;
 }
 
@@ -581,6 +623,12 @@ button {
 .cw-workbench__workflow-canvas-summary strong {
   color: #1f4d7c;
   font-size: 12px;
+}
+
+.cw-workbench__workflow-canvas-summary small {
+  color: #526173;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .cw-workbench__workflow-canvas-inspector {

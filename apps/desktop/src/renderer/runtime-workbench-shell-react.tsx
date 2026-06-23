@@ -991,6 +991,18 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
   const handleTypeFocusClearClick = useCallback((): void => {
     setTypeFocus(null);
   }, []);
+  const handleTypeFocusNodeSelectClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const nodeId =
+        event.currentTarget.dataset.workflowCanvasTypeFocusNodeSelect;
+      if (!isRuntimeWorkbenchShellWorkflowCanvasNodeId(props.canvas, nodeId)) {
+        return;
+      }
+      selectNode(nodeId);
+      nodeButtonRefs.current.get(nodeId)?.focus({ preventScroll: true });
+    },
+    [props.canvas, selectNode],
+  );
 
   return (
     <section
@@ -1040,8 +1052,10 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
         <div className="cw-workbench__workflow-canvas-sidebar">
           {selectable ? (
             <RuntimeWorkbenchShellWorkflowCanvasSummaryPanel
+              canvas={props.canvas}
               handleTypeFocusClearClick={handleTypeFocusClearClick}
               handleTypeFocusClick={handleTypeFocusClick}
+              handleTypeFocusNodeSelectClick={handleTypeFocusNodeSelectClick}
               summary={canvasSummary}
               typeFocus={typeFocus}
             />
@@ -1090,12 +1104,16 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
 }
 
 function RuntimeWorkbenchShellWorkflowCanvasSummaryPanel(props: {
+  readonly canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot;
   readonly summary: RuntimeWorkbenchShellWorkflowCanvasSummary;
   readonly typeFocus: RuntimeWorkbenchShellWorkflowCanvasTypeFocus | null;
   readonly handleTypeFocusClick: (
     focus: RuntimeWorkbenchShellWorkflowCanvasTypeFocus,
   ) => void;
   readonly handleTypeFocusClearClick: () => void;
+  readonly handleTypeFocusNodeSelectClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 }): ReactElement {
   return (
     <aside
@@ -1165,6 +1183,11 @@ function RuntimeWorkbenchShellWorkflowCanvasSummaryPanel(props: {
         items={props.summary.edgeTypes}
         title="Edge types"
         typeFocus={props.typeFocus?.kind === "edge" ? props.typeFocus : null}
+      />
+      <RuntimeWorkbenchShellWorkflowCanvasTypeFocusDetails
+        canvas={props.canvas}
+        handleNodeSelectClick={props.handleTypeFocusNodeSelectClick}
+        typeFocus={props.typeFocus}
       />
     </aside>
   );
@@ -1297,6 +1320,86 @@ function RuntimeWorkbenchShellWorkflowCanvasEdgeSummaryList(props: {
             </li>
           );
         })}
+      </ol>
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellWorkflowCanvasTypeFocusDetails(props: {
+  readonly canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot;
+  readonly typeFocus: RuntimeWorkbenchShellWorkflowCanvasTypeFocus | null;
+  readonly handleNodeSelectClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
+}): ReactElement | null {
+  if (props.typeFocus === null) {
+    return null;
+  }
+  if (props.typeFocus.kind === "node") {
+    const typeFocus = props.typeFocus;
+    const nodes = props.canvas.nodes.filter(
+      (node) => node.type === typeFocus.value,
+    );
+    return (
+      <section
+        aria-label="Canvas type focus node matches"
+        className="cw-workbench__workflow-canvas-type-focus-details"
+        data-workflow-canvas-type-focus-details="node"
+        data-workflow-canvas-type-focus-details-value={typeFocus.value}
+        data-workflow-canvas-type-focus-match-count={nodes.length}
+      >
+        <h4>{typeFocus.value} matches</h4>
+        <ol>
+          {nodes.map((node) => (
+            <li
+              data-workflow-canvas-type-focus-node-match={node.nodeId}
+              key={node.nodeId}
+            >
+              <button
+                className="cw-workbench__workflow-canvas-type-focus-match-button"
+                data-workflow-canvas-type-focus-node-select={node.nodeId}
+                onClick={props.handleNodeSelectClick}
+                type="button"
+              >
+                <span>{node.type}</span>
+                <strong>{node.title}</strong>
+                <small>{node.nodeId}</small>
+              </button>
+            </li>
+          ))}
+        </ol>
+      </section>
+    );
+  }
+
+  const typeFocus = props.typeFocus;
+  const edges = props.canvas.edges.filter(
+    (edge) => edge.type === typeFocus.value,
+  );
+  return (
+    <section
+      aria-label="Canvas type focus edge matches"
+      className="cw-workbench__workflow-canvas-type-focus-details"
+      data-workflow-canvas-type-focus-details="edge"
+      data-workflow-canvas-type-focus-details-value={typeFocus.value}
+      data-workflow-canvas-type-focus-match-count={edges.length}
+    >
+      <h4>{typeFocus.value} matches</h4>
+      <ol>
+        {edges.map((edge) => (
+          <li
+            data-workflow-canvas-type-focus-edge-match={edge.edgeId}
+            key={edge.edgeId}
+          >
+            <div className="cw-workbench__workflow-canvas-type-focus-match-row">
+              <span>{edge.type}</span>
+              <strong>
+                {edge.sourceNodeId} {" -> "} {edge.targetNodeId}
+              </strong>
+              <small>{edge.label}</small>
+            </div>
+          </li>
+        ))}
       </ol>
     </section>
   );
