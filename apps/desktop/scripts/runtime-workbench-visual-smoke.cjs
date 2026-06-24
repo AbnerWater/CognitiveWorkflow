@@ -1,9 +1,14 @@
 const fs = require("node:fs/promises");
 const {
+  sanitizeVisualSmokeEvidence,
+} = require("./runtime-workbench-visual-smoke-evidence.cjs");
+const {
   resolveVisualSmokePreflight,
 } = require("./runtime-workbench-visual-smoke-preflight.cjs");
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
+
+const chatEvidenceSensitiveTextFragments = new Set();
 
 const {
   targetUrl,
@@ -1460,6 +1465,7 @@ async function keyTaskDrawerItem(window, itemId, key) {
 }
 
 async function inputChatDraft(window, draft) {
+  chatEvidenceSensitiveTextFragments.add(draft);
   const draftLiteral = JSON.stringify(draft);
   const result = await window.webContents.executeJavaScript(`
     new Promise((resolve) => {
@@ -5580,73 +5586,78 @@ async function main() {
     canvasHistorySelectMetrics,
   );
   await fs.writeFile(outputPath, image.toPNG());
+  const evidencePayload = sanitizeVisualSmokeEvidence(
+    {
+      targetLocation,
+      streamEventMode,
+      chatBoxMode,
+      requestedViewport: { width, height, scrollY },
+      captureSize,
+      metrics,
+      initialStreamMetrics,
+      streamEventExpandedMetrics,
+      streamEventCollapsedMetrics,
+      streamFullReloadExpandedMetrics,
+      streamFullReloadCollapsedMetrics,
+      streamControlsCollapsedMetrics,
+      streamControlsExpandedMetrics,
+      streamGroupCollapsedMetrics,
+      streamGroupExpandedMetrics,
+      streamSelectionCollapsedMetrics,
+      streamSelectionExpandedMetrics,
+      streamSelectionMetadataExpandedMetrics,
+      streamSelectionMetadataCollapsedMetrics,
+      streamCollapsedMetrics,
+      streamExpandedMetrics,
+      initialFileTreeMetrics,
+      fileTreeSelectMetrics,
+      initialVersionSnapshotMetrics,
+      versionSnapshotSelectMetrics,
+      versionSnapshotKeyboardMetrics,
+      initialTaskDrawerMetrics,
+      taskDrawerSelectMetrics,
+      taskDrawerSpaceMetrics,
+      taskDrawerKeyboardMetrics,
+      collapsedMetrics,
+      chatCollapsedMetrics,
+      chatInitialMetrics,
+      chatDraftMetrics,
+      chatClearedMetrics,
+      chatLocalSubmitMetrics,
+      chatLocalHistoryMetrics,
+      chatLocalHistoryClearedMetrics,
+      chatLocalResendMetrics,
+      canvasMetrics,
+      canvasNodeTypeFocusMetrics,
+      canvasNodeTypeFocusPreMatchMetrics,
+      canvasNodeTypeFocusMatchMetrics,
+      canvasEdgeTypeFocusMetrics,
+      canvasTypeFocusClearMetrics,
+      canvasRouteMetrics,
+      canvasBackMetrics,
+      canvasKeyboardNextMetrics,
+      canvasKeyboardNoopMetrics,
+      canvasKeyboardPreviousMetrics,
+      canvasKeyboardUpMetrics,
+      canvasKeyboardDownMetrics,
+      canvasHistorySelectMetrics,
+      messages,
+      failures,
+      outputEvidence,
+    },
+    { sensitiveTextFragments: chatEvidenceSensitiveTextFragments },
+  );
   await fs.writeFile(
     `${outputPath}.json`,
-    JSON.stringify(
-      {
-        targetLocation,
-        streamEventMode,
-        chatBoxMode,
-        requestedViewport: { width, height, scrollY },
-        captureSize,
-        metrics,
-        initialStreamMetrics,
-        streamEventExpandedMetrics,
-        streamEventCollapsedMetrics,
-        streamFullReloadExpandedMetrics,
-        streamFullReloadCollapsedMetrics,
-        streamControlsCollapsedMetrics,
-        streamControlsExpandedMetrics,
-        streamGroupCollapsedMetrics,
-        streamGroupExpandedMetrics,
-        streamSelectionCollapsedMetrics,
-        streamSelectionExpandedMetrics,
-        streamSelectionMetadataExpandedMetrics,
-        streamSelectionMetadataCollapsedMetrics,
-        streamCollapsedMetrics,
-        streamExpandedMetrics,
-        initialFileTreeMetrics,
-        fileTreeSelectMetrics,
-        initialVersionSnapshotMetrics,
-        versionSnapshotSelectMetrics,
-        versionSnapshotKeyboardMetrics,
-        initialTaskDrawerMetrics,
-        taskDrawerSelectMetrics,
-        taskDrawerSpaceMetrics,
-        taskDrawerKeyboardMetrics,
-        collapsedMetrics,
-        chatCollapsedMetrics,
-        chatInitialMetrics,
-        chatDraftMetrics,
-        chatClearedMetrics,
-        chatLocalSubmitMetrics,
-        chatLocalHistoryMetrics,
-        chatLocalHistoryClearedMetrics,
-        chatLocalResendMetrics,
-        canvasMetrics,
-        canvasNodeTypeFocusMetrics,
-        canvasNodeTypeFocusPreMatchMetrics,
-        canvasNodeTypeFocusMatchMetrics,
-        canvasEdgeTypeFocusMetrics,
-        canvasTypeFocusClearMetrics,
-        canvasRouteMetrics,
-        canvasBackMetrics,
-        canvasKeyboardNextMetrics,
-        canvasKeyboardNoopMetrics,
-        canvasKeyboardPreviousMetrics,
-        canvasKeyboardUpMetrics,
-        canvasKeyboardDownMetrics,
-        canvasHistorySelectMetrics,
-        messages,
-        failures,
-        outputEvidence,
-      },
-      null,
-      2,
-    ),
+    JSON.stringify(evidencePayload, null, 2),
   );
   if (failures.length > 0) {
-    throw new Error(`Electron visual smoke failed: ${failures.join("; ")}`);
+    const persistedFailures = Array.isArray(evidencePayload.failures)
+      ? evidencePayload.failures
+      : failures;
+    throw new Error(
+      `Electron visual smoke failed: ${persistedFailures.join("; ")}`,
+    );
   }
   window.destroy();
   await app.quit();

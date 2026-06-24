@@ -9,6 +9,10 @@ const {
   resolveVisualSmokePreflight,
   summarizeOutputPath,
 } = require("./runtime-workbench-visual-smoke-preflight.cjs");
+const {
+  REDACTED_CHAT_TEXT,
+  sanitizeVisualSmokeEvidence,
+} = require("./runtime-workbench-visual-smoke-evidence.cjs");
 
 const packageRoot = path.resolve(__dirname, "..");
 const smokeScriptPath = path.join(
@@ -204,6 +208,74 @@ test("visual smoke preflight summarizes output path without directory values", (
   });
   assert.equal(JSON.stringify(summary).includes(outputPathSecret), false);
   assert.equal(JSON.stringify(summary).includes(os.tmpdir()), false);
+});
+
+test("visual smoke evidence removes persisted chat draft text fields", () => {
+  const evidence = {
+    chatDraftMetrics: {
+      chatDraftValue: "Review repair plan now",
+      chatDraftDetailsText: "Characters 22 Words 4 Intent Repair",
+      chatDraftPreviewText: "Preview Ready Repair plan Review repair plan now",
+      chatDraftLength: "22",
+      chatDraftWords: "4",
+      chatDraftPreviewState: "ready",
+    },
+    chatLocalSubmitMetrics: {
+      chatLocalSubmissionText: "Review repair plan now raw local text",
+      chatLocalSubmissionSequence: "1",
+      chatLocalSubmissionStatus: "queued_local",
+      chatLocalSubmissionCharacters: "22",
+      chatLocalSubmissionWords: "4",
+    },
+    failures: [
+      "expected chat draft value Review repair plan now, got Review repair plan now",
+      "safe failure detail",
+    ],
+    messages: [
+      {
+        level: "warning",
+        text: "Browser log included Confirm workflow handoff",
+      },
+    ],
+  };
+
+  const sanitized = sanitizeVisualSmokeEvidence(evidence, {
+    sensitiveTextFragments: [
+      "Review repair plan now",
+      "Confirm workflow handoff",
+    ],
+  });
+  const serialized = JSON.stringify(sanitized);
+
+  assert.equal("chatDraftValue" in sanitized.chatDraftMetrics, false);
+  assert.equal("chatDraftDetailsText" in sanitized.chatDraftMetrics, false);
+  assert.equal("chatDraftPreviewText" in sanitized.chatDraftMetrics, false);
+  assert.equal(
+    "chatLocalSubmissionText" in sanitized.chatLocalSubmitMetrics,
+    false,
+  );
+  assert.equal(sanitized.chatDraftMetrics.chatDraftLength, "22");
+  assert.equal(sanitized.chatDraftMetrics.chatDraftWords, "4");
+  assert.equal(sanitized.chatDraftMetrics.chatDraftPreviewState, "ready");
+  assert.equal(
+    sanitized.chatLocalSubmitMetrics.chatLocalSubmissionSequence,
+    "1",
+  );
+  assert.equal(
+    sanitized.chatLocalSubmitMetrics.chatLocalSubmissionStatus,
+    "queued_local",
+  );
+  assert.equal(serialized.includes("Review repair plan now"), false);
+  assert.equal(serialized.includes("Confirm workflow handoff"), false);
+  assert.equal(serialized.includes(REDACTED_CHAT_TEXT), true);
+  assert.equal(
+    evidence.chatDraftMetrics.chatDraftValue,
+    "Review repair plan now",
+  );
+  assert.equal(
+    evidence.chatLocalSubmitMetrics.chatLocalSubmissionText,
+    "Review repair plan now raw local text",
+  );
 });
 
 test("visual smoke preflight rejects invalid viewport env without echoing input", () => {
