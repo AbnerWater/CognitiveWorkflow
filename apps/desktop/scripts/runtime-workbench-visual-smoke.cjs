@@ -17,13 +17,20 @@ if (!targetUrl || !outputPath) {
   );
 }
 
-const streamEventMode = parseStreamEventMode(targetUrl);
+const targetLocation = parseTargetLocation(targetUrl);
+const streamEventMode = targetLocation.streamEventMode;
 
-function parseStreamEventMode(url) {
+function parseTargetLocation(url) {
   const parsedUrl = new URL(url);
-  return parsedUrl.searchParams.get("streamEvent") === "unknown"
-    ? "unknown"
-    : "known";
+  const streamEventMode =
+    parsedUrl.searchParams.get("streamEvent") === "unknown"
+      ? "unknown"
+      : "known";
+  return {
+    origin: parsedUrl.origin,
+    pathname: parsedUrl.pathname,
+    streamEventMode,
+  };
 }
 
 function expectedStreamEvent(mode) {
@@ -4991,6 +4998,7 @@ async function main() {
   if (image.isEmpty()) {
     throw new Error("Electron visual smoke capture returned an empty image");
   }
+  const captureSize = image.getSize();
   const failures = collectVisualSmokeFailures(
     metrics,
     messages,
@@ -5045,7 +5053,10 @@ async function main() {
     `${outputPath}.json`,
     JSON.stringify(
       {
+        targetLocation,
         streamEventMode,
+        requestedViewport: { width, height, scrollY },
+        captureSize,
         metrics,
         initialStreamMetrics,
         streamEventExpandedMetrics,
