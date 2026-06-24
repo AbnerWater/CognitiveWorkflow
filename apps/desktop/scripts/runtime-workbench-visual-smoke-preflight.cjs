@@ -16,6 +16,24 @@ function parseTargetLocation(url) {
   };
 }
 
+function parsePositiveIntegerEnv(env, name, defaultValue) {
+  const value = env[name] ?? defaultValue;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function parseNonNegativeIntegerEnv(env, name, defaultValue) {
+  const value = env[name] ?? defaultValue;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+  return parsed;
+}
+
 function resolveVisualSmokePreflight(env) {
   const targetUrl = env.CW_VISUAL_SMOKE_URL;
   const outputPath = env.CW_VISUAL_SMOKE_OUTPUT;
@@ -28,9 +46,9 @@ function resolveVisualSmokePreflight(env) {
   return {
     targetUrl,
     outputPath,
-    width: Number(env.CW_VISUAL_SMOKE_WIDTH ?? "1280"),
-    height: Number(env.CW_VISUAL_SMOKE_HEIGHT ?? "720"),
-    scrollY: Number(env.CW_VISUAL_SMOKE_SCROLL_Y ?? "0"),
+    width: parsePositiveIntegerEnv(env, "CW_VISUAL_SMOKE_WIDTH", "1280"),
+    height: parsePositiveIntegerEnv(env, "CW_VISUAL_SMOKE_HEIGHT", "720"),
+    scrollY: parseNonNegativeIntegerEnv(env, "CW_VISUAL_SMOKE_SCROLL_Y", "0"),
     targetLocation,
     streamEventMode: targetLocation.streamEventMode,
   };
@@ -38,5 +56,7 @@ function resolveVisualSmokePreflight(env) {
 
 module.exports = {
   parseTargetLocation,
+  parsePositiveIntegerEnv,
+  parseNonNegativeIntegerEnv,
   resolveVisualSmokePreflight,
 };

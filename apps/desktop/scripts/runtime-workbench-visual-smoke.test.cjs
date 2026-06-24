@@ -20,6 +20,9 @@ const unknownSmokeUrl =
   "http://127.0.0.1:5174/visual-smoke.html?streamEvent=unknown&token=query-secret#hash-secret";
 const invalidSmokeUrl =
   "not-a-url?token=single-smoke-secret#single-smoke-hash-secret";
+const invalidViewportSecret = "viewport-secret-value";
+const invalidHeightSecret = "height-secret-value";
+const invalidScrollSecret = "scroll-secret-value";
 
 async function withTempDir(prefix, run) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -151,6 +154,46 @@ test("visual smoke preflight rejects invalid URLs without echoing input", () => 
   );
 });
 
+test("visual smoke preflight rejects invalid viewport env without echoing input", () => {
+  assert.throws(
+    () =>
+      resolveVisualSmokePreflight({
+        CW_VISUAL_SMOKE_URL: knownSmokeUrl,
+        CW_VISUAL_SMOKE_OUTPUT: "visual-smoke.png",
+        CW_VISUAL_SMOKE_WIDTH: invalidViewportSecret,
+      }),
+    (error) =>
+      error instanceof Error &&
+      error.message === "CW_VISUAL_SMOKE_WIDTH must be a positive integer" &&
+      !error.message.includes(invalidViewportSecret),
+  );
+  assert.throws(
+    () =>
+      resolveVisualSmokePreflight({
+        CW_VISUAL_SMOKE_URL: knownSmokeUrl,
+        CW_VISUAL_SMOKE_OUTPUT: "visual-smoke.png",
+        CW_VISUAL_SMOKE_HEIGHT: "0",
+      }),
+    (error) =>
+      error instanceof Error &&
+      error.message === "CW_VISUAL_SMOKE_HEIGHT must be a positive integer" &&
+      !error.message.includes("0"),
+  );
+  assert.throws(
+    () =>
+      resolveVisualSmokePreflight({
+        CW_VISUAL_SMOKE_URL: knownSmokeUrl,
+        CW_VISUAL_SMOKE_OUTPUT: "visual-smoke.png",
+        CW_VISUAL_SMOKE_SCROLL_Y: "-1",
+      }),
+    (error) =>
+      error instanceof Error &&
+      error.message ===
+        "CW_VISUAL_SMOKE_SCROLL_Y must be a non-negative integer" &&
+      !error.message.includes("-1"),
+  );
+});
+
 test("visual smoke requires URL and output before loading Electron", async () => {
   await withTempDir("cw-visual-smoke-missing-env-", async (tempDir) => {
     const result = await runSmokePreflight(tempDir);
@@ -169,6 +212,54 @@ test("visual smoke requires URL and output before loading Electron", async () =>
     assert.equal(result.stderr.includes("module was required"), false);
     assert.equal(result.stderr.includes("single-smoke-secret"), false);
   });
+});
+
+test("visual smoke rejects invalid viewport env before loading Electron", async () => {
+  const cases = [
+    {
+      envName: "CW_VISUAL_SMOKE_WIDTH",
+      secret: invalidViewportSecret,
+      errorPattern: /CW_VISUAL_SMOKE_WIDTH must be a positive integer/u,
+    },
+    {
+      envName: "CW_VISUAL_SMOKE_HEIGHT",
+      secret: invalidHeightSecret,
+      errorPattern: /CW_VISUAL_SMOKE_HEIGHT must be a positive integer/u,
+    },
+    {
+      envName: "CW_VISUAL_SMOKE_SCROLL_Y",
+      secret: invalidScrollSecret,
+      errorPattern: /CW_VISUAL_SMOKE_SCROLL_Y must be a non-negative integer/u,
+    },
+  ];
+
+  for (const testCase of cases) {
+    await withTempDir("cw-visual-smoke-invalid-viewport-", async (tempDir) => {
+      const outputPath = path.join(tempDir, "visual-smoke.png");
+      const result = await runSmokePreflight(tempDir, {
+        CW_VISUAL_SMOKE_URL: knownSmokeUrl,
+        CW_VISUAL_SMOKE_OUTPUT: outputPath,
+        [testCase.envName]: testCase.secret,
+      });
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, testCase.errorPattern);
+      assert.equal(result.stderr.includes(testCase.secret), false);
+      assert.equal(
+        result.stderr.includes("Cannot find module 'electron'"),
+        false,
+      );
+      assert.equal(result.stderr.includes("module was required"), false);
+      await assert.rejects(fs.access(outputPath), {
+        code: "ENOENT",
+      });
+      await assert.rejects(fs.access(`${outputPath}.json`), {
+        code: "ENOENT",
+      });
+    });
+  }
 });
 
 test("visual smoke rejects invalid target URLs without leaking input", async () => {
