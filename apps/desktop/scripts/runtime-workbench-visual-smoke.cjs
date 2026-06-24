@@ -1,40 +1,20 @@
 const fs = require("node:fs/promises");
+const {
+  resolveVisualSmokePreflight,
+} = require("./runtime-workbench-visual-smoke-preflight.cjs");
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 
-const targetUrl = process.env.CW_VISUAL_SMOKE_URL;
-const outputPath = process.env.CW_VISUAL_SMOKE_OUTPUT;
-const width = Number(process.env.CW_VISUAL_SMOKE_WIDTH ?? "1280");
-const height = Number(process.env.CW_VISUAL_SMOKE_HEIGHT ?? "720");
-const scrollY = Number(process.env.CW_VISUAL_SMOKE_SCROLL_Y ?? "0");
+const {
+  targetUrl,
+  outputPath,
+  width,
+  height,
+  scrollY,
+  targetLocation,
+  streamEventMode,
+} = resolveVisualSmokePreflight(process.env);
 const expectedSelectedTitle = "Startup timed out after bounded wait";
-
-if (!targetUrl || !outputPath) {
-  throw new Error(
-    "CW_VISUAL_SMOKE_URL and CW_VISUAL_SMOKE_OUTPUT are required",
-  );
-}
-
-const targetLocation = parseTargetLocation(targetUrl);
-const streamEventMode = targetLocation.streamEventMode;
-
-function parseTargetLocation(url) {
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(url);
-  } catch {
-    throw new Error("CW_VISUAL_SMOKE_URL must be a valid URL");
-  }
-  const streamEventMode =
-    parsedUrl.searchParams.get("streamEvent") === "unknown"
-      ? "unknown"
-      : "known";
-  return {
-    origin: parsedUrl.origin,
-    pathname: parsedUrl.pathname,
-    streamEventMode,
-  };
-}
 
 const { app, BrowserWindow } = require("electron");
 
