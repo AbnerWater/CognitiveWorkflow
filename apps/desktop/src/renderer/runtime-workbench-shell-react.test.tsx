@@ -2984,6 +2984,14 @@ test("renderer runtime workbench React shell records local chat send receipt", a
       "queued_local",
     );
     assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-sequence"),
+      "1",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-count"),
+      "1",
+    );
+    assert.equal(
       localSubmission.getAttribute("data-chat-local-submit-intent"),
       "ask",
     );
@@ -3012,12 +3020,27 @@ test("renderer runtime workbench React shell records local chat send receipt", a
       /Ask the workflow status/u,
     );
     assert.doesNotMatch(
-      Array.from(localSubmission.attributes.values()).join(" "),
+      fakeRuntimeWorkbenchElementAttributeValues(localSubmission).join(" "),
       /Ask the workflow status/u,
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(localSubmission),
-      /Last request[\s\S]*Queued locally[\s\S]*Ask[\s\S]*Current workflow[\s\S]*Question[\s\S]*23[\s\S]*4/u,
+      /Recent requests[\s\S]*#1[\s\S]*Queued locally[\s\S]*Ask[\s\S]*Current workflow[\s\S]*Question[\s\S]*23 chars[\s\S]*4 words/u,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        localSubmission,
+        (element) => element.dataset.chatLocalSubmitHistoryItem !== undefined,
+      ),
+      1,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        localSubmission,
+        "chatLocalSubmitHistoryItem",
+        "1",
+      ).getAttribute("data-chat-local-submit-history-current"),
+      "true",
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -3034,6 +3057,203 @@ test("renderer runtime workbench React shell records local chat send receipt", a
         "empty",
       ).textContent,
       "No draft text",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench React shell tracks local chat send history", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactChatEnabledSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Chat Local History Runtime Workbench"
+        />,
+      );
+    });
+
+    const draftInput = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftInput",
+      "true",
+    );
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Ask the workflow status");
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatSend",
+          "true",
+        ),
+      );
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatDraftIntent",
+          "revise",
+        ),
+      );
+    });
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Revise draft title");
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatSend",
+          "true",
+        ),
+      );
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatDraftIntent",
+          "repair",
+        ),
+      );
+    });
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Repair broken node");
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatSend",
+          "true",
+        ),
+      );
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatDraftIntent",
+          "ask",
+        ),
+      );
+    });
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Ask about status");
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatSend",
+          "true",
+        ),
+      );
+    });
+
+    const localSubmission = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatLocalSubmit",
+      "true",
+    );
+    const latestHistoryItem = requireFakeRuntimeWorkbenchElementByData(
+      localSubmission,
+      "chatLocalSubmitHistoryItem",
+      "4",
+    );
+    const previousHistoryItem = requireFakeRuntimeWorkbenchElementByData(
+      localSubmission,
+      "chatLocalSubmitHistoryItem",
+      "3",
+    );
+    assert.equal(session.dispatchedCommands().length, 0);
+    assert.equal(draftInput.value, "");
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-count"),
+      "3",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-sequence"),
+      "4",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-intent"),
+      "ask",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-target"),
+      "workflow",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-action"),
+      "question",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-characters"),
+      "16",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-words"),
+      "3",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        localSubmission,
+        (element) => element.dataset.chatLocalSubmitHistoryItem !== undefined,
+      ),
+      3,
+    );
+    assert.equal(
+      latestHistoryItem.getAttribute("data-chat-local-submit-history-current"),
+      "true",
+    );
+    assert.equal(
+      latestHistoryItem.getAttribute("data-chat-local-submit-history-status"),
+      "queued_local",
+    );
+    assert.equal(
+      previousHistoryItem.getAttribute(
+        "data-chat-local-submit-history-current",
+      ),
+      "false",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        localSubmission,
+        (element) => element.dataset.chatLocalSubmitHistoryItem === "1",
+      ),
+      0,
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(localSubmission),
+      /Recent requests[\s\S]*#4[\s\S]*Queued locally[\s\S]*Ask[\s\S]*Current workflow[\s\S]*Question[\s\S]*16 chars[\s\S]*3 words[\s\S]*#3[\s\S]*Queued locally[\s\S]*Repair[\s\S]*Repair plan[\s\S]*Repair review[\s\S]*18 chars[\s\S]*3 words[\s\S]*#2[\s\S]*Queued locally[\s\S]*Revise[\s\S]*Workflow draft[\s\S]*Change request[\s\S]*18 chars[\s\S]*3 words/u,
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(localSubmission),
+      /Ask the workflow status|Revise draft title|Repair broken node|Ask about status/u,
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchElementAttributeValues(localSubmission).join(" "),
+      /Ask the workflow status|Revise draft title|Repair broken node|Ask about status/u,
     );
 
     await act(async () => {
@@ -6477,6 +6697,19 @@ function countFakeRuntimeWorkbenchElements(
       0,
     )
   );
+}
+
+function fakeRuntimeWorkbenchElementAttributeValues(
+  root: FakeRuntimeWorkbenchNode,
+): string[] {
+  const current =
+    root instanceof FakeRuntimeWorkbenchElement
+      ? Array.from(root.attributes.values())
+      : [];
+  return [
+    ...current,
+    ...root.childNodes.flatMap(fakeRuntimeWorkbenchElementAttributeValues),
+  ];
 }
 
 function fakeRuntimeWorkbenchNodeTextContent(

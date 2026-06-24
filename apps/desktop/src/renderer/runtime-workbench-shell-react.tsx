@@ -2249,6 +2249,7 @@ interface RuntimeWorkbenchShellChatDraftIntentContext {
 }
 
 interface RuntimeWorkbenchShellChatLocalSubmission {
+  readonly sequence: number;
   readonly status: "queued_local";
   readonly statusLabel: string;
   readonly intent: RuntimeWorkbenchShellChatDraftIntent;
@@ -2260,6 +2261,8 @@ interface RuntimeWorkbenchShellChatLocalSubmission {
   readonly characterCount: number;
   readonly wordCount: number;
 }
+
+const RUNTIME_WORKBENCH_CHAT_LOCAL_SUBMISSION_HISTORY_LIMIT = 3;
 
 const RUNTIME_WORKBENCH_CHAT_DRAFT_INTENTS = Object.freeze([
   "ask",
@@ -2325,6 +2328,7 @@ function runtimeWorkbenchShellChatDraftWordCount(draft: string): number {
 }
 
 function runtimeWorkbenchShellCreateChatLocalSubmission(
+  sequence: number,
   intent: RuntimeWorkbenchShellChatDraftIntent,
   intentLabel: string,
   intentContext: RuntimeWorkbenchShellChatDraftIntentContext,
@@ -2332,6 +2336,7 @@ function runtimeWorkbenchShellCreateChatLocalSubmission(
   draftWords: number,
 ): RuntimeWorkbenchShellChatLocalSubmission {
   return {
+    sequence,
     status: "queued_local",
     statusLabel: "Queued locally",
     intent,
@@ -2399,8 +2404,10 @@ function RuntimeWorkbenchShellChatBox(props: {
   const [draft, setDraft] = useState("");
   const [draftIntent, setDraftIntent] =
     useState<RuntimeWorkbenchShellChatDraftIntent>("ask");
-  const [localSubmission, setLocalSubmission] =
-    useState<RuntimeWorkbenchShellChatLocalSubmission | null>(null);
+  const [localSubmissions, setLocalSubmissions] = useState<
+    readonly RuntimeWorkbenchShellChatLocalSubmission[]
+  >([]);
+  const localSubmissionSequenceRef = useRef(0);
   const draftLength = draft.length;
   const draftWords = runtimeWorkbenchShellChatDraftWordCount(draft);
   const draftIntentLabel =
@@ -2438,13 +2445,20 @@ function RuntimeWorkbenchShellChatBox(props: {
     if (!sendGuard.enabled) {
       return;
     }
-    setLocalSubmission(
-      runtimeWorkbenchShellCreateChatLocalSubmission(
-        draftIntent,
-        draftIntentLabel,
-        draftIntentContext,
-        draftLength,
-        draftWords,
+    const sequence = localSubmissionSequenceRef.current + 1;
+    localSubmissionSequenceRef.current = sequence;
+    const localSubmission = runtimeWorkbenchShellCreateChatLocalSubmission(
+      sequence,
+      draftIntent,
+      draftIntentLabel,
+      draftIntentContext,
+      draftLength,
+      draftWords,
+    );
+    setLocalSubmissions((current) =>
+      [localSubmission, ...current].slice(
+        0,
+        RUNTIME_WORKBENCH_CHAT_LOCAL_SUBMISSION_HISTORY_LIMIT,
       ),
     );
     setDraft("");
@@ -2561,8 +2575,8 @@ function RuntimeWorkbenchShellChatBox(props: {
             intentLabel={draftIntentLabel}
             preview={draftPreview}
           />
-          <RuntimeWorkbenchShellChatLocalSubmissionReceipt
-            submission={localSubmission}
+          <RuntimeWorkbenchShellChatLocalSubmissionHistory
+            submissions={localSubmissions}
           />
           <section
             aria-label="Chat draft details"
@@ -2606,10 +2620,11 @@ function RuntimeWorkbenchShellChatBox(props: {
   );
 }
 
-function RuntimeWorkbenchShellChatLocalSubmissionReceipt(props: {
-  readonly submission: RuntimeWorkbenchShellChatLocalSubmission | null;
+function RuntimeWorkbenchShellChatLocalSubmissionHistory(props: {
+  readonly submissions: readonly RuntimeWorkbenchShellChatLocalSubmission[];
 }): ReactElement | null {
-  if (props.submission === null) {
+  const latestSubmission = props.submissions[0];
+  if (latestSubmission === undefined) {
     return null;
   }
   return (
@@ -2617,43 +2632,39 @@ function RuntimeWorkbenchShellChatLocalSubmissionReceipt(props: {
       aria-label="Chat local submission"
       className="cw-workbench__chat-local-submission"
       data-chat-local-submit="true"
-      data-chat-local-submit-action={props.submission.action}
+      data-chat-local-submit-action={latestSubmission.action}
       data-chat-local-submit-characters={String(
-        props.submission.characterCount,
+        latestSubmission.characterCount,
       )}
-      data-chat-local-submit-intent={props.submission.intent}
-      data-chat-local-submit-intent-label={props.submission.intentLabel}
-      data-chat-local-submit-status={props.submission.status}
-      data-chat-local-submit-target={props.submission.target}
-      data-chat-local-submit-words={String(props.submission.wordCount)}
+      data-chat-local-submit-count={String(props.submissions.length)}
+      data-chat-local-submit-intent={latestSubmission.intent}
+      data-chat-local-submit-intent-label={latestSubmission.intentLabel}
+      data-chat-local-submit-sequence={String(latestSubmission.sequence)}
+      data-chat-local-submit-status={latestSubmission.status}
+      data-chat-local-submit-target={latestSubmission.target}
+      data-chat-local-submit-words={String(latestSubmission.wordCount)}
     >
-      <h3>Last request</h3>
-      <dl>
-        <div>
-          <dt>Status</dt>
-          <dd>{props.submission.statusLabel}</dd>
-        </div>
-        <div>
-          <dt>Intent</dt>
-          <dd>{props.submission.intentLabel}</dd>
-        </div>
-        <div>
-          <dt>Target</dt>
-          <dd>{props.submission.targetLabel}</dd>
-        </div>
-        <div>
-          <dt>Action</dt>
-          <dd>{props.submission.actionLabel}</dd>
-        </div>
-        <div>
-          <dt>Characters</dt>
-          <dd>{props.submission.characterCount}</dd>
-        </div>
-        <div>
-          <dt>Words</dt>
-          <dd>{props.submission.wordCount}</dd>
-        </div>
-      </dl>
+      <h3>Recent requests</h3>
+      <ol data-chat-local-submit-history="true">
+        {props.submissions.map((submission, index) => (
+          <li
+            data-chat-local-submit-history-current={
+              index === 0 ? "true" : "false"
+            }
+            data-chat-local-submit-history-item={String(submission.sequence)}
+            data-chat-local-submit-history-status={submission.status}
+            key={submission.sequence}
+          >
+            <span>#{submission.sequence}</span>
+            <span>{submission.statusLabel}</span>
+            <span>{submission.intentLabel}</span>
+            <span>{submission.targetLabel}</span>
+            <span>{submission.actionLabel}</span>
+            <span>{submission.characterCount} chars</span>
+            <span>{submission.wordCount} words</span>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }

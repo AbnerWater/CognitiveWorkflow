@@ -1415,32 +1415,56 @@ button {
   font-size: 13px;
 }
 
-.cw-workbench__chat-details dl,
-.cw-workbench__chat-local-submission dl {
+.cw-workbench__chat-details dl {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
 }
 
-.cw-workbench__chat-local-submission dl {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.cw-workbench__chat-local-submission ol {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
 
-.cw-workbench__chat-details dl > div,
-.cw-workbench__chat-local-submission dl > div {
+.cw-workbench__chat-local-submission li {
+  display: grid;
+  grid-template-columns:
+    minmax(32px, 0.35fr) repeat(4, minmax(72px, 1fr))
+    repeat(2, minmax(56px, 0.7fr));
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 0;
+  border-top: 1px solid #e1e6ed;
+  color: #223047;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__chat-local-submission li:first-child {
+  border-top: 0;
+}
+
+.cw-workbench__chat-local-submission span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cw-workbench__chat-details dl > div {
   min-width: 0;
 }
 
-.cw-workbench__chat-details dt,
-.cw-workbench__chat-local-submission dt {
+.cw-workbench__chat-details dt {
   color: #526173;
   font-size: 11px;
   font-weight: 700;
 }
 
-.cw-workbench__chat-details dd,
-.cw-workbench__chat-local-submission dd {
+.cw-workbench__chat-details dd {
   min-width: 0;
   margin: 0;
   color: #223047;
