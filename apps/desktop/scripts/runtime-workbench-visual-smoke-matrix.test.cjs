@@ -16,6 +16,8 @@ const alternateMatrixUrl =
   "http://127.0.0.1:5176/matrix-smoke.html?matrix=matrix-secret#matrix-hash-secret";
 const alternateLegacyUrl =
   "http://127.0.0.1:5175/legacy-smoke.html?legacy=legacy-secret#legacy-hash-secret";
+const invalidMatrixUrl =
+  "not-a-url?token=invalid-url-secret#invalid-hash-secret";
 const validFakeElectronCliBody = `
 const fs = require("node:fs");
 const targetUrl = new URL(process.env.CW_VISUAL_SMOKE_URL);
@@ -320,6 +322,34 @@ test("visual smoke matrix requires a target URL before running cases", async () 
     );
     assert.equal(result.stderr.includes("query-secret"), false);
     assert.equal(result.stderr.includes("hash-secret"), false);
+    await assert.rejects(fs.access(result.manifestPath), {
+      code: "ENOENT",
+    });
+  });
+});
+
+test("visual smoke matrix rejects invalid target URLs without leaking input", async () => {
+  await withTempDir("cw-visual-smoke-matrix-invalid-url-", async (tempDir) => {
+    const fakeElectronCliPath = await writeFakeElectronCli(
+      tempDir,
+      `process.stdout.write("invalid-url-fake-cli-secret");`,
+    );
+
+    const result = await runMatrix(tempDir, fakeElectronCliPath, {
+      matrixUrlValue: invalidMatrixUrl,
+      readManifest: false,
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.stdout, "");
+    assert.match(
+      result.stderr,
+      /CW_VISUAL_SMOKE_MATRIX_URL or CW_VISUAL_SMOKE_URL must be a valid URL/u,
+    );
+    assert.equal(result.stderr.includes("invalid-url-fake-cli-secret"), false);
+    assert.equal(result.stderr.includes("invalid-url-secret"), false);
+    assert.equal(result.stderr.includes("invalid-hash-secret"), false);
     await assert.rejects(fs.access(result.manifestPath), {
       code: "ENOENT",
     });

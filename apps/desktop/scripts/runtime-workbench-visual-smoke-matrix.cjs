@@ -64,6 +64,18 @@ if (!baseUrl) {
   );
 }
 
+function parseBaseUrl(url) {
+  try {
+    return new URL(url);
+  } catch {
+    throw new Error(
+      "CW_VISUAL_SMOKE_MATRIX_URL or CW_VISUAL_SMOKE_URL must be a valid URL",
+    );
+  }
+}
+
+const parsedBaseUrl = parseBaseUrl(baseUrl);
+
 const outputDir =
   process.env.CW_VISUAL_SMOKE_MATRIX_OUTPUT_DIR ??
   path.join(os.tmpdir(), `cw-visual-smoke-matrix-${Date.now()}`);
@@ -73,7 +85,7 @@ const electronCliPath =
   path.join(packageRoot, "node_modules", "electron", "cli.js");
 
 function parseSafeLocation(url) {
-  const parsedUrl = new URL(url);
+  const parsedUrl = url instanceof URL ? url : parseBaseUrl(url);
   return {
     origin: parsedUrl.origin,
     pathname: parsedUrl.pathname,
@@ -81,7 +93,7 @@ function parseSafeLocation(url) {
 }
 
 function buildCaseUrl(mode) {
-  const parsedUrl = new URL(baseUrl);
+  const parsedUrl = new URL(parsedBaseUrl.toString());
   parsedUrl.search = "";
   parsedUrl.hash = "";
   if (mode === "unknown") {
@@ -393,7 +405,7 @@ async function main() {
 
   const manifestPath = path.join(outputDir, "matrix.json");
   const manifest = {
-    targetLocation: parseSafeLocation(baseUrl),
+    targetLocation: parseSafeLocation(parsedBaseUrl),
     outputDir,
     cases: caseSummaries,
     failures: matrixFailures,
