@@ -4726,6 +4726,7 @@ test("renderer runtime workbench host session composes interaction and shortcuts
   streamClient.emit(
     createRuntimeStreamViewModelEvent({
       event_id: "evt_workbench_host_stream",
+      schema_version: "0.1.0",
       seq: 1,
       correlation_id: "trace_workbench_host",
       run_id: "run_workbench_host",
@@ -4776,6 +4777,10 @@ test("renderer runtime workbench host session composes interaction and shortcuts
         path: "artifacts/workbench-host.md",
       },
     ],
+  );
+  assert.equal(
+    host.getSnapshot().runtimeStreamPanel?.timelineItems[0]?.schemaVersion,
+    "0.1.0",
   );
   assert.equal(
     host.getSnapshot().runtimeStreamPanel?.timelineItems[0]?.phase,
@@ -5075,6 +5080,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       timelineItems: [
         {
           id: "evt_shell",
+          schemaVersion: "0.1.0",
           seq: 3,
           parentEventId: null,
           correlationId: "trace_shell",
@@ -5110,6 +5116,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ],
       selectedEvent: {
         id: "evt_shell",
+        schemaVersion: "0.1.0",
         seq: 3,
         parentEventId: null,
         correlationId: "trace_shell",
@@ -5191,6 +5198,10 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(
     snapshot.runtimeStreamPanel?.timelineItems[0]?.title,
     "Shell stream event",
+  );
+  assert.equal(
+    snapshot.runtimeStreamPanel?.timelineItems[0]?.schemaVersion,
+    "0.1.0",
   );
   assert.equal(
     snapshot.runtimeStreamPanel?.timelineItems[0]?.phase,
@@ -7892,6 +7903,7 @@ test("renderer runtime stream view model folds children and filters spec fields"
     events: [
       createRuntimeStreamViewModelEvent({
         event_id: "evt_tool_start",
+        schema_version: "0.1.0",
         seq: 1,
         correlation_id: "trace_tool_start",
         run_id: "run_view_model",
@@ -7925,6 +7937,7 @@ test("renderer runtime stream view model folds children and filters spec fields"
       }),
       createRuntimeStreamViewModelEvent({
         event_id: "evt_model_delta",
+        schema_version: "",
         seq: 3,
         correlation_id: "",
         run_id: "",
@@ -7970,6 +7983,7 @@ test("renderer runtime stream view model folds children and filters spec fields"
   assert.equal(initial.summaryItems[0]?.id, "evt_model_delta");
   assert.equal(initial.timelineItems.length, 2);
   assert.equal(initial.timelineItems[0]?.id, "evt_tool_start");
+  assert.equal(initial.timelineItems[0]?.schemaVersion, "0.1.0");
   assert.equal(initial.timelineItems[0]?.correlationId, "trace_tool_start");
   assert.equal(initial.timelineItems[0]?.runId, "run_view_model");
   assert.equal(initial.timelineItems[0]?.nodeId, "node_tool");
@@ -7979,6 +7993,7 @@ test("renderer runtime stream view model folds children and filters spec fields"
   assert.equal(initial.timelineItems[0]?.childCount, 1);
   assert.equal(initial.timelineItems[0]?.children.length, 0);
   assert.equal(initial.summaryItems[0]?.correlationId, null);
+  assert.equal(initial.summaryItems[0]?.schemaVersion, null);
   assert.equal(initial.summaryItems[0]?.runId, null);
   assert.equal(initial.summaryItems[0]?.nodeId, null);
   assert.equal(initial.summaryItems[0]?.attemptId, null);
@@ -8014,6 +8029,7 @@ test("renderer runtime stream view model expands childless event details", () =>
     events: [
       createRuntimeStreamViewModelEvent({
         event_id: "evt_detail",
+        schema_version: "0.1.0",
         seq: 1,
         correlation_id: "trace_detail",
         run_id: "run_detail",
@@ -8041,6 +8057,7 @@ test("renderer runtime stream view model expands childless event details", () =>
   const initial = viewModel.snapshot();
   assert.equal(initial.timelineItems.length, 1);
   assert.equal(initial.timelineItems[0]?.id, "evt_detail");
+  assert.equal(initial.timelineItems[0]?.schemaVersion, "0.1.0");
   assert.equal(initial.timelineItems[0]?.correlationId, "trace_detail");
   assert.equal(initial.timelineItems[0]?.runId, "run_detail");
   assert.equal(initial.timelineItems[0]?.nodeId, "node_detail");

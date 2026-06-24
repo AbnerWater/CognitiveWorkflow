@@ -509,6 +509,7 @@ function buildVisualSmokeRuntimeStreamPanelSnapshot(
 ): RuntimeWorkbenchShellRuntimeStreamPanelSnapshot {
   const event = Object.freeze({
     id: "evt_visual_stream",
+    schemaVersion: "0.1.0",
     seq: 12,
     parentEventId: "evt_visual_parent",
     correlationId: "trace_visual_stream",

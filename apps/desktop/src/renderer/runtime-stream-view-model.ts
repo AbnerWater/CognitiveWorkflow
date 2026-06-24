@@ -84,6 +84,7 @@ export interface RuntimeStreamViewNormalizedFilters {
 
 export interface RuntimeStreamViewEvent {
   readonly id: string | null;
+  readonly schemaVersion: string | null;
   readonly seq: number | null;
   readonly parentEventId: string | null;
   readonly correlationId: string | null;
@@ -163,6 +164,7 @@ export interface CreateRuntimeStreamViewModelOptions {
 
 interface RuntimeStreamViewEventDraft {
   readonly id: string | null;
+  readonly schemaVersion: string | null;
   readonly seq: number | null;
   readonly parentEventId: string | null;
   readonly correlationId: string | null;
@@ -384,6 +386,7 @@ function buildRuntimeStreamViewEvent(
     draft.id === null ? visitedEventIds : [...visitedEventIds, draft.id];
   return {
     id: draft.id,
+    schemaVersion: draft.schemaVersion,
     seq: draft.seq,
     parentEventId: draft.parentEventId,
     correlationId: draft.correlationId,
@@ -427,6 +430,7 @@ function toRuntimeStreamViewEventDraft(
   const type = readString(data, "type") ?? event.type;
   return {
     id,
+    schemaVersion: readString(data, "schema_version"),
     seq: readSafeInteger(data, "seq"),
     parentEventId: readNullableString(data, "parent_event_id"),
     correlationId: readString(data, "correlation_id"),

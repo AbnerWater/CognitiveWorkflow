@@ -3484,6 +3484,7 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             props.event.artifactRefs.length,
           )}
           data-stream-event-detail-child-count={String(props.event.childCount)}
+          data-stream-event-detail-created-at={props.event.createdAt ?? ""}
           data-stream-event-detail-correlation-id={
             props.event.correlationId ?? ""
           }
@@ -3492,7 +3493,13 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
           data-stream-event-detail-node-id={props.event.nodeId ?? ""}
           data-stream-event-detail-attempt-id={props.event.attemptId ?? ""}
           data-stream-event-detail-phase={props.event.phase ?? ""}
+          data-stream-event-detail-schema-version={
+            props.event.schemaVersion ?? ""
+          }
           data-stream-event-detail-sensitivity={props.event.sensitivity}
+          data-stream-event-detail-seq={
+            props.event.seq === null ? "" : String(props.event.seq)
+          }
         >
           {props.event.content === null ? null : (
             <p data-stream-event-detail-content="true">{props.event.content}</p>
@@ -3502,6 +3509,18 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             source="event-detail"
           />
           <dl>
+            <div>
+              <dt>Schema</dt>
+              <dd>{props.event.schemaVersion ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Seq</dt>
+              <dd>{props.event.seq ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Created</dt>
+              <dd>{props.event.createdAt ?? "-"}</dd>
+            </div>
             <div>
               <dt>Run</dt>
               <dd>{props.event.runId ?? "-"}</dd>
@@ -3608,6 +3627,10 @@ function RuntimeWorkbenchShellStreamSelection(props: {
       ? "No event selected"
       : `${selected.title}, ${selected.type}`;
   const categoryLabel = selected?.category ?? "-";
+  const schemaVersionLabel = selected?.schemaVersion ?? "-";
+  const seqLabel =
+    selected === null || selected.seq === null ? "-" : String(selected.seq);
+  const createdAtLabel = selected?.createdAt ?? "-";
   const phaseLabel = selected?.phase ?? "-";
   const parentEventIdLabel = selected?.parentEventId ?? "-";
   const correlationIdLabel = selected?.correlationId ?? "-";
@@ -3667,6 +3690,7 @@ function RuntimeWorkbenchShellStreamSelection(props: {
             selected.artifactRefs.length,
           )}
           data-stream-selected-event-child-count={String(selected.childCount)}
+          data-stream-selected-event-created-at={selected.createdAt ?? ""}
           data-stream-selected-event-correlation-id={
             selected.correlationId ?? ""
           }
@@ -3676,7 +3700,13 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           data-stream-selected-event-attempt-id={selected.attemptId ?? ""}
           data-stream-selected-event-parent-id={parentEventIdLabel}
           data-stream-selected-event-phase={selected.phase ?? ""}
+          data-stream-selected-event-schema-version={
+            selected.schemaVersion ?? ""
+          }
           data-stream-selected-event-sensitivity={selected.sensitivity}
+          data-stream-selected-event-seq={
+            selected.seq === null ? "" : String(selected.seq)
+          }
         >
           <button onClick={props.onClearSelectionClick} type="button">
             Clear selection
@@ -3691,8 +3721,12 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           />
           <dl>
             <div>
+              <dt>Schema</dt>
+              <dd>{schemaVersionLabel}</dd>
+            </div>
+            <div>
               <dt>Seq</dt>
-              <dd>{selected.seq ?? "-"}</dd>
+              <dd>{seqLabel}</dd>
             </div>
             <div>
               <dt>Severity</dt>
@@ -3700,7 +3734,7 @@ function RuntimeWorkbenchShellStreamSelection(props: {
             </div>
             <div>
               <dt>Created</dt>
-              <dd>{selected.createdAt ?? "-"}</dd>
+              <dd>{createdAtLabel}</dd>
             </div>
           </dl>
           <button
@@ -3719,6 +3753,7 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               data-stream-selection-metadata-child-count={String(
                 selected.childCount,
               )}
+              data-stream-selection-metadata-created-at={createdAtLabel}
               data-stream-selection-metadata-correlation-id={correlationIdLabel}
               data-stream-selection-metadata-display-level={
                 selected.displayLevel
@@ -3729,8 +3764,22 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               data-stream-selection-metadata-attempt-id={attemptIdLabel}
               data-stream-selection-metadata-parent-id={parentEventIdLabel}
               data-stream-selection-metadata-phase={phaseLabel}
+              data-stream-selection-metadata-schema-version={schemaVersionLabel}
               data-stream-selection-metadata-sensitivity={selected.sensitivity}
+              data-stream-selection-metadata-seq={seqLabel}
             >
+              <div>
+                <dt>Schema</dt>
+                <dd>{schemaVersionLabel}</dd>
+              </div>
+              <div>
+                <dt>Seq</dt>
+                <dd>{seqLabel}</dd>
+              </div>
+              <div>
+                <dt>Created</dt>
+                <dd>{createdAtLabel}</dd>
+              </div>
               <div>
                 <dt>Category</dt>
                 <dd>{categoryLabel}</dd>

@@ -193,6 +193,15 @@ test("renderer runtime workbench React shell renders expanded stream event detai
       "1",
     );
     assert.equal(
+      detail.getAttribute("data-stream-event-detail-schema-version"),
+      "0.1.0",
+    );
+    assert.equal(detail.getAttribute("data-stream-event-detail-seq"), "7");
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-created-at"),
+      "2026-06-22T02:00:00.000Z",
+    );
+    assert.equal(
       detail.getAttribute("data-stream-event-detail-run-id"),
       "run_react_stream",
     );
@@ -235,7 +244,7 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(detail),
-      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
+      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
     );
     const selectedEvent = requireFakeRuntimeWorkbenchElementByData(
       dom.container,
@@ -245,6 +254,18 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-artifact-count"),
       "1",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-schema-version"),
+      "0.1.0",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-seq"),
+      "7",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-created-at"),
+      "2026-06-22T02:00:00.000Z",
     );
     assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-run-id"),
@@ -824,6 +845,18 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
       "0",
     );
     assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-schema-version"),
+      "0.1.0",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-seq"),
+      "7",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-created-at"),
+      "2026-06-22T02:00:00.000Z",
+    );
+    assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
         dom.container,
         "streamSelectionMetadataToggle",
@@ -867,6 +900,18 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
       "model",
     );
     assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-schema-version"),
+      "0.1.0",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-seq"),
+      "7",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-created-at"),
+      "2026-06-22T02:00:00.000Z",
+    );
+    assert.equal(
       metadata.getAttribute("data-stream-selection-metadata-run-id"),
       "run_react_stream",
     );
@@ -908,7 +953,7 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(metadata),
-      /Category[\s\S]*model[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Display level[\s\S]*default[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
+      /Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Display level[\s\S]*default[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -4451,6 +4496,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
       timelineItems: Object.freeze([
         Object.freeze({
           id: "evt_react_stream",
+          schemaVersion: "0.1.0",
           seq: 7,
           parentEventId: "evt_react_parent",
           correlationId: "trace_react_stream",
@@ -4486,6 +4532,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
       ]),
       selectedEvent: Object.freeze({
         id: "evt_react_stream",
+        schemaVersion: "0.1.0",
         seq: 7,
         parentEventId: "evt_react_parent",
         correlationId: "trace_react_stream",

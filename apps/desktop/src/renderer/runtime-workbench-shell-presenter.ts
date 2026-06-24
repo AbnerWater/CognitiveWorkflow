@@ -1623,6 +1623,7 @@ function cloneRuntimeWorkbenchShellRuntimeStreamEvent(
 ): RuntimeWorkbenchShellRuntimeStreamEventSnapshot {
   return Object.freeze({
     id: event.id,
+    schemaVersion: event.schemaVersion,
     seq: event.seq,
     parentEventId: event.parentEventId,
     correlationId: event.correlationId,

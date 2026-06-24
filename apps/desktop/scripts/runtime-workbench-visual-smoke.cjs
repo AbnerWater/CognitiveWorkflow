@@ -99,6 +99,12 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-stream-event-detail="true"]').length,
       streamEventDetailContent:
         document.querySelector('[data-stream-event-detail-content="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
+      streamEventDetailSchemaVersion:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-schema-version') ?? null,
+      streamEventDetailSeq:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-seq') ?? null,
+      streamEventDetailCreatedAt:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-created-at') ?? null,
       streamEventDetailParentId:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-parent-id') ?? null,
       streamEventDetailCorrelationId:
@@ -151,6 +157,12 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selection-toggle="true"]')?.getAttribute('aria-expanded') ?? null,
       streamSelectedEventBodies:
         document.querySelectorAll('[data-stream-selected-event="true"]').length,
+      streamSelectedEventSchemaVersion:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-schema-version') ?? null,
+      streamSelectedEventSeq:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-seq') ?? null,
+      streamSelectedEventCreatedAt:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-created-at') ?? null,
       streamSelectedEventParentId:
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-parent-id') ?? null,
       streamSelectedEventCorrelationId:
@@ -187,6 +199,12 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-category') ?? null,
       streamSelectionMetadataDisplayLevel:
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-display-level') ?? null,
+      streamSelectionMetadataSchemaVersion:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-schema-version') ?? null,
+      streamSelectionMetadataSeq:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-seq') ?? null,
+      streamSelectionMetadataCreatedAt:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-created-at') ?? null,
       streamSelectionMetadataCorrelationId:
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-correlation-id') ?? null,
       streamSelectionMetadataRunId:
@@ -1796,6 +1814,24 @@ function collectVisualSmokeFailures(
       `expected expanded stream event detail content delta content, got ${streamEventExpandedMetrics.streamEventDetailContent}`,
     );
   }
+  if (streamEventExpandedMetrics.streamEventDetailSchemaVersion !== "0.1.0") {
+    failures.push(
+      `expected expanded stream event detail schema version 0.1.0, got ${streamEventExpandedMetrics.streamEventDetailSchemaVersion}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailSeq !== "12") {
+    failures.push(
+      `expected expanded stream event detail seq 12, got ${streamEventExpandedMetrics.streamEventDetailSeq}`,
+    );
+  }
+  if (
+    streamEventExpandedMetrics.streamEventDetailCreatedAt !==
+    "2026-06-23T00:00:00.000Z"
+  ) {
+    failures.push(
+      `expected expanded stream event detail created 2026-06-23T00:00:00.000Z, got ${streamEventExpandedMetrics.streamEventDetailCreatedAt}`,
+    );
+  }
   if (
     streamEventExpandedMetrics.streamEventDetailParentId !== "evt_visual_parent"
   ) {
@@ -2166,6 +2202,24 @@ function collectVisualSmokeFailures(
       `expected initial selected stream parent evt_visual_parent, got ${initialStreamMetrics.streamSelectedEventParentId}`,
     );
   }
+  if (initialStreamMetrics.streamSelectedEventSchemaVersion !== "0.1.0") {
+    failures.push(
+      `expected initial selected stream schema version 0.1.0, got ${initialStreamMetrics.streamSelectedEventSchemaVersion}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventSeq !== "12") {
+    failures.push(
+      `expected initial selected stream seq 12, got ${initialStreamMetrics.streamSelectedEventSeq}`,
+    );
+  }
+  if (
+    initialStreamMetrics.streamSelectedEventCreatedAt !==
+    "2026-06-23T00:00:00.000Z"
+  ) {
+    failures.push(
+      `expected initial selected stream created 2026-06-23T00:00:00.000Z, got ${initialStreamMetrics.streamSelectedEventCreatedAt}`,
+    );
+  }
   if (
     initialStreamMetrics.streamSelectedEventCorrelationId !==
     "trace_visual_stream"
@@ -2263,6 +2317,29 @@ function collectVisualSmokeFailures(
   ) {
     failures.push(
       `expected expanded stream selection metadata display level default, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataDisplayLevel}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSchemaVersion !==
+    "0.1.0"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata schema version 0.1.0, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSchemaVersion}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSeq !== "12"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata seq 12, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSeq}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataCreatedAt !==
+    "2026-06-23T00:00:00.000Z"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata created 2026-06-23T00:00:00.000Z, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataCreatedAt}`,
     );
   }
   if (

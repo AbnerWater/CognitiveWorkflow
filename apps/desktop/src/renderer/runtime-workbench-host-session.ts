@@ -68,6 +68,7 @@ export interface RuntimeWorkbenchHostRuntimeStreamArtifactRefSnapshot {
 
 export interface RuntimeWorkbenchHostRuntimeStreamEventSnapshot {
   readonly id: string | null;
+  readonly schemaVersion: string | null;
   readonly seq: number | null;
   readonly parentEventId: string | null;
   readonly correlationId: string | null;
@@ -507,6 +508,7 @@ function toRuntimeWorkbenchHostRuntimeStreamEventSnapshot(
 ): RuntimeWorkbenchHostRuntimeStreamEventSnapshot {
   return Object.freeze({
     id: event.id,
+    schemaVersion: event.schemaVersion,
     seq: event.seq,
     parentEventId: event.parentEventId,
     correlationId: event.correlationId,
