@@ -252,6 +252,101 @@ process.stdout.write("\\n");
   });
 });
 
+test("visual smoke matrix summarizes missing JSON without raw output", async () => {
+  await withTempDir("cw-visual-smoke-matrix-missing-json-", async (tempDir) => {
+    const fakeElectronCliPath = await writeFakeElectronCli(
+      tempDir,
+      `
+process.stdout.write("missing-json-stdout-secret");
+process.stderr.write("missing-json-stderr-secret");
+`,
+    );
+
+    const result = await runMatrix(tempDir, fakeElectronCliPath);
+    const firstCase = result.manifest.cases[0];
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.manifest.cases.length, 6);
+    assert.equal(result.manifest.failures.length, 6);
+    assert.equal(firstCase.process.exitCode, 0);
+    assert.equal(
+      firstCase.process.stdoutLength,
+      "missing-json-stdout-secret".length,
+    );
+    assert.equal(
+      firstCase.process.stderrLength,
+      "missing-json-stderr-secret".length,
+    );
+    assert.match(
+      firstCase.failures.join("\n"),
+      /case JSON was not readable \(ENOENT\)/u,
+    );
+    assert.match(
+      firstCase.failures.join("\n"),
+      /case process wrote stderr bytes: \d+/u,
+    );
+    assert.equal(firstCase.targetLocation, null);
+    assert.equal(firstCase.messageCount, null);
+    assertSafeOutput(result, [
+      "missing-json-stdout-secret",
+      "missing-json-stderr-secret",
+      "query-secret",
+      "hash-secret",
+    ]);
+  });
+});
+
+test("visual smoke matrix summarizes nonzero child exits without raw output", async () => {
+  await withTempDir("cw-visual-smoke-matrix-child-exit-", async (tempDir) => {
+    const fakeElectronCliPath = await writeFakeElectronCli(
+      tempDir,
+      `
+process.stdout.write("child-exit-stdout-secret");
+process.stderr.write("child-exit-stderr-secret");
+process.exit(7);
+`,
+    );
+
+    const result = await runMatrix(tempDir, fakeElectronCliPath);
+    const firstCase = result.manifest.cases[0];
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.manifest.cases.length, 6);
+    assert.equal(result.manifest.failures.length, 6);
+    assert.equal(firstCase.process.exitCode, 7);
+    assert.equal(
+      firstCase.process.stdoutLength,
+      "child-exit-stdout-secret".length,
+    );
+    assert.equal(
+      firstCase.process.stderrLength,
+      "child-exit-stderr-secret".length,
+    );
+    assert.match(
+      firstCase.failures.join("\n"),
+      /case process exited with code 7/u,
+    );
+    assert.match(
+      firstCase.failures.join("\n"),
+      /case JSON was not readable \(ENOENT\)/u,
+    );
+    assert.match(
+      firstCase.failures.join("\n"),
+      /case process wrote stderr bytes: \d+/u,
+    );
+    assert.equal(firstCase.targetLocation, null);
+    assert.equal(firstCase.messageCount, null);
+    assertSafeOutput(result, [
+      "child-exit-stdout-secret",
+      "child-exit-stderr-secret",
+      "query-secret",
+      "hash-secret",
+    ]);
+  });
+});
+
 test("visual smoke matrix summarizes console messages without values", async () => {
   await withTempDir(
     "cw-visual-smoke-matrix-console-messages-",
