@@ -193,6 +193,26 @@ test("renderer runtime workbench React shell renders expanded stream event detai
       "1",
     );
     assert.equal(
+      detail.getAttribute("data-stream-event-detail-event-id"),
+      "evt_react_stream",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-type"),
+      "model.text_delta",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-title"),
+      "Model delta",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-summary"),
+      "delta summary",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-expandable"),
+      "yes",
+    );
+    assert.equal(
       detail.getAttribute("data-stream-event-detail-schema-version"),
       "0.1.0",
     );
@@ -256,7 +276,7 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(detail),
-      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
+      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Event ID[\s\S]*evt_react_stream[\s\S]*Type[\s\S]*model\.text_delta[\s\S]*Title[\s\S]*Model delta[\s\S]*Summary[\s\S]*delta summary[\s\S]*Expandable[\s\S]*yes[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
     );
     const selectedEvent = requireFakeRuntimeWorkbenchElementByData(
       dom.container,
@@ -266,6 +286,26 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-artifact-count"),
       "1",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-id"),
+      "evt_react_stream",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-type"),
+      "model.text_delta",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-title"),
+      "Model delta",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-summary"),
+      "delta summary",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-expandable"),
+      "yes",
     );
     assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-schema-version"),
@@ -869,6 +909,26 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
       "0",
     );
     assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-id"),
+      "evt_react_stream",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-type"),
+      "model.text_delta",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-title"),
+      "Model delta",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-summary"),
+      "delta summary",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-expandable"),
+      "yes",
+    );
+    assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-schema-version"),
       "0.1.0",
     );
@@ -936,6 +996,22 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
       "model",
     );
     assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-event-id"),
+      "evt_react_stream",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-type"),
+      "model.text_delta",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-title"),
+      "Model delta",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-summary"),
+      "delta summary",
+    );
+    assert.equal(
       metadata.getAttribute("data-stream-selection-metadata-schema-version"),
       "0.1.0",
     );
@@ -993,7 +1069,7 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(metadata),
-      /Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
+      /Event ID[\s\S]*evt_react_stream[\s\S]*Type[\s\S]*model\.text_delta[\s\S]*Title[\s\S]*Model delta[\s\S]*Summary[\s\S]*delta summary[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(

@@ -3490,6 +3490,10 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             props.event.correlationId ?? ""
           }
           data-stream-event-detail-display-level={props.event.displayLevel}
+          data-stream-event-detail-event-id={props.event.id ?? ""}
+          data-stream-event-detail-expandable={
+            props.event.expandable ? "yes" : "no"
+          }
           data-stream-event-detail-parent-id={props.event.parentEventId ?? ""}
           data-stream-event-detail-run-id={props.event.runId ?? ""}
           data-stream-event-detail-node-id={props.event.nodeId ?? ""}
@@ -3503,6 +3507,9 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
           data-stream-event-detail-seq={
             props.event.seq === null ? "" : String(props.event.seq)
           }
+          data-stream-event-detail-summary={props.event.summary ?? ""}
+          data-stream-event-detail-title={props.event.title}
+          data-stream-event-detail-type={props.event.type}
         >
           {props.event.content === null ? null : (
             <p data-stream-event-detail-content="true">{props.event.content}</p>
@@ -3512,6 +3519,26 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             source="event-detail"
           />
           <dl>
+            <div>
+              <dt>Event ID</dt>
+              <dd>{props.event.id ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Type</dt>
+              <dd>{props.event.type}</dd>
+            </div>
+            <div>
+              <dt>Title</dt>
+              <dd>{props.event.title}</dd>
+            </div>
+            <div>
+              <dt>Summary</dt>
+              <dd>{props.event.summary ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Expandable</dt>
+              <dd>{props.event.expandable ? "yes" : "no"}</dd>
+            </div>
             <div>
               <dt>Schema</dt>
               <dd>{props.event.schemaVersion ?? "-"}</dd>
@@ -3642,6 +3669,10 @@ function RuntimeWorkbenchShellStreamSelection(props: {
       ? "No event selected"
       : `${selected.title}, ${selected.type}`;
   const categoryLabel = selected?.category ?? "-";
+  const eventIdLabel = selected?.id ?? "-";
+  const eventTypeLabel = selected?.type ?? "-";
+  const titleLabel = selected?.title ?? "-";
+  const summaryLabel = selected?.summary ?? "-";
   const schemaVersionLabel = selected?.schemaVersion ?? "-";
   const seqLabel =
     selected === null || selected.seq === null ? "-" : String(selected.seq);
@@ -3711,6 +3742,7 @@ function RuntimeWorkbenchShellStreamSelection(props: {
             selected.correlationId ?? ""
           }
           data-stream-selected-event-display-level={selected.displayLevel}
+          data-stream-selected-event-expandable={expandableLabel}
           data-stream-selected-event-id={selected.id ?? ""}
           data-stream-selected-event-run-id={selected.runId ?? ""}
           data-stream-selected-event-node-id={selected.nodeId ?? ""}
@@ -3725,6 +3757,9 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           data-stream-selected-event-seq={
             selected.seq === null ? "" : String(selected.seq)
           }
+          data-stream-selected-event-summary={selected.summary ?? ""}
+          data-stream-selected-event-title={selected.title}
+          data-stream-selected-event-type={selected.type}
         >
           <button onClick={props.onClearSelectionClick} type="button">
             Clear selection
@@ -3738,6 +3773,26 @@ function RuntimeWorkbenchShellStreamSelection(props: {
             source="selection"
           />
           <dl>
+            <div>
+              <dt>Event ID</dt>
+              <dd>{eventIdLabel}</dd>
+            </div>
+            <div>
+              <dt>Type</dt>
+              <dd>{eventTypeLabel}</dd>
+            </div>
+            <div>
+              <dt>Title</dt>
+              <dd>{titleLabel}</dd>
+            </div>
+            <div>
+              <dt>Summary</dt>
+              <dd>{summaryLabel}</dd>
+            </div>
+            <div>
+              <dt>Expandable</dt>
+              <dd>{expandableLabel}</dd>
+            </div>
             <div>
               <dt>Schema</dt>
               <dd>{schemaVersionLabel}</dd>
@@ -3784,6 +3839,7 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               data-stream-selection-metadata-display-level={
                 selected.displayLevel
               }
+              data-stream-selection-metadata-event-id={eventIdLabel}
               data-stream-selection-metadata-expandable={expandableLabel}
               data-stream-selection-metadata-run-id={runIdLabel}
               data-stream-selection-metadata-node-id={nodeIdLabel}
@@ -3794,7 +3850,26 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               data-stream-selection-metadata-severity={selected.severity}
               data-stream-selection-metadata-sensitivity={selected.sensitivity}
               data-stream-selection-metadata-seq={seqLabel}
+              data-stream-selection-metadata-summary={summaryLabel}
+              data-stream-selection-metadata-title={titleLabel}
+              data-stream-selection-metadata-type={eventTypeLabel}
             >
+              <div>
+                <dt>Event ID</dt>
+                <dd>{eventIdLabel}</dd>
+              </div>
+              <div>
+                <dt>Type</dt>
+                <dd>{eventTypeLabel}</dd>
+              </div>
+              <div>
+                <dt>Title</dt>
+                <dd>{titleLabel}</dd>
+              </div>
+              <div>
+                <dt>Summary</dt>
+                <dd>{summaryLabel}</dd>
+              </div>
               <div>
                 <dt>Schema</dt>
                 <dd>{schemaVersionLabel}</dd>

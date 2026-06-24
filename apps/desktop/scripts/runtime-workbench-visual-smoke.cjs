@@ -111,6 +111,16 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-display-level') ?? null,
       streamEventDetailSeverity:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-severity') ?? null,
+      streamEventDetailEventId:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-event-id') ?? null,
+      streamEventDetailType:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-type') ?? null,
+      streamEventDetailTitle:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-title') ?? null,
+      streamEventDetailSummary:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-summary') ?? null,
+      streamEventDetailExpandable:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-expandable') ?? null,
       streamEventDetailParentId:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-parent-id') ?? null,
       streamEventDetailCorrelationId:
@@ -175,6 +185,16 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-display-level') ?? null,
       streamSelectedEventSeverity:
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-severity') ?? null,
+      streamSelectedEventId:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-id') ?? null,
+      streamSelectedEventType:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-type') ?? null,
+      streamSelectedEventTitle:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-title') ?? null,
+      streamSelectedEventSummary:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-summary') ?? null,
+      streamSelectedEventExpandable:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-expandable') ?? null,
       streamSelectedEventParentId:
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-parent-id') ?? null,
       streamSelectedEventCorrelationId:
@@ -213,6 +233,14 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-display-level') ?? null,
       streamSelectionMetadataSeverity:
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-severity') ?? null,
+      streamSelectionMetadataEventId:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-event-id') ?? null,
+      streamSelectionMetadataType:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-type') ?? null,
+      streamSelectionMetadataTitle:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-title') ?? null,
+      streamSelectionMetadataSummary:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-summary') ?? null,
       streamSelectionMetadataSchemaVersion:
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-schema-version') ?? null,
       streamSelectionMetadataSeq:
@@ -1862,6 +1890,35 @@ function collectVisualSmokeFailures(
     );
   }
   if (
+    streamEventExpandedMetrics.streamEventDetailEventId !== "evt_visual_stream"
+  ) {
+    failures.push(
+      `expected expanded stream event detail id evt_visual_stream, got ${streamEventExpandedMetrics.streamEventDetailEventId}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailType !== "model.text_delta") {
+    failures.push(
+      `expected expanded stream event detail type model.text_delta, got ${streamEventExpandedMetrics.streamEventDetailType}`,
+    );
+  }
+  if (
+    streamEventExpandedMetrics.streamEventDetailTitle !== "Visual stream delta"
+  ) {
+    failures.push(
+      `expected expanded stream event detail title Visual stream delta, got ${streamEventExpandedMetrics.streamEventDetailTitle}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailSummary !== "delta summary") {
+    failures.push(
+      `expected expanded stream event detail summary delta summary, got ${streamEventExpandedMetrics.streamEventDetailSummary}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailExpandable !== "yes") {
+    failures.push(
+      `expected expanded stream event detail expandable yes, got ${streamEventExpandedMetrics.streamEventDetailExpandable}`,
+    );
+  }
+  if (
     streamEventExpandedMetrics.streamEventDetailParentId !== "evt_visual_parent"
   ) {
     failures.push(
@@ -2264,6 +2321,31 @@ function collectVisualSmokeFailures(
       `expected initial selected stream severity info, got ${initialStreamMetrics.streamSelectedEventSeverity}`,
     );
   }
+  if (initialStreamMetrics.streamSelectedEventId !== "evt_visual_stream") {
+    failures.push(
+      `expected initial selected stream id evt_visual_stream, got ${initialStreamMetrics.streamSelectedEventId}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventType !== "model.text_delta") {
+    failures.push(
+      `expected initial selected stream type model.text_delta, got ${initialStreamMetrics.streamSelectedEventType}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventTitle !== "Visual stream delta") {
+    failures.push(
+      `expected initial selected stream title Visual stream delta, got ${initialStreamMetrics.streamSelectedEventTitle}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventSummary !== "delta summary") {
+    failures.push(
+      `expected initial selected stream summary delta summary, got ${initialStreamMetrics.streamSelectedEventSummary}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventExpandable !== "yes") {
+    failures.push(
+      `expected initial selected stream expandable yes, got ${initialStreamMetrics.streamSelectedEventExpandable}`,
+    );
+  }
   if (
     initialStreamMetrics.streamSelectedEventCorrelationId !==
     "trace_visual_stream"
@@ -2369,6 +2451,38 @@ function collectVisualSmokeFailures(
   ) {
     failures.push(
       `expected expanded stream selection metadata severity info, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSeverity}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataEventId !==
+    "evt_visual_stream"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata id evt_visual_stream, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataEventId}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataType !==
+    "model.text_delta"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata type model.text_delta, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataType}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataTitle !==
+    "Visual stream delta"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata title Visual stream delta, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataTitle}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSummary !==
+    "delta summary"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata summary delta summary, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSummary}`,
     );
   }
   if (
