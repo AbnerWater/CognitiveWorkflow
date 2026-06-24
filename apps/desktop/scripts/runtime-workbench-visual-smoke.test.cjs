@@ -12,6 +12,7 @@ const {
 const {
   REDACTED_CHAT_TEXT,
   sanitizeVisualSmokeEvidence,
+  sanitizeVisualSmokeText,
 } = require("./runtime-workbench-visual-smoke-evidence.cjs");
 
 const packageRoot = path.resolve(__dirname, "..");
@@ -276,6 +277,23 @@ test("visual smoke evidence removes persisted chat draft text fields", () => {
     evidence.chatLocalSubmitMetrics.chatLocalSubmissionText,
     "Review repair plan now raw local text",
   );
+});
+
+test("visual smoke evidence redacts chat draft fragments in hard exception text", () => {
+  const errorMessage = `input chat draft failed: ${JSON.stringify({
+    ok: false,
+    message: "Chat draft did not update",
+    actualValue: "Review repair plan now",
+    bodyText: "Preview Ready Review repair plan now",
+  })}`;
+
+  const sanitized = sanitizeVisualSmokeText(errorMessage, {
+    sensitiveTextFragments: ["Review repair plan now"],
+  });
+
+  assert.equal(sanitized.includes("Review repair plan now"), false);
+  assert.equal(sanitized.includes(REDACTED_CHAT_TEXT), true);
+  assert.equal(sanitized.includes("Chat draft did not update"), true);
 });
 
 test("visual smoke preflight rejects invalid viewport env without echoing input", () => {

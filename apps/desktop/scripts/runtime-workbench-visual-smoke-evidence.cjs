@@ -92,9 +92,18 @@ function sanitizeVisualSmokeEvidence(value, options = {}) {
   return sanitizeVisualSmokeEvidenceValue(value, sensitiveFragments);
 }
 
+function sanitizeVisualSmokeText(value, options = {}) {
+  const sensitiveFragments = collectSensitiveChatTextFragments(
+    null,
+    options.sensitiveTextFragments,
+  );
+  return redactSensitiveChatText(String(value), sensitiveFragments);
+}
+
 module.exports = {
   CHAT_TEXT_EVIDENCE_FIELDS,
   REDACTED_CHAT_TEXT,
   collectSensitiveChatTextFragments,
   sanitizeVisualSmokeEvidence,
+  sanitizeVisualSmokeText,
 };

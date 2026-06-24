@@ -1,6 +1,7 @@
 const fs = require("node:fs/promises");
 const {
   sanitizeVisualSmokeEvidence,
+  sanitizeVisualSmokeText,
 } = require("./runtime-workbench-visual-smoke-evidence.cjs");
 const {
   resolveVisualSmokePreflight,
@@ -1871,7 +1872,10 @@ async function runSmokeStep(label, action) {
     return await action();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`${label} failed: ${message}`);
+    const safeMessage = sanitizeVisualSmokeText(message, {
+      sensitiveTextFragments: chatEvidenceSensitiveTextFragments,
+    });
+    throw new Error(`${label} failed: ${safeMessage}`);
   }
 }
 
@@ -5664,7 +5668,13 @@ async function main() {
 }
 
 main().catch(async (error) => {
-  console.error(error);
+  const message =
+    error instanceof Error ? (error.stack ?? error.message) : String(error);
+  console.error(
+    sanitizeVisualSmokeText(message, {
+      sensitiveTextFragments: chatEvidenceSensitiveTextFragments,
+    }),
+  );
   await app.quit();
   process.exitCode = 1;
 });
