@@ -86,6 +86,7 @@ function buildCaseUrl(mode) {
 function collectCaseFailures(testCase, result) {
   const failures = [];
   const jsonFailures = Array.isArray(result.failures) ? result.failures : [];
+  const messages = Array.isArray(result.messages) ? result.messages : [];
 
   if (result.streamEventMode !== testCase.mode) {
     failures.push(
@@ -167,6 +168,11 @@ function collectCaseFailures(testCase, result) {
       )}`,
     );
   }
+  if (messages.length !== 0) {
+    failures.push(
+      `expected no console warning/error messages, got ${messages.length}`,
+    );
+  }
   if (jsonFailures.length > 0) {
     failures.push(`case JSON contains failures: ${jsonFailures.join("; ")}`);
   }
@@ -227,16 +233,47 @@ function collectCaseFailures(testCase, result) {
   return failures;
 }
 
-function summarizeCase(testCase, outputPath, result, failures) {
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function summarizeJsonReadError(error) {
+  if (error instanceof Error && "code" in error) {
+    return `case JSON was not readable (${String(error.code)})`;
+  }
+  if (error instanceof SyntaxError) {
+    return "case JSON was not valid JSON";
+  }
+  return "case JSON was not readable";
+}
+
+function summarizeProcessErrorCode(error) {
+  if (error instanceof Error && "code" in error) {
+    return String(error.code);
+  }
+  return "UNKNOWN";
+}
+
+function summarizeCase(testCase, outputPath, result, runResult, failures) {
   return {
     name: testCase.name,
     mode: testCase.mode,
-    targetLocation: result.targetLocation,
-    requestedViewport: result.requestedViewport,
-    captureSize: result.captureSize,
-    observedViewport: result.metrics?.viewport,
-    observedScroll: result.metrics?.scroll,
-    horizontalOverflow: result.metrics?.horizontalOverflow,
+    process: {
+      exitCode: runResult.exitCode,
+      signal: runResult.signal,
+      errorCode: runResult.errorCode,
+      stdoutLength: runResult.stdout.length,
+      stderrLength: runResult.stderr.length,
+    },
+    targetLocation: result?.targetLocation ?? null,
+    requestedViewport: result?.requestedViewport ?? null,
+    captureSize: result?.captureSize ?? null,
+    observedViewport: result?.metrics?.viewport ?? null,
+    observedScroll: result?.metrics?.scroll ?? null,
+    horizontalOverflow: result?.metrics?.horizontalOverflow ?? null,
+    messageCount: Array.isArray(result?.messages)
+      ? result.messages.length
+      : null,
     outputPath,
     jsonPath: `${outputPath}.json`,
     failures,
@@ -253,7 +290,15 @@ function runSmoke(testCase, outputPath) {
     CW_VISUAL_SMOKE_SCROLL_Y: String(testCase.scrollY),
   };
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (runResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(runResult);
+    };
     const child = spawn(process.execPath, [electronCliPath, smokeScriptPath], {
       cwd: packageRoot,
       env,
@@ -264,24 +309,28 @@ function runSmoke(testCase, outputPath) {
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString();
       stdout += text;
-      process.stdout.write(text);
     });
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
       stderr += text;
-      process.stderr.write(text);
     });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-        return;
-      }
-      reject(
-        new Error(
-          `visual smoke case ${testCase.name} exited with code ${String(code)}`,
-        ),
-      );
+    child.on("error", (error) => {
+      finish({
+        exitCode: null,
+        signal: null,
+        errorCode: summarizeProcessErrorCode(error),
+        stdout,
+        stderr,
+      });
+    });
+    child.on("close", (code, signal) => {
+      finish({
+        exitCode: code,
+        signal,
+        errorCode: null,
+        stdout,
+        stderr,
+      });
     });
   });
 }
@@ -296,15 +345,43 @@ async function main() {
     console.log(
       `[visual-smoke:matrix] running ${testCase.name} ${testCase.width}x${testCase.height} scroll=${testCase.scrollY}`,
     );
-    await runSmoke(testCase, outputPath);
-    const result = JSON.parse(
-      await fs.readFile(`${outputPath}.json`, { encoding: "utf8" }),
-    );
-    const failures = collectCaseFailures(testCase, result);
+    const runResult = await runSmoke(testCase, outputPath);
+    let result = null;
+    let parsedJson = false;
+    const failures = [];
+    if (runResult.errorCode !== null) {
+      failures.push(`case process failed to start (${runResult.errorCode})`);
+    } else if (runResult.exitCode !== 0) {
+      failures.push(
+        `case process exited with code ${String(runResult.exitCode)}`,
+      );
+    }
+    if (runResult.stderr.length !== 0) {
+      failures.push(
+        `case process wrote stderr bytes: ${String(runResult.stderr.length)}`,
+      );
+    }
+    try {
+      result = JSON.parse(
+        await fs.readFile(`${outputPath}.json`, { encoding: "utf8" }),
+      );
+      parsedJson = true;
+    } catch (error) {
+      failures.push(summarizeJsonReadError(error));
+    }
+    if (parsedJson && !isRecord(result)) {
+      failures.push("case JSON root was not an object");
+      result = null;
+    }
+    if (isRecord(result)) {
+      failures.push(...collectCaseFailures(testCase, result));
+    }
     if (failures.length > 0) {
       matrixFailures.push(`${testCase.name}: ${failures.join("; ")}`);
     }
-    caseSummaries.push(summarizeCase(testCase, outputPath, result, failures));
+    caseSummaries.push(
+      summarizeCase(testCase, outputPath, result, runResult, failures),
+    );
   }
 
   const manifestPath = path.join(outputDir, "matrix.json");
