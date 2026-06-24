@@ -3484,7 +3484,13 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             props.event.artifactRefs.length,
           )}
           data-stream-event-detail-child-count={String(props.event.childCount)}
+          data-stream-event-detail-correlation-id={
+            props.event.correlationId ?? ""
+          }
           data-stream-event-detail-parent-id={props.event.parentEventId ?? ""}
+          data-stream-event-detail-run-id={props.event.runId ?? ""}
+          data-stream-event-detail-node-id={props.event.nodeId ?? ""}
+          data-stream-event-detail-attempt-id={props.event.attemptId ?? ""}
           data-stream-event-detail-phase={props.event.phase ?? ""}
           data-stream-event-detail-sensitivity={props.event.sensitivity}
         >
@@ -3496,6 +3502,22 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             source="event-detail"
           />
           <dl>
+            <div>
+              <dt>Run</dt>
+              <dd>{props.event.runId ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Node</dt>
+              <dd>{props.event.nodeId ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Attempt</dt>
+              <dd>{props.event.attemptId ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Correlation</dt>
+              <dd>{props.event.correlationId ?? "-"}</dd>
+            </div>
             <div>
               <dt>Phase</dt>
               <dd>{props.event.phase ?? "-"}</dd>
@@ -3588,6 +3610,10 @@ function RuntimeWorkbenchShellStreamSelection(props: {
   const categoryLabel = selected?.category ?? "-";
   const phaseLabel = selected?.phase ?? "-";
   const parentEventIdLabel = selected?.parentEventId ?? "-";
+  const correlationIdLabel = selected?.correlationId ?? "-";
+  const runIdLabel = selected?.runId ?? "-";
+  const nodeIdLabel = selected?.nodeId ?? "-";
+  const attemptIdLabel = selected?.attemptId ?? "-";
   const sensitivityLabel =
     selected === null
       ? "-"
@@ -3641,7 +3667,13 @@ function RuntimeWorkbenchShellStreamSelection(props: {
             selected.artifactRefs.length,
           )}
           data-stream-selected-event-child-count={String(selected.childCount)}
+          data-stream-selected-event-correlation-id={
+            selected.correlationId ?? ""
+          }
           data-stream-selected-event-id={selected.id ?? ""}
+          data-stream-selected-event-run-id={selected.runId ?? ""}
+          data-stream-selected-event-node-id={selected.nodeId ?? ""}
+          data-stream-selected-event-attempt-id={selected.attemptId ?? ""}
           data-stream-selected-event-parent-id={parentEventIdLabel}
           data-stream-selected-event-phase={selected.phase ?? ""}
           data-stream-selected-event-sensitivity={selected.sensitivity}
@@ -3687,10 +3719,14 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               data-stream-selection-metadata-child-count={String(
                 selected.childCount,
               )}
+              data-stream-selection-metadata-correlation-id={correlationIdLabel}
               data-stream-selection-metadata-display-level={
                 selected.displayLevel
               }
               data-stream-selection-metadata-expandable={expandableLabel}
+              data-stream-selection-metadata-run-id={runIdLabel}
+              data-stream-selection-metadata-node-id={nodeIdLabel}
+              data-stream-selection-metadata-attempt-id={attemptIdLabel}
               data-stream-selection-metadata-parent-id={parentEventIdLabel}
               data-stream-selection-metadata-phase={phaseLabel}
               data-stream-selection-metadata-sensitivity={selected.sensitivity}
@@ -3698,6 +3734,22 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               <div>
                 <dt>Category</dt>
                 <dd>{categoryLabel}</dd>
+              </div>
+              <div>
+                <dt>Run</dt>
+                <dd>{runIdLabel}</dd>
+              </div>
+              <div>
+                <dt>Node</dt>
+                <dd>{nodeIdLabel}</dd>
+              </div>
+              <div>
+                <dt>Attempt</dt>
+                <dd>{attemptIdLabel}</dd>
+              </div>
+              <div>
+                <dt>Correlation</dt>
+                <dd>{correlationIdLabel}</dd>
               </div>
               <div>
                 <dt>Phase</dt>

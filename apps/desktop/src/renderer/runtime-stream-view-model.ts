@@ -86,6 +86,10 @@ export interface RuntimeStreamViewEvent {
   readonly id: string | null;
   readonly seq: number | null;
   readonly parentEventId: string | null;
+  readonly correlationId: string | null;
+  readonly runId: string | null;
+  readonly nodeId: string | null;
+  readonly attemptId: string | null;
   readonly type: string;
   readonly category: RuntimeStreamViewCategory | null;
   readonly phase: RuntimeStreamViewEventPhase | null;
@@ -161,6 +165,10 @@ interface RuntimeStreamViewEventDraft {
   readonly id: string | null;
   readonly seq: number | null;
   readonly parentEventId: string | null;
+  readonly correlationId: string | null;
+  readonly runId: string | null;
+  readonly nodeId: string | null;
+  readonly attemptId: string | null;
   readonly type: string;
   readonly category: RuntimeStreamViewCategory | null;
   readonly phase: RuntimeStreamViewEventPhase | null;
@@ -378,6 +386,10 @@ function buildRuntimeStreamViewEvent(
     id: draft.id,
     seq: draft.seq,
     parentEventId: draft.parentEventId,
+    correlationId: draft.correlationId,
+    runId: draft.runId,
+    nodeId: draft.nodeId,
+    attemptId: draft.attemptId,
     type: draft.type,
     category: draft.category,
     phase: draft.phase,
@@ -417,6 +429,10 @@ function toRuntimeStreamViewEventDraft(
     id,
     seq: readSafeInteger(data, "seq"),
     parentEventId: readNullableString(data, "parent_event_id"),
+    correlationId: readString(data, "correlation_id"),
+    runId: readString(data, "run_id"),
+    nodeId: readString(data, "node_id"),
+    attemptId: readString(data, "attempt_id"),
     type,
     category: readRuntimeStreamCategory(data, "category"),
     phase: readRuntimeStreamEventPhase(data, "phase"),

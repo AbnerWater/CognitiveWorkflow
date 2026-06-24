@@ -101,6 +101,14 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-event-detail-content="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       streamEventDetailParentId:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-parent-id') ?? null,
+      streamEventDetailCorrelationId:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-correlation-id') ?? null,
+      streamEventDetailRunId:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-run-id') ?? null,
+      streamEventDetailNodeId:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-node-id') ?? null,
+      streamEventDetailAttemptId:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-attempt-id') ?? null,
       streamEventDetailPhase:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-phase') ?? null,
       streamEventDetailSensitivity:
@@ -145,6 +153,14 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-stream-selected-event="true"]').length,
       streamSelectedEventParentId:
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-parent-id') ?? null,
+      streamSelectedEventCorrelationId:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-correlation-id') ?? null,
+      streamSelectedEventRunId:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-run-id') ?? null,
+      streamSelectedEventNodeId:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-node-id') ?? null,
+      streamSelectedEventAttemptId:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-attempt-id') ?? null,
       streamSelectedEventPhase:
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-phase') ?? null,
       streamSelectedEventSensitivity:
@@ -171,6 +187,14 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-category') ?? null,
       streamSelectionMetadataDisplayLevel:
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-display-level') ?? null,
+      streamSelectionMetadataCorrelationId:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-correlation-id') ?? null,
+      streamSelectionMetadataRunId:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-run-id') ?? null,
+      streamSelectionMetadataNodeId:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-node-id') ?? null,
+      streamSelectionMetadataAttemptId:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-attempt-id') ?? null,
       streamSelectionMetadataPhase:
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-phase') ?? null,
       streamSelectionMetadataSensitivity:
@@ -1780,6 +1804,36 @@ function collectVisualSmokeFailures(
     );
   }
   if (
+    streamEventExpandedMetrics.streamEventDetailCorrelationId !==
+    "trace_visual_stream"
+  ) {
+    failures.push(
+      `expected expanded stream event detail correlation trace_visual_stream, got ${streamEventExpandedMetrics.streamEventDetailCorrelationId}`,
+    );
+  }
+  if (
+    streamEventExpandedMetrics.streamEventDetailRunId !== "run_visual_stream"
+  ) {
+    failures.push(
+      `expected expanded stream event detail run run_visual_stream, got ${streamEventExpandedMetrics.streamEventDetailRunId}`,
+    );
+  }
+  if (
+    streamEventExpandedMetrics.streamEventDetailNodeId !== "node_visual_model"
+  ) {
+    failures.push(
+      `expected expanded stream event detail node node_visual_model, got ${streamEventExpandedMetrics.streamEventDetailNodeId}`,
+    );
+  }
+  if (
+    streamEventExpandedMetrics.streamEventDetailAttemptId !==
+    "attempt_visual_stream"
+  ) {
+    failures.push(
+      `expected expanded stream event detail attempt attempt_visual_stream, got ${streamEventExpandedMetrics.streamEventDetailAttemptId}`,
+    );
+  }
+  if (
     streamEventExpandedMetrics.streamEventDetailPhase !== "attempt.streaming"
   ) {
     failures.push(
@@ -2112,6 +2166,32 @@ function collectVisualSmokeFailures(
       `expected initial selected stream parent evt_visual_parent, got ${initialStreamMetrics.streamSelectedEventParentId}`,
     );
   }
+  if (
+    initialStreamMetrics.streamSelectedEventCorrelationId !==
+    "trace_visual_stream"
+  ) {
+    failures.push(
+      `expected initial selected stream correlation trace_visual_stream, got ${initialStreamMetrics.streamSelectedEventCorrelationId}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventRunId !== "run_visual_stream") {
+    failures.push(
+      `expected initial selected stream run run_visual_stream, got ${initialStreamMetrics.streamSelectedEventRunId}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventNodeId !== "node_visual_model") {
+    failures.push(
+      `expected initial selected stream node node_visual_model, got ${initialStreamMetrics.streamSelectedEventNodeId}`,
+    );
+  }
+  if (
+    initialStreamMetrics.streamSelectedEventAttemptId !==
+    "attempt_visual_stream"
+  ) {
+    failures.push(
+      `expected initial selected stream attempt attempt_visual_stream, got ${initialStreamMetrics.streamSelectedEventAttemptId}`,
+    );
+  }
   if (initialStreamMetrics.streamSelectedEventPhase !== "attempt.streaming") {
     failures.push(
       `expected initial selected stream phase attempt.streaming, got ${initialStreamMetrics.streamSelectedEventPhase}`,
@@ -2183,6 +2263,38 @@ function collectVisualSmokeFailures(
   ) {
     failures.push(
       `expected expanded stream selection metadata display level default, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataDisplayLevel}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataCorrelationId !==
+    "trace_visual_stream"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata correlation trace_visual_stream, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataCorrelationId}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataRunId !==
+    "run_visual_stream"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata run run_visual_stream, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataRunId}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataNodeId !==
+    "node_visual_model"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata node node_visual_model, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataNodeId}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataAttemptId !==
+    "attempt_visual_stream"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata attempt attempt_visual_stream, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataAttemptId}`,
     );
   }
   if (

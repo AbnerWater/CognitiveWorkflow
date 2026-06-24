@@ -70,6 +70,10 @@ export interface RuntimeWorkbenchHostRuntimeStreamEventSnapshot {
   readonly id: string | null;
   readonly seq: number | null;
   readonly parentEventId: string | null;
+  readonly correlationId: string | null;
+  readonly runId: string | null;
+  readonly nodeId: string | null;
+  readonly attemptId: string | null;
   readonly type: string;
   readonly category: string | null;
   readonly phase: RuntimeStreamViewEventPhase | null;
@@ -505,6 +509,10 @@ function toRuntimeWorkbenchHostRuntimeStreamEventSnapshot(
     id: event.id,
     seq: event.seq,
     parentEventId: event.parentEventId,
+    correlationId: event.correlationId,
+    runId: event.runId,
+    nodeId: event.nodeId,
+    attemptId: event.attemptId,
     type: event.type,
     category: event.category,
     phase: event.phase,
