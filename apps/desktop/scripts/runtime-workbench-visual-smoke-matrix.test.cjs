@@ -18,6 +18,8 @@ const alternateLegacyUrl =
   "http://127.0.0.1:5175/legacy-smoke.html?legacy=legacy-secret#legacy-hash-secret";
 const invalidMatrixUrl =
   "not-a-url?token=invalid-url-secret#invalid-hash-secret";
+const invalidLegacyUrl =
+  "legacy-not-a-url?legacy=invalid-legacy-secret#invalid-legacy-hash-secret";
 const validFakeElectronCliBody = `
 const fs = require("node:fs");
 const targetUrl = new URL(process.env.CW_VISUAL_SMOKE_URL);
@@ -354,6 +356,79 @@ test("visual smoke matrix rejects invalid target URLs without leaking input", as
       code: "ENOENT",
     });
   });
+});
+
+test("visual smoke matrix rejects invalid legacy URL fallback without leaking input", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-invalid-legacy-url-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        `process.stdout.write("invalid-legacy-url-fake-cli-secret");`,
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath, {
+        urlMode: "legacy",
+        legacyUrlValue: invalidLegacyUrl,
+        readManifest: false,
+      });
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.stdout, "");
+      assert.match(
+        result.stderr,
+        /CW_VISUAL_SMOKE_MATRIX_URL or CW_VISUAL_SMOKE_URL must be a valid URL/u,
+      );
+      assert.equal(
+        result.stderr.includes("invalid-legacy-url-fake-cli-secret"),
+        false,
+      );
+      assert.equal(result.stderr.includes("invalid-legacy-secret"), false);
+      assert.equal(result.stderr.includes("invalid-legacy-hash-secret"), false);
+      await assert.rejects(fs.access(result.manifestPath), {
+        code: "ENOENT",
+      });
+    },
+  );
+});
+
+test("visual smoke matrix rejects invalid matrix URL before valid legacy fallback", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-invalid-priority-url-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        `process.stdout.write("invalid-priority-url-fake-cli-secret");`,
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath, {
+        urlMode: "both",
+        matrixUrlValue: invalidMatrixUrl,
+        legacyUrlValue: alternateLegacyUrl,
+        readManifest: false,
+      });
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.stdout, "");
+      assert.match(
+        result.stderr,
+        /CW_VISUAL_SMOKE_MATRIX_URL or CW_VISUAL_SMOKE_URL must be a valid URL/u,
+      );
+      assert.equal(
+        result.stderr.includes("invalid-priority-url-fake-cli-secret"),
+        false,
+      );
+      assert.equal(result.stderr.includes("invalid-url-secret"), false);
+      assert.equal(result.stderr.includes("invalid-hash-secret"), false);
+      assert.equal(result.stderr.includes("legacy-secret"), false);
+      assert.equal(result.stderr.includes("legacy-hash-secret"), false);
+      await assert.rejects(fs.access(result.manifestPath), {
+        code: "ENOENT",
+      });
+    },
+  );
 });
 
 test("visual smoke matrix sanitizes invalid JSON failures", async () => {
