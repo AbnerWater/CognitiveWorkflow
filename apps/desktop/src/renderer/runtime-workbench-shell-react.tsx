@@ -3483,11 +3483,13 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
           data-stream-event-detail-artifact-count={String(
             props.event.artifactRefs.length,
           )}
+          data-stream-event-detail-category={props.event.category ?? ""}
           data-stream-event-detail-child-count={String(props.event.childCount)}
           data-stream-event-detail-created-at={props.event.createdAt ?? ""}
           data-stream-event-detail-correlation-id={
             props.event.correlationId ?? ""
           }
+          data-stream-event-detail-display-level={props.event.displayLevel}
           data-stream-event-detail-parent-id={props.event.parentEventId ?? ""}
           data-stream-event-detail-run-id={props.event.runId ?? ""}
           data-stream-event-detail-node-id={props.event.nodeId ?? ""}
@@ -3496,6 +3498,7 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
           data-stream-event-detail-schema-version={
             props.event.schemaVersion ?? ""
           }
+          data-stream-event-detail-severity={props.event.severity}
           data-stream-event-detail-sensitivity={props.event.sensitivity}
           data-stream-event-detail-seq={
             props.event.seq === null ? "" : String(props.event.seq)
@@ -3520,6 +3523,18 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             <div>
               <dt>Created</dt>
               <dd>{props.event.createdAt ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Category</dt>
+              <dd>{props.event.category ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Display level</dt>
+              <dd>{props.event.displayLevel}</dd>
+            </div>
+            <div>
+              <dt>Severity</dt>
+              <dd>{props.event.severity}</dd>
             </div>
             <div>
               <dt>Run</dt>
@@ -3689,11 +3704,13 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           data-stream-selected-event-artifact-count={String(
             selected.artifactRefs.length,
           )}
+          data-stream-selected-event-category={selected.category ?? ""}
           data-stream-selected-event-child-count={String(selected.childCount)}
           data-stream-selected-event-created-at={selected.createdAt ?? ""}
           data-stream-selected-event-correlation-id={
             selected.correlationId ?? ""
           }
+          data-stream-selected-event-display-level={selected.displayLevel}
           data-stream-selected-event-id={selected.id ?? ""}
           data-stream-selected-event-run-id={selected.runId ?? ""}
           data-stream-selected-event-node-id={selected.nodeId ?? ""}
@@ -3703,6 +3720,7 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           data-stream-selected-event-schema-version={
             selected.schemaVersion ?? ""
           }
+          data-stream-selected-event-severity={selected.severity}
           data-stream-selected-event-sensitivity={selected.sensitivity}
           data-stream-selected-event-seq={
             selected.seq === null ? "" : String(selected.seq)
@@ -3727,6 +3745,14 @@ function RuntimeWorkbenchShellStreamSelection(props: {
             <div>
               <dt>Seq</dt>
               <dd>{seqLabel}</dd>
+            </div>
+            <div>
+              <dt>Category</dt>
+              <dd>{categoryLabel}</dd>
+            </div>
+            <div>
+              <dt>Display level</dt>
+              <dd>{selected.displayLevel}</dd>
             </div>
             <div>
               <dt>Severity</dt>
@@ -3765,6 +3791,7 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               data-stream-selection-metadata-parent-id={parentEventIdLabel}
               data-stream-selection-metadata-phase={phaseLabel}
               data-stream-selection-metadata-schema-version={schemaVersionLabel}
+              data-stream-selection-metadata-severity={selected.severity}
               data-stream-selection-metadata-sensitivity={selected.sensitivity}
               data-stream-selection-metadata-seq={seqLabel}
             >
@@ -3811,6 +3838,10 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               <div>
                 <dt>Display level</dt>
                 <dd>{selected.displayLevel}</dd>
+              </div>
+              <div>
+                <dt>Severity</dt>
+                <dd>{selected.severity}</dd>
               </div>
               <div>
                 <dt>Parent event</dt>

@@ -202,6 +202,18 @@ test("renderer runtime workbench React shell renders expanded stream event detai
       "2026-06-22T02:00:00.000Z",
     );
     assert.equal(
+      detail.getAttribute("data-stream-event-detail-category"),
+      "model",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-display-level"),
+      "default",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-severity"),
+      "info",
+    );
+    assert.equal(
       detail.getAttribute("data-stream-event-detail-run-id"),
       "run_react_stream",
     );
@@ -244,7 +256,7 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(detail),
-      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
+      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
     );
     const selectedEvent = requireFakeRuntimeWorkbenchElementByData(
       dom.container,
@@ -266,6 +278,18 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-created-at"),
       "2026-06-22T02:00:00.000Z",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-category"),
+      "model",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-display-level"),
+      "default",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-severity"),
+      "info",
     );
     assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-run-id"),
@@ -857,6 +881,18 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
       "2026-06-22T02:00:00.000Z",
     );
     assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-category"),
+      "model",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-display-level"),
+      "default",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-severity"),
+      "info",
+    );
+    assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
         dom.container,
         "streamSelectionMetadataToggle",
@@ -940,6 +976,10 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
       "default",
     );
     assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-severity"),
+      "info",
+    );
+    assert.equal(
       metadata.getAttribute("data-stream-selection-metadata-parent-id"),
       "evt_react_parent",
     );
@@ -953,7 +993,7 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(metadata),
-      /Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Display level[\s\S]*default[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
+      /Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
