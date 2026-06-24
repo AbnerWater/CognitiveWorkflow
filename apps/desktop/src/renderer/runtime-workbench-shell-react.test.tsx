@@ -4709,6 +4709,169 @@ test("renderer runtime workbench React shell opens loopback SSE and resets full 
   }
 });
 
+test("renderer runtime workbench React shell labels unknown loopback SSE events", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const loopback = await createRuntimeWorkbenchLoopbackSseServer({
+    firstStreamEvents: [createRuntimeWorkbenchLoopbackUnknownStreamEvent()],
+  });
+  const errors: unknown[] = [];
+  const runtime = createLoopbackRuntimeBridge({
+    base_url: loopback.baseUrl,
+    token: "loopback-token",
+  });
+  const [{ createRoot }, { act }] = await Promise.all([
+    import("react-dom/client"),
+    import("react"),
+  ]);
+  const session = createRuntimeWorkbenchShellReactSession({
+    runtime,
+    eventSourceFactory: createRuntimeFetchEventSourceFactory(),
+    onError: (error) => {
+      errors.push(error);
+    },
+  });
+  const pendingDispatches: Array<ReturnType<typeof session.dispatch>> = [];
+  const drainDispatches = async (): Promise<void> => {
+    for (;;) {
+      const pendingDispatch = pendingDispatches.shift();
+      if (pendingDispatch === undefined) {
+        return;
+      }
+      await pendingDispatch;
+    }
+  };
+  const reactSession = {
+    ...session,
+    dispatch: async (command: RuntimeWorkbenchInteractionCommand) => {
+      const pendingDispatch = session.dispatch(command);
+      pendingDispatches.push(pendingDispatch);
+      return pendingDispatch;
+    },
+  };
+  const root = createRoot(dom.container as unknown as Element);
+
+  try {
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          defaultRuntimeStreamOptionsFormState={{
+            categories: ["model", "system"],
+            displayLevel: "default",
+            projectId: "project_live",
+            runId: "run_live_smoke",
+          }}
+          runtimeStreamSessionOptions={{
+            channel: { kind: "run", runId: "run_live_smoke" },
+            filters: { level: "default", category: ["model", "system"] },
+            projectId: "project_live",
+            scheduler: createImmediateRuntimeStreamScheduler(),
+          }}
+          session={reactSession}
+          title="Unknown Loopback Runtime Workbench"
+        />,
+      );
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "actionId",
+          "open_runtime_stream_session",
+        ),
+      );
+      await drainDispatches();
+    });
+
+    await act(async () => {
+      await waitFor(() => session.getSnapshot().activePanel === "stream");
+      await waitFor(() => loopback.requests.length >= 1);
+      await waitFor(
+        () =>
+          requireRuntimeStreamPanel(session.getSnapshot()).timelineItems[0]
+            ?.id === "evt_live_unknown",
+      );
+    });
+
+    const panel = requireRuntimeStreamPanel(session.getSnapshot());
+    assert.equal(panel.status, "running");
+    assert.equal(panel.totalEvents, 1);
+    assert.equal(panel.timelineItems[0]?.type, "adapter.experimental_event");
+    assert.equal(panel.timelineItems[0]?.title, "Experimental adapter event");
+    assert.equal(panel.timelineItems[0]?.category, "system");
+
+    const unknownEvent = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamEventKnownType",
+      "false",
+    );
+    assert.match(
+      unknownEvent.getAttribute("class") ?? "",
+      /cw-workbench__stream-event--unknown-type/u,
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(unknownEvent),
+      /Experimental adapter event[\s\S]*adapter\.experimental_event[\s\S]*Unknown event/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "streamEventSelect",
+          "evt_live_unknown",
+        ),
+      );
+      await drainDispatches();
+      await waitFor(
+        () =>
+          requireRuntimeStreamPanel(session.getSnapshot()).selectedEvent?.id ===
+          "evt_live_unknown",
+      );
+    });
+
+    const selectedEvent = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamSelectedEventKnownType",
+      "false",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-type"),
+      "adapter.experimental_event",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        selectedEvent,
+        "streamSelectedEventTypeStatus",
+        "unknown",
+      ).textContent,
+      "Unknown event",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-payload-kind"),
+      "object",
+    );
+    assert.equal(
+      selectedEvent.getAttribute(
+        "data-stream-selected-event-payload-key-count",
+      ),
+      "1",
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(selectedEvent),
+      /secret_payload_value|payload_token|hidden metadata value/u,
+    );
+    assert.deepEqual(errors, []);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    session.dispose();
+    await loopback.close();
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell builds run stream options from form state", () => {
   const state = createRuntimeWorkbenchShellReactStreamOptionsFormState({
     categories: ["model", "tool", "model", "planning"],
@@ -4796,7 +4959,13 @@ interface RuntimeWorkbenchLoopbackSseServer {
   readonly close: () => Promise<void>;
 }
 
-async function createRuntimeWorkbenchLoopbackSseServer(): Promise<RuntimeWorkbenchLoopbackSseServer> {
+interface RuntimeWorkbenchLoopbackSseServerOptions {
+  readonly firstStreamEvents?: readonly Readonly<Record<string, unknown>>[];
+}
+
+async function createRuntimeWorkbenchLoopbackSseServer(
+  options: RuntimeWorkbenchLoopbackSseServerOptions = {},
+): Promise<RuntimeWorkbenchLoopbackSseServer> {
   const requests: RuntimeWorkbenchLoopbackSseRequest[] = [];
   let activeStreamResponse: ServerResponse | null = null;
   let acceptedStreamCount = 0;
@@ -4849,21 +5018,27 @@ async function createRuntimeWorkbenchLoopbackSseServer(): Promise<RuntimeWorkben
           activeStreamResponse = null;
         }
       });
-      const event =
+      const events =
         acceptedStreamCount === 1
-          ? createRuntimeWorkbenchLoopbackStreamEvent({
-              content: "live streamed content",
-              eventId: "evt_live_model",
-              seq: 1,
-              title: "Live model response",
-            })
-          : createRuntimeWorkbenchLoopbackStreamEvent({
-              content: "content after reset",
-              eventId: "evt_live_after_reset",
-              seq: 1,
-              title: "Live model after reset",
-            });
-      response.write(encodeRuntimeWorkbenchLoopbackSseFrame(event));
+          ? (options.firstStreamEvents ?? [
+              createRuntimeWorkbenchLoopbackStreamEvent({
+                content: "live streamed content",
+                eventId: "evt_live_model",
+                seq: 1,
+                title: "Live model response",
+              }),
+            ])
+          : [
+              createRuntimeWorkbenchLoopbackStreamEvent({
+                content: "content after reset",
+                eventId: "evt_live_after_reset",
+                seq: 1,
+                title: "Live model after reset",
+              }),
+            ];
+      for (const event of events) {
+        response.write(encodeRuntimeWorkbenchLoopbackSseFrame(event));
+      }
     },
   );
 
@@ -4939,6 +5114,38 @@ function createRuntimeWorkbenchLoopbackStreamEvent(options: {
     metadata: {
       "cw.trace": { value: "hidden metadata value" },
       "cw.ui": { value: "hidden metadata value" },
+    },
+  };
+}
+
+function createRuntimeWorkbenchLoopbackUnknownStreamEvent(): Record<
+  string,
+  unknown
+> {
+  return {
+    event_id: "evt_live_unknown",
+    schema_version: "0.1.0",
+    seq: 1,
+    parent_event_id: null,
+    correlation_id: "trace_live_unknown",
+    run_id: "run_live_smoke",
+    node_id: null,
+    attempt_id: null,
+    type: "adapter.experimental_event",
+    category: "system",
+    phase: "attempt.streaming",
+    title: "Experimental adapter event",
+    summary: "Forward compatible event",
+    content: "unknown live content",
+    payload: { secret_payload_value: "payload_token" },
+    artifact_refs: [],
+    display_level: "default",
+    severity: "info",
+    sensitivity: "project",
+    expandable: false,
+    created_at: "2026-06-23T00:00:00.000Z",
+    metadata: {
+      "cw.trace": { value: "hidden metadata value" },
     },
   };
 }
