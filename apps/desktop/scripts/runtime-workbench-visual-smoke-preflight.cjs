@@ -1,3 +1,5 @@
+const path = require("node:path");
+
 function parseTargetLocation(url) {
   let parsedUrl;
   try {
@@ -34,6 +36,14 @@ function parseNonNegativeIntegerEnv(env, name, defaultValue) {
   return parsed;
 }
 
+function summarizeOutputPath(outputPath) {
+  const outputFileName = path.basename(outputPath);
+  return {
+    outputFileName,
+    jsonFileName: `${outputFileName}.json`,
+  };
+}
+
 function resolveVisualSmokePreflight(env) {
   const targetUrl = env.CW_VISUAL_SMOKE_URL;
   const outputPath = env.CW_VISUAL_SMOKE_OUTPUT;
@@ -50,6 +60,7 @@ function resolveVisualSmokePreflight(env) {
     height: parsePositiveIntegerEnv(env, "CW_VISUAL_SMOKE_HEIGHT", "720"),
     scrollY: parseNonNegativeIntegerEnv(env, "CW_VISUAL_SMOKE_SCROLL_Y", "0"),
     targetLocation,
+    outputEvidence: summarizeOutputPath(outputPath),
     streamEventMode: targetLocation.streamEventMode,
   };
 }
@@ -58,5 +69,6 @@ module.exports = {
   parseTargetLocation,
   parsePositiveIntegerEnv,
   parseNonNegativeIntegerEnv,
+  summarizeOutputPath,
   resolveVisualSmokePreflight,
 };

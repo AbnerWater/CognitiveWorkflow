@@ -12,6 +12,7 @@ const {
   height,
   scrollY,
   targetLocation,
+  outputEvidence,
   streamEventMode,
 } = resolveVisualSmokePreflight(process.env);
 const expectedSelectedTitle = "Startup timed out after bounded wait";
@@ -5097,7 +5098,7 @@ async function main() {
         canvasHistorySelectMetrics,
         messages,
         failures,
-        outputPath,
+        outputEvidence,
       },
       null,
       2,

@@ -7,6 +7,7 @@ const test = require("node:test");
 const {
   parseTargetLocation,
   resolveVisualSmokePreflight,
+  summarizeOutputPath,
 } = require("./runtime-workbench-visual-smoke-preflight.cjs");
 
 const packageRoot = path.resolve(__dirname, "..");
@@ -23,6 +24,7 @@ const invalidSmokeUrl =
 const invalidViewportSecret = "viewport-secret-value";
 const invalidHeightSecret = "height-secret-value";
 const invalidScrollSecret = "scroll-secret-value";
+const outputPathSecret = "output-path-secret";
 
 async function withTempDir(prefix, run) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -100,6 +102,10 @@ test("visual smoke preflight summarizes known URLs without query or hash", () =>
   assert.equal(preflight.width, 1280);
   assert.equal(preflight.height, 720);
   assert.equal(preflight.scrollY, 0);
+  assert.deepEqual(preflight.outputEvidence, {
+    outputFileName: "visual-smoke.png",
+    jsonFileName: "visual-smoke.png.json",
+  });
   assert.deepEqual(preflight.targetLocation, {
     origin: "http://127.0.0.1:5174",
     pathname: "/visual-smoke.html",
@@ -152,6 +158,22 @@ test("visual smoke preflight rejects invalid URLs without echoing input", () => 
       !error.message.includes("single-smoke-secret") &&
       !error.message.includes("single-smoke-hash-secret"),
   );
+});
+
+test("visual smoke preflight summarizes output path without directory values", () => {
+  const outputPath = path.join(
+    os.tmpdir(),
+    outputPathSecret,
+    "visual-smoke.png",
+  );
+  const summary = summarizeOutputPath(outputPath);
+
+  assert.deepEqual(summary, {
+    outputFileName: "visual-smoke.png",
+    jsonFileName: "visual-smoke.png.json",
+  });
+  assert.equal(JSON.stringify(summary).includes(outputPathSecret), false);
+  assert.equal(JSON.stringify(summary).includes(os.tmpdir()), false);
 });
 
 test("visual smoke preflight rejects invalid viewport env without echoing input", () => {
