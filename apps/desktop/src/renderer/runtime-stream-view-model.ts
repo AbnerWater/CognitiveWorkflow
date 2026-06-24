@@ -58,6 +58,18 @@ export type RuntimeStreamViewEventPhase =
 
 export type RuntimeStreamViewSensitivity = "public" | "project" | "sensitive";
 
+export type RuntimeStreamViewStructuredFieldKind =
+  | "null"
+  | "object"
+  | "array"
+  | "primitive";
+
+export interface RuntimeStreamViewStructuredFieldSummary {
+  readonly present: boolean;
+  readonly kind: RuntimeStreamViewStructuredFieldKind;
+  readonly keyCount: number;
+}
+
 export type RuntimeStreamViewCategory =
   | "lifecycle"
   | "model"
@@ -101,6 +113,8 @@ export interface RuntimeStreamViewEvent {
   readonly summary: string | null;
   readonly content: string | null;
   readonly expandable: boolean;
+  readonly payloadSummary: RuntimeStreamViewStructuredFieldSummary;
+  readonly metadataSummary: RuntimeStreamViewStructuredFieldSummary;
   readonly expanded: boolean;
   readonly childCount: number;
   readonly children: readonly RuntimeStreamViewEvent[];
@@ -182,6 +196,8 @@ interface RuntimeStreamViewEventDraft {
   readonly content: string | null;
   readonly expandable: boolean;
   readonly payload: unknown;
+  readonly payloadSummary: RuntimeStreamViewStructuredFieldSummary;
+  readonly metadataSummary: RuntimeStreamViewStructuredFieldSummary;
   readonly artifactRefs: unknown;
   readonly createdAt: string | null;
   readonly rawData: string;
@@ -403,6 +419,8 @@ function buildRuntimeStreamViewEvent(
     summary: draft.summary,
     content: draft.content,
     expandable,
+    payloadSummary: draft.payloadSummary,
+    metadataSummary: draft.metadataSummary,
     expanded,
     childCount: children.length,
     children: expanded
@@ -428,6 +446,8 @@ function toRuntimeStreamViewEventDraft(
   const data = isRecord(event.data) ? event.data : {};
   const id = readString(data, "event_id") ?? event.id;
   const type = readString(data, "type") ?? event.type;
+  const payload = structuredClone(readUnknown(data, "payload") ?? null);
+  const metadata = structuredClone(readUnknown(data, "metadata") ?? {});
   return {
     id,
     schemaVersion: readString(data, "schema_version"),
@@ -447,7 +467,9 @@ function toRuntimeStreamViewEventDraft(
     summary: readNullableString(data, "summary"),
     content: readNullableString(data, "content"),
     expandable: readBoolean(data, "expandable") ?? false,
-    payload: structuredClone(readUnknown(data, "payload") ?? null),
+    payload,
+    payloadSummary: summarizeRuntimeStreamStructuredField(payload),
+    metadataSummary: summarizeRuntimeStreamStructuredField(metadata),
     artifactRefs: structuredClone(readUnknown(data, "artifact_refs") ?? []),
     createdAt: readNullableString(data, "created_at"),
     rawData: event.rawData,
@@ -683,6 +705,29 @@ function readUnknown(
   key: string,
 ): unknown {
   return record[key];
+}
+
+function summarizeRuntimeStreamStructuredField(
+  value: unknown,
+): RuntimeStreamViewStructuredFieldSummary {
+  if (value === null || value === undefined) {
+    return Object.freeze({ present: false, kind: "null", keyCount: 0 });
+  }
+  if (Array.isArray(value)) {
+    return Object.freeze({
+      present: true,
+      kind: "array",
+      keyCount: value.length,
+    });
+  }
+  if (isRecord(value)) {
+    return Object.freeze({
+      present: true,
+      kind: "object",
+      keyCount: Object.keys(value).length,
+    });
+  }
+  return Object.freeze({ present: true, kind: "primitive", keyCount: 0 });
 }
 
 function cloneRuntimeStreamFullReloadDecision(

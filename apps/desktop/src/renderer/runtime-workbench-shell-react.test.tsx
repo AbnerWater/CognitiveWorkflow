@@ -213,6 +213,30 @@ test("renderer runtime workbench React shell renders expanded stream event detai
       "yes",
     );
     assert.equal(
+      detail.getAttribute("data-stream-event-detail-payload-present"),
+      "yes",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-payload-kind"),
+      "object",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-payload-key-count"),
+      "1",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-metadata-present"),
+      "yes",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-metadata-kind"),
+      "object",
+    );
+    assert.equal(
+      detail.getAttribute("data-stream-event-detail-metadata-key-count"),
+      "2",
+    );
+    assert.equal(
       detail.getAttribute("data-stream-event-detail-schema-version"),
       "0.1.0",
     );
@@ -276,7 +300,7 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(detail),
-      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Event ID[\s\S]*evt_react_stream[\s\S]*Type[\s\S]*model\.text_delta[\s\S]*Title[\s\S]*Model delta[\s\S]*Summary[\s\S]*delta summary[\s\S]*Expandable[\s\S]*yes[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
+      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Event ID[\s\S]*evt_react_stream[\s\S]*Type[\s\S]*model\.text_delta[\s\S]*Title[\s\S]*Model delta[\s\S]*Summary[\s\S]*delta summary[\s\S]*Expandable[\s\S]*yes[\s\S]*Payload[\s\S]*object \(1 key\)[\s\S]*Metadata[\s\S]*object \(2 keys\)[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
     );
     const selectedEvent = requireFakeRuntimeWorkbenchElementByData(
       dom.container,
@@ -306,6 +330,34 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-expandable"),
       "yes",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-payload-present"),
+      "yes",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-payload-kind"),
+      "object",
+    );
+    assert.equal(
+      selectedEvent.getAttribute(
+        "data-stream-selected-event-payload-key-count",
+      ),
+      "1",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-metadata-present"),
+      "yes",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-metadata-kind"),
+      "object",
+    );
+    assert.equal(
+      selectedEvent.getAttribute(
+        "data-stream-selected-event-metadata-key-count",
+      ),
+      "2",
     );
     assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-schema-version"),
@@ -929,6 +981,34 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
       "yes",
     );
     assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-payload-present"),
+      "yes",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-payload-kind"),
+      "object",
+    );
+    assert.equal(
+      selectedEvent.getAttribute(
+        "data-stream-selected-event-payload-key-count",
+      ),
+      "1",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-metadata-present"),
+      "yes",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-metadata-kind"),
+      "object",
+    );
+    assert.equal(
+      selectedEvent.getAttribute(
+        "data-stream-selected-event-metadata-key-count",
+      ),
+      "2",
+    );
+    assert.equal(
       selectedEvent.getAttribute("data-stream-selected-event-schema-version"),
       "0.1.0",
     );
@@ -1012,6 +1092,32 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
       "delta summary",
     );
     assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-payload-present"),
+      "yes",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-payload-kind"),
+      "object",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-payload-key-count"),
+      "1",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-metadata-present"),
+      "yes",
+    );
+    assert.equal(
+      metadata.getAttribute("data-stream-selection-metadata-metadata-kind"),
+      "object",
+    );
+    assert.equal(
+      metadata.getAttribute(
+        "data-stream-selection-metadata-metadata-key-count",
+      ),
+      "2",
+    );
+    assert.equal(
       metadata.getAttribute("data-stream-selection-metadata-schema-version"),
       "0.1.0",
     );
@@ -1069,7 +1175,7 @@ test("renderer runtime workbench React shell toggles selected stream metadata lo
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(metadata),
-      /Event ID[\s\S]*evt_react_stream[\s\S]*Type[\s\S]*model\.text_delta[\s\S]*Title[\s\S]*Model delta[\s\S]*Summary[\s\S]*delta summary[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
+      /Event ID[\s\S]*evt_react_stream[\s\S]*Type[\s\S]*model\.text_delta[\s\S]*Title[\s\S]*Model delta[\s\S]*Summary[\s\S]*delta summary[\s\S]*Payload[\s\S]*object \(1 key\)[\s\S]*Metadata[\s\S]*object \(2 keys\)[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0[\s\S]*Expandable[\s\S]*yes/u,
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -4151,6 +4257,47 @@ test("renderer runtime workbench React shell opens loopback SSE and resets full 
     );
     panel = requireRuntimeStreamPanel(session.getSnapshot());
     assert.equal(panel.selectedEvent?.id, "evt_live_model");
+    assert.deepEqual(panel.selectedEvent?.payloadSummary, {
+      present: true,
+      kind: "object",
+      keyCount: 1,
+    });
+    assert.deepEqual(panel.selectedEvent?.metadataSummary, {
+      present: true,
+      kind: "object",
+      keyCount: 2,
+    });
+    const liveSelectedEvent = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamSelectedEvent",
+      "true",
+    );
+    assert.equal(
+      liveSelectedEvent.getAttribute("data-stream-selected-event-payload-kind"),
+      "object",
+    );
+    assert.equal(
+      liveSelectedEvent.getAttribute(
+        "data-stream-selected-event-payload-key-count",
+      ),
+      "1",
+    );
+    assert.equal(
+      liveSelectedEvent.getAttribute(
+        "data-stream-selected-event-metadata-kind",
+      ),
+      "object",
+    );
+    assert.equal(
+      liveSelectedEvent.getAttribute(
+        "data-stream-selected-event-metadata-key-count",
+      ),
+      "2",
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(liveSelectedEvent),
+      /delta_text|cw\.trace|hidden metadata value/u,
+    );
 
     await act(async () => {
       await waitFor(
@@ -4459,7 +4606,10 @@ function createRuntimeWorkbenchLoopbackStreamEvent(options: {
     sensitivity: "project",
     expandable: true,
     created_at: "2026-06-23T00:00:00.000Z",
-    metadata: {},
+    metadata: {
+      "cw.trace": { value: "hidden metadata value" },
+      "cw.ui": { value: "hidden metadata value" },
+    },
   };
 }
 
@@ -4629,6 +4779,16 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
           summary: "delta summary",
           content: "delta content",
           expandable: true,
+          payloadSummary: Object.freeze({
+            present: true,
+            kind: "object",
+            keyCount: 1,
+          }),
+          metadataSummary: Object.freeze({
+            present: true,
+            kind: "object",
+            keyCount: 2,
+          }),
           expanded: false,
           childCount: 0,
           children: Object.freeze([]),
@@ -4665,6 +4825,16 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
         summary: "delta summary",
         content: "delta content",
         expandable: true,
+        payloadSummary: Object.freeze({
+          present: true,
+          kind: "object",
+          keyCount: 1,
+        }),
+        metadataSummary: Object.freeze({
+          present: true,
+          kind: "object",
+          keyCount: 2,
+        }),
         expanded: false,
         childCount: 0,
         children: Object.freeze([]),

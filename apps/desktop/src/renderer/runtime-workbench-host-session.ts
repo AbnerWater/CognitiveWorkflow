@@ -13,6 +13,7 @@ import type {
   RuntimeStreamViewEvent,
   RuntimeStreamViewSensitivity,
   RuntimeStreamViewSeverity,
+  RuntimeStreamViewStructuredFieldSummary,
 } from "./runtime-stream-view-model.js";
 import {
   createRuntimeWorkbenchInteraction,
@@ -85,6 +86,8 @@ export interface RuntimeWorkbenchHostRuntimeStreamEventSnapshot {
   readonly summary: string | null;
   readonly content: string | null;
   readonly expandable: boolean;
+  readonly payloadSummary: RuntimeStreamViewStructuredFieldSummary;
+  readonly metadataSummary: RuntimeStreamViewStructuredFieldSummary;
   readonly expanded: boolean;
   readonly childCount: number;
   readonly children: readonly RuntimeWorkbenchHostRuntimeStreamEventSnapshot[];
@@ -525,6 +528,8 @@ function toRuntimeWorkbenchHostRuntimeStreamEventSnapshot(
     summary: event.summary,
     content: event.content,
     expandable: event.expandable,
+    payloadSummary: Object.freeze({ ...event.payloadSummary }),
+    metadataSummary: Object.freeze({ ...event.metadataSummary }),
     expanded: event.expanded,
     childCount: event.childCount,
     children: Object.freeze(

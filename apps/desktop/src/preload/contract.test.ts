@@ -5097,6 +5097,16 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
           summary: "Projected without raw data",
           content: "stream content",
           expandable: false,
+          payloadSummary: {
+            present: false,
+            kind: "null",
+            keyCount: 0,
+          },
+          metadataSummary: {
+            present: true,
+            kind: "object",
+            keyCount: 0,
+          },
           expanded: false,
           childCount: 0,
           children: [],
@@ -5133,6 +5143,16 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
         summary: "Projected without raw data",
         content: "stream content",
         expandable: false,
+        payloadSummary: {
+          present: false,
+          kind: "null",
+          keyCount: 0,
+        },
+        metadataSummary: {
+          present: true,
+          kind: "object",
+          keyCount: 0,
+        },
         expanded: false,
         childCount: 0,
         children: [],

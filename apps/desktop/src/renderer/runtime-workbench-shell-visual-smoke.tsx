@@ -526,6 +526,16 @@ function buildVisualSmokeRuntimeStreamPanelSnapshot(
     summary: "delta summary",
     content: "delta content",
     expandable: true,
+    payloadSummary: Object.freeze({
+      present: true,
+      kind: "object",
+      keyCount: 1,
+    }),
+    metadataSummary: Object.freeze({
+      present: true,
+      kind: "object",
+      keyCount: 2,
+    }),
     expanded: state.streamEventExpanded,
     childCount: 0,
     children: Object.freeze([]),

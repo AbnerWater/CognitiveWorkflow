@@ -1640,6 +1640,8 @@ function cloneRuntimeWorkbenchShellRuntimeStreamEvent(
     summary: event.summary,
     content: event.content,
     expandable: event.expandable,
+    payloadSummary: Object.freeze({ ...event.payloadSummary }),
+    metadataSummary: Object.freeze({ ...event.metadataSummary }),
     expanded: event.expanded,
     childCount: event.childCount,
     children: Object.freeze(

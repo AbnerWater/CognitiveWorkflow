@@ -3415,6 +3415,12 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
     event: MouseEvent<HTMLButtonElement>,
   ) => void;
 }): ReactElement {
+  const payloadSummaryLabel = runtimeWorkbenchShellReactStructuredFieldLabel(
+    props.event.payloadSummary,
+  );
+  const metadataSummaryLabel = runtimeWorkbenchShellReactStructuredFieldLabel(
+    props.event.metadataSummary,
+  );
   return (
     <li
       className={`cw-workbench__stream-event cw-workbench__stream-event--${props.event.severity}`}
@@ -3494,7 +3500,25 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
           data-stream-event-detail-expandable={
             props.event.expandable ? "yes" : "no"
           }
+          data-stream-event-detail-metadata-key-count={String(
+            props.event.metadataSummary.keyCount,
+          )}
+          data-stream-event-detail-metadata-kind={
+            props.event.metadataSummary.kind
+          }
+          data-stream-event-detail-metadata-present={
+            props.event.metadataSummary.present ? "yes" : "no"
+          }
           data-stream-event-detail-parent-id={props.event.parentEventId ?? ""}
+          data-stream-event-detail-payload-key-count={String(
+            props.event.payloadSummary.keyCount,
+          )}
+          data-stream-event-detail-payload-kind={
+            props.event.payloadSummary.kind
+          }
+          data-stream-event-detail-payload-present={
+            props.event.payloadSummary.present ? "yes" : "no"
+          }
           data-stream-event-detail-run-id={props.event.runId ?? ""}
           data-stream-event-detail-node-id={props.event.nodeId ?? ""}
           data-stream-event-detail-attempt-id={props.event.attemptId ?? ""}
@@ -3538,6 +3562,14 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             <div>
               <dt>Expandable</dt>
               <dd>{props.event.expandable ? "yes" : "no"}</dd>
+            </div>
+            <div>
+              <dt>Payload</dt>
+              <dd>{payloadSummaryLabel}</dd>
+            </div>
+            <div>
+              <dt>Metadata</dt>
+              <dd>{metadataSummaryLabel}</dd>
             </div>
             <div>
               <dt>Schema</dt>
@@ -3673,6 +3705,16 @@ function RuntimeWorkbenchShellStreamSelection(props: {
   const eventTypeLabel = selected?.type ?? "-";
   const titleLabel = selected?.title ?? "-";
   const summaryLabel = selected?.summary ?? "-";
+  const payloadSummaryLabel =
+    selected === null
+      ? "-"
+      : runtimeWorkbenchShellReactStructuredFieldLabel(selected.payloadSummary);
+  const metadataSummaryLabel =
+    selected === null
+      ? "-"
+      : runtimeWorkbenchShellReactStructuredFieldLabel(
+          selected.metadataSummary,
+        );
   const schemaVersionLabel = selected?.schemaVersion ?? "-";
   const seqLabel =
     selected === null || selected.seq === null ? "-" : String(selected.seq);
@@ -3748,6 +3790,22 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           data-stream-selected-event-node-id={selected.nodeId ?? ""}
           data-stream-selected-event-attempt-id={selected.attemptId ?? ""}
           data-stream-selected-event-parent-id={parentEventIdLabel}
+          data-stream-selected-event-metadata-key-count={String(
+            selected.metadataSummary.keyCount,
+          )}
+          data-stream-selected-event-metadata-kind={
+            selected.metadataSummary.kind
+          }
+          data-stream-selected-event-metadata-present={
+            selected.metadataSummary.present ? "yes" : "no"
+          }
+          data-stream-selected-event-payload-key-count={String(
+            selected.payloadSummary.keyCount,
+          )}
+          data-stream-selected-event-payload-kind={selected.payloadSummary.kind}
+          data-stream-selected-event-payload-present={
+            selected.payloadSummary.present ? "yes" : "no"
+          }
           data-stream-selected-event-phase={selected.phase ?? ""}
           data-stream-selected-event-schema-version={
             selected.schemaVersion ?? ""
@@ -3792,6 +3850,14 @@ function RuntimeWorkbenchShellStreamSelection(props: {
             <div>
               <dt>Expandable</dt>
               <dd>{expandableLabel}</dd>
+            </div>
+            <div>
+              <dt>Payload</dt>
+              <dd>{payloadSummaryLabel}</dd>
+            </div>
+            <div>
+              <dt>Metadata</dt>
+              <dd>{metadataSummaryLabel}</dd>
             </div>
             <div>
               <dt>Schema</dt>
@@ -3845,6 +3911,24 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               data-stream-selection-metadata-node-id={nodeIdLabel}
               data-stream-selection-metadata-attempt-id={attemptIdLabel}
               data-stream-selection-metadata-parent-id={parentEventIdLabel}
+              data-stream-selection-metadata-metadata-key-count={String(
+                selected.metadataSummary.keyCount,
+              )}
+              data-stream-selection-metadata-metadata-kind={
+                selected.metadataSummary.kind
+              }
+              data-stream-selection-metadata-metadata-present={
+                selected.metadataSummary.present ? "yes" : "no"
+              }
+              data-stream-selection-metadata-payload-key-count={String(
+                selected.payloadSummary.keyCount,
+              )}
+              data-stream-selection-metadata-payload-kind={
+                selected.payloadSummary.kind
+              }
+              data-stream-selection-metadata-payload-present={
+                selected.payloadSummary.present ? "yes" : "no"
+              }
               data-stream-selection-metadata-phase={phaseLabel}
               data-stream-selection-metadata-schema-version={schemaVersionLabel}
               data-stream-selection-metadata-severity={selected.severity}
@@ -3869,6 +3953,14 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               <div>
                 <dt>Summary</dt>
                 <dd>{summaryLabel}</dd>
+              </div>
+              <div>
+                <dt>Payload</dt>
+                <dd>{payloadSummaryLabel}</dd>
+              </div>
+              <div>
+                <dt>Metadata</dt>
+                <dd>{metadataSummaryLabel}</dd>
               </div>
               <div>
                 <dt>Schema</dt>
@@ -4063,4 +4155,23 @@ function isRuntimeWorkbenchShellReactCategory(
 
 function runtimeWorkbenchShellReactTitleCase(value: string): string {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function runtimeWorkbenchShellReactStructuredFieldLabel(
+  summary: RuntimeWorkbenchShellRuntimeStreamEventSnapshot["payloadSummary"],
+): string {
+  if (!summary.present || summary.kind === "null") {
+    return "none";
+  }
+  if (summary.kind === "object") {
+    return `object (${summary.keyCount} ${
+      summary.keyCount === 1 ? "key" : "keys"
+    })`;
+  }
+  if (summary.kind === "array") {
+    return `array (${summary.keyCount} ${
+      summary.keyCount === 1 ? "item" : "items"
+    })`;
+  }
+  return "primitive";
 }
