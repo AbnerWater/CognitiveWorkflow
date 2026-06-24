@@ -296,6 +296,26 @@ test("visual smoke evidence redacts chat draft fragments in hard exception text"
   assert.equal(sanitized.includes("Chat draft did not update"), true);
 });
 
+test("visual smoke evidence redacts escaped chat draft fragments in hard exception text", () => {
+  const chatDraft = 'Review "repair"\nplan \\ now';
+  const escapedChatDraft = JSON.stringify(chatDraft).slice(1, -1);
+  const errorMessage = `input chat draft failed: ${JSON.stringify({
+    ok: false,
+    message: "Chat draft did not update",
+    actualValue: chatDraft,
+    bodyText: `Preview Ready ${chatDraft}`,
+  })}`;
+
+  const sanitized = sanitizeVisualSmokeText(errorMessage, {
+    sensitiveTextFragments: [chatDraft],
+  });
+
+  assert.equal(sanitized.includes(chatDraft), false);
+  assert.equal(sanitized.includes(escapedChatDraft), false);
+  assert.equal(sanitized.includes(REDACTED_CHAT_TEXT), true);
+  assert.equal(sanitized.includes("Chat draft did not update"), true);
+});
+
 test("visual smoke preflight rejects invalid viewport env without echoing input", () => {
   assert.throws(
     () =>

@@ -17,9 +17,17 @@ function addSensitiveFragment(fragments, value) {
   }
   const trimmed = value.trim();
   if (trimmed.length > 0) {
-    fragments.add(value);
-    fragments.add(trimmed);
+    addSensitiveFragmentVariant(fragments, value);
+    addSensitiveFragmentVariant(fragments, trimmed);
   }
+}
+
+function addSensitiveFragmentVariant(fragments, value) {
+  if (value.length === 0) {
+    return;
+  }
+  fragments.add(value);
+  fragments.add(JSON.stringify(value).slice(1, -1));
 }
 
 function collectSensitiveChatTextFragments(value, extraFragments = []) {
