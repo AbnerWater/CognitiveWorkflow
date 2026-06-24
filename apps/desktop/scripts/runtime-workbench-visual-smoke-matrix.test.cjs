@@ -130,6 +130,7 @@ fs.writeFileSync(
       result.manifest.cases.map((testCase) => [testCase.name, testCase]),
     );
     const knownDesktop = caseByName.get("known-desktop");
+    const knownMobile = caseByName.get("known-mobile");
     const unknownDesktop = caseByName.get("unknown-desktop");
     const unknownScroll = caseByName.get("unknown-mobile-scroll-1440");
 
@@ -137,7 +138,7 @@ fs.writeFileSync(
     assert.equal(result.signal, null);
     assert.equal(result.stderr, "");
     assert.equal(result.manifest.failures.length, 0);
-    assert.equal(result.manifest.cases.length, 5);
+    assert.equal(result.manifest.cases.length, 6);
     assert.equal(
       result.manifest.targetLocation.origin,
       "http://127.0.0.1:5174",
@@ -148,13 +149,24 @@ fs.writeFileSync(
     assert.equal(knownDesktop?.process.stderrLength, 0);
     assert.equal(knownDesktop?.messageCount, 0);
     assert.deepEqual(knownDesktop?.failures, []);
+    assert.equal(knownMobile?.mode, "known");
+    assert.deepEqual(knownMobile?.requestedViewport, {
+      width: 390,
+      height: 844,
+      scrollY: 0,
+    });
+    assert.deepEqual(knownMobile?.observedViewport, {
+      width: 390,
+      height: 844,
+    });
+    assert.deepEqual(knownMobile?.failures, []);
     assert.equal(unknownDesktop?.mode, "unknown");
     assert.deepEqual(unknownDesktop?.failures, []);
     assert.equal(unknownScroll?.observedScroll.y, 1440);
     assert.equal(unknownScroll?.observedScroll.maxY, 2000);
     assert.deepEqual(
       result.manifest.cases.map((testCase) => testCase.failures),
-      [[], [], [], [], []],
+      [[], [], [], [], [], []],
     );
     assertSafeOutput(result, ["query-secret", "hash-secret"]);
   });
@@ -180,8 +192,8 @@ process.stderr.write("raw-child-stderr-secret");
 
     assert.equal(result.exitCode, 1);
     assert.equal(result.signal, null);
-    assert.equal(result.manifest.cases.length, 5);
-    assert.equal(result.manifest.failures.length, 5);
+    assert.equal(result.manifest.cases.length, 6);
+    assert.equal(result.manifest.failures.length, 6);
     assert.equal(
       result.manifest.targetLocation.origin,
       "http://127.0.0.1:5174",
@@ -229,8 +241,8 @@ process.stdout.write("\\n");
     const firstCase = result.manifest.cases[0];
 
     assert.equal(result.exitCode, 1);
-    assert.equal(result.manifest.cases.length, 5);
-    assert.equal(result.manifest.failures.length, 5);
+    assert.equal(result.manifest.cases.length, 6);
+    assert.equal(result.manifest.failures.length, 6);
     assert.deepEqual(firstCase.failures, ["case JSON root was not an object"]);
     assert.equal(firstCase.process.exitCode, 0);
     assert.equal(firstCase.process.stdoutLength, 1);
@@ -290,8 +302,8 @@ fs.writeFileSync(
       const firstCase = result.manifest.cases[0];
 
       assert.equal(result.exitCode, 1);
-      assert.equal(result.manifest.cases.length, 5);
-      assert.equal(result.manifest.failures.length, 5);
+      assert.equal(result.manifest.cases.length, 6);
+      assert.equal(result.manifest.failures.length, 6);
       assert.equal(firstCase.messageCount, 2);
       assert.deepEqual(firstCase.failures, [
         "expected no console warning/error messages, got 2",

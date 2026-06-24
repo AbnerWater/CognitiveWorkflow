@@ -19,6 +19,13 @@ const defaultCases = [
     scrollY: 0,
   },
   {
+    name: "known-mobile",
+    mode: "known",
+    width: 390,
+    height: 844,
+    scrollY: 0,
+  },
+  {
     name: "unknown-desktop",
     mode: "unknown",
     width: 1280,
