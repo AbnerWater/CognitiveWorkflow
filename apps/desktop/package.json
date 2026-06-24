@@ -15,6 +15,7 @@
     "build:ts": "tsc -p tsconfig.json",
     "test": "pnpm run build && node --test dist/main/electron-app.test.js dist/main/electron-runtime-startup-options.test.js dist/main/runtime.test.js dist/main/runtime-command.test.js dist/main/runtime-connection-registry.test.js dist/main/runtime-handoff.test.js dist/main/runtime-ipc-handlers.test.js dist/main/runtime-ipc-main-factory.test.js dist/main/runtime-lifecycle.test.js dist/main/runtime-lock.test.js dist/main/runtime-orchestration.test.js dist/main/runtime-sidecar-stream-smoke.test.js dist/main/runtime-startup-controller.test.js dist/main/security.test.js dist/main/sidecar.test.js dist/preload/contract.test.js dist/renderer/runtime-stream-fetch-event-source.test.js dist/renderer/runtime-workbench-shell-react.test.js dist/shared/runtime-ipc.test.js",
     "visual-smoke": "electron scripts/runtime-workbench-visual-smoke.cjs",
+    "visual-smoke:matrix": "node scripts/runtime-workbench-visual-smoke-matrix.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },

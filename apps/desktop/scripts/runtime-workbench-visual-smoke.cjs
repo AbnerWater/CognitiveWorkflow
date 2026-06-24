@@ -712,6 +712,15 @@ async function readMetrics(window) {
         document.body.scrollWidth - document.body.clientWidth,
         document.documentElement.scrollWidth - document.documentElement.clientWidth
       ),
+      scroll: {
+        x: window.scrollX,
+        y: window.scrollY,
+        maxY: Math.max(
+          0,
+          document.body.scrollHeight - window.innerHeight,
+          document.documentElement.scrollHeight - window.innerHeight
+        ),
+      },
       frameworkOverlayText:
         document.body.textContent?.includes('Internal server error') ||
         document.body.textContent?.includes('[plugin:vite]') ||
