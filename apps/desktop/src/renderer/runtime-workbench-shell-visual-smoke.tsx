@@ -50,8 +50,11 @@ interface VisualSmokeState {
   readonly focusedTimelineItemId: string;
   readonly selectedTimelineItemId: string | null;
   readonly streamEventExpanded: boolean;
+  readonly streamEventMode: VisualSmokeStreamEventMode;
   readonly lastHandledShortcutLabel: string | null;
 }
+
+type VisualSmokeStreamEventMode = "known" | "unknown";
 
 const VISUAL_SMOKE_MARKDOWN_STREAM_CONTENT = [
   "delta content with `inline_code` and <mark>marked token</mark> [trusted link](/artifacts/visual-report.md) [blocked link](javascript:alert(1)).",
@@ -77,6 +80,7 @@ function createRuntimeWorkbenchShellVisualSmokeSession(): RuntimeWorkbenchShellD
     focusedTimelineItemId: VISUAL_SMOKE_TIMELINE_ITEMS[0]?.id ?? "",
     selectedTimelineItemId: VISUAL_SMOKE_TIMELINE_ITEMS[1]?.id ?? null,
     streamEventExpanded: false,
+    streamEventMode: parseVisualSmokeStreamEventMode(),
     lastHandledShortcutLabel: "None",
   };
   let disposed = false;
@@ -524,6 +528,7 @@ function buildVisualSmokeSnapshot(
 function buildVisualSmokeRuntimeStreamPanelSnapshot(
   state: VisualSmokeState,
 ): RuntimeWorkbenchShellRuntimeStreamPanelSnapshot {
+  const eventMode = state.streamEventMode;
   const event = Object.freeze({
     id: "evt_visual_stream",
     schemaVersion: "0.1.0",
@@ -531,16 +536,26 @@ function buildVisualSmokeRuntimeStreamPanelSnapshot(
     parentEventId: "evt_visual_parent",
     correlationId: "trace_visual_stream",
     runId: "run_visual_stream",
-    nodeId: "node_visual_model",
+    nodeId:
+      eventMode === "unknown" ? "node_visual_adapter" : "node_visual_model",
     attemptId: "attempt_visual_stream",
-    type: "model.text_delta",
-    category: "model",
+    type:
+      eventMode === "unknown"
+        ? "adapter.experimental_event"
+        : "model.text_delta",
+    category: eventMode === "unknown" ? "system" : "model",
     phase: "attempt.streaming",
     displayLevel: "default",
     severity: "info",
     sensitivity: "sensitive",
-    title: "Visual stream delta",
-    summary: "delta summary",
+    title:
+      eventMode === "unknown"
+        ? "Visual experimental adapter event"
+        : "Visual stream delta",
+    summary:
+      eventMode === "unknown"
+        ? "forward compatible visual summary"
+        : "delta summary",
     content: VISUAL_SMOKE_MARKDOWN_STREAM_CONTENT,
     expandable: true,
     payloadSummary: Object.freeze({
@@ -598,6 +613,13 @@ function buildVisualSmokeRuntimeStreamPanelSnapshot(
       errorCode: "SE_SSE_REPLAY_NOT_FOUND",
     }),
   });
+}
+
+function parseVisualSmokeStreamEventMode(): VisualSmokeStreamEventMode {
+  const streamEventMode = new URLSearchParams(window.location.search).get(
+    "streamEvent",
+  );
+  return streamEventMode === "unknown" ? "unknown" : "known";
 }
 
 function buildVisualSmokeChromeSnapshot(

@@ -17,6 +17,42 @@ if (!targetUrl || !outputPath) {
   );
 }
 
+const streamEventMode = parseStreamEventMode(targetUrl);
+
+function parseStreamEventMode(url) {
+  const parsedUrl = new URL(url);
+  return parsedUrl.searchParams.get("streamEvent") === "unknown"
+    ? "unknown"
+    : "known";
+}
+
+function expectedStreamEvent(mode) {
+  if (mode === "unknown") {
+    return {
+      category: "system",
+      collapsedSelectionTitle: "Unknown event",
+      knownType: "false",
+      nodeId: "node_visual_adapter",
+      summary: "forward compatible visual summary",
+      title: "Visual experimental adapter event",
+      type: "adapter.experimental_event",
+      typeStatusLabel: "Unknown event type",
+      unknownBadgeCount: 1,
+    };
+  }
+  return {
+    category: "model",
+    collapsedSelectionTitle: "Visual stream delta",
+    knownType: "true",
+    nodeId: "node_visual_model",
+    summary: "delta summary",
+    title: "Visual stream delta",
+    type: "model.text_delta",
+    typeStatusLabel: "Known event type",
+    unknownBadgeCount: 0,
+  };
+}
+
 async function readMetrics(window) {
   return window.webContents.executeJavaScript(`
     (() => ({
@@ -101,6 +137,8 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-event-expand-toggle="evt_visual_stream"]')?.getAttribute('aria-expanded') ?? null,
       streamEventDetails:
         document.querySelectorAll('[data-stream-event-detail="true"]').length,
+      streamEventDetailText:
+        document.querySelector('[data-stream-event-detail="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       streamEventDetailContent:
         document.querySelector('[data-stream-event-detail-content="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       streamEventDetailContentHeadingCount:
@@ -317,6 +355,8 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selection-metadata-toggle="true"]')?.getAttribute('aria-expanded') ?? null,
       streamSelectionMetadataDetails:
         document.querySelectorAll('[data-stream-selection-metadata="true"]').length,
+      streamSelectionMetadataText:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       streamSelectionMetadataCategory:
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-category') ?? null,
       streamSelectionMetadataDisplayLevel:
@@ -1691,6 +1731,7 @@ function collectVisualSmokeFailures(
   metrics,
   messages,
   requestedWidth,
+  requestedStreamEventMode,
   initialStreamMetrics,
   streamEventExpandedMetrics,
   streamEventCollapsedMetrics,
@@ -1736,6 +1777,9 @@ function collectVisualSmokeFailures(
   canvasHistorySelectMetrics,
 ) {
   const failures = [];
+  const expectedRuntimeStreamEvent = expectedStreamEvent(
+    requestedStreamEventMode,
+  );
   const selectedWorkflowCanvasEdgeIds = Array.isArray(
     canvasMetrics.selectedWorkflowCanvasEdgeIds,
   )
@@ -1980,24 +2024,36 @@ function collectVisualSmokeFailures(
       `expected initial stream selected event body, got ${initialStreamMetrics.streamSelectedEventBodies}`,
     );
   }
-  if (initialStreamMetrics.streamEventKnownType !== "true") {
+  if (
+    initialStreamMetrics.streamEventKnownType !==
+    expectedRuntimeStreamEvent.knownType
+  ) {
     failures.push(
-      `expected initial stream timeline event known type true, got ${initialStreamMetrics.streamEventKnownType}`,
+      `expected initial stream timeline event known type ${expectedRuntimeStreamEvent.knownType}, got ${initialStreamMetrics.streamEventKnownType}`,
     );
   }
-  if (initialStreamMetrics.streamEventTypeStatusBadges !== 0) {
+  if (
+    initialStreamMetrics.streamEventTypeStatusBadges !==
+    expectedRuntimeStreamEvent.unknownBadgeCount
+  ) {
     failures.push(
-      `expected no initial stream unknown type badges, got ${initialStreamMetrics.streamEventTypeStatusBadges}`,
+      `expected ${expectedRuntimeStreamEvent.unknownBadgeCount} initial stream unknown type badges, got ${initialStreamMetrics.streamEventTypeStatusBadges}`,
     );
   }
-  if (initialStreamMetrics.streamSelectedEventKnownType !== "true") {
+  if (
+    initialStreamMetrics.streamSelectedEventKnownType !==
+    expectedRuntimeStreamEvent.knownType
+  ) {
     failures.push(
-      `expected initial selected stream event known type true, got ${initialStreamMetrics.streamSelectedEventKnownType}`,
+      `expected initial selected stream event known type ${expectedRuntimeStreamEvent.knownType}, got ${initialStreamMetrics.streamSelectedEventKnownType}`,
     );
   }
-  if (initialStreamMetrics.streamSelectedEventTypeStatusBadges !== 0) {
+  if (
+    initialStreamMetrics.streamSelectedEventTypeStatusBadges !==
+    expectedRuntimeStreamEvent.unknownBadgeCount
+  ) {
     failures.push(
-      `expected no initial selected stream unknown type badges, got ${initialStreamMetrics.streamSelectedEventTypeStatusBadges}`,
+      `expected ${expectedRuntimeStreamEvent.unknownBadgeCount} initial selected stream unknown type badges, got ${initialStreamMetrics.streamSelectedEventTypeStatusBadges}`,
     );
   }
   pushStreamContentMetricFailures(
@@ -2060,9 +2116,21 @@ function collectVisualSmokeFailures(
       `expected expanded stream event detail body, got ${streamEventExpandedMetrics.streamEventDetails}`,
     );
   }
-  if (streamEventExpandedMetrics.streamEventDetailKnownType !== "true") {
+  if (
+    streamEventExpandedMetrics.streamEventDetailKnownType !==
+    expectedRuntimeStreamEvent.knownType
+  ) {
     failures.push(
-      `expected expanded stream event detail known type true, got ${streamEventExpandedMetrics.streamEventDetailKnownType}`,
+      `expected expanded stream event detail known type ${expectedRuntimeStreamEvent.knownType}, got ${streamEventExpandedMetrics.streamEventDetailKnownType}`,
+    );
+  }
+  if (
+    !String(streamEventExpandedMetrics.streamEventDetailText ?? "").includes(
+      expectedRuntimeStreamEvent.typeStatusLabel,
+    )
+  ) {
+    failures.push(
+      `expected expanded stream event detail type status ${expectedRuntimeStreamEvent.typeStatusLabel}, got ${streamEventExpandedMetrics.streamEventDetailText}`,
     );
   }
   if (
@@ -2103,9 +2171,12 @@ function collectVisualSmokeFailures(
       `expected expanded stream event detail created 2026-06-23T00:00:00.000Z, got ${streamEventExpandedMetrics.streamEventDetailCreatedAt}`,
     );
   }
-  if (streamEventExpandedMetrics.streamEventDetailCategory !== "model") {
+  if (
+    streamEventExpandedMetrics.streamEventDetailCategory !==
+    expectedRuntimeStreamEvent.category
+  ) {
     failures.push(
-      `expected expanded stream event detail category model, got ${streamEventExpandedMetrics.streamEventDetailCategory}`,
+      `expected expanded stream event detail category ${expectedRuntimeStreamEvent.category}, got ${streamEventExpandedMetrics.streamEventDetailCategory}`,
     );
   }
   if (streamEventExpandedMetrics.streamEventDetailDisplayLevel !== "default") {
@@ -2125,21 +2196,28 @@ function collectVisualSmokeFailures(
       `expected expanded stream event detail id evt_visual_stream, got ${streamEventExpandedMetrics.streamEventDetailEventId}`,
     );
   }
-  if (streamEventExpandedMetrics.streamEventDetailType !== "model.text_delta") {
+  if (
+    streamEventExpandedMetrics.streamEventDetailType !==
+    expectedRuntimeStreamEvent.type
+  ) {
     failures.push(
-      `expected expanded stream event detail type model.text_delta, got ${streamEventExpandedMetrics.streamEventDetailType}`,
+      `expected expanded stream event detail type ${expectedRuntimeStreamEvent.type}, got ${streamEventExpandedMetrics.streamEventDetailType}`,
     );
   }
   if (
-    streamEventExpandedMetrics.streamEventDetailTitle !== "Visual stream delta"
+    streamEventExpandedMetrics.streamEventDetailTitle !==
+    expectedRuntimeStreamEvent.title
   ) {
     failures.push(
-      `expected expanded stream event detail title Visual stream delta, got ${streamEventExpandedMetrics.streamEventDetailTitle}`,
+      `expected expanded stream event detail title ${expectedRuntimeStreamEvent.title}, got ${streamEventExpandedMetrics.streamEventDetailTitle}`,
     );
   }
-  if (streamEventExpandedMetrics.streamEventDetailSummary !== "delta summary") {
+  if (
+    streamEventExpandedMetrics.streamEventDetailSummary !==
+    expectedRuntimeStreamEvent.summary
+  ) {
     failures.push(
-      `expected expanded stream event detail summary delta summary, got ${streamEventExpandedMetrics.streamEventDetailSummary}`,
+      `expected expanded stream event detail summary ${expectedRuntimeStreamEvent.summary}, got ${streamEventExpandedMetrics.streamEventDetailSummary}`,
     );
   }
   if (streamEventExpandedMetrics.streamEventDetailExpandable !== "yes") {
@@ -2200,10 +2278,11 @@ function collectVisualSmokeFailures(
     );
   }
   if (
-    streamEventExpandedMetrics.streamEventDetailNodeId !== "node_visual_model"
+    streamEventExpandedMetrics.streamEventDetailNodeId !==
+    expectedRuntimeStreamEvent.nodeId
   ) {
     failures.push(
-      `expected expanded stream event detail node node_visual_model, got ${streamEventExpandedMetrics.streamEventDetailNodeId}`,
+      `expected expanded stream event detail node ${expectedRuntimeStreamEvent.nodeId}, got ${streamEventExpandedMetrics.streamEventDetailNodeId}`,
     );
   }
   if (
@@ -2498,7 +2577,7 @@ function collectVisualSmokeFailures(
   }
   if (
     streamSelectionCollapsedMetrics.streamSelectionCollapsedSummary !==
-    "Visual stream delta, model.text_delta"
+    `${expectedRuntimeStreamEvent.collapsedSelectionTitle}, ${expectedRuntimeStreamEvent.type}`
   ) {
     failures.push(
       `expected collapsed stream selection summary, got ${streamSelectionCollapsedMetrics.streamSelectionCollapsedSummary}`,
@@ -2514,10 +2593,10 @@ function collectVisualSmokeFailures(
   }
   if (
     streamSelectionCollapsedMetrics.streamSelectionCollapsedSelectedType !==
-    "model.text_delta"
+    expectedRuntimeStreamEvent.type
   ) {
     failures.push(
-      `expected collapsed stream selection selected type model.text_delta, got ${streamSelectionCollapsedMetrics.streamSelectionCollapsedSelectedType}`,
+      `expected collapsed stream selection selected type ${expectedRuntimeStreamEvent.type}, got ${streamSelectionCollapsedMetrics.streamSelectionCollapsedSelectedType}`,
     );
   }
   if (streamSelectionCollapsedMetrics.streamSelectedEventBodies !== 0) {
@@ -2565,9 +2644,12 @@ function collectVisualSmokeFailures(
       `expected initial selected stream created 2026-06-23T00:00:00.000Z, got ${initialStreamMetrics.streamSelectedEventCreatedAt}`,
     );
   }
-  if (initialStreamMetrics.streamSelectedEventCategory !== "model") {
+  if (
+    initialStreamMetrics.streamSelectedEventCategory !==
+    expectedRuntimeStreamEvent.category
+  ) {
     failures.push(
-      `expected initial selected stream category model, got ${initialStreamMetrics.streamSelectedEventCategory}`,
+      `expected initial selected stream category ${expectedRuntimeStreamEvent.category}, got ${initialStreamMetrics.streamSelectedEventCategory}`,
     );
   }
   if (initialStreamMetrics.streamSelectedEventDisplayLevel !== "default") {
@@ -2585,19 +2667,28 @@ function collectVisualSmokeFailures(
       `expected initial selected stream id evt_visual_stream, got ${initialStreamMetrics.streamSelectedEventId}`,
     );
   }
-  if (initialStreamMetrics.streamSelectedEventType !== "model.text_delta") {
+  if (
+    initialStreamMetrics.streamSelectedEventType !==
+    expectedRuntimeStreamEvent.type
+  ) {
     failures.push(
-      `expected initial selected stream type model.text_delta, got ${initialStreamMetrics.streamSelectedEventType}`,
+      `expected initial selected stream type ${expectedRuntimeStreamEvent.type}, got ${initialStreamMetrics.streamSelectedEventType}`,
     );
   }
-  if (initialStreamMetrics.streamSelectedEventTitle !== "Visual stream delta") {
+  if (
+    initialStreamMetrics.streamSelectedEventTitle !==
+    expectedRuntimeStreamEvent.title
+  ) {
     failures.push(
-      `expected initial selected stream title Visual stream delta, got ${initialStreamMetrics.streamSelectedEventTitle}`,
+      `expected initial selected stream title ${expectedRuntimeStreamEvent.title}, got ${initialStreamMetrics.streamSelectedEventTitle}`,
     );
   }
-  if (initialStreamMetrics.streamSelectedEventSummary !== "delta summary") {
+  if (
+    initialStreamMetrics.streamSelectedEventSummary !==
+    expectedRuntimeStreamEvent.summary
+  ) {
     failures.push(
-      `expected initial selected stream summary delta summary, got ${initialStreamMetrics.streamSelectedEventSummary}`,
+      `expected initial selected stream summary ${expectedRuntimeStreamEvent.summary}, got ${initialStreamMetrics.streamSelectedEventSummary}`,
     );
   }
   if (initialStreamMetrics.streamSelectedEventExpandable !== "yes") {
@@ -2648,9 +2739,12 @@ function collectVisualSmokeFailures(
       `expected initial selected stream run run_visual_stream, got ${initialStreamMetrics.streamSelectedEventRunId}`,
     );
   }
-  if (initialStreamMetrics.streamSelectedEventNodeId !== "node_visual_model") {
+  if (
+    initialStreamMetrics.streamSelectedEventNodeId !==
+    expectedRuntimeStreamEvent.nodeId
+  ) {
     failures.push(
-      `expected initial selected stream node node_visual_model, got ${initialStreamMetrics.streamSelectedEventNodeId}`,
+      `expected initial selected stream node ${expectedRuntimeStreamEvent.nodeId}, got ${initialStreamMetrics.streamSelectedEventNodeId}`,
     );
   }
   if (
@@ -2720,18 +2814,27 @@ function collectVisualSmokeFailures(
   }
   if (
     streamSelectionMetadataExpandedMetrics.streamSelectionMetadataKnownType !==
-    "true"
+    expectedRuntimeStreamEvent.knownType
   ) {
     failures.push(
-      `expected expanded stream selection metadata known type true, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataKnownType}`,
+      `expected expanded stream selection metadata known type ${expectedRuntimeStreamEvent.knownType}, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataKnownType}`,
+    );
+  }
+  if (
+    !String(
+      streamSelectionMetadataExpandedMetrics.streamSelectionMetadataText ?? "",
+    ).includes(expectedRuntimeStreamEvent.typeStatusLabel)
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata type status ${expectedRuntimeStreamEvent.typeStatusLabel}, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataText}`,
     );
   }
   if (
     streamSelectionMetadataExpandedMetrics.streamSelectionMetadataCategory !==
-    "model"
+    expectedRuntimeStreamEvent.category
   ) {
     failures.push(
-      `expected expanded stream selection metadata category model, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataCategory}`,
+      `expected expanded stream selection metadata category ${expectedRuntimeStreamEvent.category}, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataCategory}`,
     );
   }
   if (
@@ -2760,26 +2863,26 @@ function collectVisualSmokeFailures(
   }
   if (
     streamSelectionMetadataExpandedMetrics.streamSelectionMetadataType !==
-    "model.text_delta"
+    expectedRuntimeStreamEvent.type
   ) {
     failures.push(
-      `expected expanded stream selection metadata type model.text_delta, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataType}`,
+      `expected expanded stream selection metadata type ${expectedRuntimeStreamEvent.type}, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataType}`,
     );
   }
   if (
     streamSelectionMetadataExpandedMetrics.streamSelectionMetadataTitle !==
-    "Visual stream delta"
+    expectedRuntimeStreamEvent.title
   ) {
     failures.push(
-      `expected expanded stream selection metadata title Visual stream delta, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataTitle}`,
+      `expected expanded stream selection metadata title ${expectedRuntimeStreamEvent.title}, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataTitle}`,
     );
   }
   if (
     streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSummary !==
-    "delta summary"
+    expectedRuntimeStreamEvent.summary
   ) {
     failures.push(
-      `expected expanded stream selection metadata summary delta summary, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSummary}`,
+      `expected expanded stream selection metadata summary ${expectedRuntimeStreamEvent.summary}, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataSummary}`,
     );
   }
   if (
@@ -2871,10 +2974,10 @@ function collectVisualSmokeFailures(
   }
   if (
     streamSelectionMetadataExpandedMetrics.streamSelectionMetadataNodeId !==
-    "node_visual_model"
+    expectedRuntimeStreamEvent.nodeId
   ) {
     failures.push(
-      `expected expanded stream selection metadata node node_visual_model, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataNodeId}`,
+      `expected expanded stream selection metadata node ${expectedRuntimeStreamEvent.nodeId}, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataNodeId}`,
     );
   }
   if (
@@ -4892,6 +4995,7 @@ async function main() {
     metrics,
     messages,
     width,
+    streamEventMode,
     initialStreamMetrics,
     streamEventExpandedMetrics,
     streamEventCollapsedMetrics,
@@ -4941,6 +5045,7 @@ async function main() {
     `${outputPath}.json`,
     JSON.stringify(
       {
+        streamEventMode,
         metrics,
         initialStreamMetrics,
         streamEventExpandedMetrics,
