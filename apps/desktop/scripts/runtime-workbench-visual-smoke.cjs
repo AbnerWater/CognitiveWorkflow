@@ -105,6 +105,10 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-list-count') ?? null,
       streamEventDetailContentCodeBlockCount:
         document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-code-block-count') ?? null,
+      streamEventDetailContentFallback:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-fallback') ?? null,
+      streamEventDetailContentFallbackReason:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-fallback-reason') ?? null,
       streamEventDetailContentTableCount:
         document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-table-count') ?? null,
       streamEventDetailContentLinkCount:
@@ -217,6 +221,10 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-list-count') ?? null,
       streamSelectedEventContentCodeBlockCount:
         document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-code-block-count') ?? null,
+      streamSelectedEventContentFallback:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-fallback') ?? null,
+      streamSelectedEventContentFallbackReason:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-fallback-reason') ?? null,
       streamSelectedEventContentTableCount:
         document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-table-count') ?? null,
       streamSelectedEventContentLinkCount:
@@ -1615,6 +1623,16 @@ function pushStreamContentMetricFailures(
         `expected ${label} ${suffix} ${expected}, got ${metrics[key]}`,
       );
     }
+  }
+  if (metrics[`${prefix}Fallback`] !== "false") {
+    failures.push(
+      `expected ${label} fallback false, got ${metrics[`${prefix}Fallback`]}`,
+    );
+  }
+  if (metrics[`${prefix}FallbackReason`] !== "none") {
+    failures.push(
+      `expected ${label} fallback reason none, got ${metrics[`${prefix}FallbackReason`]}`,
+    );
   }
   if (metrics[`${prefix}ScriptCount`] !== 0) {
     failures.push(

@@ -320,6 +320,14 @@ test("renderer runtime workbench React shell renders expanded stream event detai
       "1",
     );
     assert.equal(
+      detailContent.getAttribute("data-stream-content-fallback"),
+      "false",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-fallback-reason"),
+      "none",
+    );
+    assert.equal(
       detailContent.getAttribute("data-stream-content-link-count"),
       "1",
     );
@@ -505,6 +513,14 @@ test("renderer runtime workbench React shell renders expanded stream event detai
       "1",
     );
     assert.equal(
+      selectedContent.getAttribute("data-stream-content-fallback"),
+      "false",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-fallback-reason"),
+      "none",
+    );
+    assert.equal(
       selectedContent.getAttribute("data-stream-content-link-count"),
       "1",
     );
@@ -534,6 +550,107 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     assert.doesNotMatch(
       fakeRuntimeWorkbenchNodeTextContent(selectedContent),
       /javascript:|example\.invalid/u,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench React shell falls back to plain text when stream content rendering fails", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const fallbackText =
+      "fallback plain text with [trusted link](/blocked) and <script>blocked</script>";
+    const snapshot =
+      createRuntimeWorkbenchShellReactExpandedStreamEventContentSnapshot(
+        createThrowingRuntimeWorkbenchStreamContent(fallbackText),
+      );
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Stream Content Fallback Runtime Workbench"
+        />,
+      );
+    });
+
+    const detailContent = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamContent",
+      "event-detail",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-fallback"),
+      "true",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-fallback-reason"),
+      "render_failed",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-heading-count"),
+      "0",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-link-count"),
+      "0",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-blocked-html-count"),
+      "0",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(detailContent),
+      /fallback plain text with \[trusted link\]\(\/blocked\) and <script>blocked<\/script>/u,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        detailContent,
+        (element) =>
+          element.tagName === "A" ||
+          element.tagName === "SCRIPT" ||
+          element.tagName === "IMG",
+      ),
+      0,
+    );
+
+    const selectedContent = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamContent",
+      "selection",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-fallback"),
+      "true",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-fallback-reason"),
+      "render_failed",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-table-count"),
+      "0",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        selectedContent,
+        (element) =>
+          element.tagName === "A" ||
+          element.tagName === "SCRIPT" ||
+          element.tagName === "IMG",
+      ),
+      0,
     );
 
     await act(async () => {
@@ -5031,6 +5148,41 @@ function createRuntimeWorkbenchShellReactExpandedStreamEventSnapshot(): RuntimeW
       selectedEvent: expandedEvent,
     }),
   });
+}
+
+function createRuntimeWorkbenchShellReactExpandedStreamEventContentSnapshot(
+  content: string,
+): RuntimeWorkbenchShellSnapshot {
+  const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+  const panel = requireRuntimeStreamPanel(snapshot);
+  const event = panel.timelineItems[0];
+  if (event === undefined) {
+    throw new Error("Expected stream event fixture");
+  }
+  const expandedEvent = Object.freeze({
+    ...event,
+    content,
+    expanded: true,
+  });
+  return Object.freeze({
+    ...snapshot,
+    runtimeStreamPanel: Object.freeze({
+      ...panel,
+      timelineItems: Object.freeze([expandedEvent]),
+      selectedEvent: expandedEvent,
+    }),
+  });
+}
+
+function createThrowingRuntimeWorkbenchStreamContent(text: string): string {
+  return {
+    replace(): never {
+      throw new Error("Forced stream content render failure");
+    },
+    toString(): string {
+      return text;
+    },
+  } as unknown as string;
 }
 
 function createRuntimeWorkbenchShellReactChatEnabledSnapshot(): RuntimeWorkbenchShellSnapshot {

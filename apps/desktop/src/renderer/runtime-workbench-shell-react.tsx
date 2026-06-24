@@ -4181,9 +4181,15 @@ interface RuntimeWorkbenchShellStreamContentMetrics {
   blockedLinkCount: number;
 }
 
+type RuntimeWorkbenchShellStreamContentFallbackReason =
+  | "none"
+  | "render_failed";
+
 interface RuntimeWorkbenchShellRenderedStreamContent {
   readonly blocks: readonly ReactNode[];
   readonly metrics: RuntimeWorkbenchShellStreamContentMetrics;
+  readonly fallback: boolean;
+  readonly fallbackReason: RuntimeWorkbenchShellStreamContentFallbackReason;
 }
 
 interface RuntimeWorkbenchShellMarkdownLinkToken {
@@ -4224,6 +4230,8 @@ function RuntimeWorkbenchShellStreamContent(
       data-stream-content-code-block-count={String(
         rendered.metrics.codeBlockCount,
       )}
+      data-stream-content-fallback={rendered.fallback ? "true" : "false"}
+      data-stream-content-fallback-reason={rendered.fallbackReason}
       data-stream-content-heading-count={String(rendered.metrics.headingCount)}
       data-stream-content-link-count={String(rendered.metrics.linkCount)}
       data-stream-content-list-count={String(rendered.metrics.listCount)}
@@ -4242,6 +4250,23 @@ function RuntimeWorkbenchShellStreamContent(
 }
 
 function runtimeWorkbenchShellReactRenderRestrictedMarkdown(
+  content: string,
+  source: RuntimeWorkbenchShellStreamContentSource,
+): RuntimeWorkbenchShellRenderedStreamContent {
+  try {
+    return runtimeWorkbenchShellReactRenderRestrictedMarkdownBlocks(
+      content,
+      source,
+    );
+  } catch {
+    return runtimeWorkbenchShellReactRenderPlainTextStreamContent(
+      content,
+      source,
+    );
+  }
+}
+
+function runtimeWorkbenchShellReactRenderRestrictedMarkdownBlocks(
   content: string,
   source: RuntimeWorkbenchShellStreamContentSource,
 ): RuntimeWorkbenchShellRenderedStreamContent {
@@ -4412,7 +4437,36 @@ function runtimeWorkbenchShellReactRenderRestrictedMarkdown(
   if (blocks.length === 0) {
     blocks.push(<p key={`${source}:paragraph:0`} />);
   }
-  return { blocks, metrics };
+  return { blocks, fallback: false, fallbackReason: "none", metrics };
+}
+
+function runtimeWorkbenchShellReactRenderPlainTextStreamContent(
+  content: unknown,
+  source: RuntimeWorkbenchShellStreamContentSource,
+): RuntimeWorkbenchShellRenderedStreamContent {
+  return {
+    blocks: [
+      <p key={`${source}:fallback:0`}>
+        {runtimeWorkbenchShellReactStringifyStreamContent(content)}
+      </p>,
+    ],
+    fallback: true,
+    fallbackReason: "render_failed",
+    metrics: runtimeWorkbenchShellReactCreateStreamContentMetrics(),
+  };
+}
+
+function runtimeWorkbenchShellReactStringifyStreamContent(
+  content: unknown,
+): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  try {
+    return String(content);
+  } catch {
+    return "";
+  }
 }
 
 function runtimeWorkbenchShellReactCreateStreamContentMetrics(): RuntimeWorkbenchShellStreamContentMetrics {
