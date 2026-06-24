@@ -1400,28 +1400,47 @@ button {
   background: #fbfcfd;
 }
 
-.cw-workbench__chat-details h3 {
+.cw-workbench__chat-local-submission {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-left: 4px solid #77b28c;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.cw-workbench__chat-details h3,
+.cw-workbench__chat-local-submission h3 {
   font-size: 13px;
 }
 
-.cw-workbench__chat-details dl {
+.cw-workbench__chat-details dl,
+.cw-workbench__chat-local-submission dl {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
 }
 
-.cw-workbench__chat-details dl > div {
+.cw-workbench__chat-local-submission dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cw-workbench__chat-details dl > div,
+.cw-workbench__chat-local-submission dl > div {
   min-width: 0;
 }
 
-.cw-workbench__chat-details dt {
+.cw-workbench__chat-details dt,
+.cw-workbench__chat-local-submission dt {
   color: #526173;
   font-size: 11px;
   font-weight: 700;
 }
 
-.cw-workbench__chat-details dd {
+.cw-workbench__chat-details dd,
+.cw-workbench__chat-local-submission dd {
   min-width: 0;
   margin: 0;
   color: #223047;

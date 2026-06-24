@@ -2248,6 +2248,19 @@ interface RuntimeWorkbenchShellChatDraftIntentContext {
   readonly actionLabel: string;
 }
 
+interface RuntimeWorkbenchShellChatLocalSubmission {
+  readonly status: "queued_local";
+  readonly statusLabel: string;
+  readonly intent: RuntimeWorkbenchShellChatDraftIntent;
+  readonly intentLabel: string;
+  readonly target: RuntimeWorkbenchShellChatDraftIntentContext["target"];
+  readonly targetLabel: string;
+  readonly action: RuntimeWorkbenchShellChatDraftIntentContext["action"];
+  readonly actionLabel: string;
+  readonly characterCount: number;
+  readonly wordCount: number;
+}
+
 const RUNTIME_WORKBENCH_CHAT_DRAFT_INTENTS = Object.freeze([
   "ask",
   "revise",
@@ -2311,6 +2324,27 @@ function runtimeWorkbenchShellChatDraftWordCount(draft: string): number {
   return trimmedDraft.split(/\s+/u).length;
 }
 
+function runtimeWorkbenchShellCreateChatLocalSubmission(
+  intent: RuntimeWorkbenchShellChatDraftIntent,
+  intentLabel: string,
+  intentContext: RuntimeWorkbenchShellChatDraftIntentContext,
+  draftLength: number,
+  draftWords: number,
+): RuntimeWorkbenchShellChatLocalSubmission {
+  return {
+    status: "queued_local",
+    statusLabel: "Queued locally",
+    intent,
+    intentLabel,
+    target: intentContext.target,
+    targetLabel: intentContext.targetLabel,
+    action: intentContext.action,
+    actionLabel: intentContext.actionLabel,
+    characterCount: draftLength,
+    wordCount: draftWords,
+  };
+}
+
 function runtimeWorkbenchShellChatDraftPreview(
   chatBoxEnabled: boolean,
   draftWords: number,
@@ -2365,6 +2399,8 @@ function RuntimeWorkbenchShellChatBox(props: {
   const [draft, setDraft] = useState("");
   const [draftIntent, setDraftIntent] =
     useState<RuntimeWorkbenchShellChatDraftIntent>("ask");
+  const [localSubmission, setLocalSubmission] =
+    useState<RuntimeWorkbenchShellChatLocalSubmission | null>(null);
   const draftLength = draft.length;
   const draftWords = runtimeWorkbenchShellChatDraftWordCount(draft);
   const draftIntentLabel =
@@ -2398,6 +2434,28 @@ function RuntimeWorkbenchShellChatBox(props: {
     },
     [],
   );
+  const handleSendClick = useCallback((): void => {
+    if (!sendGuard.enabled) {
+      return;
+    }
+    setLocalSubmission(
+      runtimeWorkbenchShellCreateChatLocalSubmission(
+        draftIntent,
+        draftIntentLabel,
+        draftIntentContext,
+        draftLength,
+        draftWords,
+      ),
+    );
+    setDraft("");
+  }, [
+    draftIntent,
+    draftIntentContext,
+    draftIntentLabel,
+    draftLength,
+    draftWords,
+    sendGuard.enabled,
+  ]);
   return (
     <section
       aria-label={props.chatBox.title}
@@ -2481,6 +2539,7 @@ function RuntimeWorkbenchShellChatBox(props: {
               data-chat-send-disabled={sendGuard.enabled ? "false" : "true"}
               data-chat-send-reason={sendGuard.reason}
               disabled={!sendGuard.enabled}
+              onClick={handleSendClick}
               type="button"
             >
               Send
@@ -2501,6 +2560,9 @@ function RuntimeWorkbenchShellChatBox(props: {
             intent={draftIntent}
             intentLabel={draftIntentLabel}
             preview={draftPreview}
+          />
+          <RuntimeWorkbenchShellChatLocalSubmissionReceipt
+            submission={localSubmission}
           />
           <section
             aria-label="Chat draft details"
@@ -2540,6 +2602,58 @@ function RuntimeWorkbenchShellChatBox(props: {
           {props.chatBox.collapsedSummary}
         </p>
       )}
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellChatLocalSubmissionReceipt(props: {
+  readonly submission: RuntimeWorkbenchShellChatLocalSubmission | null;
+}): ReactElement | null {
+  if (props.submission === null) {
+    return null;
+  }
+  return (
+    <section
+      aria-label="Chat local submission"
+      className="cw-workbench__chat-local-submission"
+      data-chat-local-submit="true"
+      data-chat-local-submit-action={props.submission.action}
+      data-chat-local-submit-characters={String(
+        props.submission.characterCount,
+      )}
+      data-chat-local-submit-intent={props.submission.intent}
+      data-chat-local-submit-intent-label={props.submission.intentLabel}
+      data-chat-local-submit-status={props.submission.status}
+      data-chat-local-submit-target={props.submission.target}
+      data-chat-local-submit-words={String(props.submission.wordCount)}
+    >
+      <h3>Last request</h3>
+      <dl>
+        <div>
+          <dt>Status</dt>
+          <dd>{props.submission.statusLabel}</dd>
+        </div>
+        <div>
+          <dt>Intent</dt>
+          <dd>{props.submission.intentLabel}</dd>
+        </div>
+        <div>
+          <dt>Target</dt>
+          <dd>{props.submission.targetLabel}</dd>
+        </div>
+        <div>
+          <dt>Action</dt>
+          <dd>{props.submission.actionLabel}</dd>
+        </div>
+        <div>
+          <dt>Characters</dt>
+          <dd>{props.submission.characterCount}</dd>
+        </div>
+        <div>
+          <dt>Words</dt>
+          <dd>{props.submission.wordCount}</dd>
+        </div>
+      </dl>
     </section>
   );
 }

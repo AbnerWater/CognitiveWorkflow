@@ -2933,6 +2933,117 @@ test("renderer runtime workbench React shell marks chat send guard ready locally
   }
 });
 
+test("renderer runtime workbench React shell records local chat send receipt", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactChatEnabledSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Chat Local Send Runtime Workbench"
+        />,
+      );
+    });
+
+    const draftInput = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftInput",
+      "true",
+    );
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Ask the workflow status");
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatSend",
+          "true",
+        ),
+      );
+    });
+
+    const localSubmission = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatLocalSubmit",
+      "true",
+    );
+    assert.equal(session.dispatchedCommands().length, 0);
+    assert.equal(draftInput.value, "");
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-status"),
+      "queued_local",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-intent"),
+      "ask",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-intent-label"),
+      "Ask",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-target"),
+      "workflow",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-action"),
+      "question",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-characters"),
+      "23",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-words"),
+      "4",
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(localSubmission),
+      /Ask the workflow status/u,
+    );
+    assert.doesNotMatch(
+      Array.from(localSubmission.attributes.values()).join(" "),
+      /Ask the workflow status/u,
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(localSubmission),
+      /Last request[\s\S]*Queued locally[\s\S]*Ask[\s\S]*Current workflow[\s\S]*Question[\s\S]*23[\s\S]*4/u,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-send-reason"),
+      "empty_draft",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreviewBody",
+        "empty",
+      ).textContent,
+      "No draft text",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell selects file tree node locally", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {
