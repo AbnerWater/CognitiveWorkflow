@@ -102,9 +102,10 @@ async function runMatrix(tempDir, fakeElectronCliPath, options = {}) {
     readManifest = true,
     matrixUrlValue = matrixUrl,
     legacyUrlValue = matrixUrl,
+    outputDirName = "matrix-output",
     extraEnv = {},
   } = options;
-  const outputDir = path.join(tempDir, "matrix-output");
+  const outputDir = path.join(tempDir, outputDirName);
   const childEnv = {
     ...process.env,
     ...extraEnv,
@@ -170,7 +171,9 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       validFakeElectronCliBody,
     );
 
-    const result = await runMatrix(tempDir, fakeElectronCliPath);
+    const result = await runMatrix(tempDir, fakeElectronCliPath, {
+      outputDirName: "matrix-output-secret",
+    });
     const caseByName = new Map(
       result.manifest.cases.map((testCase) => [testCase.name, testCase]),
     );
@@ -184,15 +187,27 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     assert.equal(result.stderr, "");
     assert.equal(result.manifest.failures.length, 0);
     assert.equal(result.manifest.cases.length, 6);
+    assert.deepEqual(result.manifest.outputEvidence, {
+      manifestFileName: "matrix.json",
+      caseCount: 6,
+    });
+    assert.equal("outputDir" in result.manifest, false);
     assert.equal(
       result.manifest.targetLocation.origin,
       "http://127.0.0.1:5174",
     );
     assert.equal(result.manifest.targetLocation.pathname, "/visual-smoke.html");
+    assert.ok(knownDesktop);
     assert.equal(knownDesktop?.mode, "known");
     assert.equal(knownDesktop?.process.exitCode, 0);
     assert.equal(knownDesktop?.process.stderrLength, 0);
     assert.equal(knownDesktop?.messageCount, 0);
+    assert.deepEqual(knownDesktop?.outputEvidence, {
+      outputFileName: "known-desktop.png",
+      jsonFileName: "known-desktop.png.json",
+    });
+    assert.equal("outputPath" in knownDesktop, false);
+    assert.equal("jsonPath" in knownDesktop, false);
     assert.deepEqual(knownDesktop?.failures, []);
     assert.equal(knownMobile?.mode, "known");
     assert.deepEqual(knownMobile?.requestedViewport, {
@@ -213,7 +228,12 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       result.manifest.cases.map((testCase) => testCase.failures),
       [[], [], [], [], [], []],
     );
-    assertSafeOutput(result, ["query-secret", "hash-secret"]);
+    assertSafeOutput(result, [
+      "query-secret",
+      "hash-secret",
+      "matrix-output-secret",
+      tempDir,
+    ]);
   });
 });
 

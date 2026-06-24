@@ -2,6 +2,9 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
+const {
+  summarizeOutputPath,
+} = require("./runtime-workbench-visual-smoke-preflight.cjs");
 
 const packageRoot = path.resolve(__dirname, "..");
 const smokeScriptPath = path.join(
@@ -293,8 +296,7 @@ function summarizeCase(testCase, outputPath, result, runResult, failures) {
     messageCount: Array.isArray(result?.messages)
       ? result.messages.length
       : null,
-    outputPath,
-    jsonPath: `${outputPath}.json`,
+    outputEvidence: summarizeOutputPath(outputPath),
     failures,
   };
 }
@@ -406,12 +408,15 @@ async function main() {
   const manifestPath = path.join(outputDir, "matrix.json");
   const manifest = {
     targetLocation: parseSafeLocation(parsedBaseUrl),
-    outputDir,
+    outputEvidence: {
+      manifestFileName: path.basename(manifestPath),
+      caseCount: caseSummaries.length,
+    },
     cases: caseSummaries,
     failures: matrixFailures,
   };
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  console.log(`[visual-smoke:matrix] wrote ${manifestPath}`);
+  console.log("[visual-smoke:matrix] wrote matrix.json");
 
   if (matrixFailures.length > 0) {
     throw new Error(
