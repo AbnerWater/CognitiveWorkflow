@@ -42,7 +42,7 @@ const Module = require("node:module");
 const originalLoad = Module._load;
 Module._load = function guardedLoad(request, parent, isMain) {
   if (request === "electron") {
-    throw new Error("electron module was required before visual smoke preflight completed");
+    throw new Error("electron module was required by visual smoke runner");
   }
   return originalLoad.apply(this, arguments);
 };
@@ -260,6 +260,47 @@ test("visual smoke rejects invalid viewport env before loading Electron", async 
       });
     });
   }
+});
+
+test("visual smoke valid env reaches Electron import after preflight", async () => {
+  await withTempDir("cw-visual-smoke-valid-handoff-", async (tempDir) => {
+    const outputPath = path.join(tempDir, "visual-smoke.png");
+    const result = await runSmokePreflight(tempDir, {
+      CW_VISUAL_SMOKE_URL: knownSmokeUrl,
+      CW_VISUAL_SMOKE_OUTPUT: outputPath,
+      CW_VISUAL_SMOKE_WIDTH: "1280",
+      CW_VISUAL_SMOKE_HEIGHT: "720",
+      CW_VISUAL_SMOKE_SCROLL_Y: "0",
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.stdout, "");
+    assert.match(
+      result.stderr,
+      /electron module was required by visual smoke runner/u,
+    );
+    assert.equal(
+      result.stderr.includes(
+        "CW_VISUAL_SMOKE_URL and CW_VISUAL_SMOKE_OUTPUT are required",
+      ),
+      false,
+    );
+    assert.equal(result.stderr.includes("must be a valid URL"), false);
+    assert.equal(result.stderr.includes("must be a positive integer"), false);
+    assert.equal(
+      result.stderr.includes("must be a non-negative integer"),
+      false,
+    );
+    assert.equal(result.stderr.includes("query-secret"), false);
+    assert.equal(result.stderr.includes("hash-secret"), false);
+    await assert.rejects(fs.access(outputPath), {
+      code: "ENOENT",
+    });
+    await assert.rejects(fs.access(`${outputPath}.json`), {
+      code: "ENOENT",
+    });
+  });
 });
 
 test("visual smoke rejects invalid target URLs without leaking input", async () => {
