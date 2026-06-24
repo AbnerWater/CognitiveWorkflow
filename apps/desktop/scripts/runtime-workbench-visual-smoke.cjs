@@ -2,8 +2,6 @@ const fs = require("node:fs/promises");
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 
-const { app, BrowserWindow } = require("electron");
-
 const targetUrl = process.env.CW_VISUAL_SMOKE_URL;
 const outputPath = process.env.CW_VISUAL_SMOKE_OUTPUT;
 const width = Number(process.env.CW_VISUAL_SMOKE_WIDTH ?? "1280");
@@ -21,7 +19,12 @@ const targetLocation = parseTargetLocation(targetUrl);
 const streamEventMode = targetLocation.streamEventMode;
 
 function parseTargetLocation(url) {
-  const parsedUrl = new URL(url);
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    throw new Error("CW_VISUAL_SMOKE_URL must be a valid URL");
+  }
   const streamEventMode =
     parsedUrl.searchParams.get("streamEvent") === "unknown"
       ? "unknown"
@@ -32,6 +35,8 @@ function parseTargetLocation(url) {
     streamEventMode,
   };
 }
+
+const { app, BrowserWindow } = require("electron");
 
 function expectedStreamEvent(mode) {
   if (mode === "unknown") {
