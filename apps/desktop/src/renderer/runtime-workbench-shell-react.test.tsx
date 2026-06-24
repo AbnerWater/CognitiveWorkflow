@@ -298,9 +298,76 @@ test("renderer runtime workbench React shell renders expanded stream event detai
       eventArtifact.getAttribute("data-stream-artifact-ref-path"),
       "artifacts/report.md",
     );
+    const detailContent = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamContent",
+      "event-detail",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-heading-count"),
+      "1",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-list-count"),
+      "1",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-code-block-count"),
+      "1",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-table-count"),
+      "1",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-link-count"),
+      "1",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-mark-count"),
+      "1",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-blocked-html-count"),
+      "2",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-blocked-image-count"),
+      "1",
+    );
+    assert.equal(
+      detailContent.getAttribute("data-stream-content-blocked-link-count"),
+      "1",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        detailContent,
+        (element) => element.tagName === "SCRIPT" || element.tagName === "IMG",
+      ),
+      0,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElement(
+        detailContent,
+        (element) => element.tagName === "A",
+        "stream detail markdown link",
+      ).getAttribute("href"),
+      "/artifacts/report.md",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        detailContent,
+        (element) => element.tagName === "MARK",
+      ),
+      1,
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(detailContent),
+      /javascript:|example\.invalid/u,
+    );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(detail),
-      /delta content[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Event ID[\s\S]*evt_react_stream[\s\S]*Type[\s\S]*model\.text_delta[\s\S]*Title[\s\S]*Model delta[\s\S]*Summary[\s\S]*delta summary[\s\S]*Expandable[\s\S]*yes[\s\S]*Payload[\s\S]*object \(1 key\)[\s\S]*Metadata[\s\S]*object \(2 keys\)[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
+      /delta content[\s\S]*inline_code[\s\S]*marked token[\s\S]*trusted link[\s\S]*blocked link[\s\S]*blocked image[\s\S]*Markdown detail[\s\S]*first item[\s\S]*Metric[\s\S]*Value[\s\S]*const result = "ok";[\s\S]*Artifact refs[\s\S]*Report draft[\s\S]*File[\s\S]*artifacts\/report\.md[\s\S]*text\/markdown[\s\S]*128 bytes[\s\S]*Report preview[\s\S]*Event ID[\s\S]*evt_react_stream[\s\S]*Type[\s\S]*model\.text_delta[\s\S]*Title[\s\S]*Model delta[\s\S]*Summary[\s\S]*delta summary[\s\S]*Expandable[\s\S]*yes[\s\S]*Payload[\s\S]*object \(1 key\)[\s\S]*Metadata[\s\S]*object \(2 keys\)[\s\S]*Schema[\s\S]*0\.1\.0[\s\S]*Seq[\s\S]*7[\s\S]*Created[\s\S]*2026-06-22T02:00:00\.000Z[\s\S]*Category[\s\S]*model[\s\S]*Display level[\s\S]*default[\s\S]*Severity[\s\S]*info[\s\S]*Run[\s\S]*run_react_stream[\s\S]*Node[\s\S]*node_react_model[\s\S]*Attempt[\s\S]*attempt_react_stream[\s\S]*Correlation[\s\S]*trace_react_stream[\s\S]*Phase[\s\S]*attempt\.streaming[\s\S]*Sensitivity[\s\S]*Project[\s\S]*Parent event[\s\S]*evt_react_parent[\s\S]*Child count[\s\S]*0/u,
     );
     const selectedEvent = requireFakeRuntimeWorkbenchElementByData(
       dom.container,
@@ -415,6 +482,58 @@ test("renderer runtime workbench React shell renders expanded stream event detai
     assert.equal(
       selectedArtifact.getAttribute("data-stream-artifact-ref-id"),
       "artifact_react_report",
+    );
+    const selectedContent = requireFakeRuntimeWorkbenchElementByData(
+      selectedEvent,
+      "streamContent",
+      "selection",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-heading-count"),
+      "1",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-list-count"),
+      "1",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-table-count"),
+      "1",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-code-block-count"),
+      "1",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-link-count"),
+      "1",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-mark-count"),
+      "1",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-blocked-html-count"),
+      "2",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-blocked-image-count"),
+      "1",
+    );
+    assert.equal(
+      selectedContent.getAttribute("data-stream-content-blocked-link-count"),
+      "1",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        selectedContent,
+        (element) => element.tagName === "SCRIPT" || element.tagName === "IMG",
+      ),
+      0,
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(selectedContent),
+      /javascript:|example\.invalid/u,
     );
 
     await act(async () => {
@@ -4727,6 +4846,23 @@ function createRuntimeWorkbenchShellReactSnapshot(): RuntimeWorkbenchShellSnapsh
   });
 }
 
+const RUNTIME_WORKBENCH_SHELL_REACT_MARKDOWN_STREAM_CONTENT = [
+  "delta content with `inline_code` and <mark>marked token</mark> [trusted link](/artifacts/report.md) [blocked link](javascript:alert(1)).",
+  "![blocked image](https://example.invalid/plot.png) <script>alert(1)</script>",
+  "",
+  "## Markdown detail",
+  "- first item",
+  "- second item",
+  "",
+  "| Metric | Value |",
+  "| --- | --- |",
+  "| status | ok |",
+  "",
+  "```",
+  'const result = "ok";',
+  "```",
+].join("\n");
+
 function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShellSnapshot {
   return buildRuntimeWorkbenchShellSnapshot({
     activePanel: "stream",
@@ -4777,7 +4913,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
           sensitivity: "project",
           title: "Model delta",
           summary: "delta summary",
-          content: "delta content",
+          content: RUNTIME_WORKBENCH_SHELL_REACT_MARKDOWN_STREAM_CONTENT,
           expandable: true,
           payloadSummary: Object.freeze({
             present: true,
@@ -4823,7 +4959,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
         sensitivity: "project",
         title: "Model delta",
         summary: "delta summary",
-        content: "delta content",
+        content: RUNTIME_WORKBENCH_SHELL_REACT_MARKDOWN_STREAM_CONTENT,
         expandable: true,
         payloadSummary: Object.freeze({
           present: true,

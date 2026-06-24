@@ -99,6 +99,30 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-stream-event-detail="true"]').length,
       streamEventDetailContent:
         document.querySelector('[data-stream-event-detail-content="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
+      streamEventDetailContentHeadingCount:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-heading-count') ?? null,
+      streamEventDetailContentListCount:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-list-count') ?? null,
+      streamEventDetailContentCodeBlockCount:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-code-block-count') ?? null,
+      streamEventDetailContentTableCount:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-table-count') ?? null,
+      streamEventDetailContentLinkCount:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-link-count') ?? null,
+      streamEventDetailContentMarkCount:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-mark-count') ?? null,
+      streamEventDetailContentBlockedHtmlCount:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-blocked-html-count') ?? null,
+      streamEventDetailContentBlockedImageCount:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-blocked-image-count') ?? null,
+      streamEventDetailContentBlockedLinkCount:
+        document.querySelector('[data-stream-content="event-detail"]')?.getAttribute('data-stream-content-blocked-link-count') ?? null,
+      streamEventDetailContentLinkHref:
+        document.querySelector('[data-stream-content="event-detail"] a')?.getAttribute('href') ?? null,
+      streamEventDetailContentScriptCount:
+        document.querySelectorAll('[data-stream-content="event-detail"] script').length,
+      streamEventDetailContentImageCount:
+        document.querySelectorAll('[data-stream-content="event-detail"] img').length,
       streamEventDetailSchemaVersion:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-schema-version') ?? null,
       streamEventDetailSeq:
@@ -185,6 +209,30 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selection-toggle="true"]')?.getAttribute('aria-expanded') ?? null,
       streamSelectedEventBodies:
         document.querySelectorAll('[data-stream-selected-event="true"]').length,
+      streamSelectedEventContentText:
+        document.querySelector('[data-stream-content="selection"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
+      streamSelectedEventContentHeadingCount:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-heading-count') ?? null,
+      streamSelectedEventContentListCount:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-list-count') ?? null,
+      streamSelectedEventContentCodeBlockCount:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-code-block-count') ?? null,
+      streamSelectedEventContentTableCount:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-table-count') ?? null,
+      streamSelectedEventContentLinkCount:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-link-count') ?? null,
+      streamSelectedEventContentMarkCount:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-mark-count') ?? null,
+      streamSelectedEventContentBlockedHtmlCount:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-blocked-html-count') ?? null,
+      streamSelectedEventContentBlockedImageCount:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-blocked-image-count') ?? null,
+      streamSelectedEventContentBlockedLinkCount:
+        document.querySelector('[data-stream-content="selection"]')?.getAttribute('data-stream-content-blocked-link-count') ?? null,
+      streamSelectedEventContentScriptCount:
+        document.querySelectorAll('[data-stream-content="selection"] script').length,
+      streamSelectedEventContentImageCount:
+        document.querySelectorAll('[data-stream-content="selection"] img').length,
       streamSelectedEventSchemaVersion:
         document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-schema-version') ?? null,
       streamSelectedEventSeq:
@@ -1541,6 +1589,57 @@ async function runSmokeStep(label, action) {
   }
 }
 
+function pushStreamContentMetricFailures(
+  failures,
+  metrics,
+  prefix,
+  textKey,
+  label,
+  expectedLinkHref,
+) {
+  const expectedCounts = {
+    HeadingCount: "1",
+    ListCount: "1",
+    CodeBlockCount: "1",
+    TableCount: "1",
+    LinkCount: "1",
+    MarkCount: "1",
+    BlockedHtmlCount: "2",
+    BlockedImageCount: "1",
+    BlockedLinkCount: "1",
+  };
+  for (const [suffix, expected] of Object.entries(expectedCounts)) {
+    const key = `${prefix}${suffix}`;
+    if (metrics[key] !== expected) {
+      failures.push(
+        `expected ${label} ${suffix} ${expected}, got ${metrics[key]}`,
+      );
+    }
+  }
+  if (metrics[`${prefix}ScriptCount`] !== 0) {
+    failures.push(
+      `expected ${label} to render no script elements, got ${metrics[`${prefix}ScriptCount`]}`,
+    );
+  }
+  if (metrics[`${prefix}ImageCount`] !== 0) {
+    failures.push(
+      `expected ${label} to render no image elements, got ${metrics[`${prefix}ImageCount`]}`,
+    );
+  }
+  if (
+    expectedLinkHref !== undefined &&
+    metrics[`${prefix}LinkHref`] !== expectedLinkHref
+  ) {
+    failures.push(
+      `expected ${label} safe link href ${expectedLinkHref}, got ${metrics[`${prefix}LinkHref`]}`,
+    );
+  }
+  const text = metrics[textKey] ?? "";
+  if (text.includes("javascript:") || text.includes("example.invalid")) {
+    failures.push(`expected ${label} to hide unsafe link targets, got ${text}`);
+  }
+}
+
 function collectVisualSmokeFailures(
   metrics,
   messages,
@@ -1834,6 +1933,13 @@ function collectVisualSmokeFailures(
       `expected initial stream selected event body, got ${initialStreamMetrics.streamSelectedEventBodies}`,
     );
   }
+  pushStreamContentMetricFailures(
+    failures,
+    initialStreamMetrics,
+    "streamSelectedEventContent",
+    "streamSelectedEventContentText",
+    "initial stream selected event content",
+  );
   if (initialStreamMetrics.streamSelectedEventArtifactCount !== "1") {
     failures.push(
       `expected initial stream selected event artifact count 1, got ${initialStreamMetrics.streamSelectedEventArtifactCount}`,
@@ -1887,11 +1993,26 @@ function collectVisualSmokeFailures(
       `expected expanded stream event detail body, got ${streamEventExpandedMetrics.streamEventDetails}`,
     );
   }
-  if (streamEventExpandedMetrics.streamEventDetailContent !== "delta content") {
+  if (
+    !String(streamEventExpandedMetrics.streamEventDetailContent ?? "").includes(
+      "delta content",
+    ) ||
+    !String(streamEventExpandedMetrics.streamEventDetailContent ?? "").includes(
+      "Visual markdown detail",
+    )
+  ) {
     failures.push(
-      `expected expanded stream event detail content delta content, got ${streamEventExpandedMetrics.streamEventDetailContent}`,
+      `expected expanded stream event detail markdown content, got ${streamEventExpandedMetrics.streamEventDetailContent}`,
     );
   }
+  pushStreamContentMetricFailures(
+    failures,
+    streamEventExpandedMetrics,
+    "streamEventDetailContent",
+    "streamEventDetailContent",
+    "expanded stream event detail content",
+    "/artifacts/visual-report.md",
+  );
   if (streamEventExpandedMetrics.streamEventDetailSchemaVersion !== "0.1.0") {
     failures.push(
       `expected expanded stream event detail schema version 0.1.0, got ${streamEventExpandedMetrics.streamEventDetailSchemaVersion}`,

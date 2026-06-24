@@ -10,6 +10,7 @@ import {
   useSyncExternalStore,
   type MouseEvent,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
 import type {
@@ -3535,9 +3536,10 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
           data-stream-event-detail-title={props.event.title}
           data-stream-event-detail-type={props.event.type}
         >
-          {props.event.content === null ? null : (
-            <p data-stream-event-detail-content="true">{props.event.content}</p>
-          )}
+          <RuntimeWorkbenchShellStreamContent
+            content={props.event.content}
+            source="event-detail"
+          />
           <RuntimeWorkbenchShellStreamArtifactRefs
             artifactRefs={props.event.artifactRefs}
             source="event-detail"
@@ -3825,7 +3827,10 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           <strong>{selected.title}</strong>
           <span>{selected.type}</span>
           {selected.summary === null ? null : <p>{selected.summary}</p>}
-          {selected.content === null ? null : <p>{selected.content}</p>}
+          <RuntimeWorkbenchShellStreamContent
+            content={selected.content}
+            source="selection"
+          />
           <RuntimeWorkbenchShellStreamArtifactRefs
             artifactRefs={selected.artifactRefs}
             source="selection"
@@ -4155,6 +4160,485 @@ function isRuntimeWorkbenchShellReactCategory(
 
 function runtimeWorkbenchShellReactTitleCase(value: string): string {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+type RuntimeWorkbenchShellStreamContentSource = "event-detail" | "selection";
+
+interface RuntimeWorkbenchShellStreamContentProps {
+  readonly content: string | null;
+  readonly source: RuntimeWorkbenchShellStreamContentSource;
+}
+
+interface RuntimeWorkbenchShellStreamContentMetrics {
+  headingCount: number;
+  listCount: number;
+  codeBlockCount: number;
+  tableCount: number;
+  linkCount: number;
+  markCount: number;
+  blockedHtmlCount: number;
+  blockedImageCount: number;
+  blockedLinkCount: number;
+}
+
+interface RuntimeWorkbenchShellRenderedStreamContent {
+  readonly blocks: readonly ReactNode[];
+  readonly metrics: RuntimeWorkbenchShellStreamContentMetrics;
+}
+
+interface RuntimeWorkbenchShellMarkdownLinkToken {
+  readonly label: string;
+  readonly target: string;
+  readonly end: number;
+}
+
+function RuntimeWorkbenchShellStreamContent(
+  props: RuntimeWorkbenchShellStreamContentProps,
+): ReactElement | null {
+  const rendered = useMemo(
+    () =>
+      props.content === null
+        ? null
+        : runtimeWorkbenchShellReactRenderRestrictedMarkdown(
+            props.content,
+            props.source,
+          ),
+    [props.content, props.source],
+  );
+  if (rendered === null) {
+    return null;
+  }
+  return (
+    <div
+      className="cw-workbench__stream-content"
+      data-stream-content={props.source}
+      data-stream-content-blocked-html-count={String(
+        rendered.metrics.blockedHtmlCount,
+      )}
+      data-stream-content-blocked-image-count={String(
+        rendered.metrics.blockedImageCount,
+      )}
+      data-stream-content-blocked-link-count={String(
+        rendered.metrics.blockedLinkCount,
+      )}
+      data-stream-content-code-block-count={String(
+        rendered.metrics.codeBlockCount,
+      )}
+      data-stream-content-heading-count={String(rendered.metrics.headingCount)}
+      data-stream-content-link-count={String(rendered.metrics.linkCount)}
+      data-stream-content-list-count={String(rendered.metrics.listCount)}
+      data-stream-content-mark-count={String(rendered.metrics.markCount)}
+      data-stream-content-table-count={String(rendered.metrics.tableCount)}
+      data-stream-event-detail-content={
+        props.source === "event-detail" ? "true" : undefined
+      }
+      data-stream-selected-event-content={
+        props.source === "selection" ? "true" : undefined
+      }
+    >
+      {rendered.blocks}
+    </div>
+  );
+}
+
+function runtimeWorkbenchShellReactRenderRestrictedMarkdown(
+  content: string,
+  source: RuntimeWorkbenchShellStreamContentSource,
+): RuntimeWorkbenchShellRenderedStreamContent {
+  const metrics = runtimeWorkbenchShellReactCreateStreamContentMetrics();
+  const blocks: ReactNode[] = [];
+  const lines = content.replace(/\r\n?/gu, "\n").split("\n");
+  let lineIndex = 0;
+  while (lineIndex < lines.length) {
+    const line = lines[lineIndex] ?? "";
+    if (line.trim().length === 0) {
+      lineIndex += 1;
+      continue;
+    }
+    if (runtimeWorkbenchShellReactIsFenceLine(line)) {
+      const codeLines: string[] = [];
+      lineIndex += 1;
+      while (lineIndex < lines.length) {
+        const codeLine = lines[lineIndex] ?? "";
+        if (runtimeWorkbenchShellReactIsFenceLine(codeLine)) {
+          lineIndex += 1;
+          break;
+        }
+        codeLines.push(codeLine);
+        lineIndex += 1;
+      }
+      metrics.codeBlockCount += 1;
+      blocks.push(
+        <pre key={`${source}:code:${blocks.length}`}>
+          <code>{codeLines.join("\n")}</code>
+        </pre>,
+      );
+      continue;
+    }
+    if (runtimeWorkbenchShellReactIsTableStart(lines, lineIndex)) {
+      const headerCells = runtimeWorkbenchShellReactSplitTableRow(line);
+      lineIndex += 2;
+      const mutableRows: string[][] = [];
+      while (lineIndex < lines.length) {
+        const rowLine = lines[lineIndex] ?? "";
+        if (
+          rowLine.trim().length === 0 ||
+          !runtimeWorkbenchShellReactLooksLikeTableRow(rowLine)
+        ) {
+          break;
+        }
+        mutableRows.push(runtimeWorkbenchShellReactSplitTableRow(rowLine));
+        lineIndex += 1;
+      }
+      metrics.tableCount += 1;
+      blocks.push(
+        <table key={`${source}:table:${blocks.length}`}>
+          <thead>
+            <tr>
+              {headerCells.map((cell, cellIndex) => (
+                <th key={`${source}:table:${blocks.length}:h:${cellIndex}`}>
+                  {runtimeWorkbenchShellReactRenderInlineMarkdown(
+                    cell,
+                    metrics,
+                    `${source}:table:${blocks.length}:h:${cellIndex}`,
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {mutableRows.map((row, rowIndex) => (
+              <tr key={`${source}:table:${blocks.length}:r:${rowIndex}`}>
+                {row.map((cell, cellIndex) => (
+                  <td
+                    key={`${source}:table:${blocks.length}:r:${rowIndex}:${cellIndex}`}
+                  >
+                    {runtimeWorkbenchShellReactRenderInlineMarkdown(
+                      cell,
+                      metrics,
+                      `${source}:table:${blocks.length}:r:${rowIndex}:${cellIndex}`,
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>,
+      );
+      continue;
+    }
+    const headingMatch = /^(#{1,3})\s+(.+)$/u.exec(line);
+    if (headingMatch !== null) {
+      const level = headingMatch[1]?.length ?? 1;
+      const headingText = headingMatch[2] ?? "";
+      metrics.headingCount += 1;
+      const headingContent = runtimeWorkbenchShellReactRenderInlineMarkdown(
+        headingText,
+        metrics,
+        `${source}:heading:${blocks.length}`,
+      );
+      if (level === 1) {
+        blocks.push(
+          <h1 key={`${source}:heading:${blocks.length}`}>{headingContent}</h1>,
+        );
+      } else if (level === 2) {
+        blocks.push(
+          <h2 key={`${source}:heading:${blocks.length}`}>{headingContent}</h2>,
+        );
+      } else {
+        blocks.push(
+          <h3 key={`${source}:heading:${blocks.length}`}>{headingContent}</h3>,
+        );
+      }
+      lineIndex += 1;
+      continue;
+    }
+    const listMatch = runtimeWorkbenchShellReactMatchListItem(line);
+    if (listMatch !== null) {
+      const ordered = listMatch.ordered;
+      const items: string[] = [];
+      while (lineIndex < lines.length) {
+        const itemMatch = runtimeWorkbenchShellReactMatchListItem(
+          lines[lineIndex] ?? "",
+        );
+        if (itemMatch === null || itemMatch.ordered !== ordered) {
+          break;
+        }
+        items.push(itemMatch.text);
+        lineIndex += 1;
+      }
+      metrics.listCount += 1;
+      const listItems = items.map((item, itemIndex) => (
+        <li key={`${source}:list:${blocks.length}:${itemIndex}`}>
+          {runtimeWorkbenchShellReactRenderInlineMarkdown(
+            item,
+            metrics,
+            `${source}:list:${blocks.length}:${itemIndex}`,
+          )}
+        </li>
+      ));
+      blocks.push(
+        ordered ? (
+          <ol key={`${source}:list:${blocks.length}`}>{listItems}</ol>
+        ) : (
+          <ul key={`${source}:list:${blocks.length}`}>{listItems}</ul>
+        ),
+      );
+      continue;
+    }
+    const paragraphLines: string[] = [line.trim()];
+    lineIndex += 1;
+    while (lineIndex < lines.length) {
+      const nextLine = lines[lineIndex] ?? "";
+      if (
+        nextLine.trim().length === 0 ||
+        runtimeWorkbenchShellReactIsSpecialBlockStart(lines, lineIndex)
+      ) {
+        break;
+      }
+      paragraphLines.push(nextLine.trim());
+      lineIndex += 1;
+    }
+    blocks.push(
+      <p key={`${source}:paragraph:${blocks.length}`}>
+        {runtimeWorkbenchShellReactRenderInlineMarkdown(
+          paragraphLines.join(" "),
+          metrics,
+          `${source}:paragraph:${blocks.length}`,
+        )}
+      </p>,
+    );
+  }
+  if (blocks.length === 0) {
+    blocks.push(<p key={`${source}:paragraph:0`} />);
+  }
+  return { blocks, metrics };
+}
+
+function runtimeWorkbenchShellReactCreateStreamContentMetrics(): RuntimeWorkbenchShellStreamContentMetrics {
+  return {
+    headingCount: 0,
+    listCount: 0,
+    codeBlockCount: 0,
+    tableCount: 0,
+    linkCount: 0,
+    markCount: 0,
+    blockedHtmlCount: 0,
+    blockedImageCount: 0,
+    blockedLinkCount: 0,
+  };
+}
+
+function runtimeWorkbenchShellReactRenderInlineMarkdown(
+  text: string,
+  metrics: RuntimeWorkbenchShellStreamContentMetrics,
+  keyPrefix: string,
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let buffer = "";
+  let index = 0;
+  let keyIndex = 0;
+  const flushText = (): void => {
+    if (buffer.length === 0) {
+      return;
+    }
+    nodes.push(buffer);
+    buffer = "";
+  };
+  while (index < text.length) {
+    if (text.startsWith("![", index)) {
+      const imageToken = runtimeWorkbenchShellReactParseMarkdownLink(
+        text,
+        index + 1,
+      );
+      if (imageToken !== null) {
+        flushText();
+        metrics.blockedImageCount += 1;
+        nodes.push(
+          imageToken.label.length === 0 ? "[image]" : imageToken.label,
+        );
+        index = imageToken.end;
+        continue;
+      }
+    }
+    if (text[index] === "[") {
+      const linkToken = runtimeWorkbenchShellReactParseMarkdownLink(
+        text,
+        index,
+      );
+      if (linkToken !== null) {
+        flushText();
+        const label =
+          linkToken.label.length === 0 ? linkToken.target : linkToken.label;
+        if (runtimeWorkbenchShellReactIsTrustedMarkdownHref(linkToken.target)) {
+          metrics.linkCount += 1;
+          nodes.push(
+            <a
+              href={linkToken.target}
+              key={`${keyPrefix}:link:${keyIndex}`}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {label}
+            </a>,
+          );
+          keyIndex += 1;
+        } else {
+          metrics.blockedLinkCount += 1;
+          nodes.push(label);
+        }
+        index = linkToken.end;
+        continue;
+      }
+    }
+    if (text[index] === "`") {
+      const codeEnd = text.indexOf("`", index + 1);
+      if (codeEnd > index + 1) {
+        flushText();
+        nodes.push(
+          <code key={`${keyPrefix}:code:${keyIndex}`}>
+            {text.slice(index + 1, codeEnd)}
+          </code>,
+        );
+        keyIndex += 1;
+        index = codeEnd + 1;
+        continue;
+      }
+    }
+    if (text.startsWith("<mark>", index)) {
+      const markEnd = text.indexOf("</mark>", index + "<mark>".length);
+      if (markEnd >= 0) {
+        flushText();
+        metrics.markCount += 1;
+        nodes.push(
+          <mark key={`${keyPrefix}:mark:${keyIndex}`}>
+            {runtimeWorkbenchShellReactRenderInlineMarkdown(
+              text.slice(index + "<mark>".length, markEnd),
+              metrics,
+              `${keyPrefix}:mark:${keyIndex}`,
+            )}
+          </mark>,
+        );
+        keyIndex += 1;
+        index = markEnd + "</mark>".length;
+        continue;
+      }
+    }
+    if (text[index] === "<") {
+      const htmlEnd = text.indexOf(">", index + 1);
+      if (htmlEnd > index) {
+        const htmlToken = text.slice(index, htmlEnd + 1);
+        if (/^<\/?[A-Za-z][^>]*>$/u.test(htmlToken)) {
+          flushText();
+          metrics.blockedHtmlCount += 1;
+          nodes.push(htmlToken);
+          index = htmlEnd + 1;
+          continue;
+        }
+      }
+    }
+    buffer += text[index] ?? "";
+    index += 1;
+  }
+  flushText();
+  return nodes;
+}
+
+function runtimeWorkbenchShellReactParseMarkdownLink(
+  text: string,
+  start: number,
+): RuntimeWorkbenchShellMarkdownLinkToken | null {
+  const labelEnd = text.indexOf("]", start + 1);
+  if (labelEnd < 0 || text[labelEnd + 1] !== "(") {
+    return null;
+  }
+  const targetEnd = text.indexOf(")", labelEnd + 2);
+  if (targetEnd < 0) {
+    return null;
+  }
+  return {
+    label: text.slice(start + 1, labelEnd),
+    target: text.slice(labelEnd + 2, targetEnd).trim(),
+    end: targetEnd + 1,
+  };
+}
+
+function runtimeWorkbenchShellReactIsTrustedMarkdownHref(
+  href: string,
+): boolean {
+  if (href.length === 0 || /[\u0000-\u001f\u007f\s]/u.test(href)) {
+    return false;
+  }
+  if (href.startsWith("//")) {
+    return false;
+  }
+  const schemeMatch = /^([A-Za-z][A-Za-z0-9+.-]*):/u.exec(href);
+  if (schemeMatch !== null) {
+    const scheme = schemeMatch[1]?.toLowerCase() ?? "";
+    return scheme === "https" || scheme === "mailto";
+  }
+  return true;
+}
+
+function runtimeWorkbenchShellReactIsSpecialBlockStart(
+  lines: readonly string[],
+  index: number,
+): boolean {
+  const line = lines[index] ?? "";
+  return (
+    runtimeWorkbenchShellReactIsFenceLine(line) ||
+    runtimeWorkbenchShellReactIsTableStart(lines, index) ||
+    /^(#{1,3})\s+(.+)$/u.test(line) ||
+    runtimeWorkbenchShellReactMatchListItem(line) !== null
+  );
+}
+
+function runtimeWorkbenchShellReactIsFenceLine(line: string): boolean {
+  return /^\s*```/u.test(line);
+}
+
+function runtimeWorkbenchShellReactIsTableStart(
+  lines: readonly string[],
+  index: number,
+): boolean {
+  const header = lines[index] ?? "";
+  const separator = lines[index + 1] ?? "";
+  return (
+    runtimeWorkbenchShellReactLooksLikeTableRow(header) &&
+    runtimeWorkbenchShellReactIsTableSeparator(separator)
+  );
+}
+
+function runtimeWorkbenchShellReactLooksLikeTableRow(line: string): boolean {
+  return runtimeWorkbenchShellReactSplitTableRow(line).length > 1;
+}
+
+function runtimeWorkbenchShellReactIsTableSeparator(line: string): boolean {
+  const cells = runtimeWorkbenchShellReactSplitTableRow(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/u.test(cell));
+}
+
+function runtimeWorkbenchShellReactSplitTableRow(line: string): string[] {
+  const trimmed = line.trim();
+  const withoutLeading = trimmed.startsWith("|") ? trimmed.slice(1) : trimmed;
+  const withoutTrailing = withoutLeading.endsWith("|")
+    ? withoutLeading.slice(0, -1)
+    : withoutLeading;
+  return withoutTrailing.split("|").map((cell) => cell.trim());
+}
+
+function runtimeWorkbenchShellReactMatchListItem(
+  line: string,
+): { readonly ordered: boolean; readonly text: string } | null {
+  const match = /^\s*((?:[-*+])|(?:\d+[.)]))\s+(.+)$/u.exec(line);
+  if (match === null) {
+    return null;
+  }
+  const marker = match[1] ?? "";
+  return {
+    ordered: /^\d/u.test(marker),
+    text: match[2] ?? "",
+  };
 }
 
 function runtimeWorkbenchShellReactStructuredFieldLabel(

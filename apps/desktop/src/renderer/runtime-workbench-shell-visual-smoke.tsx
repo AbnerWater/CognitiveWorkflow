@@ -53,6 +53,23 @@ interface VisualSmokeState {
   readonly lastHandledShortcutLabel: string | null;
 }
 
+const VISUAL_SMOKE_MARKDOWN_STREAM_CONTENT = [
+  "delta content with `inline_code` and <mark>marked token</mark> [trusted link](/artifacts/visual-report.md) [blocked link](javascript:alert(1)).",
+  "![blocked image](https://example.invalid/visual.png) <script>alert(1)</script>",
+  "",
+  "## Visual markdown detail",
+  "- first visual item",
+  "- second visual item",
+  "",
+  "| Metric | Value |",
+  "| --- | --- |",
+  "| status | ok |",
+  "",
+  "```",
+  'const result = "visual";',
+  "```",
+].join("\n");
+
 function createRuntimeWorkbenchShellVisualSmokeSession(): RuntimeWorkbenchShellDomSession {
   const listeners = new Set<() => void>();
   let state: VisualSmokeState = {
@@ -524,7 +541,7 @@ function buildVisualSmokeRuntimeStreamPanelSnapshot(
     sensitivity: "sensitive",
     title: "Visual stream delta",
     summary: "delta summary",
-    content: "delta content",
+    content: VISUAL_SMOKE_MARKDOWN_STREAM_CONTENT,
     expandable: true,
     payloadSummary: Object.freeze({
       present: true,
