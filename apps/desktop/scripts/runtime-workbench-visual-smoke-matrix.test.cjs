@@ -71,6 +71,95 @@ function assertSafeOutput(result, forbiddenFragments) {
   }
 }
 
+test("visual smoke matrix accepts valid known and unknown evidence", async () => {
+  await withTempDir("cw-visual-smoke-matrix-valid-", async (tempDir) => {
+    const fakeElectronCliPath = await writeFakeElectronCli(
+      tempDir,
+      `
+const fs = require("node:fs");
+const targetUrl = new URL(process.env.CW_VISUAL_SMOKE_URL);
+const mode = targetUrl.searchParams.get("streamEvent") === "unknown"
+  ? "unknown"
+  : "known";
+const urlFailures = [];
+if (targetUrl.hash !== "") {
+  urlFailures.push("case URL hash was not stripped");
+}
+if (mode === "known" && targetUrl.search !== "") {
+  urlFailures.push("known case URL search was not stripped");
+}
+if (mode === "unknown" && targetUrl.search !== "?streamEvent=unknown") {
+  urlFailures.push("unknown case URL search was not normalized");
+}
+const width = Number(process.env.CW_VISUAL_SMOKE_WIDTH);
+const height = Number(process.env.CW_VISUAL_SMOKE_HEIGHT);
+const scrollY = Number(process.env.CW_VISUAL_SMOKE_SCROLL_Y);
+const maxY = 2000;
+const knownType = mode === "unknown" ? "false" : "true";
+const knownText = mode === "unknown" ? "Unknown event type" : "Known event type";
+const result = {
+  streamEventMode: mode,
+  targetLocation: { streamEventMode: mode },
+  requestedViewport: { width, height, scrollY },
+  captureSize: { width, height },
+  metrics: {
+    viewport: { width, height },
+    scroll: { x: 0, y: Math.min(scrollY, maxY), maxY },
+    horizontalOverflow: 0,
+  },
+  streamEventExpandedMetrics: {
+    streamEventDetailKnownType: knownType,
+    streamEventDetailText: knownText,
+  },
+  streamSelectionMetadataExpandedMetrics: {
+    streamSelectionMetadataKnownType: knownType,
+    streamSelectionMetadataText: knownText,
+  },
+  failures: urlFailures,
+  messages: [],
+};
+fs.writeFileSync(
+  \`\${process.env.CW_VISUAL_SMOKE_OUTPUT}.json\`,
+  JSON.stringify(result),
+);
+`,
+    );
+
+    const result = await runMatrix(tempDir, fakeElectronCliPath);
+    const caseByName = new Map(
+      result.manifest.cases.map((testCase) => [testCase.name, testCase]),
+    );
+    const knownDesktop = caseByName.get("known-desktop");
+    const unknownDesktop = caseByName.get("unknown-desktop");
+    const unknownScroll = caseByName.get("unknown-mobile-scroll-1440");
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.signal, null);
+    assert.equal(result.stderr, "");
+    assert.equal(result.manifest.failures.length, 0);
+    assert.equal(result.manifest.cases.length, 5);
+    assert.equal(
+      result.manifest.targetLocation.origin,
+      "http://127.0.0.1:5174",
+    );
+    assert.equal(result.manifest.targetLocation.pathname, "/visual-smoke.html");
+    assert.equal(knownDesktop?.mode, "known");
+    assert.equal(knownDesktop?.process.exitCode, 0);
+    assert.equal(knownDesktop?.process.stderrLength, 0);
+    assert.equal(knownDesktop?.messageCount, 0);
+    assert.deepEqual(knownDesktop?.failures, []);
+    assert.equal(unknownDesktop?.mode, "unknown");
+    assert.deepEqual(unknownDesktop?.failures, []);
+    assert.equal(unknownScroll?.observedScroll.y, 1440);
+    assert.equal(unknownScroll?.observedScroll.maxY, 2000);
+    assert.deepEqual(
+      result.manifest.cases.map((testCase) => testCase.failures),
+      [[], [], [], [], []],
+    );
+    assertSafeOutput(result, ["query-secret", "hash-secret"]);
+  });
+});
+
 test("visual smoke matrix sanitizes invalid JSON failures", async () => {
   await withTempDir("cw-visual-smoke-matrix-invalid-json-", async (tempDir) => {
     const fakeElectronCliPath = await writeFakeElectronCli(
