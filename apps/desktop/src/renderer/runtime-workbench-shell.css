@@ -2301,6 +2301,10 @@ button {
   border-left-color: #4f8cc9;
 }
 
+.cw-workbench__stream-event--unknown-type {
+  border-left-color: #7a6f5a;
+}
+
 .cw-workbench__stream-event-main {
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);
@@ -2340,6 +2344,14 @@ button {
   color: #526173;
   overflow-wrap: anywhere;
   font-size: 11px;
+}
+
+.cw-workbench__stream-event-meta .cw-workbench__stream-event-type-status,
+.cw-workbench__stream-selected-event .cw-workbench__stream-event-type-status {
+  border-color: #d9ccb3;
+  background: #fff8eb;
+  color: #6d5428;
+  font-weight: 800;
 }
 
 .cw-workbench__stream-event-detail {

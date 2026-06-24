@@ -24,7 +24,10 @@ import type {
   RuntimeStreamDisplayLevel,
 } from "./runtime-stream-client.js";
 import type { RuntimeStreamInteractionCommand } from "./runtime-stream-interaction.js";
-import type { CreateRuntimeStreamInteractionSessionFactorySessionOptions } from "./runtime-stream-session.js";
+import {
+  RUNTIME_STREAM_ALL_EVENT_TYPES,
+  type CreateRuntimeStreamInteractionSessionFactorySessionOptions,
+} from "./runtime-stream-session.js";
 import type {
   RuntimeWorkbenchInteractionCommand,
   RuntimeWorkbenchInteractionCommandId,
@@ -108,6 +111,10 @@ const RUNTIME_WORKBENCH_RUN_STREAM_CATEGORIES: readonly RuntimeStreamCategory[] 
 
 const RUNTIME_WORKBENCH_PLANNING_STREAM_CATEGORIES: readonly RuntimeStreamCategory[] =
   ["planning", "system"] as const;
+
+const RUNTIME_WORKBENCH_STREAM_KNOWN_EVENT_TYPE_SET = new Set<string>(
+  RUNTIME_STREAM_ALL_EVENT_TYPES,
+);
 
 export function useRuntimeWorkbenchShellSnapshot(
   session: RuntimeWorkbenchShellDomSession,
@@ -3416,6 +3423,9 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
     event: MouseEvent<HTMLButtonElement>,
   ) => void;
 }): ReactElement {
+  const knownType = runtimeWorkbenchShellReactIsKnownStreamEventType(
+    props.event.type,
+  );
   const payloadSummaryLabel = runtimeWorkbenchShellReactStructuredFieldLabel(
     props.event.payloadSummary,
   );
@@ -3424,8 +3434,15 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
   );
   return (
     <li
-      className={`cw-workbench__stream-event cw-workbench__stream-event--${props.event.severity}`}
+      className={[
+        "cw-workbench__stream-event",
+        `cw-workbench__stream-event--${props.event.severity}`,
+        knownType ? "" : "cw-workbench__stream-event--unknown-type",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       data-stream-event-expanded={props.event.expanded ? "true" : "false"}
+      data-stream-event-known-type={knownType ? "true" : "false"}
       data-stream-event-parent-id={props.event.parentEventId ?? ""}
     >
       <div className="cw-workbench__stream-event-main">
@@ -3441,6 +3458,14 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
       </div>
       <div className="cw-workbench__stream-event-meta">
         <span>{props.event.type}</span>
+        {knownType ? null : (
+          <span
+            className="cw-workbench__stream-event-type-status"
+            data-stream-event-type-status="unknown"
+          >
+            Unknown event
+          </span>
+        )}
         {props.event.category === null ? null : (
           <span>
             {runtimeWorkbenchShellReactTitleCase(props.event.category)}
@@ -3501,6 +3526,7 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
           data-stream-event-detail-expandable={
             props.event.expandable ? "yes" : "no"
           }
+          data-stream-event-detail-known-type={knownType ? "true" : "false"}
           data-stream-event-detail-metadata-key-count={String(
             props.event.metadataSummary.keyCount,
           )}
@@ -3552,6 +3578,10 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             <div>
               <dt>Type</dt>
               <dd>{props.event.type}</dd>
+            </div>
+            <div>
+              <dt>Type status</dt>
+              <dd>{knownType ? "Known event type" : "Unknown event type"}</dd>
             </div>
             <div>
               <dt>Title</dt>
@@ -3698,10 +3728,16 @@ function RuntimeWorkbenchShellStreamSelection(props: {
   const handleMetadataToggleClick = useCallback((): void => {
     setMetadataExpanded((current) => !current);
   }, []);
+  const selectedKnownType =
+    selected === null
+      ? true
+      : runtimeWorkbenchShellReactIsKnownStreamEventType(selected.type);
   const collapsedSummary =
     selected === null
       ? "No event selected"
-      : `${selected.title}, ${selected.type}`;
+      : selectedKnownType
+        ? `${selected.title}, ${selected.type}`
+        : `Unknown event, ${selected.type}`;
   const categoryLabel = selected?.category ?? "-";
   const eventIdLabel = selected?.id ?? "-";
   const eventTypeLabel = selected?.type ?? "-";
@@ -3733,6 +3769,9 @@ function RuntimeWorkbenchShellStreamSelection(props: {
       : runtimeWorkbenchShellReactTitleCase(selected.sensitivity);
   const expandableLabel =
     selected === null ? "-" : selected.expandable ? "yes" : "no";
+  const typeStatusLabel = selectedKnownType
+    ? "Known event type"
+    : "Unknown event type";
   return (
     <aside
       className={[
@@ -3788,6 +3827,9 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           data-stream-selected-event-display-level={selected.displayLevel}
           data-stream-selected-event-expandable={expandableLabel}
           data-stream-selected-event-id={selected.id ?? ""}
+          data-stream-selected-event-known-type={
+            selectedKnownType ? "true" : "false"
+          }
           data-stream-selected-event-run-id={selected.runId ?? ""}
           data-stream-selected-event-node-id={selected.nodeId ?? ""}
           data-stream-selected-event-attempt-id={selected.attemptId ?? ""}
@@ -3826,6 +3868,14 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           </button>
           <strong>{selected.title}</strong>
           <span>{selected.type}</span>
+          {selectedKnownType ? null : (
+            <span
+              className="cw-workbench__stream-event-type-status"
+              data-stream-selected-event-type-status="unknown"
+            >
+              Unknown event
+            </span>
+          )}
           {selected.summary === null ? null : <p>{selected.summary}</p>}
           <RuntimeWorkbenchShellStreamContent
             content={selected.content}
@@ -3843,6 +3893,10 @@ function RuntimeWorkbenchShellStreamSelection(props: {
             <div>
               <dt>Type</dt>
               <dd>{eventTypeLabel}</dd>
+            </div>
+            <div>
+              <dt>Type status</dt>
+              <dd>{typeStatusLabel}</dd>
             </div>
             <div>
               <dt>Title</dt>
@@ -3912,6 +3966,9 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               }
               data-stream-selection-metadata-event-id={eventIdLabel}
               data-stream-selection-metadata-expandable={expandableLabel}
+              data-stream-selection-metadata-known-type={
+                selectedKnownType ? "true" : "false"
+              }
               data-stream-selection-metadata-run-id={runIdLabel}
               data-stream-selection-metadata-node-id={nodeIdLabel}
               data-stream-selection-metadata-attempt-id={attemptIdLabel}
@@ -3950,6 +4007,10 @@ function RuntimeWorkbenchShellStreamSelection(props: {
               <div>
                 <dt>Type</dt>
                 <dd>{eventTypeLabel}</dd>
+              </div>
+              <div>
+                <dt>Type status</dt>
+                <dd>{typeStatusLabel}</dd>
               </div>
               <div>
                 <dt>Title</dt>
@@ -4160,6 +4221,12 @@ function isRuntimeWorkbenchShellReactCategory(
 
 function runtimeWorkbenchShellReactTitleCase(value: string): string {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function runtimeWorkbenchShellReactIsKnownStreamEventType(
+  eventType: string,
+): boolean {
+  return RUNTIME_WORKBENCH_STREAM_KNOWN_EVENT_TYPE_SET.has(eventType);
 }
 
 type RuntimeWorkbenchShellStreamContentSource = "event-detail" | "selection";

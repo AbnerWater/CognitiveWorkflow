@@ -91,6 +91,10 @@ async function readMetrics(window) {
         document.querySelectorAll('[data-stream-event-id]').length,
       streamExpandedEvents:
         document.querySelectorAll('[data-stream-event-expanded="true"]').length,
+      streamEventKnownType:
+        document.querySelector('[data-stream-event-known-type]')?.getAttribute('data-stream-event-known-type') ?? null,
+      streamEventTypeStatusBadges:
+        document.querySelectorAll('[data-stream-event-type-status="unknown"]').length,
       streamEventExpandToggleButtons:
         document.querySelectorAll('[data-stream-event-expand-toggle]').length,
       streamEventExpandToggleExpanded:
@@ -149,6 +153,8 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-summary') ?? null,
       streamEventDetailExpandable:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-expandable') ?? null,
+      streamEventDetailKnownType:
+        document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-known-type') ?? null,
       streamEventDetailPayloadPresent:
         document.querySelector('[data-stream-event-detail="true"]')?.getAttribute('data-stream-event-detail-payload-present') ?? null,
       streamEventDetailPayloadKind:
@@ -213,6 +219,10 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selection-toggle="true"]')?.getAttribute('aria-expanded') ?? null,
       streamSelectedEventBodies:
         document.querySelectorAll('[data-stream-selected-event="true"]').length,
+      streamSelectedEventKnownType:
+        document.querySelector('[data-stream-selected-event="true"]')?.getAttribute('data-stream-selected-event-known-type') ?? null,
+      streamSelectedEventTypeStatusBadges:
+        document.querySelectorAll('[data-stream-selected-event-type-status="unknown"]').length,
       streamSelectedEventContentText:
         document.querySelector('[data-stream-content="selection"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       streamSelectedEventContentHeadingCount:
@@ -357,6 +367,8 @@ async function readMetrics(window) {
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-child-count') ?? null,
       streamSelectionMetadataExpandable:
         document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-expandable') ?? null,
+      streamSelectionMetadataKnownType:
+        document.querySelector('[data-stream-selection-metadata="true"]')?.getAttribute('data-stream-selection-metadata-known-type') ?? null,
       streamSelectionCollapsedSummary:
         document.querySelector('[data-stream-selection-collapsed-summary="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       streamSelectionCollapsedSelectedId:
@@ -850,15 +862,32 @@ async function clickLifecycleCommand(window, command) {
 }
 
 async function clickPanel(window, panel) {
-  await window.webContents.executeJavaScript(`
-    (() => {
-      const button = document.querySelector('.cw-workbench__dock-item[data-panel="${panel}"], .cw-workbench__tab[data-panel="${panel}"]');
-      if (!(button instanceof HTMLButtonElement)) {
-        throw new Error('Missing workbench panel button: ${panel}');
-      }
-      button.click();
-    })()
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const startedAt = Date.now();
+      const clickPanelButton = () => {
+        const button = document.querySelector('.cw-workbench__dock-item[data-panel="${panel}"], .cw-workbench__tab[data-panel="${panel}"]');
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 1500) {
+          resolve({
+            ok: false,
+            message: 'Missing workbench panel button: ${panel}',
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(clickPanelButton);
+      };
+      clickPanelButton();
+    })
   `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
 }
 
 async function clickWorkflowCanvasNode(window, nodeId) {
@@ -1951,6 +1980,26 @@ function collectVisualSmokeFailures(
       `expected initial stream selected event body, got ${initialStreamMetrics.streamSelectedEventBodies}`,
     );
   }
+  if (initialStreamMetrics.streamEventKnownType !== "true") {
+    failures.push(
+      `expected initial stream timeline event known type true, got ${initialStreamMetrics.streamEventKnownType}`,
+    );
+  }
+  if (initialStreamMetrics.streamEventTypeStatusBadges !== 0) {
+    failures.push(
+      `expected no initial stream unknown type badges, got ${initialStreamMetrics.streamEventTypeStatusBadges}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventKnownType !== "true") {
+    failures.push(
+      `expected initial selected stream event known type true, got ${initialStreamMetrics.streamSelectedEventKnownType}`,
+    );
+  }
+  if (initialStreamMetrics.streamSelectedEventTypeStatusBadges !== 0) {
+    failures.push(
+      `expected no initial selected stream unknown type badges, got ${initialStreamMetrics.streamSelectedEventTypeStatusBadges}`,
+    );
+  }
   pushStreamContentMetricFailures(
     failures,
     initialStreamMetrics,
@@ -2009,6 +2058,11 @@ function collectVisualSmokeFailures(
   if (streamEventExpandedMetrics.streamEventDetails !== 1) {
     failures.push(
       `expected expanded stream event detail body, got ${streamEventExpandedMetrics.streamEventDetails}`,
+    );
+  }
+  if (streamEventExpandedMetrics.streamEventDetailKnownType !== "true") {
+    failures.push(
+      `expected expanded stream event detail known type true, got ${streamEventExpandedMetrics.streamEventDetailKnownType}`,
     );
   }
   if (
@@ -2662,6 +2716,14 @@ function collectVisualSmokeFailures(
   ) {
     failures.push(
       `expected expanded stream selection metadata body, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataDetails}`,
+    );
+  }
+  if (
+    streamSelectionMetadataExpandedMetrics.streamSelectionMetadataKnownType !==
+    "true"
+  ) {
+    failures.push(
+      `expected expanded stream selection metadata known type true, got ${streamSelectionMetadataExpandedMetrics.streamSelectionMetadataKnownType}`,
     );
   }
   if (

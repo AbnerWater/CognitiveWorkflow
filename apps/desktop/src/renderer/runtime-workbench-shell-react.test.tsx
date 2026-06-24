@@ -131,6 +131,100 @@ test("renderer runtime workbench React shell renders active stream panel events"
   assert.match(markup, /Clear selection/u);
 });
 
+test("renderer runtime workbench React shell folds and labels unknown stream event types", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot =
+      createRuntimeWorkbenchShellReactUnknownStreamEventSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Unknown Stream Event Runtime Workbench"
+        />,
+      );
+    });
+
+    const unknownEvent = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamEventKnownType",
+      "false",
+    );
+    assert.equal(
+      unknownEvent.getAttribute("data-stream-event-expanded"),
+      "false",
+    );
+    assert.match(
+      unknownEvent.getAttribute("class") ?? "",
+      /cw-workbench__stream-event--unknown-type/u,
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(unknownEvent),
+      /Experimental adapter event[\s\S]*adapter\.experimental_event[\s\S]*Unknown event/u,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        unknownEvent,
+        (element) => element.dataset.streamEventDetail === "true",
+      ),
+      0,
+    );
+
+    const selectedEvent = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "streamSelectedEventKnownType",
+      "false",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-type"),
+      "adapter.experimental_event",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        selectedEvent,
+        "streamSelectedEventTypeStatus",
+        "unknown",
+      ).textContent,
+      "Unknown event",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-payload-present"),
+      "yes",
+    );
+    assert.equal(
+      selectedEvent.getAttribute("data-stream-selected-event-payload-kind"),
+      "object",
+    );
+    assert.equal(
+      selectedEvent.getAttribute(
+        "data-stream-selected-event-payload-key-count",
+      ),
+      "1",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(selectedEvent),
+      /Type status[\s\S]*Unknown event type[\s\S]*Payload[\s\S]*object \(1 key\)/u,
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(selectedEvent),
+      /secret_payload_value|payload_token/u,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell renders expanded stream event detail", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {
@@ -5146,6 +5240,65 @@ function createRuntimeWorkbenchShellReactExpandedStreamEventSnapshot(): RuntimeW
       ...panel,
       timelineItems: Object.freeze([expandedEvent]),
       selectedEvent: expandedEvent,
+    }),
+  });
+}
+
+function createRuntimeWorkbenchShellReactUnknownStreamEventSnapshot(): RuntimeWorkbenchShellSnapshot {
+  const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+  const panel = requireRuntimeStreamPanel(snapshot);
+  const event = panel.timelineItems[0];
+  if (event === undefined) {
+    throw new Error("Expected stream event fixture");
+  }
+  const unknownEvent = Object.freeze({
+    ...event,
+    id: "evt_react_unknown",
+    seq: 11,
+    parentEventId: null,
+    correlationId: "trace_react_unknown",
+    runId: "run_react_stream",
+    nodeId: "node_react_adapter",
+    attemptId: "attempt_react_unknown",
+    type: "adapter.experimental_event",
+    category: "system",
+    phase: null,
+    title: "Experimental adapter event",
+    summary: "Forward-compatible event from a newer runtime",
+    content: null,
+    payloadSummary: Object.freeze({
+      present: true,
+      kind: "object",
+      keyCount: 1,
+    }),
+    metadataSummary: Object.freeze({
+      present: false,
+      kind: "null",
+      keyCount: 0,
+    }),
+    expanded: false,
+    childCount: 0,
+    children: Object.freeze([]),
+    artifactRefs: Object.freeze([]),
+    createdAt: "2026-06-24T02:30:00.000Z",
+  });
+  return Object.freeze({
+    ...snapshot,
+    runtimeStreamPanel: Object.freeze({
+      ...panel,
+      totalEvents: 1,
+      bufferedEventCount: 1,
+      matchingEventCount: 1,
+      visibleEventCount: 1,
+      hiddenEventCount: 0,
+      search: Object.freeze({
+        query: "experimental",
+        matchCount: 1,
+        activeMatchIndex: 0,
+        activeEventId: "evt_react_unknown",
+      }),
+      timelineItems: Object.freeze([unknownEvent]),
+      selectedEvent: unknownEvent,
     }),
   });
 }
