@@ -1,9 +1,12 @@
-import type {
-  RuntimeStreamConnectionRequest,
-  RuntimeStreamEventSource,
-  RuntimeStreamEventSourceFactory,
-  RuntimeStreamSourceListener,
+import {
+  RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE,
+  type RuntimeStreamConnectionRequest,
+  type RuntimeStreamEventSource,
+  type RuntimeStreamEventSourceFactory,
+  type RuntimeStreamSourceListener,
 } from "./runtime-stream-client.js";
+
+const RUNTIME_STREAM_EVENT_SOURCE_ERROR_TYPE = "error";
 
 export interface CreateRuntimeFetchEventSourceFactoryOptions {
   readonly fetchImpl?: typeof fetch;
@@ -39,6 +42,17 @@ export function createRuntimeFetchEventSource(
       return;
     }
     for (const listener of listeners.get(event.type) ?? []) {
+      listener(event);
+    }
+    if (
+      event.type === RUNTIME_STREAM_EVENT_SOURCE_ERROR_TYPE ||
+      event.type === RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE
+    ) {
+      return;
+    }
+    for (const listener of listeners.get(
+      RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE,
+    ) ?? []) {
       listener(event);
     }
   };

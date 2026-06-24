@@ -4,9 +4,10 @@ import {
   createRuntimeFetchEventSource,
   createRuntimeFetchEventSourceFactory,
 } from "./runtime-stream-fetch-event-source.js";
-import type {
-  RuntimeStreamConnectionRequest,
-  RuntimeStreamSourceEvent,
+import {
+  RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE,
+  type RuntimeStreamConnectionRequest,
+  type RuntimeStreamSourceEvent,
 } from "./runtime-stream-client.js";
 
 test("fetch-backed runtime stream source forwards headers and dispatches SSE events", async () => {
@@ -31,11 +32,15 @@ test("fetch-backed runtime stream source forwards headers and dispatches SSE eve
     );
   };
   const events: RuntimeStreamSourceEvent[] = [];
+  const allEvents: RuntimeStreamSourceEvent[] = [];
   const source = createRuntimeFetchEventSourceFactory({ fetchImpl })(
     createRuntimeFetchEventSourceRequest(),
   );
   source.addEventListener("model.text_delta", (event) => {
     events.push(event);
+  });
+  source.addEventListener(RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE, (event) => {
+    allEvents.push(event);
   });
 
   await waitFor(() => streamController !== undefined);
@@ -48,7 +53,17 @@ test("fetch-backed runtime stream source forwards headers and dispatches SSE eve
       ].join("\n"),
     ),
   );
-  await waitFor(() => events.length === 1);
+  await waitFor(() => events.length === 1 && allEvents.length === 1);
+  streamController?.enqueue(
+    encodeSse(
+      [
+        "id: evt_unknown",
+        "event: adapter.experimental_event",
+        'data: {"type":"adapter.experimental_event","seq":2}',
+      ].join("\n"),
+    ),
+  );
+  await waitFor(() => allEvents.length === 2);
 
   assert.equal(requestUrl, "http://127.0.0.1:48123/cw/v1/runs/run_1/stream");
   assert.equal(requestHeaders?.get("authorization"), "Bearer test-token");
@@ -59,6 +74,18 @@ test("fetch-backed runtime stream source forwards headers and dispatches SSE eve
       type: "model.text_delta",
       data: '{"type":"model.text_delta","seq":1}',
       lastEventId: "evt_1",
+    },
+  ]);
+  assert.deepEqual(allEvents, [
+    {
+      type: "model.text_delta",
+      data: '{"type":"model.text_delta","seq":1}',
+      lastEventId: "evt_1",
+    },
+    {
+      type: "adapter.experimental_event",
+      data: '{"type":"adapter.experimental_event","seq":2}',
+      lastEventId: "evt_unknown",
     },
   ]);
 
@@ -76,12 +103,16 @@ test("fetch-backed runtime stream source maps replay failures to error events", 
       { status: 412, headers: { "content-type": "application/json" } },
     );
   const errors: RuntimeStreamSourceEvent[] = [];
+  const allEvents: RuntimeStreamSourceEvent[] = [];
   const source = createRuntimeFetchEventSource(
     createRuntimeFetchEventSourceRequest(),
     { fetchImpl },
   );
   source.addEventListener("error", (event) => {
     errors.push(event);
+  });
+  source.addEventListener(RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE, (event) => {
+    allEvents.push(event);
   });
 
   await waitFor(() => errors.length === 1);
@@ -91,6 +122,7 @@ test("fetch-backed runtime stream source maps replay failures to error events", 
     errorCode: "SE_SSE_REPLAY_NOT_FOUND",
     reason: "Replay point not found",
   });
+  assert.deepEqual(allEvents, []);
 });
 
 test("fetch-backed runtime stream source emits an error when the SSE body ends", async () => {

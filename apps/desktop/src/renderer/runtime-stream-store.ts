@@ -48,6 +48,7 @@ export interface RuntimeStreamEventStore {
 export interface CreateRuntimeStreamEventStoreOptions {
   readonly clientOptions: OpenRuntimeStreamReconnectingClientOptions;
   readonly eventTypes: readonly string[];
+  readonly knownEventTypes?: readonly string[];
   readonly maxEvents?: number;
   readonly clientFactory?: RuntimeStreamEventStoreClientFactory;
   readonly onError?: RuntimeStreamEventStoreErrorHandler;
@@ -78,6 +79,10 @@ export function createRuntimeStreamEventStore(
   options: CreateRuntimeStreamEventStoreOptions,
 ): RuntimeStreamEventStore {
   const eventTypes = normalizeRuntimeStreamStoreEventTypes(options.eventTypes);
+  const knownEventTypes =
+    options.knownEventTypes === undefined
+      ? null
+      : normalizeRuntimeStreamStoreKnownEventTypes(options.knownEventTypes);
   const maxEvents = normalizeRuntimeStreamStoreMaxEvents(
     options.maxEvents ?? RUNTIME_STREAM_EVENT_STORE_DEFAULT_MAX_EVENTS,
   );
@@ -185,8 +190,11 @@ export function createRuntimeStreamEventStore(
           }
 
           activeClient = client;
-          activeUnsubscribes = eventTypes.map((eventType) =>
-            client.subscribe(eventType, recordEvent),
+          activeUnsubscribes = subscribeRuntimeStreamEventStoreEvents(
+            client,
+            eventTypes,
+            knownEventTypes,
+            recordEvent,
           );
           status = "running";
           publish();
@@ -282,6 +290,29 @@ export function bindRuntimeStreamEventStoreToPageLifecycle(
   };
 }
 
+function subscribeRuntimeStreamEventStoreEvents(
+  client: RuntimeStreamReconnectingClient,
+  eventTypes: readonly string[],
+  knownEventTypes: readonly string[] | null,
+  listener: (event: RuntimeStreamEvent<unknown>) => void,
+): RuntimeStreamUnsubscribe[] {
+  if (client.subscribeAll !== undefined && knownEventTypes !== null) {
+    const selectedEventTypes = new Set(eventTypes);
+    const knownEventTypeSet = new Set(knownEventTypes);
+    return [
+      client.subscribeAll((event) => {
+        if (
+          selectedEventTypes.has(event.type) ||
+          !knownEventTypeSet.has(event.type)
+        ) {
+          listener(event);
+        }
+      }),
+    ];
+  }
+  return eventTypes.map((eventType) => client.subscribe(eventType, listener));
+}
+
 function normalizeRuntimeStreamStoreEventTypes(
   eventTypes: readonly string[],
 ): string[] {
@@ -290,6 +321,19 @@ function normalizeRuntimeStreamStoreEventTypes(
       "Runtime stream event store requires at least one event type",
     );
   }
+  const uniqueEventTypes: string[] = [];
+  for (const eventType of eventTypes) {
+    assertRuntimeStreamStoreEventType(eventType);
+    if (!uniqueEventTypes.includes(eventType)) {
+      uniqueEventTypes.push(eventType);
+    }
+  }
+  return uniqueEventTypes;
+}
+
+function normalizeRuntimeStreamStoreKnownEventTypes(
+  eventTypes: readonly string[],
+): string[] {
   const uniqueEventTypes: string[] = [];
   for (const eventType of eventTypes) {
     assertRuntimeStreamStoreEventType(eventType);

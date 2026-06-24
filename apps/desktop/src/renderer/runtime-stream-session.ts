@@ -341,6 +341,7 @@ export function createRuntimeStreamInteractionSession(
   const store = createRuntimeStreamEventStore({
     clientOptions: options.clientOptions,
     eventTypes,
+    knownEventTypes: RUNTIME_STREAM_ALL_EVENT_TYPES,
     ...(options.maxEvents !== undefined
       ? { maxEvents: options.maxEvents }
       : {}),

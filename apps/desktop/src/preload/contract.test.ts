@@ -115,6 +115,7 @@ import {
   type OpenRuntimeStreamReconnectingClientOptions,
   openRuntimeStreamClient,
   openRuntimeStreamReconnectingClient,
+  RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE,
   RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE,
   type RuntimeStreamConnectionRequest,
   type RuntimeStreamEvent,
@@ -7353,6 +7354,66 @@ test("renderer runtime stream client dispatches parsed events with isolated payl
   assert.equal(client.isClosed(), true);
 });
 
+test("renderer runtime stream client dispatches unknown events through all-event subscription", async () => {
+  const eventSource = createFakeRuntimeStreamEventSource();
+  const eventErrors: unknown[] = [];
+  const events: Array<RuntimeStreamEvent<Record<string, unknown>>> = [];
+  const client = await openRuntimeStreamClient({
+    runtime: {
+      connectionInfo: async () => ({
+        base_url: "http://127.0.0.1:51234/cw/v1",
+        token: "token_abc123",
+      }),
+    },
+    channel: { kind: "run", runId: "run_01J" },
+    eventSourceFactory: () => eventSource.source,
+    onEventError: (error) => {
+      eventErrors.push(error);
+    },
+  });
+
+  if (client.subscribeAll === undefined) {
+    throw new Error("Runtime stream client all-event subscription is missing");
+  }
+
+  const unsubscribe = client.subscribeAll<Record<string, unknown>>((event) => {
+    events.push(event);
+  });
+  assert.equal(
+    eventSource.listenerCount(RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE),
+    1,
+  );
+
+  eventSource.emit("adapter.experimental_event", {
+    data: JSON.stringify({
+      event_id: "evt_unknown",
+      type: "adapter.experimental_event",
+      title: "Experimental",
+    }),
+    lastEventId: "evt_fallback",
+  });
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.id, "evt_unknown");
+  assert.equal(events[0]?.type, "adapter.experimental_event");
+  assert.equal(events[0]?.data.title, "Experimental");
+
+  eventSource.emit("adapter.experimental_event", {
+    data: JSON.stringify({
+      event_id: "evt_mismatch",
+      type: "model.text_delta",
+      title: "Mismatch",
+    }),
+  });
+  assert.equal(eventErrors.length, 1);
+  assert.equal(unsubscribe(), true);
+  assert.equal(unsubscribe(), false);
+  assert.equal(
+    eventSource.listenerCount(RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE),
+    0,
+  );
+  assert.equal(client.close(), true);
+});
+
 test("renderer runtime stream client rejects unsafe event subscriptions", async () => {
   const eventSource = createFakeRuntimeStreamEventSource();
   const client = await openRuntimeStreamClient({
@@ -8625,6 +8686,95 @@ test("renderer runtime stream session composes store view model and interaction"
       .length,
     0,
   );
+
+  assert.equal(session.dispose(), true);
+});
+
+test("renderer runtime stream session records configured and unknown events through all-event source", async () => {
+  const streamFactory = createFakeRuntimeStreamEventSourceFactory();
+  const session = createRuntimeStreamInteractionSession({
+    clientOptions: createRuntimeStreamEventStoreClientOptions({
+      eventSourceFactory: streamFactory.factory,
+    }),
+    eventTypes: ["model.text_delta"],
+  });
+
+  const started = await session.start();
+  assert.equal(started.store.status, "running");
+  const source = streamFactory.sources[0];
+  assert.ok(source !== undefined);
+  assert.equal(source.listenerCount(RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE), 1);
+  assert.equal(source.listenerCount("model.text_delta"), 0);
+  assert.equal(source.listenerCount("tool.call_started"), 0);
+
+  source.emit("tool.call_started", {
+    data: JSON.stringify({
+      event_id: "evt_unselected_known",
+      seq: 99,
+      type: "tool.call_started",
+      category: "tool",
+      display_level: "default",
+      severity: "info",
+      title: "Unselected tool call",
+      expandable: false,
+      payload: {},
+      artifact_refs: [],
+      created_at: "2026-06-21T00:00:00.001Z",
+    }),
+  });
+  assert.equal(session.snapshot().store.totalEvents, 0);
+
+  source.emit("model.text_delta", {
+    data: JSON.stringify({
+      event_id: "evt_selected_model",
+      seq: 100,
+      type: "model.text_delta",
+      category: "model",
+      display_level: "default",
+      severity: "info",
+      title: "Selected model event",
+      content: "hello",
+      expandable: false,
+      payload: {},
+      artifact_refs: [],
+      created_at: "2026-06-21T00:00:00.002Z",
+    }),
+  });
+
+  source.emit("adapter.experimental_event", {
+    data: JSON.stringify({
+      event_id: "evt_unknown_ingest",
+      seq: 101,
+      type: "adapter.experimental_event",
+      category: "system",
+      display_level: "default",
+      severity: "info",
+      title: "Experimental adapter event",
+      summary: "Forward compatible",
+      expandable: false,
+      payload: { hidden: "secret" },
+      artifact_refs: [],
+      created_at: "2026-06-21T00:00:00.003Z",
+    }),
+  });
+
+  const snapshot = session.snapshot();
+  assert.equal(snapshot.store.totalEvents, 2);
+  assert.equal(snapshot.interaction.view.visibleEventCount, 2);
+  assert.deepEqual(
+    snapshot.interaction.view.timelineItems.map((item) => item.id),
+    ["evt_selected_model", "evt_unknown_ingest"],
+  );
+  const item = snapshot.interaction.view.timelineItems[1];
+  assert.ok(item !== undefined);
+  assert.equal(item.id, "evt_unknown_ingest");
+  assert.equal(item.type, "adapter.experimental_event");
+  assert.equal(item.title, "Experimental adapter event");
+  assert.deepEqual(item.payloadSummary, {
+    present: true,
+    kind: "object",
+    keyCount: 1,
+  });
 
   assert.equal(session.dispose(), true);
 });
@@ -10240,8 +10390,17 @@ function createFakeRuntimeStreamEventSource(): {
       },
     },
     emit: (type, event) => {
+      const sourceEvent = { ...event, type };
       for (const listener of [...(listeners.get(type) ?? [])]) {
-        listener({ ...event, type });
+        listener(sourceEvent);
+      }
+      if (type === "error" || type === RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE) {
+        return;
+      }
+      for (const listener of [
+        ...(listeners.get(RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE) ?? []),
+      ]) {
+        listener(sourceEvent);
       }
     },
     listenerCount: (type) => listeners.get(type)?.size ?? 0,

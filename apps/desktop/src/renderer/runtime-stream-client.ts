@@ -9,6 +9,8 @@ import {
 export const RUNTIME_STREAM_DEFAULT_RETRY_MS = 3000;
 export const RUNTIME_STREAM_REPLAY_NOT_FOUND_CODE =
   "SE_SSE_REPLAY_NOT_FOUND" as const;
+export const RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE =
+  "__cw_all_events__" as const;
 
 export type RuntimeStreamDisplayLevel = "minimal" | "default" | "detailed";
 
@@ -98,6 +100,9 @@ export interface RuntimeStreamClient {
     eventType: string,
     listener: RuntimeStreamEventListener<TData>,
   ) => RuntimeStreamUnsubscribe;
+  readonly subscribeAll?: <TData = unknown>(
+    listener: RuntimeStreamEventListener<TData>,
+  ) => RuntimeStreamUnsubscribe;
   readonly close: () => boolean;
   readonly isClosed: () => boolean;
 }
@@ -184,6 +189,9 @@ export interface RuntimeStreamReconnectingClient {
     eventType: string,
     listener: RuntimeStreamEventListener<TData>,
   ) => RuntimeStreamUnsubscribe;
+  readonly subscribeAll?: <TData = unknown>(
+    listener: RuntimeStreamEventListener<TData>,
+  ) => RuntimeStreamUnsubscribe;
   readonly close: () => boolean;
   readonly isClosed: () => boolean;
   readonly activeRequest: () => RuntimeStreamConnectionRequest | null;
@@ -207,7 +215,7 @@ export interface OpenRuntimeStreamReconnectingClientOptions {
 }
 
 interface RuntimeStreamManagedSubscription {
-  readonly eventType: string;
+  readonly eventType: string | null;
   readonly listener: RuntimeStreamEventListener<unknown>;
   activeUnsubscribe: RuntimeStreamUnsubscribe | null;
   subscribed: boolean;
@@ -305,6 +313,38 @@ export async function openRuntimeStreamClient(
         return true;
       };
     },
+    subscribeAll: <TData>(listener: RuntimeStreamEventListener<TData>) => {
+      if (closed) {
+        return () => false;
+      }
+      const sourceListener: RuntimeStreamSourceListener = (event) => {
+        try {
+          listener(parseRuntimeStreamEvent<TData>(event.type, event));
+        } catch (error) {
+          reportEventError(error);
+        }
+      };
+      eventSource.addEventListener(
+        RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE,
+        sourceListener,
+      );
+      subscriptions.push({
+        eventType: RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE,
+        listener: sourceListener,
+      });
+      let subscribed = true;
+      return () => {
+        if (!subscribed) {
+          return false;
+        }
+        subscribed = false;
+        eventSource.removeEventListener(
+          RUNTIME_STREAM_ALL_EVENT_SOURCE_TYPE,
+          sourceListener,
+        );
+        return true;
+      };
+    },
     close: () => {
       if (closed) {
         return false;
@@ -391,13 +431,49 @@ export async function openRuntimeStreamReconnectingClient(
     if (!subscription.subscribed) {
       return;
     }
-    subscription.activeUnsubscribe = client.subscribe(
-      subscription.eventType,
-      (event) => {
-        replayState.recordEvent(event);
-        subscription.listener(event);
-      },
-    );
+    const handleEvent: RuntimeStreamEventListener<unknown> = (event) => {
+      replayState.recordEvent(event);
+      subscription.listener(event);
+    };
+    subscription.activeUnsubscribe =
+      subscription.eventType === null
+        ? (client.subscribeAll?.(handleEvent) ?? (() => false))
+        : client.subscribe(subscription.eventType, handleEvent);
+  };
+
+  const subscribeManaged = <TData>(
+    eventType: string | null,
+    listener: RuntimeStreamEventListener<TData>,
+  ): RuntimeStreamUnsubscribe => {
+    if (closed) {
+      return () => false;
+    }
+
+    const subscription: RuntimeStreamManagedSubscription = {
+      eventType,
+      listener: listener as RuntimeStreamEventListener<unknown>,
+      activeUnsubscribe: null,
+      subscribed: true,
+    };
+    subscriptions.push(subscription);
+
+    if (activeClient !== null) {
+      attachSubscription(activeClient, subscription);
+    }
+
+    return () => {
+      if (!subscription.subscribed) {
+        return false;
+      }
+      subscription.subscribed = false;
+      subscription.activeUnsubscribe?.();
+      subscription.activeUnsubscribe = null;
+      const index = subscriptions.indexOf(subscription);
+      if (index >= 0) {
+        subscriptions.splice(index, 1);
+      }
+      return true;
+    };
   };
 
   const connect = async (lastEventId: string | null): Promise<void> => {
@@ -480,32 +556,10 @@ export async function openRuntimeStreamReconnectingClient(
         return () => false;
       }
 
-      const subscription: RuntimeStreamManagedSubscription = {
-        eventType,
-        listener: listener as RuntimeStreamEventListener<unknown>,
-        activeUnsubscribe: null,
-        subscribed: true,
-      };
-      subscriptions.push(subscription);
-
-      if (activeClient !== null) {
-        attachSubscription(activeClient, subscription);
-      }
-
-      return () => {
-        if (!subscription.subscribed) {
-          return false;
-        }
-        subscription.subscribed = false;
-        subscription.activeUnsubscribe?.();
-        subscription.activeUnsubscribe = null;
-        const index = subscriptions.indexOf(subscription);
-        if (index >= 0) {
-          subscriptions.splice(index, 1);
-        }
-        return true;
-      };
+      return subscribeManaged(eventType, listener);
     },
+    subscribeAll: <TData>(listener: RuntimeStreamEventListener<TData>) =>
+      subscribeManaged(null, listener),
     close: () => {
       if (closed) {
         return false;
