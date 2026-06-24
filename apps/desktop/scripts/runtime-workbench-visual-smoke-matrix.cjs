@@ -29,6 +29,14 @@ const defaultCases = [
     scrollY: 0,
   },
   {
+    name: "chat-enabled-desktop",
+    mode: "known",
+    chatBoxMode: "enabled",
+    width: 1280,
+    height: 720,
+    scrollY: 0,
+  },
+  {
     name: "unknown-desktop",
     mode: "unknown",
     width: 1280,
@@ -95,20 +103,382 @@ function parseSafeLocation(url) {
   };
 }
 
-function buildCaseUrl(mode) {
+function getCaseChatBoxMode(testCase) {
+  return testCase.chatBoxMode === "enabled" ? "enabled" : "disabled";
+}
+
+function buildCaseUrl(testCase) {
   const parsedUrl = new URL(parsedBaseUrl.toString());
   parsedUrl.search = "";
   parsedUrl.hash = "";
-  if (mode === "unknown") {
+  if (testCase.mode === "unknown") {
     parsedUrl.searchParams.set("streamEvent", "unknown");
   }
+  if (getCaseChatBoxMode(testCase) === "enabled") {
+    parsedUrl.searchParams.set("chatBox", "enabled");
+  }
   return parsedUrl.toString();
+}
+
+function readMetric(metrics, key) {
+  if (!isRecord(metrics)) {
+    return null;
+  }
+  const value = metrics[key];
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    value === null
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function joinMetricList(metrics, key) {
+  if (!isRecord(metrics)) {
+    return "";
+  }
+  const value = metrics[key];
+  if (!Array.isArray(value)) {
+    return "";
+  }
+  return value.map((item) => String(item)).join(",");
+}
+
+function summarizeMetricList(metrics, key) {
+  if (!isRecord(metrics)) {
+    return null;
+  }
+  const value = metrics[key];
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  return value.map((item) => String(item));
+}
+
+function expectMetric(failures, label, metrics, key, expected) {
+  const actual = readMetric(metrics, key);
+  if (String(actual) !== String(expected)) {
+    failures.push(
+      `expected ${label} ${String(expected)}, got ${String(actual)}`,
+    );
+  }
+}
+
+function expectMetricList(failures, label, metrics, key, expected) {
+  const actual = joinMetricList(metrics, key);
+  if (actual !== expected) {
+    failures.push(`expected ${label} ${expected}, got ${actual}`);
+  }
+}
+
+function collectEnabledChatBoxFailures(result) {
+  const failures = [];
+  const first = result.chatLocalSubmitMetrics;
+  const history = result.chatLocalHistoryMetrics;
+  const cleared = result.chatLocalHistoryClearedMetrics;
+  const resend = result.chatLocalResendMetrics;
+
+  if (!isRecord(first)) {
+    failures.push("expected first local chat submission metrics");
+  }
+  if (!isRecord(history)) {
+    failures.push("expected capped local chat history metrics");
+  }
+  if (!isRecord(cleared)) {
+    failures.push("expected cleared local chat history metrics");
+  }
+  if (!isRecord(resend)) {
+    failures.push("expected local chat resend metrics");
+  }
+
+  expectMetric(
+    failures,
+    "first local submission present",
+    first,
+    "chatLocalSubmissionPresent",
+    true,
+  );
+  expectMetric(
+    failures,
+    "first local submission sequence",
+    first,
+    "chatLocalSubmissionSequence",
+    "1",
+  );
+  expectMetric(
+    failures,
+    "first local submission count",
+    first,
+    "chatLocalSubmissionCount",
+    "1",
+  );
+  expectMetric(
+    failures,
+    "first local submission status",
+    first,
+    "chatLocalSubmissionStatus",
+    "queued_local",
+  );
+  expectMetric(
+    failures,
+    "first local submission intent",
+    first,
+    "chatLocalSubmissionIntent",
+    "repair",
+  );
+  expectMetric(
+    failures,
+    "first local submission target",
+    first,
+    "chatLocalSubmissionTarget",
+    "repair",
+  );
+  expectMetric(
+    failures,
+    "first local submission action",
+    first,
+    "chatLocalSubmissionAction",
+    "repair_review",
+  );
+  expectMetric(
+    failures,
+    "first local submission characters",
+    first,
+    "chatLocalSubmissionCharacters",
+    "22",
+  );
+  expectMetric(
+    failures,
+    "first local submission words",
+    first,
+    "chatLocalSubmissionWords",
+    "4",
+  );
+  expectMetric(
+    failures,
+    "first local submission clear count",
+    first,
+    "chatLocalSubmissionClearCount",
+    "1",
+  );
+  expectMetric(
+    failures,
+    "first local submission history items",
+    first,
+    "chatLocalSubmissionHistoryItems",
+    1,
+  );
+  expectMetricList(
+    failures,
+    "first local submission history ids",
+    first,
+    "chatLocalSubmissionHistoryItemIds",
+    "1",
+  );
+
+  expectMetric(
+    failures,
+    "capped local history sequence",
+    history,
+    "chatLocalSubmissionSequence",
+    "4",
+  );
+  expectMetric(
+    failures,
+    "capped local history count",
+    history,
+    "chatLocalSubmissionCount",
+    "3",
+  );
+  expectMetric(
+    failures,
+    "capped local history status",
+    history,
+    "chatLocalSubmissionStatus",
+    "queued_local",
+  );
+  expectMetric(
+    failures,
+    "capped local history intent",
+    history,
+    "chatLocalSubmissionIntent",
+    "repair",
+  );
+  expectMetric(
+    failures,
+    "capped local history target",
+    history,
+    "chatLocalSubmissionTarget",
+    "repair",
+  );
+  expectMetric(
+    failures,
+    "capped local history action",
+    history,
+    "chatLocalSubmissionAction",
+    "repair_review",
+  );
+  expectMetric(
+    failures,
+    "capped local history characters",
+    history,
+    "chatLocalSubmissionCharacters",
+    "24",
+  );
+  expectMetric(
+    failures,
+    "capped local history words",
+    history,
+    "chatLocalSubmissionWords",
+    "3",
+  );
+  expectMetric(
+    failures,
+    "capped local history clear count",
+    history,
+    "chatLocalSubmissionClearCount",
+    "3",
+  );
+  expectMetric(
+    failures,
+    "capped local history items",
+    history,
+    "chatLocalSubmissionHistoryItems",
+    3,
+  );
+  expectMetricList(
+    failures,
+    "capped local history ids",
+    history,
+    "chatLocalSubmissionHistoryItemIds",
+    "4,3,2",
+  );
+  expectMetricList(
+    failures,
+    "capped local history statuses",
+    history,
+    "chatLocalSubmissionHistoryStatuses",
+    "queued_local,queued_local,queued_local",
+  );
+
+  expectMetric(
+    failures,
+    "cleared local history present",
+    cleared,
+    "chatLocalSubmissionPresent",
+    false,
+  );
+  expectMetric(
+    failures,
+    "cleared local history clear buttons",
+    cleared,
+    "chatLocalSubmissionClearButtons",
+    0,
+  );
+  expectMetric(
+    failures,
+    "cleared local history items",
+    cleared,
+    "chatLocalSubmissionHistoryItems",
+    0,
+  );
+  expectMetric(
+    failures,
+    "cleared local history draft intent",
+    cleared,
+    "chatDraftIntent",
+    "repair",
+  );
+  expectMetric(
+    failures,
+    "cleared local history draft send reason",
+    cleared,
+    "chatDraftSendReason",
+    "empty_draft",
+  );
+  expectMetric(
+    failures,
+    "cleared local history draft preview state",
+    cleared,
+    "chatDraftPreviewState",
+    "empty",
+  );
+
+  expectMetric(
+    failures,
+    "resend local submission sequence",
+    resend,
+    "chatLocalSubmissionSequence",
+    "5",
+  );
+  expectMetric(
+    failures,
+    "resend local submission count",
+    resend,
+    "chatLocalSubmissionCount",
+    "1",
+  );
+  expectMetric(
+    failures,
+    "resend local submission status",
+    resend,
+    "chatLocalSubmissionStatus",
+    "queued_local",
+  );
+  expectMetric(
+    failures,
+    "resend local submission intent",
+    resend,
+    "chatLocalSubmissionIntent",
+    "repair",
+  );
+  expectMetric(
+    failures,
+    "resend local submission target",
+    resend,
+    "chatLocalSubmissionTarget",
+    "repair",
+  );
+  expectMetric(
+    failures,
+    "resend local submission action",
+    resend,
+    "chatLocalSubmissionAction",
+    "repair_review",
+  );
+  expectMetric(
+    failures,
+    "resend local submission characters",
+    resend,
+    "chatLocalSubmissionCharacters",
+    "20",
+  );
+  expectMetric(
+    failures,
+    "resend local submission words",
+    resend,
+    "chatLocalSubmissionWords",
+    "3",
+  );
+  expectMetricList(
+    failures,
+    "resend local submission history ids",
+    resend,
+    "chatLocalSubmissionHistoryItemIds",
+    "5",
+  );
+
+  return failures;
 }
 
 function collectCaseFailures(testCase, result) {
   const failures = [];
   const jsonFailures = Array.isArray(result.failures) ? result.failures : [];
   const messages = Array.isArray(result.messages) ? result.messages : [];
+  const expectedChatBoxMode = getCaseChatBoxMode(testCase);
 
   if (result.streamEventMode !== testCase.mode) {
     failures.push(
@@ -119,6 +489,20 @@ function collectCaseFailures(testCase, result) {
     failures.push(
       `expected target mode ${testCase.mode}, got ${String(
         result.targetLocation?.streamEventMode,
+      )}`,
+    );
+  }
+  if (result.chatBoxMode !== expectedChatBoxMode) {
+    failures.push(
+      `expected chat mode ${expectedChatBoxMode}, got ${String(
+        result.chatBoxMode,
+      )}`,
+    );
+  }
+  if (result.targetLocation?.chatBoxMode !== expectedChatBoxMode) {
+    failures.push(
+      `expected target chat mode ${expectedChatBoxMode}, got ${String(
+        result.targetLocation?.chatBoxMode,
       )}`,
     );
   }
@@ -196,7 +580,7 @@ function collectCaseFailures(testCase, result) {
     );
   }
   if (jsonFailures.length > 0) {
-    failures.push(`case JSON contains failures: ${jsonFailures.join("; ")}`);
+    failures.push(`case JSON contains ${jsonFailures.length} failure(s)`);
   }
 
   const detailText =
@@ -252,6 +636,19 @@ function collectCaseFailures(testCase, result) {
     }
   }
 
+  if (expectedChatBoxMode === "enabled") {
+    failures.push(...collectEnabledChatBoxFailures(result));
+  } else if (
+    result.chatLocalSubmitMetrics != null ||
+    result.chatLocalHistoryMetrics != null ||
+    result.chatLocalHistoryClearedMetrics != null ||
+    result.chatLocalResendMetrics != null
+  ) {
+    failures.push(
+      "expected no local chat submission metrics for disabled chat",
+    );
+  }
+
   return failures;
 }
 
@@ -276,10 +673,67 @@ function summarizeProcessErrorCode(error) {
   return "UNKNOWN";
 }
 
+function summarizeChatLocalRecord(metrics) {
+  if (!isRecord(metrics)) {
+    return null;
+  }
+  return {
+    present: readMetric(metrics, "chatLocalSubmissionPresent"),
+    sequence: readMetric(metrics, "chatLocalSubmissionSequence"),
+    count: readMetric(metrics, "chatLocalSubmissionCount"),
+    status: readMetric(metrics, "chatLocalSubmissionStatus"),
+    intent: readMetric(metrics, "chatLocalSubmissionIntent"),
+    target: readMetric(metrics, "chatLocalSubmissionTarget"),
+    action: readMetric(metrics, "chatLocalSubmissionAction"),
+    characters: readMetric(metrics, "chatLocalSubmissionCharacters"),
+    words: readMetric(metrics, "chatLocalSubmissionWords"),
+    clearButtonCount: readMetric(metrics, "chatLocalSubmissionClearButtons"),
+    clearCount: readMetric(metrics, "chatLocalSubmissionClearCount"),
+    historyItems: readMetric(metrics, "chatLocalSubmissionHistoryItems"),
+    historyItemIds: summarizeMetricList(
+      metrics,
+      "chatLocalSubmissionHistoryItemIds",
+    ),
+    historyStatuses: summarizeMetricList(
+      metrics,
+      "chatLocalSubmissionHistoryStatuses",
+    ),
+  };
+}
+
+function summarizeChatClearedRecord(metrics) {
+  if (!isRecord(metrics)) {
+    return null;
+  }
+  return {
+    present: readMetric(metrics, "chatLocalSubmissionPresent"),
+    clearButtonCount: readMetric(metrics, "chatLocalSubmissionClearButtons"),
+    historyItems: readMetric(metrics, "chatLocalSubmissionHistoryItems"),
+    draftIntent: readMetric(metrics, "chatDraftIntent"),
+    draftSendReason: readMetric(metrics, "chatDraftSendReason"),
+    draftPreviewState: readMetric(metrics, "chatDraftPreviewState"),
+  };
+}
+
+function summarizeChatLocalEvidence(result) {
+  if (result?.chatBoxMode !== "enabled") {
+    return null;
+  }
+  return {
+    firstSubmission: summarizeChatLocalRecord(result.chatLocalSubmitMetrics),
+    cappedHistory: summarizeChatLocalRecord(result.chatLocalHistoryMetrics),
+    clearedHistory: summarizeChatClearedRecord(
+      result.chatLocalHistoryClearedMetrics,
+    ),
+    resendAfterClear: summarizeChatLocalRecord(result.chatLocalResendMetrics),
+  };
+}
+
 function summarizeCase(testCase, outputPath, result, runResult, failures) {
   return {
     name: testCase.name,
     mode: testCase.mode,
+    chatBoxMode: getCaseChatBoxMode(testCase),
     process: {
       exitCode: runResult.exitCode,
       signal: runResult.signal,
@@ -297,6 +751,7 @@ function summarizeCase(testCase, outputPath, result, runResult, failures) {
       ? result.messages.length
       : null,
     outputEvidence: summarizeOutputPath(outputPath),
+    chatLocalEvidence: summarizeChatLocalEvidence(result),
     failures,
   };
 }
@@ -304,7 +759,7 @@ function summarizeCase(testCase, outputPath, result, runResult, failures) {
 function runSmoke(testCase, outputPath) {
   const env = {
     ...process.env,
-    CW_VISUAL_SMOKE_URL: buildCaseUrl(testCase.mode),
+    CW_VISUAL_SMOKE_URL: buildCaseUrl(testCase),
     CW_VISUAL_SMOKE_OUTPUT: outputPath,
     CW_VISUAL_SMOKE_WIDTH: String(testCase.width),
     CW_VISUAL_SMOKE_HEIGHT: String(testCase.height),

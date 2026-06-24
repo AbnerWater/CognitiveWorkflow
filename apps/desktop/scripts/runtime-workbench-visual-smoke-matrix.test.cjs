@@ -26,15 +26,24 @@ const targetUrl = new URL(process.env.CW_VISUAL_SMOKE_URL);
 const mode = targetUrl.searchParams.get("streamEvent") === "unknown"
   ? "unknown"
   : "known";
+const chatBoxMode = targetUrl.searchParams.get("chatBox") === "enabled"
+  ? "enabled"
+  : "disabled";
 const urlFailures = [];
 if (targetUrl.hash !== "") {
   urlFailures.push("case URL hash was not stripped");
 }
-if (mode === "known" && targetUrl.search !== "") {
-  urlFailures.push("known case URL search was not stripped");
+const expectedSearchParams = new URLSearchParams();
+if (mode === "unknown") {
+  expectedSearchParams.set("streamEvent", "unknown");
 }
-if (mode === "unknown" && targetUrl.search !== "?streamEvent=unknown") {
-  urlFailures.push("unknown case URL search was not normalized");
+if (chatBoxMode === "enabled") {
+  expectedSearchParams.set("chatBox", "enabled");
+}
+const expectedSearch = expectedSearchParams.toString();
+const expectedSearchText = expectedSearch === "" ? "" : "?" + expectedSearch;
+if (targetUrl.search !== expectedSearchText) {
+  urlFailures.push("case URL search was not normalized");
 }
 if (
   process.env.CW_FAKE_EXPECTED_TARGET_ORIGIN !== undefined &&
@@ -56,7 +65,8 @@ const knownType = mode === "unknown" ? "false" : "true";
 const knownText = mode === "unknown" ? "Unknown event type" : "Known event type";
 const result = {
   streamEventMode: mode,
-  targetLocation: { streamEventMode: mode },
+  chatBoxMode,
+  targetLocation: { streamEventMode: mode, chatBoxMode },
   requestedViewport: { width, height, scrollY },
   captureSize: { width, height },
   metrics: {
@@ -75,6 +85,71 @@ const result = {
   failures: urlFailures,
   messages: [],
 };
+if (chatBoxMode === "enabled") {
+  Object.assign(result, {
+    chatDraftMetrics: {
+      chatDraftValue: "Review repair plan now",
+      chatDraftPreviewText: "Review repair plan now raw matrix draft",
+    },
+    chatLocalSubmitMetrics: {
+      chatLocalSubmissionPresent: true,
+      chatLocalSubmissionAction: "repair_review",
+      chatLocalSubmissionCharacters: "22",
+      chatLocalSubmissionClearCount: "1",
+      chatLocalSubmissionCount: "1",
+      chatLocalSubmissionHistoryItemIds: ["1"],
+      chatLocalSubmissionHistoryItems: 1,
+      chatLocalSubmissionIntent: "repair",
+      chatLocalSubmissionSequence: "1",
+      chatLocalSubmissionStatus: "queued_local",
+      chatLocalSubmissionTarget: "repair",
+      chatLocalSubmissionText: "Review repair plan now raw matrix draft",
+      chatLocalSubmissionWords: "4",
+    },
+    chatLocalHistoryMetrics: {
+      chatLocalSubmissionPresent: true,
+      chatLocalSubmissionAction: "repair_review",
+      chatLocalSubmissionCharacters: "24",
+      chatLocalSubmissionClearCount: "3",
+      chatLocalSubmissionCount: "3",
+      chatLocalSubmissionHistoryItemIds: ["4", "3", "2"],
+      chatLocalSubmissionHistoryItems: 3,
+      chatLocalSubmissionHistoryStatuses: [
+        "queued_local",
+        "queued_local",
+        "queued_local",
+      ],
+      chatLocalSubmissionIntent: "repair",
+      chatLocalSubmissionSequence: "4",
+      chatLocalSubmissionStatus: "queued_local",
+      chatLocalSubmissionTarget: "repair",
+      chatLocalSubmissionText: "Confirm workflow handoff raw matrix draft",
+      chatLocalSubmissionWords: "3",
+    },
+    chatLocalHistoryClearedMetrics: {
+      chatDraftIntent: "repair",
+      chatDraftPreviewState: "empty",
+      chatDraftSendReason: "empty_draft",
+      chatLocalSubmissionClearButtons: 0,
+      chatLocalSubmissionHistoryItems: 0,
+      chatLocalSubmissionPresent: false,
+    },
+    chatLocalResendMetrics: {
+      chatLocalSubmissionPresent: true,
+      chatLocalSubmissionAction: "repair_review",
+      chatLocalSubmissionCharacters: "20",
+      chatLocalSubmissionCount: "1",
+      chatLocalSubmissionHistoryItemIds: ["5"],
+      chatLocalSubmissionHistoryItems: 1,
+      chatLocalSubmissionIntent: "repair",
+      chatLocalSubmissionSequence: "5",
+      chatLocalSubmissionStatus: "queued_local",
+      chatLocalSubmissionTarget: "repair",
+      chatLocalSubmissionText: "Resume local request raw matrix draft",
+      chatLocalSubmissionWords: "3",
+    },
+  });
+}
 fs.writeFileSync(
   \`\${process.env.CW_VISUAL_SMOKE_OUTPUT}.json\`,
   JSON.stringify(result),
@@ -179,6 +254,7 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     );
     const knownDesktop = caseByName.get("known-desktop");
     const knownMobile = caseByName.get("known-mobile");
+    const chatEnabled = caseByName.get("chat-enabled-desktop");
     const unknownDesktop = caseByName.get("unknown-desktop");
     const unknownScroll = caseByName.get("unknown-mobile-scroll-1440");
 
@@ -186,10 +262,10 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     assert.equal(result.signal, null);
     assert.equal(result.stderr, "");
     assert.equal(result.manifest.failures.length, 0);
-    assert.equal(result.manifest.cases.length, 6);
+    assert.equal(result.manifest.cases.length, 7);
     assert.deepEqual(result.manifest.outputEvidence, {
       manifestFileName: "matrix.json",
-      caseCount: 6,
+      caseCount: 7,
     });
     assert.equal("outputDir" in result.manifest, false);
     assert.equal(
@@ -199,6 +275,7 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     assert.equal(result.manifest.targetLocation.pathname, "/visual-smoke.html");
     assert.ok(knownDesktop);
     assert.equal(knownDesktop?.mode, "known");
+    assert.equal(knownDesktop?.chatBoxMode, "disabled");
     assert.equal(knownDesktop?.process.exitCode, 0);
     assert.equal(knownDesktop?.process.stderrLength, 0);
     assert.equal(knownDesktop?.messageCount, 0);
@@ -210,6 +287,7 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     assert.equal("jsonPath" in knownDesktop, false);
     assert.deepEqual(knownDesktop?.failures, []);
     assert.equal(knownMobile?.mode, "known");
+    assert.equal(knownMobile?.chatBoxMode, "disabled");
     assert.deepEqual(knownMobile?.requestedViewport, {
       width: 390,
       height: 844,
@@ -220,15 +298,89 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       height: 844,
     });
     assert.deepEqual(knownMobile?.failures, []);
+    assert.equal(chatEnabled?.mode, "known");
+    assert.equal(chatEnabled?.chatBoxMode, "enabled");
+    assert.deepEqual(chatEnabled?.requestedViewport, {
+      width: 1280,
+      height: 720,
+      scrollY: 0,
+    });
+    assert.deepEqual(chatEnabled?.targetLocation, {
+      streamEventMode: "known",
+      chatBoxMode: "enabled",
+    });
+    assert.deepEqual(chatEnabled?.chatLocalEvidence, {
+      firstSubmission: {
+        present: true,
+        sequence: "1",
+        count: "1",
+        status: "queued_local",
+        intent: "repair",
+        target: "repair",
+        action: "repair_review",
+        characters: "22",
+        words: "4",
+        clearButtonCount: null,
+        clearCount: "1",
+        historyItems: 1,
+        historyItemIds: ["1"],
+        historyStatuses: null,
+      },
+      cappedHistory: {
+        present: true,
+        sequence: "4",
+        count: "3",
+        status: "queued_local",
+        intent: "repair",
+        target: "repair",
+        action: "repair_review",
+        characters: "24",
+        words: "3",
+        clearButtonCount: null,
+        clearCount: "3",
+        historyItems: 3,
+        historyItemIds: ["4", "3", "2"],
+        historyStatuses: ["queued_local", "queued_local", "queued_local"],
+      },
+      clearedHistory: {
+        present: false,
+        clearButtonCount: 0,
+        historyItems: 0,
+        draftIntent: "repair",
+        draftSendReason: "empty_draft",
+        draftPreviewState: "empty",
+      },
+      resendAfterClear: {
+        present: true,
+        sequence: "5",
+        count: "1",
+        status: "queued_local",
+        intent: "repair",
+        target: "repair",
+        action: "repair_review",
+        characters: "20",
+        words: "3",
+        clearButtonCount: null,
+        clearCount: null,
+        historyItems: 1,
+        historyItemIds: ["5"],
+        historyStatuses: null,
+      },
+    });
+    assert.deepEqual(chatEnabled?.failures, []);
     assert.equal(unknownDesktop?.mode, "unknown");
+    assert.equal(unknownDesktop?.chatBoxMode, "disabled");
     assert.deepEqual(unknownDesktop?.failures, []);
     assert.equal(unknownScroll?.observedScroll.y, 1440);
     assert.equal(unknownScroll?.observedScroll.maxY, 2000);
     assert.deepEqual(
       result.manifest.cases.map((testCase) => testCase.failures),
-      [[], [], [], [], [], []],
+      [[], [], [], [], [], [], []],
     );
     assertSafeOutput(result, [
+      "Review repair plan now",
+      "Confirm workflow handoff",
+      "Resume local request",
       "query-secret",
       "hash-secret",
       "matrix-output-secret",
@@ -258,7 +410,7 @@ test("visual smoke matrix prefers matrix URL over legacy URL", async () => {
     assert.equal(result.signal, null);
     assert.equal(result.stderr, "");
     assert.equal(result.manifest.failures.length, 0);
-    assert.equal(result.manifest.cases.length, 6);
+    assert.equal(result.manifest.cases.length, 7);
     assert.equal(
       result.manifest.targetLocation.origin,
       "http://127.0.0.1:5176",
@@ -266,7 +418,7 @@ test("visual smoke matrix prefers matrix URL over legacy URL", async () => {
     assert.equal(result.manifest.targetLocation.pathname, "/matrix-smoke.html");
     assert.deepEqual(
       result.manifest.cases.map((testCase) => testCase.failures),
-      [[], [], [], [], [], []],
+      [[], [], [], [], [], [], []],
     );
     assertSafeOutput(result, [
       "matrix-secret",
@@ -292,7 +444,7 @@ test("visual smoke matrix accepts legacy single-case URL fallback", async () => 
     assert.equal(result.signal, null);
     assert.equal(result.stderr, "");
     assert.equal(result.manifest.failures.length, 0);
-    assert.equal(result.manifest.cases.length, 6);
+    assert.equal(result.manifest.cases.length, 7);
     assert.deepEqual(
       result.manifest.cases.map((testCase) => [
         testCase.name,
@@ -304,6 +456,7 @@ test("visual smoke matrix accepts legacy single-case URL fallback", async () => 
       [
         ["known-desktop", "known", 1280, 720, 0],
         ["known-mobile", "known", 390, 844, 0],
+        ["chat-enabled-desktop", "known", 1280, 720, 0],
         ["unknown-desktop", "unknown", 1280, 720, 0],
         ["unknown-mobile", "unknown", 390, 844, 0],
         ["unknown-mobile-scroll-900", "unknown", 390, 844, 900],
@@ -471,8 +624,8 @@ process.stderr.write("raw-child-stderr-secret");
 
     assert.equal(result.exitCode, 1);
     assert.equal(result.signal, null);
-    assert.equal(result.manifest.cases.length, 6);
-    assert.equal(result.manifest.failures.length, 6);
+    assert.equal(result.manifest.cases.length, 7);
+    assert.equal(result.manifest.failures.length, 7);
     assert.equal(
       result.manifest.targetLocation.origin,
       "http://127.0.0.1:5174",
@@ -505,6 +658,137 @@ process.stderr.write("raw-child-stderr-secret");
   });
 });
 
+test("visual smoke matrix sanitizes child failure text", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-child-failures-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        `
+const fs = require("node:fs");
+const targetUrl = new URL(process.env.CW_VISUAL_SMOKE_URL);
+const mode = targetUrl.searchParams.get("streamEvent") === "unknown"
+  ? "unknown"
+  : "known";
+const chatBoxMode = targetUrl.searchParams.get("chatBox") === "enabled"
+  ? "enabled"
+  : "disabled";
+const width = Number(process.env.CW_VISUAL_SMOKE_WIDTH);
+const height = Number(process.env.CW_VISUAL_SMOKE_HEIGHT);
+const scrollY = Number(process.env.CW_VISUAL_SMOKE_SCROLL_Y);
+const maxY = 2000;
+const knownType = mode === "unknown" ? "false" : "true";
+const knownText = mode === "unknown" ? "Unknown event type" : "Known event type";
+const failures = chatBoxMode === "enabled"
+  ? ["raw child failure leaked Review repair plan now and Resume local request"]
+  : [];
+const result = {
+  streamEventMode: mode,
+  chatBoxMode,
+  targetLocation: { streamEventMode: mode, chatBoxMode },
+  requestedViewport: { width, height, scrollY },
+  captureSize: { width, height },
+  metrics: {
+    viewport: { width, height },
+    scroll: { x: 0, y: Math.min(scrollY, maxY), maxY },
+    horizontalOverflow: 0,
+  },
+  streamEventExpandedMetrics: {
+    streamEventDetailKnownType: knownType,
+    streamEventDetailText: knownText,
+  },
+  streamSelectionMetadataExpandedMetrics: {
+    streamSelectionMetadataKnownType: knownType,
+    streamSelectionMetadataText: knownText,
+  },
+  chatLocalSubmitMetrics: chatBoxMode === "enabled" ? {
+    chatLocalSubmissionPresent: true,
+    chatLocalSubmissionAction: "repair_review",
+    chatLocalSubmissionCharacters: "22",
+    chatLocalSubmissionClearCount: "1",
+    chatLocalSubmissionCount: "1",
+    chatLocalSubmissionHistoryItemIds: ["1"],
+    chatLocalSubmissionHistoryItems: 1,
+    chatLocalSubmissionIntent: "repair",
+    chatLocalSubmissionSequence: "1",
+    chatLocalSubmissionStatus: "queued_local",
+    chatLocalSubmissionTarget: "repair",
+    chatLocalSubmissionWords: "4",
+  } : null,
+  chatLocalHistoryMetrics: chatBoxMode === "enabled" ? {
+    chatLocalSubmissionPresent: true,
+    chatLocalSubmissionAction: "repair_review",
+    chatLocalSubmissionCharacters: "24",
+    chatLocalSubmissionClearCount: "3",
+    chatLocalSubmissionCount: "3",
+    chatLocalSubmissionHistoryItemIds: ["4", "3", "2"],
+    chatLocalSubmissionHistoryItems: 3,
+    chatLocalSubmissionHistoryStatuses: [
+      "queued_local",
+      "queued_local",
+      "queued_local",
+    ],
+    chatLocalSubmissionIntent: "repair",
+    chatLocalSubmissionSequence: "4",
+    chatLocalSubmissionStatus: "queued_local",
+    chatLocalSubmissionTarget: "repair",
+    chatLocalSubmissionWords: "3",
+  } : null,
+  chatLocalHistoryClearedMetrics: chatBoxMode === "enabled" ? {
+    chatDraftIntent: "repair",
+    chatDraftPreviewState: "empty",
+    chatDraftSendReason: "empty_draft",
+    chatLocalSubmissionClearButtons: 0,
+    chatLocalSubmissionHistoryItems: 0,
+    chatLocalSubmissionPresent: false,
+  } : null,
+  chatLocalResendMetrics: chatBoxMode === "enabled" ? {
+    chatLocalSubmissionPresent: true,
+    chatLocalSubmissionAction: "repair_review",
+    chatLocalSubmissionCharacters: "20",
+    chatLocalSubmissionCount: "1",
+    chatLocalSubmissionHistoryItemIds: ["5"],
+    chatLocalSubmissionHistoryItems: 1,
+    chatLocalSubmissionIntent: "repair",
+    chatLocalSubmissionSequence: "5",
+    chatLocalSubmissionStatus: "queued_local",
+    chatLocalSubmissionTarget: "repair",
+    chatLocalSubmissionWords: "3",
+  } : null,
+  failures,
+  messages: [],
+};
+fs.writeFileSync(
+  \`\${process.env.CW_VISUAL_SMOKE_OUTPUT}.json\`,
+  JSON.stringify(result),
+);
+`,
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath);
+      const childFailureCase = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-desktop",
+      );
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.manifest.cases.length, 7);
+      assert.equal(result.manifest.failures.length, 1);
+      assert.deepEqual(childFailureCase?.failures, [
+        "case JSON contains 1 failure(s)",
+      ]);
+      assertSafeOutput(result, [
+        "raw child failure",
+        "Review repair plan now",
+        "Resume local request",
+        "query-secret",
+        "hash-secret",
+        tempDir,
+      ]);
+    },
+  );
+});
+
 test("visual smoke matrix rejects non-object JSON roots", async () => {
   await withTempDir("cw-visual-smoke-matrix-null-root-", async (tempDir) => {
     const fakeElectronCliPath = await writeFakeElectronCli(
@@ -520,8 +804,8 @@ process.stdout.write("\\n");
     const firstCase = result.manifest.cases[0];
 
     assert.equal(result.exitCode, 1);
-    assert.equal(result.manifest.cases.length, 6);
-    assert.equal(result.manifest.failures.length, 6);
+    assert.equal(result.manifest.cases.length, 7);
+    assert.equal(result.manifest.failures.length, 7);
     assert.deepEqual(firstCase.failures, ["case JSON root was not an object"]);
     assert.equal(firstCase.process.exitCode, 0);
     assert.equal(firstCase.process.stdoutLength, 1);
@@ -546,8 +830,8 @@ process.stderr.write("missing-json-stderr-secret");
 
     assert.equal(result.exitCode, 1);
     assert.equal(result.signal, null);
-    assert.equal(result.manifest.cases.length, 6);
-    assert.equal(result.manifest.failures.length, 6);
+    assert.equal(result.manifest.cases.length, 7);
+    assert.equal(result.manifest.failures.length, 7);
     assert.equal(firstCase.process.exitCode, 0);
     assert.equal(
       firstCase.process.stdoutLength,
@@ -592,8 +876,8 @@ process.exit(7);
 
     assert.equal(result.exitCode, 1);
     assert.equal(result.signal, null);
-    assert.equal(result.manifest.cases.length, 6);
-    assert.equal(result.manifest.failures.length, 6);
+    assert.equal(result.manifest.cases.length, 7);
+    assert.equal(result.manifest.failures.length, 7);
     assert.equal(firstCase.process.exitCode, 7);
     assert.equal(
       firstCase.process.stdoutLength,
@@ -638,6 +922,9 @@ const targetUrl = new URL(process.env.CW_VISUAL_SMOKE_URL);
 const mode = targetUrl.searchParams.get("streamEvent") === "unknown"
   ? "unknown"
   : "known";
+const chatBoxMode = targetUrl.searchParams.get("chatBox") === "enabled"
+  ? "enabled"
+  : "disabled";
 const width = Number(process.env.CW_VISUAL_SMOKE_WIDTH);
 const height = Number(process.env.CW_VISUAL_SMOKE_HEIGHT);
 const scrollY = Number(process.env.CW_VISUAL_SMOKE_SCROLL_Y);
@@ -646,7 +933,8 @@ const knownType = mode === "unknown" ? "false" : "true";
 const knownText = mode === "unknown" ? "Unknown event type" : "Known event type";
 const result = {
   streamEventMode: mode,
-  targetLocation: { streamEventMode: mode },
+  chatBoxMode,
+  targetLocation: { streamEventMode: mode, chatBoxMode },
   requestedViewport: { width, height, scrollY },
   captureSize: { width, height },
   metrics: {
@@ -676,8 +964,8 @@ fs.writeFileSync(
       const firstCase = result.manifest.cases[0];
 
       assert.equal(result.exitCode, 1);
-      assert.equal(result.manifest.cases.length, 6);
-      assert.equal(result.manifest.failures.length, 6);
+      assert.equal(result.manifest.cases.length, 7);
+      assert.equal(result.manifest.failures.length, 7);
       assert.equal(firstCase.messageCount, 2);
       assert.deepEqual(firstCase.failures, [
         "expected no console warning/error messages, got 2",
