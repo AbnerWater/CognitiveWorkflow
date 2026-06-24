@@ -14,6 +14,7 @@ const {
   targetLocation,
   outputEvidence,
   streamEventMode,
+  chatBoxMode,
 } = resolveVisualSmokePreflight(process.env);
 const expectedSelectedTitle = "Startup timed out after bounded wait";
 
@@ -44,6 +45,14 @@ function expectedStreamEvent(mode) {
     typeStatusLabel: "Known event type",
     unknownBadgeCount: 0,
   };
+}
+
+function countChatDraftWords(draft) {
+  const trimmedDraft = draft.trim();
+  if (trimmedDraft.length === 0) {
+    return 0;
+  }
+  return trimmedDraft.split(/\s+/u).length;
 }
 
 async function readMetrics(window) {
@@ -686,6 +695,46 @@ async function readMetrics(window) {
         document.querySelector('[data-chat-send-guard="true"]')?.getAttribute('data-chat-send-guard-reason') ?? null,
       chatSendGuardText:
         document.querySelector('[data-chat-send-guard="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
+      chatLocalSubmissionPresent:
+        document.querySelector('[data-chat-local-submit="true"]') !== null,
+      chatLocalSubmissionAction:
+        document.querySelector('[data-chat-local-submit="true"]')?.getAttribute('data-chat-local-submit-action') ?? null,
+      chatLocalSubmissionCharacters:
+        document.querySelector('[data-chat-local-submit="true"]')?.getAttribute('data-chat-local-submit-characters') ?? null,
+      chatLocalSubmissionCount:
+        document.querySelector('[data-chat-local-submit="true"]')?.getAttribute('data-chat-local-submit-count') ?? null,
+      chatLocalSubmissionIntent:
+        document.querySelector('[data-chat-local-submit="true"]')?.getAttribute('data-chat-local-submit-intent') ?? null,
+      chatLocalSubmissionIntentLabel:
+        document.querySelector('[data-chat-local-submit="true"]')?.getAttribute('data-chat-local-submit-intent-label') ?? null,
+      chatLocalSubmissionSequence:
+        document.querySelector('[data-chat-local-submit="true"]')?.getAttribute('data-chat-local-submit-sequence') ?? null,
+      chatLocalSubmissionStatus:
+        document.querySelector('[data-chat-local-submit="true"]')?.getAttribute('data-chat-local-submit-status') ?? null,
+      chatLocalSubmissionTarget:
+        document.querySelector('[data-chat-local-submit="true"]')?.getAttribute('data-chat-local-submit-target') ?? null,
+      chatLocalSubmissionWords:
+        document.querySelector('[data-chat-local-submit="true"]')?.getAttribute('data-chat-local-submit-words') ?? null,
+      chatLocalSubmissionClearButtons:
+        document.querySelectorAll('[data-chat-local-submit-clear="true"]').length,
+      chatLocalSubmissionClearCount:
+        document.querySelector('[data-chat-local-submit-clear="true"]')?.getAttribute('data-chat-local-submit-clear-count') ?? null,
+      chatLocalSubmissionHistoryItems:
+        document.querySelectorAll('[data-chat-local-submit-history-item]').length,
+      chatLocalSubmissionHistoryItemIds:
+        Array.from(
+          document.querySelectorAll('[data-chat-local-submit-history-item]'),
+          (element) => element.getAttribute('data-chat-local-submit-history-item')
+        ).filter(Boolean),
+      chatLocalSubmissionHistoryCurrentItem:
+        document.querySelector('[data-chat-local-submit-history-current="true"]')?.getAttribute('data-chat-local-submit-history-item') ?? null,
+      chatLocalSubmissionHistoryStatuses:
+        Array.from(
+          document.querySelectorAll('[data-chat-local-submit-history-status]'),
+          (element) => element.getAttribute('data-chat-local-submit-history-status')
+        ).filter(Boolean),
+      chatLocalSubmissionText:
+        document.querySelector('[data-chat-local-submit="true"]')?.textContent?.replace(/\\s+/g, ' ').trim() ?? null,
       chatCollapsedSummary:
         document.querySelector('.cw-workbench__chat-collapsed')?.textContent ?? null,
       timelineItems: document.querySelectorAll('.cw-workbench__lifecycle-item').length,
@@ -1511,6 +1560,158 @@ async function clearChatDraft(window) {
   }
 }
 
+async function sendChatDraft(window, draft, expected) {
+  await inputChatDraft(window, draft);
+  const expectedSubmission = {
+    sequence: String(expected.sequence),
+    count: String(expected.count),
+    status: expected.status,
+    intent: expected.intent,
+    target: expected.target,
+    action: expected.action,
+    characters: String(draft.length),
+    words: String(countChatDraftWords(draft)),
+    forbiddenDraft: draft,
+  };
+  const expectedLiteral = JSON.stringify(expectedSubmission);
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expected = ${expectedLiteral};
+      const button = document.querySelector('[data-chat-send="true"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        resolve({ ok: false, message: 'Missing chat send button' });
+        return;
+      }
+      if (button.disabled) {
+        resolve({
+          ok: false,
+          message: 'Chat send button is disabled',
+          sendReason: button.getAttribute('data-chat-send-reason') ?? null,
+        });
+        return;
+      }
+      button.click();
+      const startedAt = Date.now();
+      const readSubmission = () => {
+        const section = document.querySelector('[data-chat-local-submit="true"]');
+        const historyItems = Array.from(
+          document.querySelectorAll('[data-chat-local-submit-history-item]'),
+          (element) => element.getAttribute('data-chat-local-submit-history-item')
+        ).filter(Boolean);
+        const historyStatuses = Array.from(
+          document.querySelectorAll('[data-chat-local-submit-history-status]'),
+          (element) => element.getAttribute('data-chat-local-submit-history-status')
+        ).filter(Boolean);
+        const attributesContainRawDraft = section === null
+          ? false
+          : Array.from(section.querySelectorAll('*')).some((element) =>
+              Array.from(element.attributes).some((attribute) =>
+                attribute.value.includes(expected.forbiddenDraft)
+              )
+            ) ||
+            Array.from(section.attributes).some((attribute) =>
+              attribute.value.includes(expected.forbiddenDraft)
+            );
+        const textContainsRawDraft =
+          section?.textContent?.includes(expected.forbiddenDraft) ?? false;
+        return {
+          present: section !== null,
+          action:
+            section?.getAttribute('data-chat-local-submit-action') ?? null,
+          characters:
+            section?.getAttribute('data-chat-local-submit-characters') ?? null,
+          count: section?.getAttribute('data-chat-local-submit-count') ?? null,
+          intent: section?.getAttribute('data-chat-local-submit-intent') ?? null,
+          sequence:
+            section?.getAttribute('data-chat-local-submit-sequence') ?? null,
+          status: section?.getAttribute('data-chat-local-submit-status') ?? null,
+          target: section?.getAttribute('data-chat-local-submit-target') ?? null,
+          words: section?.getAttribute('data-chat-local-submit-words') ?? null,
+          historyItems,
+          historyStatuses,
+          containsRawDraft: attributesContainRawDraft || textContainsRawDraft,
+          draftValue:
+            document.querySelector('[data-chat-draft-input="true"]')?.value ?? null,
+        };
+      };
+      const waitForSubmission = () => {
+        const actual = readSubmission();
+        if (
+          actual.present === true &&
+          actual.sequence === expected.sequence &&
+          actual.count === expected.count &&
+          actual.status === expected.status &&
+          actual.intent === expected.intent &&
+          actual.target === expected.target &&
+          actual.action === expected.action &&
+          actual.characters === expected.characters &&
+          actual.words === expected.words &&
+          actual.draftValue === '' &&
+          actual.containsRawDraft === false
+        ) {
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Chat local submission did not match expected metadata',
+            actual,
+          });
+          return;
+        }
+        window.requestAnimationFrame(waitForSubmission);
+      };
+      waitForSubmission();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
+async function clearChatLocalSubmissionHistory(window) {
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const button = document.querySelector('[data-chat-local-submit-clear="true"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        resolve({ ok: false, message: 'Missing chat local history clear button' });
+        return;
+      }
+      button.click();
+      const startedAt = Date.now();
+      const waitForClear = () => {
+        const section = document.querySelector('[data-chat-local-submit="true"]');
+        const clearButtons = document.querySelectorAll(
+          '[data-chat-local-submit-clear="true"]'
+        ).length;
+        const historyItems = document.querySelectorAll(
+          '[data-chat-local-submit-history-item]'
+        ).length;
+        if (section === null && clearButtons === 0 && historyItems === 0) {
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Chat local submission history did not clear',
+            present: section !== null,
+            clearButtons,
+            historyItems,
+          });
+          return;
+        }
+        window.requestAnimationFrame(waitForClear);
+      };
+      waitForClear();
+    })
+  `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
+}
+
 async function clickChatDraftIntent(window, intent) {
   const intentLiteral = JSON.stringify(intent);
   const result = await window.webContents.executeJavaScript(`
@@ -1734,6 +1935,7 @@ function collectVisualSmokeFailures(
   messages,
   requestedWidth,
   requestedStreamEventMode,
+  requestedChatBoxMode,
   initialStreamMetrics,
   streamEventExpandedMetrics,
   streamEventCollapsedMetrics,
@@ -1763,6 +1965,10 @@ function collectVisualSmokeFailures(
   chatInitialMetrics,
   chatDraftMetrics,
   chatClearedMetrics,
+  chatLocalSubmitMetrics,
+  chatLocalHistoryMetrics,
+  chatLocalHistoryClearedMetrics,
+  chatLocalResendMetrics,
   canvasMetrics,
   canvasNodeTypeFocusMetrics,
   canvasNodeTypeFocusPreMatchMetrics,
@@ -4404,21 +4610,6 @@ function collectVisualSmokeFailures(
       `expected chat draft details intent label Repair, got ${chatDraftMetrics.chatDraftIntentLabel}`,
     );
   }
-  if (chatDraftMetrics.chatDraftPreviewState !== "blocked") {
-    failures.push(
-      `expected chat draft preview state blocked, got ${chatDraftMetrics.chatDraftPreviewState}`,
-    );
-  }
-  if (chatDraftMetrics.chatDraftPreviewReason !== "chat_disabled") {
-    failures.push(
-      `expected chat draft preview reason chat_disabled, got ${chatDraftMetrics.chatDraftPreviewReason}`,
-    );
-  }
-  if (chatDraftMetrics.chatDraftPreviewReady !== "false") {
-    failures.push(
-      `expected chat draft preview ready false, got ${chatDraftMetrics.chatDraftPreviewReady}`,
-    );
-  }
   if (chatDraftMetrics.chatDraftPreviewIntent !== "repair") {
     failures.push(
       `expected chat draft preview intent repair, got ${chatDraftMetrics.chatDraftPreviewIntent}`,
@@ -4459,38 +4650,6 @@ function collectVisualSmokeFailures(
       `expected chat draft status Idle, got ${chatDraftMetrics.chatDraftStatus}`,
     );
   }
-  if (chatDraftMetrics.chatDraftSendEnabled !== "false") {
-    failures.push(
-      `expected chat draft send-enabled false, got ${chatDraftMetrics.chatDraftSendEnabled}`,
-    );
-  }
-  if (chatDraftMetrics.chatDraftSendReason !== "chat_disabled") {
-    failures.push(
-      `expected chat draft send reason chat_disabled, got ${chatDraftMetrics.chatDraftSendReason}`,
-    );
-  }
-  if (chatDraftMetrics.chatSendReason !== "chat_disabled") {
-    failures.push(
-      `expected chat send reason chat_disabled after draft, got ${chatDraftMetrics.chatSendReason}`,
-    );
-  }
-  if (chatDraftMetrics.chatSendGuardEnabled !== "false") {
-    failures.push(
-      `expected chat send guard enabled false after draft, got ${chatDraftMetrics.chatSendGuardEnabled}`,
-    );
-  }
-  if (chatDraftMetrics.chatSendGuardReason !== "chat_disabled") {
-    failures.push(
-      `expected chat send guard reason chat_disabled after draft, got ${chatDraftMetrics.chatSendGuardReason}`,
-    );
-  }
-  if (
-    chatDraftMetrics.chatSendGuardText !== "Send unavailable: Chat disabled"
-  ) {
-    failures.push(
-      `expected chat send guard text for disabled chat, got ${chatDraftMetrics.chatSendGuardText}`,
-    );
-  }
   if (
     !chatDraftMetrics.chatDraftDetailsText?.includes("Characters") ||
     !chatDraftMetrics.chatDraftDetailsText?.includes("22") ||
@@ -4503,108 +4662,403 @@ function collectVisualSmokeFailures(
       `expected chat draft visible details to include Characters 22, Words 4, and Intent Repair, got ${chatDraftMetrics.chatDraftDetailsText}`,
     );
   }
-  if (
-    !chatDraftMetrics.chatDraftPreviewText?.includes("Preview") ||
-    !chatDraftMetrics.chatDraftPreviewText?.includes("Blocked") ||
-    !chatDraftMetrics.chatDraftPreviewText?.includes(
-      "Review repair plan now",
-    ) ||
-    !chatDraftMetrics.chatDraftPreviewText?.includes("Repair") ||
-    !chatDraftMetrics.chatDraftPreviewText?.includes("Repair plan") ||
-    !chatDraftMetrics.chatDraftPreviewText?.includes("Repair review") ||
-    !chatDraftMetrics.chatDraftPreviewText?.includes("Chat disabled")
-  ) {
-    failures.push(
-      `expected chat draft preview text to include blocked Repair context preview, got ${chatDraftMetrics.chatDraftPreviewText}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftValue !== "") {
-    failures.push(
-      `expected cleared chat draft value to be empty, got ${chatClearedMetrics.chatDraftValue}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftLength !== "0") {
-    failures.push(
-      `expected cleared chat draft length 0, got ${chatClearedMetrics.chatDraftLength}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftWords !== "0") {
-    failures.push(
-      `expected cleared chat draft words 0, got ${chatClearedMetrics.chatDraftWords}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftIntent !== "repair") {
-    failures.push(
-      `expected cleared chat draft intent to remain repair, got ${chatClearedMetrics.chatDraftIntent}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftSendReason !== "empty_draft") {
-    failures.push(
-      `expected cleared chat draft send reason empty_draft, got ${chatClearedMetrics.chatDraftSendReason}`,
-    );
-  }
-  if (chatClearedMetrics.chatSendReason !== "empty_draft") {
-    failures.push(
-      `expected cleared chat send reason empty_draft, got ${chatClearedMetrics.chatSendReason}`,
-    );
-  }
-  if (chatClearedMetrics.chatSendGuardEnabled !== "false") {
-    failures.push(
-      `expected cleared chat send guard enabled false, got ${chatClearedMetrics.chatSendGuardEnabled}`,
-    );
-  }
-  if (chatClearedMetrics.chatSendGuardReason !== "empty_draft") {
-    failures.push(
-      `expected cleared chat send guard reason empty_draft, got ${chatClearedMetrics.chatSendGuardReason}`,
-    );
-  }
-  if (
-    chatClearedMetrics.chatSendGuardText !== "Send unavailable: Draft is empty"
-  ) {
-    failures.push(
-      `expected cleared chat send guard text for empty draft, got ${chatClearedMetrics.chatSendGuardText}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftPreviewState !== "empty") {
-    failures.push(
-      `expected cleared chat draft preview state empty, got ${chatClearedMetrics.chatDraftPreviewState}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftPreviewReason !== "empty_draft") {
-    failures.push(
-      `expected cleared chat draft preview reason empty_draft, got ${chatClearedMetrics.chatDraftPreviewReason}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftPreviewIntent !== "repair") {
-    failures.push(
-      `expected cleared chat draft preview intent repair, got ${chatClearedMetrics.chatDraftPreviewIntent}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftPreviewBody !== "empty") {
-    failures.push(
-      `expected cleared chat draft preview body empty, got ${chatClearedMetrics.chatDraftPreviewBody}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftPreviewTarget !== "repair") {
-    failures.push(
-      `expected cleared chat draft preview target repair, got ${chatClearedMetrics.chatDraftPreviewTarget}`,
-    );
-  }
-  if (chatClearedMetrics.chatDraftPreviewAction !== "repair_review") {
-    failures.push(
-      `expected cleared chat draft preview action repair_review, got ${chatClearedMetrics.chatDraftPreviewAction}`,
-    );
-  }
-  if (
-    !chatClearedMetrics.chatDraftPreviewText?.includes("No draft text") ||
-    !chatClearedMetrics.chatDraftPreviewText?.includes("Repair") ||
-    !chatClearedMetrics.chatDraftPreviewText?.includes("Repair plan") ||
-    !chatClearedMetrics.chatDraftPreviewText?.includes("Repair review") ||
-    !chatClearedMetrics.chatDraftPreviewText?.includes("Draft is empty")
-  ) {
-    failures.push(
-      `expected cleared chat draft preview text to include empty Repair context preview, got ${chatClearedMetrics.chatDraftPreviewText}`,
-    );
+  if (requestedChatBoxMode === "enabled") {
+    if (chatDraftMetrics.chatDraftPreviewState !== "ready") {
+      failures.push(
+        `expected enabled chat draft preview state ready, got ${chatDraftMetrics.chatDraftPreviewState}`,
+      );
+    }
+    if (chatDraftMetrics.chatDraftPreviewReason !== "ready") {
+      failures.push(
+        `expected enabled chat draft preview reason ready, got ${chatDraftMetrics.chatDraftPreviewReason}`,
+      );
+    }
+    if (chatDraftMetrics.chatDraftPreviewReady !== "true") {
+      failures.push(
+        `expected enabled chat draft preview ready true, got ${chatDraftMetrics.chatDraftPreviewReady}`,
+      );
+    }
+    if (chatDraftMetrics.chatDraftSendEnabled !== "true") {
+      failures.push(
+        `expected enabled chat draft send-enabled true, got ${chatDraftMetrics.chatDraftSendEnabled}`,
+      );
+    }
+    if (chatDraftMetrics.chatDraftSendReason !== "ready") {
+      failures.push(
+        `expected enabled chat draft send reason ready, got ${chatDraftMetrics.chatDraftSendReason}`,
+      );
+    }
+    if (chatDraftMetrics.chatSendReason !== "ready") {
+      failures.push(
+        `expected enabled chat send reason ready after draft, got ${chatDraftMetrics.chatSendReason}`,
+      );
+    }
+    if (chatDraftMetrics.chatSendGuardEnabled !== "true") {
+      failures.push(
+        `expected enabled chat send guard enabled true after draft, got ${chatDraftMetrics.chatSendGuardEnabled}`,
+      );
+    }
+    if (chatDraftMetrics.chatSendGuardReason !== "ready") {
+      failures.push(
+        `expected enabled chat send guard reason ready after draft, got ${chatDraftMetrics.chatSendGuardReason}`,
+      );
+    }
+    if (chatDraftMetrics.chatSendGuardText !== "Send ready") {
+      failures.push(
+        `expected enabled chat send guard text Send ready, got ${chatDraftMetrics.chatSendGuardText}`,
+      );
+    }
+    if (
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Preview") ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Ready") ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Repair") ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Repair plan") ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Repair review") ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Ready to send")
+    ) {
+      failures.push(
+        `expected enabled chat draft preview text to include ready Repair context preview, got ${chatDraftMetrics.chatDraftPreviewText}`,
+      );
+    }
+    const firstHistoryIds = Array.isArray(
+      chatLocalSubmitMetrics?.chatLocalSubmissionHistoryItemIds,
+    )
+      ? chatLocalSubmitMetrics.chatLocalSubmissionHistoryItemIds.join(",")
+      : "";
+    if (chatLocalSubmitMetrics?.chatDraftValue !== "") {
+      failures.push(
+        `expected first local send to clear draft, got ${chatLocalSubmitMetrics?.chatDraftValue}`,
+      );
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionPresent !== true) {
+      failures.push("expected first local submission section to be present");
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionSequence !== "1") {
+      failures.push(
+        `expected first local submission sequence 1, got ${chatLocalSubmitMetrics?.chatLocalSubmissionSequence}`,
+      );
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionCount !== "1") {
+      failures.push(
+        `expected first local submission count 1, got ${chatLocalSubmitMetrics?.chatLocalSubmissionCount}`,
+      );
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionStatus !== "queued_local") {
+      failures.push(
+        `expected first local submission status queued_local, got ${chatLocalSubmitMetrics?.chatLocalSubmissionStatus}`,
+      );
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionIntent !== "repair") {
+      failures.push(
+        `expected first local submission intent repair, got ${chatLocalSubmitMetrics?.chatLocalSubmissionIntent}`,
+      );
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionTarget !== "repair") {
+      failures.push(
+        `expected first local submission target repair, got ${chatLocalSubmitMetrics?.chatLocalSubmissionTarget}`,
+      );
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionAction !== "repair_review") {
+      failures.push(
+        `expected first local submission action repair_review, got ${chatLocalSubmitMetrics?.chatLocalSubmissionAction}`,
+      );
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionCharacters !== "22") {
+      failures.push(
+        `expected first local submission characters 22, got ${chatLocalSubmitMetrics?.chatLocalSubmissionCharacters}`,
+      );
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionWords !== "4") {
+      failures.push(
+        `expected first local submission words 4, got ${chatLocalSubmitMetrics?.chatLocalSubmissionWords}`,
+      );
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionClearCount !== "1") {
+      failures.push(
+        `expected first local submission clear count 1, got ${chatLocalSubmitMetrics?.chatLocalSubmissionClearCount}`,
+      );
+    }
+    if (chatLocalSubmitMetrics?.chatLocalSubmissionHistoryItems !== 1) {
+      failures.push(
+        `expected first local submission history item count 1, got ${chatLocalSubmitMetrics?.chatLocalSubmissionHistoryItems}`,
+      );
+    }
+    if (firstHistoryIds !== "1") {
+      failures.push(
+        `expected first local submission history ids 1, got ${firstHistoryIds}`,
+      );
+    }
+    const cappedHistoryIds = Array.isArray(
+      chatLocalHistoryMetrics?.chatLocalSubmissionHistoryItemIds,
+    )
+      ? chatLocalHistoryMetrics.chatLocalSubmissionHistoryItemIds.join(",")
+      : "";
+    const cappedHistoryStatuses = Array.isArray(
+      chatLocalHistoryMetrics?.chatLocalSubmissionHistoryStatuses,
+    )
+      ? chatLocalHistoryMetrics.chatLocalSubmissionHistoryStatuses.join(",")
+      : "";
+    if (chatLocalHistoryMetrics?.chatLocalSubmissionSequence !== "4") {
+      failures.push(
+        `expected capped local history latest sequence 4, got ${chatLocalHistoryMetrics?.chatLocalSubmissionSequence}`,
+      );
+    }
+    if (chatLocalHistoryMetrics?.chatLocalSubmissionCount !== "3") {
+      failures.push(
+        `expected capped local history count 3, got ${chatLocalHistoryMetrics?.chatLocalSubmissionCount}`,
+      );
+    }
+    if (chatLocalHistoryMetrics?.chatLocalSubmissionCharacters !== "24") {
+      failures.push(
+        `expected capped local history latest characters 24, got ${chatLocalHistoryMetrics?.chatLocalSubmissionCharacters}`,
+      );
+    }
+    if (chatLocalHistoryMetrics?.chatLocalSubmissionWords !== "3") {
+      failures.push(
+        `expected capped local history latest words 3, got ${chatLocalHistoryMetrics?.chatLocalSubmissionWords}`,
+      );
+    }
+    if (chatLocalHistoryMetrics?.chatLocalSubmissionClearCount !== "3") {
+      failures.push(
+        `expected capped local history clear count 3, got ${chatLocalHistoryMetrics?.chatLocalSubmissionClearCount}`,
+      );
+    }
+    if (chatLocalHistoryMetrics?.chatLocalSubmissionHistoryItems !== 3) {
+      failures.push(
+        `expected capped local history item count 3, got ${chatLocalHistoryMetrics?.chatLocalSubmissionHistoryItems}`,
+      );
+    }
+    if (cappedHistoryIds !== "4,3,2") {
+      failures.push(
+        `expected capped local history ids 4,3,2, got ${cappedHistoryIds}`,
+      );
+    }
+    if (cappedHistoryStatuses !== "queued_local,queued_local,queued_local") {
+      failures.push(
+        `expected capped local history queued statuses, got ${cappedHistoryStatuses}`,
+      );
+    }
+    if (
+      !chatLocalHistoryMetrics?.chatLocalSubmissionText?.includes("#4") ||
+      !chatLocalHistoryMetrics.chatLocalSubmissionText.includes("#3") ||
+      !chatLocalHistoryMetrics.chatLocalSubmissionText.includes("#2") ||
+      !chatLocalHistoryMetrics.chatLocalSubmissionText.includes("24 chars") ||
+      !chatLocalHistoryMetrics.chatLocalSubmissionText.includes("3 words")
+    ) {
+      failures.push(
+        `expected capped local history text to include metadata-only entries, got ${chatLocalHistoryMetrics?.chatLocalSubmissionText}`,
+      );
+    }
+    if (chatLocalHistoryClearedMetrics?.chatLocalSubmissionPresent !== false) {
+      failures.push("expected cleared local history section to be absent");
+    }
+    if (chatLocalHistoryClearedMetrics?.chatLocalSubmissionClearButtons !== 0) {
+      failures.push(
+        `expected no clear history buttons after local clear, got ${chatLocalHistoryClearedMetrics?.chatLocalSubmissionClearButtons}`,
+      );
+    }
+    if (chatLocalHistoryClearedMetrics?.chatLocalSubmissionHistoryItems !== 0) {
+      failures.push(
+        `expected no history items after local clear, got ${chatLocalHistoryClearedMetrics?.chatLocalSubmissionHistoryItems}`,
+      );
+    }
+    if (chatLocalHistoryClearedMetrics?.chatDraftIntent !== "repair") {
+      failures.push(
+        `expected local history clear to keep repair intent, got ${chatLocalHistoryClearedMetrics?.chatDraftIntent}`,
+      );
+    }
+    if (chatLocalHistoryClearedMetrics?.chatDraftSendReason !== "empty_draft") {
+      failures.push(
+        `expected local history clear to leave empty draft reason, got ${chatLocalHistoryClearedMetrics?.chatDraftSendReason}`,
+      );
+    }
+    if (chatLocalHistoryClearedMetrics?.chatDraftPreviewState !== "empty") {
+      failures.push(
+        `expected local history clear to leave empty preview, got ${chatLocalHistoryClearedMetrics?.chatDraftPreviewState}`,
+      );
+    }
+    const resendHistoryIds = Array.isArray(
+      chatLocalResendMetrics?.chatLocalSubmissionHistoryItemIds,
+    )
+      ? chatLocalResendMetrics.chatLocalSubmissionHistoryItemIds.join(",")
+      : "";
+    if (chatLocalResendMetrics?.chatLocalSubmissionSequence !== "5") {
+      failures.push(
+        `expected resend after local clear sequence 5, got ${chatLocalResendMetrics?.chatLocalSubmissionSequence}`,
+      );
+    }
+    if (chatLocalResendMetrics?.chatLocalSubmissionCount !== "1") {
+      failures.push(
+        `expected resend after local clear count 1, got ${chatLocalResendMetrics?.chatLocalSubmissionCount}`,
+      );
+    }
+    if (chatLocalResendMetrics?.chatLocalSubmissionCharacters !== "20") {
+      failures.push(
+        `expected resend after local clear characters 20, got ${chatLocalResendMetrics?.chatLocalSubmissionCharacters}`,
+      );
+    }
+    if (chatLocalResendMetrics?.chatLocalSubmissionWords !== "3") {
+      failures.push(
+        `expected resend after local clear words 3, got ${chatLocalResendMetrics?.chatLocalSubmissionWords}`,
+      );
+    }
+    if (resendHistoryIds !== "5") {
+      failures.push(
+        `expected resend after local clear history ids 5, got ${resendHistoryIds}`,
+      );
+    }
+  } else {
+    if (chatDraftMetrics.chatDraftPreviewState !== "blocked") {
+      failures.push(
+        `expected chat draft preview state blocked, got ${chatDraftMetrics.chatDraftPreviewState}`,
+      );
+    }
+    if (chatDraftMetrics.chatDraftPreviewReason !== "chat_disabled") {
+      failures.push(
+        `expected chat draft preview reason chat_disabled, got ${chatDraftMetrics.chatDraftPreviewReason}`,
+      );
+    }
+    if (chatDraftMetrics.chatDraftPreviewReady !== "false") {
+      failures.push(
+        `expected chat draft preview ready false, got ${chatDraftMetrics.chatDraftPreviewReady}`,
+      );
+    }
+    if (chatDraftMetrics.chatDraftSendEnabled !== "false") {
+      failures.push(
+        `expected chat draft send-enabled false, got ${chatDraftMetrics.chatDraftSendEnabled}`,
+      );
+    }
+    if (chatDraftMetrics.chatDraftSendReason !== "chat_disabled") {
+      failures.push(
+        `expected chat draft send reason chat_disabled, got ${chatDraftMetrics.chatDraftSendReason}`,
+      );
+    }
+    if (chatDraftMetrics.chatSendReason !== "chat_disabled") {
+      failures.push(
+        `expected chat send reason chat_disabled after draft, got ${chatDraftMetrics.chatSendReason}`,
+      );
+    }
+    if (chatDraftMetrics.chatSendGuardEnabled !== "false") {
+      failures.push(
+        `expected chat send guard enabled false after draft, got ${chatDraftMetrics.chatSendGuardEnabled}`,
+      );
+    }
+    if (chatDraftMetrics.chatSendGuardReason !== "chat_disabled") {
+      failures.push(
+        `expected chat send guard reason chat_disabled after draft, got ${chatDraftMetrics.chatSendGuardReason}`,
+      );
+    }
+    if (
+      chatDraftMetrics.chatSendGuardText !== "Send unavailable: Chat disabled"
+    ) {
+      failures.push(
+        `expected chat send guard text for disabled chat, got ${chatDraftMetrics.chatSendGuardText}`,
+      );
+    }
+    if (
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Preview") ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Blocked") ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes(
+        "Review repair plan now",
+      ) ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Repair") ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Repair plan") ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Repair review") ||
+      !chatDraftMetrics.chatDraftPreviewText?.includes("Chat disabled")
+    ) {
+      failures.push(
+        `expected chat draft preview text to include blocked Repair context preview, got ${chatDraftMetrics.chatDraftPreviewText}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftValue !== "") {
+      failures.push(
+        `expected cleared chat draft value to be empty, got ${chatClearedMetrics?.chatDraftValue}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftLength !== "0") {
+      failures.push(
+        `expected cleared chat draft length 0, got ${chatClearedMetrics?.chatDraftLength}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftWords !== "0") {
+      failures.push(
+        `expected cleared chat draft words 0, got ${chatClearedMetrics?.chatDraftWords}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftIntent !== "repair") {
+      failures.push(
+        `expected cleared chat draft intent to remain repair, got ${chatClearedMetrics?.chatDraftIntent}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftSendReason !== "empty_draft") {
+      failures.push(
+        `expected cleared chat draft send reason empty_draft, got ${chatClearedMetrics?.chatDraftSendReason}`,
+      );
+    }
+    if (chatClearedMetrics?.chatSendReason !== "empty_draft") {
+      failures.push(
+        `expected cleared chat send reason empty_draft, got ${chatClearedMetrics?.chatSendReason}`,
+      );
+    }
+    if (chatClearedMetrics?.chatSendGuardEnabled !== "false") {
+      failures.push(
+        `expected cleared chat send guard enabled false, got ${chatClearedMetrics?.chatSendGuardEnabled}`,
+      );
+    }
+    if (chatClearedMetrics?.chatSendGuardReason !== "empty_draft") {
+      failures.push(
+        `expected cleared chat send guard reason empty_draft, got ${chatClearedMetrics?.chatSendGuardReason}`,
+      );
+    }
+    if (
+      chatClearedMetrics?.chatSendGuardText !==
+      "Send unavailable: Draft is empty"
+    ) {
+      failures.push(
+        `expected cleared chat send guard text for empty draft, got ${chatClearedMetrics?.chatSendGuardText}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftPreviewState !== "empty") {
+      failures.push(
+        `expected cleared chat draft preview state empty, got ${chatClearedMetrics?.chatDraftPreviewState}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftPreviewReason !== "empty_draft") {
+      failures.push(
+        `expected cleared chat draft preview reason empty_draft, got ${chatClearedMetrics?.chatDraftPreviewReason}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftPreviewIntent !== "repair") {
+      failures.push(
+        `expected cleared chat draft preview intent repair, got ${chatClearedMetrics?.chatDraftPreviewIntent}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftPreviewBody !== "empty") {
+      failures.push(
+        `expected cleared chat draft preview body empty, got ${chatClearedMetrics?.chatDraftPreviewBody}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftPreviewTarget !== "repair") {
+      failures.push(
+        `expected cleared chat draft preview target repair, got ${chatClearedMetrics?.chatDraftPreviewTarget}`,
+      );
+    }
+    if (chatClearedMetrics?.chatDraftPreviewAction !== "repair_review") {
+      failures.push(
+        `expected cleared chat draft preview action repair_review, got ${chatClearedMetrics?.chatDraftPreviewAction}`,
+      );
+    }
+    if (
+      !chatClearedMetrics?.chatDraftPreviewText?.includes("No draft text") ||
+      !chatClearedMetrics.chatDraftPreviewText.includes("Repair") ||
+      !chatClearedMetrics.chatDraftPreviewText.includes("Repair plan") ||
+      !chatClearedMetrics.chatDraftPreviewText.includes("Repair review") ||
+      !chatClearedMetrics.chatDraftPreviewText.includes("Draft is empty")
+    ) {
+      failures.push(
+        `expected cleared chat draft preview text to include empty Repair context preview, got ${chatClearedMetrics?.chatDraftPreviewText}`,
+      );
+    }
   }
   if (metrics.timelineItems !== 5) {
     failures.push(`expected 5 timeline items, got ${metrics.timelineItems}`);
@@ -4871,11 +5325,88 @@ async function main() {
   const chatDraftMetrics = await runSmokeStep("read chat draft metrics", () =>
     readMetrics(window),
   );
-  await runSmokeStep("clear chat draft", () => clearChatDraft(window));
-  const chatClearedMetrics = await runSmokeStep(
-    "read cleared chat draft metrics",
-    () => readMetrics(window),
-  );
+  let chatClearedMetrics = null;
+  let chatLocalSubmitMetrics = null;
+  let chatLocalHistoryMetrics = null;
+  let chatLocalHistoryClearedMetrics = null;
+  let chatLocalResendMetrics = null;
+  if (chatBoxMode === "enabled") {
+    await runSmokeStep("send first local chat draft", () =>
+      sendChatDraft(window, "Review repair plan now", {
+        sequence: 1,
+        count: 1,
+        status: "queued_local",
+        intent: "repair",
+        target: "repair",
+        action: "repair_review",
+      }),
+    );
+    chatLocalSubmitMetrics = await runSmokeStep(
+      "read first local chat send metrics",
+      () => readMetrics(window),
+    );
+    await runSmokeStep("send second local chat draft", () =>
+      sendChatDraft(window, "Audit repair evidence", {
+        sequence: 2,
+        count: 2,
+        status: "queued_local",
+        intent: "repair",
+        target: "repair",
+        action: "repair_review",
+      }),
+    );
+    await runSmokeStep("send third local chat draft", () =>
+      sendChatDraft(window, "Trace runtime status", {
+        sequence: 3,
+        count: 3,
+        status: "queued_local",
+        intent: "repair",
+        target: "repair",
+        action: "repair_review",
+      }),
+    );
+    await runSmokeStep("send fourth local chat draft", () =>
+      sendChatDraft(window, "Confirm workflow handoff", {
+        sequence: 4,
+        count: 3,
+        status: "queued_local",
+        intent: "repair",
+        target: "repair",
+        action: "repair_review",
+      }),
+    );
+    chatLocalHistoryMetrics = await runSmokeStep(
+      "read capped local chat history metrics",
+      () => readMetrics(window),
+    );
+    await runSmokeStep("clear local chat history", () =>
+      clearChatLocalSubmissionHistory(window),
+    );
+    chatLocalHistoryClearedMetrics = await runSmokeStep(
+      "read cleared local chat history metrics",
+      () => readMetrics(window),
+    );
+    await runSmokeStep("send local chat draft after history clear", () =>
+      sendChatDraft(window, "Resume local request", {
+        sequence: 5,
+        count: 1,
+        status: "queued_local",
+        intent: "repair",
+        target: "repair",
+        action: "repair_review",
+      }),
+    );
+    chatLocalResendMetrics = await runSmokeStep(
+      "read local chat resend metrics",
+      () => readMetrics(window),
+    );
+  } else {
+    await runSmokeStep("clear chat draft", () => clearChatDraft(window));
+    chatClearedMetrics = await runSmokeStep(
+      "read cleared chat draft metrics",
+      () => readMetrics(window),
+    );
+  }
   await runSmokeStep("show canvas panel", () => clickPanel(window, "canvas"));
   await runSmokeStep("select repair canvas node", () =>
     clickWorkflowCanvasNode(window, "repair_task"),
@@ -4999,6 +5530,7 @@ async function main() {
     messages,
     width,
     streamEventMode,
+    chatBoxMode,
     initialStreamMetrics,
     streamEventExpandedMetrics,
     streamEventCollapsedMetrics,
@@ -5028,6 +5560,10 @@ async function main() {
     chatInitialMetrics,
     chatDraftMetrics,
     chatClearedMetrics,
+    chatLocalSubmitMetrics,
+    chatLocalHistoryMetrics,
+    chatLocalHistoryClearedMetrics,
+    chatLocalResendMetrics,
     canvasMetrics,
     canvasNodeTypeFocusMetrics,
     canvasNodeTypeFocusPreMatchMetrics,
@@ -5050,6 +5586,7 @@ async function main() {
       {
         targetLocation,
         streamEventMode,
+        chatBoxMode,
         requestedViewport: { width, height, scrollY },
         captureSize,
         metrics,
@@ -5082,6 +5619,10 @@ async function main() {
         chatInitialMetrics,
         chatDraftMetrics,
         chatClearedMetrics,
+        chatLocalSubmitMetrics,
+        chatLocalHistoryMetrics,
+        chatLocalHistoryClearedMetrics,
+        chatLocalResendMetrics,
         canvasMetrics,
         canvasNodeTypeFocusMetrics,
         canvasNodeTypeFocusPreMatchMetrics,

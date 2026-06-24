@@ -19,6 +19,8 @@ const knownSmokeUrl =
   "http://127.0.0.1:5174/visual-smoke.html?token=query-secret#hash-secret";
 const unknownSmokeUrl =
   "http://127.0.0.1:5174/visual-smoke.html?streamEvent=unknown&token=query-secret#hash-secret";
+const chatEnabledSmokeUrl =
+  "http://127.0.0.1:5174/visual-smoke.html?chatBox=enabled&token=query-secret#hash-secret";
 const invalidSmokeUrl =
   "not-a-url?token=single-smoke-secret#single-smoke-hash-secret";
 const invalidViewportSecret = "viewport-secret-value";
@@ -110,8 +112,10 @@ test("visual smoke preflight summarizes known URLs without query or hash", () =>
     origin: "http://127.0.0.1:5174",
     pathname: "/visual-smoke.html",
     streamEventMode: "known",
+    chatBoxMode: "disabled",
   });
   assert.equal(preflight.streamEventMode, "known");
+  assert.equal(preflight.chatBoxMode, "disabled");
   assert.equal(
     JSON.stringify(preflight.targetLocation).includes("query-secret"),
     false,
@@ -138,8 +142,34 @@ test("visual smoke preflight keeps unknown stream event mode", () => {
     origin: "http://127.0.0.1:5174",
     pathname: "/visual-smoke.html",
     streamEventMode: "unknown",
+    chatBoxMode: "disabled",
   });
   assert.equal(preflight.streamEventMode, "unknown");
+  assert.equal(preflight.chatBoxMode, "disabled");
+});
+
+test("visual smoke preflight keeps enabled chat box mode", () => {
+  const preflight = resolveVisualSmokePreflight({
+    CW_VISUAL_SMOKE_URL: chatEnabledSmokeUrl,
+    CW_VISUAL_SMOKE_OUTPUT: "visual-smoke.png",
+  });
+
+  assert.deepEqual(preflight.targetLocation, {
+    origin: "http://127.0.0.1:5174",
+    pathname: "/visual-smoke.html",
+    streamEventMode: "known",
+    chatBoxMode: "enabled",
+  });
+  assert.equal(preflight.streamEventMode, "known");
+  assert.equal(preflight.chatBoxMode, "enabled");
+  assert.equal(
+    JSON.stringify(preflight.targetLocation).includes("query-secret"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(preflight.targetLocation).includes("hash-secret"),
+    false,
+  );
 });
 
 test("visual smoke preflight rejects missing env", () => {

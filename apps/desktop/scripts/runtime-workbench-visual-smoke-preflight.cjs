@@ -11,10 +11,15 @@ function parseTargetLocation(url) {
     parsedUrl.searchParams.get("streamEvent") === "unknown"
       ? "unknown"
       : "known";
+  const chatBoxMode =
+    parsedUrl.searchParams.get("chatBox") === "enabled"
+      ? "enabled"
+      : "disabled";
   return {
     origin: parsedUrl.origin,
     pathname: parsedUrl.pathname,
     streamEventMode,
+    chatBoxMode,
   };
 }
 
@@ -62,6 +67,7 @@ function resolveVisualSmokePreflight(env) {
     targetLocation,
     outputEvidence: summarizeOutputPath(outputPath),
     streamEventMode: targetLocation.streamEventMode,
+    chatBoxMode: targetLocation.chatBoxMode,
   };
 }
 

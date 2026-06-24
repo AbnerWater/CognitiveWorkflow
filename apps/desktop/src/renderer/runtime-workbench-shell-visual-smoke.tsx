@@ -51,10 +51,12 @@ interface VisualSmokeState {
   readonly selectedTimelineItemId: string | null;
   readonly streamEventExpanded: boolean;
   readonly streamEventMode: VisualSmokeStreamEventMode;
+  readonly chatBoxMode: VisualSmokeChatBoxMode;
   readonly lastHandledShortcutLabel: string | null;
 }
 
 type VisualSmokeStreamEventMode = "known" | "unknown";
+type VisualSmokeChatBoxMode = "disabled" | "enabled";
 
 const VISUAL_SMOKE_MARKDOWN_STREAM_CONTENT = [
   "delta content with `inline_code` and <mark>marked token</mark> [trusted link](/artifacts/visual-report.md) [blocked link](javascript:alert(1)).",
@@ -81,6 +83,7 @@ function createRuntimeWorkbenchShellVisualSmokeSession(): RuntimeWorkbenchShellD
     selectedTimelineItemId: VISUAL_SMOKE_TIMELINE_ITEMS[1]?.id ?? null,
     streamEventExpanded: false,
     streamEventMode: parseVisualSmokeStreamEventMode(),
+    chatBoxMode: parseVisualSmokeChatBoxMode(),
     lastHandledShortcutLabel: "None",
   };
   let disposed = false;
@@ -622,6 +625,13 @@ function parseVisualSmokeStreamEventMode(): VisualSmokeStreamEventMode {
   return streamEventMode === "unknown" ? "unknown" : "known";
 }
 
+function parseVisualSmokeChatBoxMode(): VisualSmokeChatBoxMode {
+  const chatBoxMode = new URLSearchParams(window.location.search).get(
+    "chatBox",
+  );
+  return chatBoxMode === "enabled" ? "enabled" : "disabled";
+}
+
 function buildVisualSmokeChromeSnapshot(
   state: VisualSmokeState,
   disposed: boolean,
@@ -902,7 +912,7 @@ function buildVisualSmokeChromeSnapshot(
     chatBox: Object.freeze({
       title: "Chat Box",
       placeholder: "Ask about the active workflow",
-      enabled: false,
+      enabled: state.chatBoxMode === "enabled" && !disposed,
       statusLabel: disposed ? "Disposed" : "Idle",
       collapsedSummary: `${activePanelLabel} focus, chat ${disposed ? "disposed" : "idle"}`,
       collapsible: true,
