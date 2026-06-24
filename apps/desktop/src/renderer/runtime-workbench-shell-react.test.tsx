@@ -3264,6 +3264,167 @@ test("renderer runtime workbench React shell tracks local chat send history", as
   }
 });
 
+test("renderer runtime workbench React shell clears local chat send history", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactChatEnabledSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Chat Local History Clear Runtime Workbench"
+        />,
+      );
+    });
+
+    const draftInput = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftInput",
+      "true",
+    );
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Ask the workflow status");
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatSend",
+          "true",
+        ),
+      );
+    });
+
+    const initialLocalSubmission = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatLocalSubmit",
+      "true",
+    );
+    assert.equal(
+      initialLocalSubmission.getAttribute("data-chat-local-submit-sequence"),
+      "1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        initialLocalSubmission,
+        "chatLocalSubmitClear",
+        "true",
+      ).getAttribute("data-chat-local-submit-clear-count"),
+      "1",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatDraftIntent",
+          "revise",
+        ),
+      );
+    });
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Revise after clear");
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          initialLocalSubmission,
+          "chatLocalSubmitClear",
+          "true",
+        ),
+      );
+    });
+
+    assert.equal(session.dispatchedCommands().length, 0);
+    assert.equal(draftInput.value, "Revise after clear");
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.chatLocalSubmit === "true",
+      ),
+      0,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-intent"),
+      "revise",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-send-reason"),
+      "ready",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatSend",
+          "true",
+        ),
+      );
+    });
+
+    const nextLocalSubmission = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatLocalSubmit",
+      "true",
+    );
+    assert.equal(session.dispatchedCommands().length, 0);
+    assert.equal(draftInput.value, "");
+    assert.equal(
+      nextLocalSubmission.getAttribute("data-chat-local-submit-sequence"),
+      "2",
+    );
+    assert.equal(
+      nextLocalSubmission.getAttribute("data-chat-local-submit-count"),
+      "1",
+    );
+    assert.equal(
+      nextLocalSubmission.getAttribute("data-chat-local-submit-intent"),
+      "revise",
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        nextLocalSubmission,
+        (element) => element.dataset.chatLocalSubmitHistoryItem !== undefined,
+      ),
+      1,
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(nextLocalSubmission),
+      /Revise after clear/u,
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchElementAttributeValues(nextLocalSubmission).join(" "),
+      /Revise after clear/u,
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(nextLocalSubmission),
+      /Recent requests[\s\S]*#2[\s\S]*Queued locally[\s\S]*Revise[\s\S]*Workflow draft[\s\S]*Change request[\s\S]*18 chars[\s\S]*3 words/u,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell selects file tree node locally", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {

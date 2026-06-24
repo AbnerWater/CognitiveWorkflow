@@ -2431,6 +2431,9 @@ function RuntimeWorkbenchShellChatBox(props: {
   const handleDraftClearClick = useCallback((): void => {
     setDraft("");
   }, []);
+  const handleLocalSubmissionClearClick = useCallback((): void => {
+    setLocalSubmissions([]);
+  }, []);
   const handleDraftIntentClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const intent = event.currentTarget.dataset.chatDraftIntent;
@@ -2576,6 +2579,7 @@ function RuntimeWorkbenchShellChatBox(props: {
             preview={draftPreview}
           />
           <RuntimeWorkbenchShellChatLocalSubmissionHistory
+            onClear={handleLocalSubmissionClearClick}
             submissions={localSubmissions}
           />
           <section
@@ -2621,6 +2625,7 @@ function RuntimeWorkbenchShellChatBox(props: {
 }
 
 function RuntimeWorkbenchShellChatLocalSubmissionHistory(props: {
+  readonly onClear: () => void;
   readonly submissions: readonly RuntimeWorkbenchShellChatLocalSubmission[];
 }): ReactElement | null {
   const latestSubmission = props.submissions[0];
@@ -2644,7 +2649,17 @@ function RuntimeWorkbenchShellChatLocalSubmissionHistory(props: {
       data-chat-local-submit-target={latestSubmission.target}
       data-chat-local-submit-words={String(latestSubmission.wordCount)}
     >
-      <h3>Recent requests</h3>
+      <div className="cw-workbench__chat-local-submission-header">
+        <h3>Recent requests</h3>
+        <button
+          data-chat-local-submit-clear="true"
+          data-chat-local-submit-clear-count={String(props.submissions.length)}
+          onClick={props.onClear}
+          type="button"
+        >
+          Clear history
+        </button>
+      </div>
       <ol data-chat-local-submit-history="true">
         {props.submissions.map((submission, index) => (
           <li
