@@ -1,0 +1,245 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.170",
+  "status": "in_progress",
+  "authority": {
+    "roadmap": "docs/roadmap.md#5.2",
+    "phase_exit": "docs/roadmap.md#5.3",
+    "review_matrix": "docs/roadmap.md#5.4",
+    "runbook": "docs/04_runbook/m1.5-progress.md"
+  },
+  "dependency_boundary": {
+    "approved_minimal_group": [
+      {
+        "name": "react",
+        "version": "18.3.1",
+        "package_json_section": "dependencies"
+      },
+      {
+        "name": "react-dom",
+        "version": "18.3.1",
+        "package_json_section": "dependencies"
+      },
+      {
+        "name": "electron",
+        "version": "35.7.5",
+        "package_json_section": "devDependencies"
+      },
+      {
+        "name": "vite",
+        "version": "5.4.21",
+        "package_json_section": "devDependencies"
+      },
+      {
+        "name": "@vitejs/plugin-react",
+        "version": "4.7.0",
+        "package_json_section": "devDependencies"
+      },
+      {
+        "name": "@types/react",
+        "version": "18.3.31",
+        "package_json_section": "devDependencies"
+      },
+      {
+        "name": "@types/react-dom",
+        "version": "18.3.7",
+        "package_json_section": "devDependencies"
+      }
+    ],
+    "requires_separate_gate": [
+      {
+        "id": "DEP-FORGE",
+        "packages": ["@electron-forge/cli", "@electron-forge/plugin-vite"],
+        "roadmap_item": "Electron Forge project skeleton",
+        "status": "not_approved"
+      },
+      {
+        "id": "DEP-TAILWIND",
+        "packages": ["tailwindcss", "postcss", "autoprefixer"],
+        "roadmap_item": "Tailwind desktop styling",
+        "status": "not_approved"
+      },
+      {
+        "id": "DEP-REACT-FLOW",
+        "packages": ["@xyflow/react"],
+        "roadmap_item": "React Flow Canvas",
+        "status": "not_approved"
+      },
+      {
+        "id": "DEP-UPDATER",
+        "packages": ["electron-updater", "electron-builder"],
+        "roadmap_item": "GitHub Releases updater and packaging",
+        "status": "not_approved"
+      }
+    ]
+  },
+  "m1_5_roadmap_items": [
+    {
+      "id": "M1.5-R1",
+      "requirement": "Electron Forge + Vite + React 18 + TypeScript + Tailwind project skeleton",
+      "status": "partial",
+      "verified_evidence": [
+        "apps/desktop/package.json contains React 18, Electron 35, Vite, TypeScript, and React plugin dependencies",
+        "W1.5.79-W1.5.80 established React/Vite renderer and Electron main/preload/window wiring"
+      ],
+      "remaining_gap": [
+        "Electron Forge is not installed",
+        "Tailwind is not installed",
+        "Both require a separate dependency gate"
+      ]
+    },
+    {
+      "id": "M1.5-R2",
+      "requirement": "main/preload/renderer with contextIsolation, sandbox, and strict CSP",
+      "status": "verified",
+      "verified_evidence": [
+        "W1.5.1 security/runtime contract checks",
+        "W1.5.23-W1.5.26 preload/main bootstrap adapters",
+        "W1.5.80 real Electron window navigation guard and eager sidecar startup"
+      ],
+      "remaining_gap": []
+    },
+    {
+      "id": "M1.5-R3",
+      "requirement": "sidecar spawn, token injection, port probing, and READY stdout capture",
+      "status": "verified",
+      "verified_evidence": [
+        "W1.5.2-W1.5.21 sidecar lifecycle, runtime.lock, startup status, registry, and IPC bridge",
+        "W1.5.85 real Python sidecar stream smoke"
+      ],
+      "remaining_gap": []
+    },
+    {
+      "id": "M1.5-R4",
+      "requirement": "React Flow Canvas",
+      "status": "blocked_by_dependency_gate",
+      "verified_evidence": [
+        "W1.5.94-W1.5.104 provide a focused read-only Canvas scaffold with local selection, navigation, summary, and type focus evidence"
+      ],
+      "remaining_gap": [
+        "@xyflow/react is not approved or installed",
+        "Drag/connect/edit performance acceptance remains unverified"
+      ]
+    },
+    {
+      "id": "M1.5-R5",
+      "requirement": "Bottom Chat Box",
+      "status": "partial",
+      "verified_evidence": [
+        "W1.5.108-W1.5.112 local draft, intent, preview, and send guard",
+        "W1.5.150-W1.5.169 local metadata-only send/history/focus and visual smoke matrix evidence"
+      ],
+      "remaining_gap": [
+        "Real chat command routing is not implemented",
+        "Runtime mutation and persistence are intentionally out of the local scaffold boundary"
+      ]
+    },
+    {
+      "id": "M1.5-R6",
+      "requirement": "Runtime Stream folding panel",
+      "status": "verified",
+      "verified_evidence": [
+        "W1.5.113-W1.5.149 cover stream collapse, details, content rendering, unknown event handling, and visual smoke matrix hardening"
+      ],
+      "remaining_gap": []
+    },
+    {
+      "id": "M1.5-R7",
+      "requirement": "Task Drawer, Dock, File Tree, and Version Snapshots",
+      "status": "partial",
+      "verified_evidence": [
+        "W1.5.89-W1.5.93 shell chrome, Task Drawer collapse, Chat Box collapse, File Tree scaffold, and Version Snapshot scaffold",
+        "W1.5.105-W1.5.107 local read-only selection details"
+      ],
+      "remaining_gap": [
+        "Task mutation commands are not implemented",
+        "File operations and persisted version snapshot actions are not implemented"
+      ]
+    },
+    {
+      "id": "M1.5-R8",
+      "requirement": "electron-updater through GitHub Releases",
+      "status": "blocked_by_dependency_gate",
+      "verified_evidence": [],
+      "remaining_gap": [
+        "electron-updater and electron-builder are not approved or installed",
+        "Cross-platform installer startup evidence is not available"
+      ]
+    }
+  ],
+  "phase_1_exit_readiness": [
+    {
+      "id": "EXIT-P1-1",
+      "status": "not_ready",
+      "reason": "FR-001 through FR-020 still require a formal UX acceptance checklist and several surfaces remain scaffold-only or dependency-gated."
+    },
+    {
+      "id": "EXIT-P1-2",
+      "status": "deferred_to_m1_6",
+      "reason": "End-to-end demo workflow and export artifact evidence belong to M1.6."
+    },
+    {
+      "id": "EXIT-P1-3",
+      "status": "deferred_to_m1_6",
+      "reason": "CW-Bench v0.1 pass-rate evidence is planned after the demo workflow."
+    },
+    {
+      "id": "EXIT-P1-4",
+      "status": "not_ready",
+      "reason": "A1 spec conformance review must run across Phase 1 before phase exit."
+    },
+    {
+      "id": "EXIT-P1-5",
+      "status": "not_ready",
+      "reason": "Global locked error-code coverage must be audited before phase exit."
+    },
+    {
+      "id": "EXIT-P1-6",
+      "status": "not_ready",
+      "reason": "A3 security audit report is not yet recorded for Phase 1 exit."
+    },
+    {
+      "id": "EXIT-P1-7",
+      "status": "blocked_by_dependency_gate",
+      "reason": "Electron packaging/updater dependencies are not approved or installed."
+    },
+    {
+      "id": "EXIT-P1-8",
+      "status": "not_ready",
+      "reason": "Adapter conformance must be re-run across PydanticAIAdapter and ClaudeCodeAdapter before phase exit."
+    },
+    {
+      "id": "EXIT-P1-9",
+      "status": "not_ready",
+      "reason": "Failure taxonomy unknown-rate evidence is not yet recorded for Phase 1 exit."
+    },
+    {
+      "id": "EXIT-P1-10",
+      "status": "not_ready",
+      "reason": "A8 git-history audit must verify automatic commit/tag behavior before phase exit."
+    },
+    {
+      "id": "EXIT-P1-11",
+      "status": "not_ready",
+      "reason": "Completed Run replay from stream-events.jsonl plus trace.sqlite still needs phase-level evidence."
+    },
+    {
+      "id": "EXIT-P1-12",
+      "status": "blocked_by_dependency_gate",
+      "reason": "React Flow 100-node drag performance cannot be measured before the React Flow dependency gate."
+    }
+  ],
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.171",
+      "title": "Desktop dependency gate proposal for React Flow, Forge, Tailwind, and updater",
+      "reason": "M1.5 roadmap items R1, R4, R8 and EXIT-P1-7/P1-12 cannot be completed under the current approved minimal dependency group."
+    },
+    {
+      "id": "W1.5.172",
+      "title": "FR-001 through FR-020 UX acceptance checklist extraction",
+      "reason": "EXIT-P1-1 needs a concrete A4 checklist before M1.5 can claim phase-exit readiness."
+    }
+  ]
+}
