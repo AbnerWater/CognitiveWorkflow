@@ -133,7 +133,12 @@ test("starts real Python sidecar and opens renderer shell run stream", async () 
     if (startup !== undefined) {
       await stopStartedRuntime(startup);
     }
-    await rm(tempRoot, { recursive: true, force: true });
+    await rm(tempRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
   }
 });
 
