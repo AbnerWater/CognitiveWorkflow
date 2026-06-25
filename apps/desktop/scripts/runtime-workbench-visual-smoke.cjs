@@ -653,6 +653,8 @@ async function readMetrics(window) {
         document.querySelector('[data-chat-draft-intent-active="true"]')?.getAttribute('data-chat-draft-intent') ?? null,
       chatDraftInputs:
         document.querySelectorAll('[data-chat-draft-input="true"]').length,
+      chatDraftInputFocused:
+        document.activeElement === document.querySelector('[data-chat-draft-input="true"]'),
       chatDraftValue:
         document.querySelector('[data-chat-draft-input="true"]')?.value ?? null,
       chatDraftIntent:
@@ -1820,16 +1822,61 @@ async function clickChatDraftIntent(window, intent) {
   }
 }
 
-async function clickChatBoxToggle(window) {
-  await window.webContents.executeJavaScript(`
-    (() => {
+async function clickChatBoxToggle(window, options = {}) {
+  const expectedExpandedLiteral = JSON.stringify(
+    options.expectedExpanded ?? null,
+  );
+  const expectDraftFocusLiteral =
+    options.expectDraftFocus === true ? "true" : "false";
+  const result = await window.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const expectedExpanded = ${expectedExpandedLiteral};
+      const expectDraftFocus = ${expectDraftFocusLiteral};
       const button = document.querySelector('[data-chat-box-toggle="true"]');
       if (!(button instanceof HTMLButtonElement)) {
-        throw new Error('Missing chat box toggle button');
+        resolve({ ok: false, message: 'Missing chat box toggle button' });
+        return;
       }
       button.click();
-    })()
+      if (expectedExpanded === null && !expectDraftFocus) {
+        resolve({ ok: true });
+        return;
+      }
+      const startedAt = Date.now();
+      const waitForToggle = () => {
+        const chat = document.querySelector('.cw-workbench__chat');
+        const input = document.querySelector('[data-chat-draft-input="true"]');
+        const actualExpanded = chat?.getAttribute('data-chat-box-expanded') ?? null;
+        const draftFocused = input instanceof HTMLTextAreaElement && document.activeElement === input;
+        if (
+          actualExpanded === expectedExpanded &&
+          (!expectDraftFocus || draftFocused)
+        ) {
+          resolve({ ok: true });
+          return;
+        }
+        if (Date.now() - startedAt > 2000) {
+          resolve({
+            ok: false,
+            message: 'Chat box toggle did not settle',
+            expectedExpanded,
+            actualExpanded,
+            expectDraftFocus,
+            draftInputPresent: input instanceof HTMLTextAreaElement,
+            draftFocused,
+            activeTag: document.activeElement?.tagName ?? null,
+            bodyText: document.body.textContent?.slice(0, 500) ?? '',
+          });
+          return;
+        }
+        window.requestAnimationFrame(waitForToggle);
+      };
+      waitForToggle();
+    })
   `);
+  if (result?.ok !== true) {
+    throw new Error(JSON.stringify(result));
+  }
 }
 
 async function clickStreamPanelToggle(window) {
@@ -4581,6 +4628,11 @@ function collectVisualSmokeFailures(
       `expected one chat draft input, got ${metrics.chatDraftInputs}`,
     );
   }
+  if (chatInitialMetrics.chatDraftInputFocused !== true) {
+    failures.push(
+      `expected expanded chat box to focus draft input, got ${chatInitialMetrics.chatDraftInputFocused}`,
+    );
+  }
   if (chatInitialMetrics.chatDraftLength !== "0") {
     failures.push(
       `expected initial chat draft length 0, got ${chatInitialMetrics.chatDraftLength}`,
@@ -5363,11 +5415,18 @@ async function main() {
     readMetrics(window),
   );
   await runSmokeStep("expand task drawer", () => clickTaskDrawerToggle(window));
-  await runSmokeStep("collapse chat box", () => clickChatBoxToggle(window));
+  await runSmokeStep("collapse chat box", () =>
+    clickChatBoxToggle(window, { expectedExpanded: "false" }),
+  );
   const chatCollapsedMetrics = await runSmokeStep("read chat metrics", () =>
     readMetrics(window),
   );
-  await runSmokeStep("expand chat box", () => clickChatBoxToggle(window));
+  await runSmokeStep("expand chat box", () =>
+    clickChatBoxToggle(window, {
+      expectedExpanded: "true",
+      expectDraftFocus: true,
+    }),
+  );
   const chatInitialMetrics = await runSmokeStep(
     "read initial chat draft metrics",
     () => readMetrics(window),

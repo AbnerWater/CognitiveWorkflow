@@ -2259,10 +2259,14 @@ test("renderer runtime workbench React shell toggles chat box collapse", async (
       /Stream focus, chat idle/u,
     );
 
+    const expandChatButton = requireFakeRuntimeWorkbenchButtonByText(
+      dom.container,
+      "Expand chat",
+    );
+    expandChatButton.focus();
+    assert.equal(dom.container.ownerDocument?.activeElement, expandChatButton);
     await act(async () => {
-      clickFakeRuntimeWorkbenchElement(
-        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Expand chat"),
-      );
+      clickFakeRuntimeWorkbenchElement(expandChatButton);
     });
 
     assert.equal(
@@ -2274,6 +2278,14 @@ test("renderer runtime workbench React shell toggles chat box collapse", async (
       "true",
     );
     assert.match(fakeRuntimeWorkbenchNodeTextContent(dom.container), /Send/u);
+    assert.equal(
+      dom.container.ownerDocument?.activeElement,
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftInput",
+        "true",
+      ),
+    );
 
     await act(async () => {
       root.unmount();
@@ -2815,10 +2827,14 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
       "false",
     );
 
+    const expandChatButton = requireFakeRuntimeWorkbenchButtonByText(
+      dom.container,
+      "Expand chat",
+    );
+    expandChatButton.focus();
+    assert.equal(dom.container.ownerDocument?.activeElement, expandChatButton);
     await act(async () => {
-      clickFakeRuntimeWorkbenchElement(
-        requireFakeRuntimeWorkbenchButtonByText(dom.container, "Expand chat"),
-      );
+      clickFakeRuntimeWorkbenchElement(expandChatButton);
     });
 
     const expandedChatDraftInput = requireFakeRuntimeWorkbenchElementByData(
@@ -2827,6 +2843,10 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
       "true",
     );
     assert.equal(expandedChatDraftInput.value, "Review repair plan now");
+    assert.equal(
+      dom.container.ownerDocument?.activeElement,
+      expandedChatDraftInput,
+    );
 
     const draftClearButton = requireFakeRuntimeWorkbenchElementByData(
       dom.container,

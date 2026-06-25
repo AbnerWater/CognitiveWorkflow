@@ -2409,6 +2409,7 @@ function RuntimeWorkbenchShellChatBox(props: {
   >([]);
   const localSubmissionSequenceRef = useRef(0);
   const draftInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const shouldFocusDraftOnExpandRef = useRef(false);
   const draftLength = draft.length;
   const draftWords = runtimeWorkbenchShellChatDraftWordCount(draft);
   const draftIntentLabel =
@@ -2423,8 +2424,21 @@ function RuntimeWorkbenchShellChatBox(props: {
   const focusDraftInput = useCallback((): void => {
     draftInputRef.current?.focus({ preventScroll: true });
   }, []);
+  useEffect((): void => {
+    if (!expanded || !shouldFocusDraftOnExpandRef.current) {
+      return;
+    }
+    shouldFocusDraftOnExpandRef.current = false;
+    focusDraftInput();
+  }, [expanded, focusDraftInput]);
   const handleToggleClick = useCallback((): void => {
-    setExpanded((current) => !current);
+    setExpanded((current) => {
+      const nextExpanded = !current;
+      if (nextExpanded) {
+        shouldFocusDraftOnExpandRef.current = true;
+      }
+      return nextExpanded;
+    });
   }, []);
   const handleDraftChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>): void => {
