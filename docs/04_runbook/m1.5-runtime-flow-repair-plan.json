@@ -1,0 +1,285 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.177",
+  "plan_status": "runtime_flow_repair_plan_not_implemented",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-25",
+  "source": {
+    "ux_gap_repair_plan": "docs/04_runbook/m1.5-ux-gap-repair-plan.json#TRACK-RUNTIME-FLOW-REPAIR",
+    "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
+    "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "runtime_harness": "specs/runtime_harness.md",
+    "http_sse_api": "specs/api/http_sse.md",
+    "failure_taxonomy": "specs/failure_taxonomy.md",
+    "local_ui_evidence_bundle": "docs/04_runbook/m1.5-local-ui-evidence-bundle.json"
+  },
+  "guardrails": [
+    "This artifact plans runtime-backed desktop flow repair; it does not implement missing FR behavior.",
+    "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
+    "W1.5.177 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content.",
+    "Chat prompt text, model output text, raw URL query/hash, output directory, and other user-entered freeform text must not appear in runner output or visual evidence.",
+    "secure/** and cache/** remain untracked and must not be added to Git.",
+    "Sensitive artifacts follow the runtime_harness secure/local-token boundary and are not exposed through unsafe desktop evidence."
+  ],
+  "repair_track": {
+    "source_track_id": "TRACK-RUNTIME-FLOW-REPAIR",
+    "track_kind": "runtime_backed_desktop_flow",
+    "source_track_status": "planned_not_implemented",
+    "priority": 3,
+    "source_acceptance_readiness": "partial_requires_runtime_flow",
+    "fr_ids": ["FR-008", "FR-015", "FR-017"],
+    "blocked_by_dependency_gates": [],
+    "objective": "Replace local-only Chat Box, snapshot, and artifact surfaces with project/runtime-backed flows while preserving safe evidence contracts.",
+    "entry_criteria": [
+      "Runtime command, snapshot, and artifact IPC boundaries are reviewed before implementation.",
+      "Chat evidence remains metadata-only and raw-draft-free."
+    ],
+    "planned_repair_steps": [
+      "Route Chat Box submissions to runtime command handling without unsafe prompt persistence.",
+      "Bind Version Snapshot actions to runtime/Git snapshot operations.",
+      "Expose node artifacts in Task Drawer with project-scoped open/download behavior."
+    ],
+    "planned_verification": [
+      "pnpm --filter @cw/desktop run test",
+      "uv run pytest apps/runtime/tests -q",
+      "Targeted visual smoke for runtime-backed desktop flow after implementation"
+    ],
+    "next_slice": "W1.5.177"
+  },
+  "runtime_flow_items": [
+    {
+      "id": "RUNTIME-FR-008-CHAT-COMMAND-ROUTING",
+      "fr_id": "FR-008",
+      "runtime_boundary_kind": "chat_command_routing",
+      "source_checklist_status": "partial_scaffold",
+      "source_acceptance_readiness": "partial_requires_runtime_flow",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-008",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-008",
+        "docs/04_runbook/m1.5-progress.md#W1.5.108-W1.5.112",
+        "docs/04_runbook/m1.5-progress.md#W1.5.150-W1.5.169",
+        "apps/desktop/scripts/runtime-workbench-visual-smoke-matrix.cjs"
+      ],
+      "source_verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "source_checklist_remaining_gap": [
+        "Real chat command routing and runtime mutation are not implemented.",
+        "Persistence and project-backed command history remain out of scope."
+      ],
+      "missing_before_implementation": [
+        "Real chat command routing and runtime mutation are not implemented.",
+        "Project-backed command history and persistence remain missing."
+      ],
+      "source_next_action": "Route Chat Box submissions to runtime commands while preserving metadata-only smoke evidence.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Define the desktop IPC command boundary before changing Chat Box behavior.",
+        "Route current-node and global workflow intents to runtime command handling.",
+        "Persist only project-scoped command metadata needed for history and verification."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "docs/04_runbook/m1.5-ux-gap-repair-plan.json",
+          "pattern": "Chat evidence remains metadata-only and raw-draft-free.",
+          "reason": "Keeps chat evidence metadata-only before runtime routing work starts."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "POST   /{workflow_id}/run",
+          "reason": "Defines the workflow runtime entrypoint that desktop commands must not bypass."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "GET    /{run_id}/stream",
+          "reason": "Defines the runtime stream surface used after command submission."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "runs/<run_id>/stream-events/",
+          "reason": "Keeps command evidence aligned with run-scoped stream-event storage."
+        },
+        {
+          "source": "specs/failure_taxonomy.md",
+          "pattern": "`RH_*`",
+          "reason": "Keeps runtime-harness failure handling inside the accepted namespace."
+        }
+      ]
+    },
+    {
+      "id": "RUNTIME-FR-015-SNAPSHOT-RESTORE",
+      "fr_id": "FR-015",
+      "runtime_boundary_kind": "snapshot_restore_continue",
+      "source_checklist_status": "partial_scaffold",
+      "source_acceptance_readiness": "partial_requires_runtime_flow",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-015",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-015",
+        "docs/04_runbook/m1.5-progress.md#W1.5.93",
+        "docs/04_runbook/m1.5-progress.md#W1.5.106",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+      ],
+      "source_verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "source_checklist_remaining_gap": [
+        "Automatic snapshot creation, restore, and continue execution are not implemented.",
+        "Git-backed snapshot semantics remain unaccepted."
+      ],
+      "missing_before_implementation": [
+        "Automatic snapshot creation, restore, and continue execution are not implemented.",
+        "Git-backed snapshot semantics remain unaccepted."
+      ],
+      "source_next_action": "Connect Version Snapshot UI to runtime/Git snapshot actions and capture restore evidence.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Bind explicit Version Snapshot actions to runtime snapshot APIs.",
+        "Record automatic snapshot boundaries without claiming restore behavior before tests exist.",
+        "Add restore-and-continue evidence only after Git-backed semantics are implemented."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "POST   /{workflow_id}/snapshot",
+          "reason": "Defines the explicit runtime snapshot endpoint for desktop actions."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "snapshots/snapshots.jsonl",
+          "reason": "Defines the runtime snapshot ledger that desktop restore evidence must reference."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "run.completed / run.failed / run.cancelled",
+          "reason": "Defines terminal run boundaries where automatic snapshot behavior is expected."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "locks/git.lock",
+          "reason": "Keeps snapshot actions aligned with the Git lock boundary."
+        },
+        {
+          "source": "specs/failure_taxonomy.md",
+          "pattern": "`RH_*`",
+          "reason": "Keeps snapshot runtime errors in the accepted runtime-harness namespace."
+        }
+      ]
+    },
+    {
+      "id": "RUNTIME-FR-017-ARTIFACT-ACTIONS",
+      "fr_id": "FR-017",
+      "runtime_boundary_kind": "artifact_open_download",
+      "source_checklist_status": "partial_evidence",
+      "source_acceptance_readiness": "partial_requires_runtime_flow",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-017",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-017",
+        "docs/04_runbook/m1.5-progress.md#W1.5.120",
+        "specs/runtime_harness.md"
+      ],
+      "source_verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "source_checklist_remaining_gap": [
+        "Artifact references are not yet accepted in right-side Task details.",
+        "Artifact open/download actions are not implemented."
+      ],
+      "missing_before_implementation": [
+        "Artifact references are not yet accepted in right-side Task details.",
+        "Artifact open and download actions are not implemented."
+      ],
+      "source_next_action": "Bind artifacts to Task Drawer details and add project-scoped open/download behavior.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Bind runtime artifact references to selected-node Task Drawer details.",
+        "Add project-scoped open and download commands for non-sensitive artifacts.",
+        "Keep sensitive artifacts behind the runtime secure/local-token boundary."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "artifacts/index.jsonl",
+          "reason": "Defines the artifact manifest that Task Drawer details must read from."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "GET    /{artifact_id}/content",
+          "reason": "Defines the artifact content retrieval endpoint for open/download actions."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "sensitivity=sensitive",
+          "reason": "Defines sensitive artifact access constraints for desktop actions."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "sensitivity=sensitive",
+          "reason": "Defines sensitive artifact storage constraints that must not be bypassed."
+        },
+        {
+          "source": "specs/failure_taxonomy.md",
+          "pattern": "`RH_*`",
+          "reason": "Keeps artifact runtime errors in the accepted runtime-harness namespace."
+        }
+      ]
+    }
+  ],
+  "implementation_sequence": [
+    {
+      "order": 1,
+      "item_id": "RUNTIME-FR-008-CHAT-COMMAND-ROUTING",
+      "fr_id": "FR-008",
+      "reason": "Chat Box already has metadata-only local evidence; runtime routing can be added without new dependencies if the safe evidence boundary is preserved."
+    },
+    {
+      "order": 2,
+      "item_id": "RUNTIME-FR-015-SNAPSHOT-RESTORE",
+      "fr_id": "FR-015",
+      "reason": "Snapshot actions must follow the runtime/Git boundary before any restore or continue-execution UX is accepted."
+    },
+    {
+      "order": 3,
+      "item_id": "RUNTIME-FR-017-ARTIFACT-ACTIONS",
+      "fr_id": "FR-017",
+      "reason": "Artifact actions depend on project-scoped runtime manifest and sensitive-content policy decisions being visible in Task Drawer evidence."
+    }
+  ],
+  "runner_contract": {
+    "focused_check": "node apps/desktop/scripts/m1-5-runtime-flow-repair-plan.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-runtime-flow-repair-plan.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "runtime_focused_test": "uv run pytest apps/runtime/tests -q",
+    "runner_output_contract": {
+      "status": "runtime_flow_repair_plan_not_implemented",
+      "repair_item_count": 3,
+      "accepted_item_count": 0,
+      "runtime_flow_item_count": 3,
+      "sanitized_summary_only": true
+    }
+  },
+  "summary": {
+    "repair_item_count": 3,
+    "runtime_flow_fr_items": 3,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "pending_implementation_items": 3,
+    "exit_p1_1_status": "not_ready",
+    "next_required_review": "A4 ux-acceptance-reviewer after implementation evidence"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.178",
+      "title": "Desktop runtime bridge repair bundle",
+      "reason": "Plan backend-only FR-007/011/012/014/018 desktop runtime bridge implementation after runtime-flow planning is locked."
+    },
+    {
+      "id": "W1.5.179",
+      "title": "Runtime-backed Chat Box command routing implementation",
+      "reason": "Implement FR-008 against runtime command handling while preserving metadata-only evidence."
+    },
+    {
+      "id": "W1.5.180",
+      "title": "Version Snapshot runtime action implementation",
+      "reason": "Implement FR-015 snapshot, restore, and continue actions against runtime/Git contracts."
+    }
+  ]
+}
