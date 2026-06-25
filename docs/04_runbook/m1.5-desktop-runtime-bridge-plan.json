@@ -1,0 +1,400 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.178",
+  "plan_status": "desktop_runtime_bridge_plan_not_implemented",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-25",
+  "source": {
+    "ux_gap_repair_plan": "docs/04_runbook/m1.5-ux-gap-repair-plan.json#TRACK-DESKTOP-RUNTIME-BRIDGE",
+    "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
+    "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "runtime_harness": "specs/runtime_harness.md",
+    "http_sse_api": "specs/api/http_sse.md",
+    "workflow_run_state_machine": "specs/state_machines/workflow_run.md",
+    "workflow_graph_schema": "specs/schemas/workflow_graph.md",
+    "node_contract_schema": "specs/schemas/node_contract.md",
+    "agent_adapter_protocol": "specs/protocols/agent_adapter.md"
+  },
+  "guardrails": [
+    "This artifact plans backend-only evidence to desktop runtime bridge repair; it does not implement missing FR behavior.",
+    "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
+    "W1.5.178 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content.",
+    "Desktop controls planned here must remain fail-closed until the corresponding runtime/API path is implemented and verified.",
+    "Skill and MCP configuration evidence must not expose secrets or raw credentials.",
+    "Project creation and Git initialization evidence must keep secure/** and cache/** untracked."
+  ],
+  "repair_track": {
+    "source_track_id": "TRACK-DESKTOP-RUNTIME-BRIDGE",
+    "track_kind": "backend_only_to_desktop_flow",
+    "source_track_status": "planned_not_implemented",
+    "priority": 4,
+    "source_acceptance_readiness": "backend_only_requires_desktop_flow",
+    "fr_ids": ["FR-007", "FR-011", "FR-012", "FR-014", "FR-018"],
+    "blocked_by_dependency_gates": [],
+    "objective": "Build desktop UX paths for execution mode, project creation, Git initialization, Skill management, and semi-auto HITL behavior already represented in backend/schema evidence.",
+    "entry_criteria": [
+      "Runtime APIs for the selected flow are available or stubbed behind fail-closed desktop controls.",
+      "Git initialization and HITL flows stay aligned with runtime_harness.md and workflow_run.md."
+    ],
+    "planned_repair_steps": [
+      "Add execution mode controls near the run action and bind them to runtime execution policy.",
+      "Implement project creation with mandatory Git initialization and reference upload entry points.",
+      "Expose Skill candidates/configuration safely and capture semi-auto pause/resume confirmation UX."
+    ],
+    "planned_verification": [
+      "pnpm --filter @cw/desktop run test",
+      "uv run pytest apps/runtime/tests -q",
+      "A8 git-history audit evidence after desktop project creation is implemented"
+    ],
+    "next_slice": "W1.5.178"
+  },
+  "desktop_runtime_bridge_items": [
+    {
+      "id": "BRIDGE-FR-007-EXECUTION-MODE-CONTROL",
+      "fr_id": "FR-007",
+      "runtime_boundary_kind": "execution_mode_policy",
+      "source_checklist_status": "backend_or_schema_evidence_only",
+      "source_acceptance_readiness": "backend_only_requires_desktop_flow",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-007",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-007",
+        "specs/schemas/workflow_graph.md",
+        "specs/api/http_sse.md"
+      ],
+      "source_verification_commands": [
+        "uv run pytest packages/schemas/tests -q"
+      ],
+      "source_checklist_remaining_gap": [
+        "Desktop execution mode control near the run button is not accepted.",
+        "Mode-to-runtime behavior has not been proven through the workbench UI."
+      ],
+      "missing_before_implementation": [
+        "Desktop step, semi-auto, and auto mode control near the run button is not implemented.",
+        "Mode-to-runtime execution behavior has not been proven from the workbench UI."
+      ],
+      "source_next_action": "Add desktop execution mode control near run actions and bind it to runtime execution policy.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Define the desktop execution mode control placement near the primary run action.",
+        "Bind step, semi-auto, and auto choices to runtime execution policy without allowing unsupported state transitions.",
+        "Keep run-once step behavior fail-closed until runtime node execution evidence exists."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/schemas/workflow_graph.md",
+          "pattern": "`mode` | `enum: step / semi_auto / auto`",
+          "reason": "Defines the three execution modes that the desktop control must expose."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "POST   /{run_id}/nodes/{node_id}:run-once",
+          "reason": "Defines the runtime endpoint for step-mode single-node execution."
+        },
+        {
+          "source": "specs/state_machines/workflow_run.md",
+          "pattern": "D-WR-12 | mode 切换仅在 ready / paused 状态下允许",
+          "reason": "Keeps mode changes constrained to accepted WorkflowRun states."
+        },
+        {
+          "source": "specs/state_machines/workflow_run.md",
+          "pattern": "| `semi_auto` | 自动 | 用户点\"开始\"后进入 running",
+          "reason": "Defines semi-auto runtime behavior before desktop binding work starts."
+        }
+      ]
+    },
+    {
+      "id": "BRIDGE-FR-011-PROJECT-CREATION",
+      "fr_id": "FR-011",
+      "runtime_boundary_kind": "project_creation_and_reference_import",
+      "source_checklist_status": "backend_evidence_only",
+      "source_acceptance_readiness": "backend_only_requires_desktop_flow",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-011",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-011",
+        "apps/runtime/tests",
+        "specs/runtime_harness.md"
+      ],
+      "source_verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "source_checklist_remaining_gap": [
+        "Desktop new-project UX is not implemented.",
+        "Reference upload during initialization is not implemented."
+      ],
+      "missing_before_implementation": [
+        "Desktop new-project UX is not implemented.",
+        "Reference upload during initialization is not implemented."
+      ],
+      "source_next_action": "Implement desktop project creation and reference upload flow.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Define the desktop new-project entry point and required task-background input.",
+        "Bind project initialization to the runtime project creation endpoint.",
+        "Add reference upload/import as part of project initialization without bypassing runtime manifests."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "POST   /                                          → 创建项目（FR-011）",
+          "reason": "Defines the runtime project creation entrypoint."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "POST   /{project_id}/references",
+          "reason": "Defines the reference upload endpoint needed during project initialization."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "references.manifest.json",
+          "reason": "Defines the project reference manifest that desktop import evidence must update."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "references/                              ← 用户上传 / 引用的参考资料原文",
+          "reason": "Defines the user-visible reference material directory for project creation."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "D-RH-11",
+          "reason": "Keeps visible and internal runtime paths separated during project creation."
+        }
+      ]
+    },
+    {
+      "id": "BRIDGE-FR-012-GIT-INITIALIZATION",
+      "fr_id": "FR-012",
+      "runtime_boundary_kind": "mandatory_git_initialization",
+      "source_checklist_status": "backend_evidence_only",
+      "source_acceptance_readiness": "backend_only_requires_desktop_flow",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-012",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-012",
+        "specs/runtime_harness.md",
+        "docs/roadmap.md#EXIT-P1-10"
+      ],
+      "source_verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "source_checklist_remaining_gap": [
+        "Desktop project-creation path and A8 git-history audit evidence are not recorded.",
+        "Automatic commit/tag behavior remains a Phase 1 exit audit item."
+      ],
+      "missing_before_implementation": [
+        "Desktop project-creation path is not available.",
+        "A8 git-history audit evidence for automatic commit/tag behavior is not recorded."
+      ],
+      "source_next_action": "Tie desktop project creation to runtime Git initialization and A8 audit evidence.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Make Git initialization mandatory in the desktop project creation flow.",
+        "Expose no user bypass for Git initialization.",
+        "Capture A8 git-history audit evidence only after runtime commit/tag behavior is wired."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": ".git/                                    ← FR-012 强制初始化",
+          "reason": "Defines mandatory Git initialization for every workbench project."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "auto_commit_enabled / auto_tag_workflow",
+          "reason": "Defines the Git settings the desktop flow must not bypass."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "新建项目时（FR-011 / FR-012）：",
+          "reason": "Defines the project initialization sequence shared by FR-011 and FR-012."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "CW 安装一个 pre-commit hook",
+          "reason": "Defines the runtime Git safety hook installed during initialization."
+        }
+      ]
+    },
+    {
+      "id": "BRIDGE-FR-014-SKILL-MANAGEMENT",
+      "fr_id": "FR-014",
+      "runtime_boundary_kind": "skill_management_configuration",
+      "source_checklist_status": "backend_evidence_only",
+      "source_acceptance_readiness": "backend_only_requires_desktop_flow",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-014",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-014",
+        "docs/04_runbook/m1.5-progress.md#M1.4",
+        "apps/runtime/tests"
+      ],
+      "source_verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "source_checklist_remaining_gap": [
+        "Desktop Skill management UI is not implemented.",
+        "Secret-safe configuration display remains unaccepted."
+      ],
+      "missing_before_implementation": [
+        "Desktop Skill management UI is not implemented.",
+        "Secret-safe Skill configuration display has not been accepted."
+      ],
+      "source_next_action": "Expose project Skill candidates and configuration through a safe desktop UI.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Expose candidate Skills from runtime project configuration.",
+        "Plan enable/disable/version controls without adding a new dependency.",
+        "Display Skill and MCP configuration metadata without exposing secret values."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "GET    /{project_id}/skills",
+          "reason": "Defines the runtime endpoint for reading project Skill configuration."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "PATCH  /{project_id}/skills",
+          "reason": "Defines the runtime endpoint for enabling, disabling, or changing Skill versions."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "skills.config.json",
+          "reason": "Defines the project-local Skill configuration file."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "secret_ref",
+          "reason": "Keeps secret-bearing MCP configuration out of desktop display text."
+        },
+        {
+          "source": "specs/schemas/node_contract.md",
+          "pattern": "| `skills` | `SkillRef[]`",
+          "reason": "Defines node-level Skill references that the desktop UI must present safely."
+        }
+      ]
+    },
+    {
+      "id": "BRIDGE-FR-018-SEMI-AUTO-HITL",
+      "fr_id": "FR-018",
+      "runtime_boundary_kind": "semi_auto_hitl_pause_resume",
+      "source_checklist_status": "backend_evidence_only",
+      "source_acceptance_readiness": "backend_only_requires_desktop_flow",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-018",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-018",
+        "docs/04_runbook/m1.5-progress.md#M1.3",
+        "docs/04_runbook/m1.5-progress.md#M1.4",
+        "specs/state_machines/workflow_run.md"
+      ],
+      "source_verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "source_checklist_remaining_gap": [
+        "Desktop semi-auto mode UI and confirmation flow are not accepted.",
+        "End-to-end pause/resume UX evidence is missing."
+      ],
+      "missing_before_implementation": [
+        "Desktop semi-auto mode confirmation UI is not accepted.",
+        "End-to-end pause/resume UX evidence is missing."
+      ],
+      "source_next_action": "Implement desktop semi-auto pause/resume confirmation path and capture A4 evidence.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Plan the desktop waiting-user confirmation surface for review and high-risk nodes.",
+        "Bind human decisions to the runtime decisions endpoint.",
+        "Capture pause/resume evidence only after runtime state transitions are visible in the desktop workbench."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/state_machines/workflow_run.md",
+          "pattern": "| `semi_auto` | 自动 | 用户点\"开始\"后进入 running",
+          "reason": "Defines semi-auto behavior that must pause at review or high-risk nodes."
+        },
+        {
+          "source": "specs/state_machines/workflow_run.md",
+          "pattern": "running → waiting_user",
+          "reason": "Defines the runtime transition the desktop confirmation flow must reflect."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "POST   /{run_id}/decisions",
+          "reason": "Defines the endpoint for submitting Human Checkpoint decisions."
+        },
+        {
+          "source": "specs/protocols/agent_adapter.md",
+          "pattern": "AWAITING_HUMAN",
+          "reason": "Defines the adapter state behind HITL pause/resume behavior."
+        },
+        {
+          "source": "specs/schemas/node_contract.md",
+          "pattern": "`human_gate.decisions` / `prompt_to_user`",
+          "reason": "Defines the human gate fields that the desktop confirmation UI must present."
+        }
+      ]
+    }
+  ],
+  "implementation_sequence": [
+    {
+      "order": 1,
+      "item_id": "BRIDGE-FR-007-EXECUTION-MODE-CONTROL",
+      "fr_id": "FR-007",
+      "reason": "Execution mode controls gate later run, pause, resume, and single-node actions and should be visible before deeper project flows."
+    },
+    {
+      "order": 2,
+      "item_id": "BRIDGE-FR-011-PROJECT-CREATION",
+      "fr_id": "FR-011",
+      "reason": "Project creation is the entry point for runtime-backed desktop workbench sessions and reference import."
+    },
+    {
+      "order": 3,
+      "item_id": "BRIDGE-FR-012-GIT-INITIALIZATION",
+      "fr_id": "FR-012",
+      "reason": "Mandatory Git initialization and audit evidence are coupled to the project creation path."
+    },
+    {
+      "order": 4,
+      "item_id": "BRIDGE-FR-014-SKILL-MANAGEMENT",
+      "fr_id": "FR-014",
+      "reason": "Skill management can be planned after project configuration boundaries are visible."
+    },
+    {
+      "order": 5,
+      "item_id": "BRIDGE-FR-018-SEMI-AUTO-HITL",
+      "fr_id": "FR-018",
+      "reason": "Semi-auto HITL depends on execution mode and runtime decision surfaces being aligned first."
+    }
+  ],
+  "runner_contract": {
+    "focused_check": "node apps/desktop/scripts/m1-5-desktop-runtime-bridge-plan.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-desktop-runtime-bridge-plan.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "runtime_focused_test": "uv run pytest apps/runtime/tests -q",
+    "schema_focused_test": "uv run pytest packages/schemas/tests -q",
+    "runner_output_contract": {
+      "status": "desktop_runtime_bridge_plan_not_implemented",
+      "bridge_item_count": 5,
+      "accepted_item_count": 0,
+      "implemented_item_count": 0,
+      "sanitized_summary_only": true
+    }
+  },
+  "summary": {
+    "bridge_item_count": 5,
+    "backend_only_fr_items": 5,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "pending_implementation_items": 5,
+    "exit_p1_1_status": "not_ready",
+    "next_required_review": "A4 ux-acceptance-reviewer after implementation evidence"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.179",
+      "title": "Reference management repair plan",
+      "reason": "Plan FR-013 reference import, enable, disable, and view lifecycle after backend-to-desktop bridge planning is locked."
+    },
+    {
+      "id": "W1.5.180",
+      "title": "Execution mode desktop bridge implementation",
+      "reason": "Implement FR-007 mode controls against workflow execution policy and run-once runtime contracts."
+    },
+    {
+      "id": "W1.5.181",
+      "title": "Project creation and Git initialization desktop bridge implementation",
+      "reason": "Implement FR-011 and FR-012 together so mandatory Git initialization is proven from the desktop project creation path."
+    }
+  ]
+}
