@@ -2444,7 +2444,7 @@ function RuntimeWorkbenchShellChatBox(props: {
     },
     [],
   );
-  const handleSendClick = useCallback((): void => {
+  const submitChatDraft = useCallback((): void => {
     if (!sendGuard.enabled) {
       return;
     }
@@ -2473,6 +2473,19 @@ function RuntimeWorkbenchShellChatBox(props: {
     draftWords,
     sendGuard.enabled,
   ]);
+  const handleDraftKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+      if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
+        return;
+      }
+      event.preventDefault();
+      submitChatDraft();
+    },
+    [submitChatDraft],
+  );
+  const handleSendClick = useCallback((): void => {
+    submitChatDraft();
+  }, [submitChatDraft]);
   return (
     <section
       aria-label={props.chatBox.title}
@@ -2535,6 +2548,7 @@ function RuntimeWorkbenchShellChatBox(props: {
               aria-label="Chat draft"
               data-chat-draft-input="true"
               onChange={handleDraftChange}
+              onKeyDown={handleDraftKeyDown}
               placeholder={props.chatBox.placeholder}
               rows={2}
               value={draft}

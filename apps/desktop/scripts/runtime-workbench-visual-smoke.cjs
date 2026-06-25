@@ -1567,7 +1567,7 @@ async function clearChatDraft(window) {
   }
 }
 
-async function sendChatDraft(window, draft, expected) {
+async function sendChatDraft(window, draft, expected, options = {}) {
   await inputChatDraft(window, draft);
   const expectedSubmission = {
     sequence: String(expected.sequence),
@@ -1579,6 +1579,8 @@ async function sendChatDraft(window, draft, expected) {
     characters: String(draft.length),
     words: String(countChatDraftWords(draft)),
     forbiddenDraft: draft,
+    trigger: options.trigger ?? "button",
+    modifier: options.modifier ?? "ctrl",
   };
   const expectedLiteral = JSON.stringify(expectedSubmission);
   const result = await window.webContents.executeJavaScript(`
@@ -1597,7 +1599,30 @@ async function sendChatDraft(window, draft, expected) {
         });
         return;
       }
-      button.click();
+      if (expected.trigger === 'keyboard') {
+        const input = document.querySelector('[data-chat-draft-input="true"]');
+        if (!(input instanceof HTMLTextAreaElement)) {
+          resolve({ ok: false, message: 'Missing chat draft input for keyboard send' });
+          return;
+        }
+        const keydownEvent = new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+          ctrlKey: expected.modifier === 'ctrl',
+          metaKey: expected.modifier === 'meta',
+        });
+        const defaultAllowed = input.dispatchEvent(keydownEvent);
+        if (defaultAllowed) {
+          resolve({
+            ok: false,
+            message: 'Chat keyboard send did not prevent default',
+          });
+          return;
+        }
+      } else {
+        button.click();
+      }
       const startedAt = Date.now();
       const readSubmission = () => {
         const section = document.querySelector('[data-chat-local-submit="true"]');
@@ -5341,15 +5366,20 @@ async function main() {
   let chatLocalHistoryClearedMetrics = null;
   let chatLocalResendMetrics = null;
   if (chatBoxMode === "enabled") {
-    await runSmokeStep("send first local chat draft", () =>
-      sendChatDraft(window, "Review repair plan now", {
-        sequence: 1,
-        count: 1,
-        status: "queued_local",
-        intent: "repair",
-        target: "repair",
-        action: "repair_review",
-      }),
+    await runSmokeStep("send first local chat draft with shortcut", () =>
+      sendChatDraft(
+        window,
+        "Review repair plan now",
+        {
+          sequence: 1,
+          count: 1,
+          status: "queued_local",
+          intent: "repair",
+          target: "repair",
+          action: "repair_review",
+        },
+        { trigger: "keyboard", modifier: "ctrl" },
+      ),
     );
     chatLocalSubmitMetrics = await runSmokeStep(
       "read first local chat send metrics",

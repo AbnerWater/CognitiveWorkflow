@@ -2686,6 +2686,24 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
     );
 
     await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(chatDraftInput, "Enter", {
+          ctrlKey: true,
+        }),
+        false,
+      );
+    });
+    assert.equal(session.dispatchedCommands().length, 0);
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.chatLocalSubmit === "true",
+      ),
+      0,
+    );
+    assert.equal(chatDraftInput.value, "Review repair plan now");
+
+    await act(async () => {
       clickFakeRuntimeWorkbenchElement(
         requireFakeRuntimeWorkbenchButtonByText(dom.container, "Collapse chat"),
       );
@@ -3057,6 +3075,156 @@ test("renderer runtime workbench React shell records local chat send receipt", a
         "empty",
       ).textContent,
       "No draft text",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench React shell submits chat draft with keyboard shortcut", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactChatEnabledSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Chat Keyboard Send Runtime Workbench"
+        />,
+      );
+    });
+
+    const draftInput = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftInput",
+      "true",
+    );
+
+    await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(draftInput, "Enter", {
+          ctrlKey: true,
+        }),
+        false,
+      );
+    });
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.chatLocalSubmit === "true",
+      ),
+      0,
+    );
+
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Send with keyboard now");
+    });
+    await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(draftInput, "Enter"),
+        true,
+      );
+    });
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        dom.container,
+        (element) => element.dataset.chatLocalSubmit === "true",
+      ),
+      0,
+    );
+
+    await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(draftInput, "Enter", {
+          ctrlKey: true,
+        }),
+        false,
+      );
+    });
+
+    let localSubmission = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatLocalSubmit",
+      "true",
+    );
+    assert.equal(session.dispatchedCommands().length, 0);
+    assert.equal(draftInput.value, "");
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-sequence"),
+      "1",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-count"),
+      "1",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-characters"),
+      "22",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-words"),
+      "4",
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(localSubmission),
+      /Send with keyboard now/u,
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchElementAttributeValues(localSubmission).join(" "),
+      /Send with keyboard now/u,
+    );
+
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Meta send request");
+    });
+    await act(async () => {
+      assert.equal(
+        keydownFakeRuntimeWorkbenchElement(draftInput, "Enter", {
+          metaKey: true,
+        }),
+        false,
+      );
+    });
+
+    localSubmission = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatLocalSubmit",
+      "true",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-sequence"),
+      "2",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-count"),
+      "2",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-characters"),
+      "17",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-words"),
+      "3",
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(localSubmission),
+      /Meta send request/u,
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchElementAttributeValues(localSubmission).join(" "),
+      /Meta send request/u,
     );
 
     await act(async () => {
@@ -6747,6 +6915,12 @@ function clickFakeRuntimeWorkbenchElement(
 function keydownFakeRuntimeWorkbenchElement(
   element: FakeRuntimeWorkbenchElement,
   key: string,
+  options: {
+    readonly altKey?: boolean;
+    readonly ctrlKey?: boolean;
+    readonly metaKey?: boolean;
+    readonly shiftKey?: boolean;
+  } = {},
 ): boolean {
   assert.equal(element.disabled, false);
   const event = new Event("keydown", { bubbles: true, cancelable: true });
@@ -6754,6 +6928,12 @@ function keydownFakeRuntimeWorkbenchElement(
     configurable: true,
     value: key,
   });
+  for (const [name, value] of Object.entries(options)) {
+    Object.defineProperty(event, name, {
+      configurable: true,
+      value,
+    });
+  }
   return element.dispatchEvent(event);
 }
 
