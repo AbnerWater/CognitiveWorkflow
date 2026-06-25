@@ -481,6 +481,9 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
     case "set_execution_mode":
     case "run_node_once":
     case "create_project":
+    case "refresh_references":
+    case "import_reference":
+    case "set_reference_enabled":
       return false;
     case "dispatch_lifecycle_panel":
       return (
@@ -662,6 +665,35 @@ function cloneRuntimeWorkbenchInteractionCommand(
         ...(command.settingsOverrides !== undefined
           ? { settingsOverrides: command.settingsOverrides }
           : {}),
+      });
+    case "refresh_references":
+      return Object.freeze({
+        type: command.type,
+        projectId: command.projectId,
+      });
+    case "import_reference":
+      return Object.freeze({
+        type: command.type,
+        projectId: command.projectId,
+        fileName: command.fileName,
+        fileContentBase64: command.fileContentBase64,
+        kind: command.kind,
+        ...(command.sensitive !== undefined
+          ? { sensitive: command.sensitive }
+          : {}),
+        ...(command.autoChunk !== undefined
+          ? { autoChunk: command.autoChunk }
+          : {}),
+        ...(command.sourceUrl !== undefined
+          ? { sourceUrl: command.sourceUrl }
+          : {}),
+      });
+    case "set_reference_enabled":
+      return Object.freeze({
+        type: command.type,
+        projectId: command.projectId,
+        referenceId: command.referenceId,
+        enabled: command.enabled,
       });
     case "open_lifecycle_panel_session":
       return Object.freeze({

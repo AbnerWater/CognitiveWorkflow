@@ -103,6 +103,51 @@ test("builds authenticated runtime fetch requests through injected fetch", async
   });
 });
 
+test("decodes base64 runtime fetch request bodies through injected fetch", async () => {
+  let capturedUrl = "";
+  let capturedInit: RequestInit | undefined;
+  const handlers = createRuntimeIpcMainHandlers({
+    connectionInfo: () => CONNECTION,
+    fetchImpl: async (input, init) => {
+      capturedUrl = String(input);
+      capturedInit = init;
+      return new Response(null, { status: 204 });
+    },
+  });
+
+  const response = await handlers.fetch(
+    buildRuntimeIpcFetchRequest("/projects/prj_123/references", {
+      method: "POST",
+      headers: {
+        "Content-Type": "multipart/form-data; boundary=cw_boundary",
+      },
+      bodyBase64: "cmVmZXJlbmNlLWJ5dGVz",
+    }),
+  );
+
+  assert.equal(
+    capturedUrl,
+    "http://127.0.0.1:51234/cw/v1/projects/prj_123/references",
+  );
+  assert.equal(capturedInit?.method, "POST");
+  assert.deepEqual(capturedInit?.headers, {
+    Authorization: "Bearer token_abc123",
+    "X-Cw-Client": "electron-renderer",
+    "Content-Type": "multipart/form-data; boundary=cw_boundary",
+  });
+  assert.ok(Buffer.isBuffer(capturedInit?.body));
+  assert.equal(
+    (capturedInit?.body as Buffer).toString("utf8"),
+    "reference-bytes",
+  );
+  assert.deepEqual(response, {
+    ok: true,
+    status: 204,
+    headers: {},
+    body: null,
+  });
+});
+
 test("returns text and empty runtime fetch responses", async () => {
   const textHandler = createRuntimeIpcMainHandlers({
     connectionInfo: () => CONNECTION,

@@ -83,6 +83,64 @@ export interface RuntimeWorkbenchProjectCreationSnapshot {
   readonly canCreateProject: boolean;
 }
 
+export type RuntimeWorkbenchReferenceManagementStatus =
+  | "idle"
+  | "refreshing"
+  | "importing"
+  | "updating"
+  | "succeeded"
+  | "failed"
+  | "blocked";
+
+export type RuntimeWorkbenchReferenceManagementBlockedReason =
+  | "invalid_input"
+  | "request_failed"
+  | "response_invalid"
+  | "runtime_unavailable";
+
+export type RuntimeWorkbenchReferenceKind =
+  | "pdf"
+  | "md"
+  | "txt"
+  | "csv"
+  | "xlsx"
+  | "image"
+  | "web_url";
+
+export type RuntimeWorkbenchReferenceChunkStatus =
+  | "none"
+  | "chunked"
+  | "indexed"
+  | "stale";
+
+export interface RuntimeWorkbenchReferenceEntrySnapshot {
+  readonly referenceId: string;
+  readonly path: string;
+  readonly kind: RuntimeWorkbenchReferenceKind;
+  readonly enabled: boolean;
+  readonly sourceUrl: string | null;
+  readonly contentHash: string;
+  readonly chunkStatus: RuntimeWorkbenchReferenceChunkStatus;
+  readonly chunkSizeTokens: number | null;
+  readonly sensitive: boolean;
+  readonly importedAt: string;
+}
+
+export interface RuntimeWorkbenchReferenceManagementSnapshot {
+  readonly status: RuntimeWorkbenchReferenceManagementStatus;
+  readonly activeProjectId: string | null;
+  readonly method: "GET" | "POST" | "PATCH" | null;
+  readonly path: RuntimeRequestPath | null;
+  readonly entries: readonly RuntimeWorkbenchReferenceEntrySnapshot[];
+  readonly indexSnapshotId: string | null;
+  readonly lastReferenceId: string | null;
+  readonly statusCode: number | null;
+  readonly blockedReason: RuntimeWorkbenchReferenceManagementBlockedReason | null;
+  readonly canRefreshReferences: boolean;
+  readonly canImportReference: boolean;
+  readonly canUpdateReference: boolean;
+}
+
 export interface RuntimeWorkbenchExecutionPolicySnapshot {
   readonly mode: RuntimeWorkbenchExecutionMode;
   readonly availableModes: readonly RuntimeWorkbenchExecutionMode[];
@@ -105,10 +163,31 @@ export interface RuntimeWorkbenchProjectCreationInput {
   readonly settingsOverrides?: Readonly<Record<string, unknown>>;
 }
 
+export interface RuntimeWorkbenchReferenceRefreshInput {
+  readonly projectId: string;
+}
+
+export interface RuntimeWorkbenchReferenceImportInput {
+  readonly projectId: string;
+  readonly fileName: string;
+  readonly fileContentBase64: string;
+  readonly kind: RuntimeWorkbenchReferenceKind;
+  readonly sensitive?: boolean;
+  readonly autoChunk?: boolean;
+  readonly sourceUrl?: string;
+}
+
+export interface RuntimeWorkbenchReferenceEnabledInput {
+  readonly projectId: string;
+  readonly referenceId: string;
+  readonly enabled: boolean;
+}
+
 export interface RuntimeWorkbenchSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
   readonly projectCreation: RuntimeWorkbenchProjectCreationSnapshot;
+  readonly referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot;
   readonly lifecyclePanel: RuntimeLifecyclePanelSessionControllerSnapshot;
   readonly runtimeStream: RuntimeStreamInteractionSessionControllerSnapshot;
   readonly disposed: boolean;
@@ -152,6 +231,15 @@ export interface RuntimeWorkbenchSession {
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly createProject: (
     input: RuntimeWorkbenchProjectCreationInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly refreshReferences: (
+    input: RuntimeWorkbenchReferenceRefreshInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly importReference: (
+    input: RuntimeWorkbenchReferenceImportInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly setReferenceEnabled: (
+    input: RuntimeWorkbenchReferenceEnabledInput,
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly openLifecyclePanelSession: (
     options?: CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
@@ -199,6 +287,12 @@ export function createRuntimeWorkbenchSession(
     runtimeAvailable: options.runtime !== undefined,
     disposed,
   });
+  let referenceManagementSnapshot =
+    createRuntimeWorkbenchReferenceManagementSnapshot({
+      status: "idle",
+      runtimeAvailable: options.runtime !== undefined,
+      disposed,
+    });
   const listeners = new Set<RuntimeWorkbenchSessionStoreChangeListener>();
   let lifecyclePanelUnsubscribe: RuntimeStatusUnsubscribe | undefined;
   let runtimeStreamUnsubscribe: RuntimeStatusUnsubscribe | undefined;
@@ -213,6 +307,11 @@ export function createRuntimeWorkbenchSession(
     }),
     projectCreation: createRuntimeWorkbenchProjectCreationSnapshot({
       ...projectCreationSnapshot,
+      runtimeAvailable: options.runtime !== undefined,
+      disposed,
+    }),
+    referenceManagement: createRuntimeWorkbenchReferenceManagementSnapshot({
+      ...referenceManagementSnapshot,
       runtimeAvailable: options.runtime !== undefined,
       disposed,
     }),
@@ -251,6 +350,11 @@ export function createRuntimeWorkbenchSession(
       }),
       projectCreation: createRuntimeWorkbenchProjectCreationSnapshot({
         ...projectCreationSnapshot,
+        runtimeAvailable: options.runtime !== undefined,
+        disposed,
+      }),
+      referenceManagement: createRuntimeWorkbenchReferenceManagementSnapshot({
+        ...referenceManagementSnapshot,
         runtimeAvailable: options.runtime !== undefined,
         disposed,
       }),
@@ -624,6 +728,387 @@ export function createRuntimeWorkbenchSession(
         throw error;
       }
     },
+    refreshReferences: async (input) => {
+      assertActive();
+      const projectId = normalizeRuntimeWorkbenchReferencePathSegment(
+        input.projectId,
+      );
+      if (projectId === null) {
+        referenceManagementSnapshot =
+          createRuntimeWorkbenchReferenceManagementSnapshot({
+            blockedReason: "invalid_input",
+            runtimeAvailable: options.runtime !== undefined,
+            status: "blocked",
+            disposed,
+          });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench reference project id is invalid");
+      }
+      const requestPath = buildRuntimeWorkbenchReferencesPath(projectId);
+      if (options.runtime === undefined) {
+        referenceManagementSnapshot =
+          createRuntimeWorkbenchReferenceManagementSnapshot({
+            activeProjectId: projectId,
+            blockedReason: "runtime_unavailable",
+            path: requestPath,
+            runtimeAvailable: false,
+            status: "blocked",
+            disposed,
+          });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+      referenceManagementSnapshot =
+        createRuntimeWorkbenchReferenceManagementSnapshot({
+          activeProjectId: projectId,
+          entries: referenceManagementSnapshot.entries,
+          indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+          method: "GET",
+          path: requestPath,
+          runtimeAvailable: true,
+          status: "refreshing",
+          disposed,
+        });
+      publishIfChanged(true);
+      try {
+        const response = await options.runtime.fetch(requestPath);
+        if (!response.ok) {
+          referenceManagementSnapshot =
+            createRuntimeWorkbenchReferenceManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries: referenceManagementSnapshot.entries,
+              indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+              method: "GET",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const parsed = parseRuntimeWorkbenchReferenceManifest(response.body);
+        if (parsed === null) {
+          referenceManagementSnapshot =
+            createRuntimeWorkbenchReferenceManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "response_invalid",
+              method: "GET",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error("Runtime workbench reference manifest is invalid");
+        }
+        referenceManagementSnapshot =
+          createRuntimeWorkbenchReferenceManagementSnapshot({
+            activeProjectId: projectId,
+            entries: parsed.entries,
+            indexSnapshotId: parsed.indexSnapshotId,
+            method: "GET",
+            path: requestPath,
+            runtimeAvailable: true,
+            status: "succeeded",
+            statusCode: response.status,
+            disposed,
+          });
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (referenceManagementSnapshot.status !== "failed") {
+          referenceManagementSnapshot =
+            createRuntimeWorkbenchReferenceManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries: referenceManagementSnapshot.entries,
+              indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+              method: "GET",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              disposed,
+            });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
+    importReference: async (input) => {
+      assertActive();
+      const projectId = normalizeRuntimeWorkbenchReferencePathSegment(
+        input.projectId,
+      );
+      const fileName = normalizeRuntimeWorkbenchReferenceFileName(
+        input.fileName,
+      );
+      const sourceUrl = normalizeRuntimeWorkbenchReferenceOptionalText(
+        input.sourceUrl,
+      );
+      const fileContentBase64 = normalizeRuntimeWorkbenchReferenceBase64(
+        input.fileContentBase64,
+      );
+      if (
+        projectId === null ||
+        fileName === null ||
+        fileContentBase64 === null ||
+        !isRuntimeWorkbenchReferenceKind(input.kind)
+      ) {
+        referenceManagementSnapshot =
+          createRuntimeWorkbenchReferenceManagementSnapshot({
+            blockedReason: "invalid_input",
+            runtimeAvailable: options.runtime !== undefined,
+            status: "blocked",
+            disposed,
+          });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench reference import input is invalid");
+      }
+      const requestPath = buildRuntimeWorkbenchReferencesPath(projectId);
+      if (options.runtime === undefined) {
+        referenceManagementSnapshot =
+          createRuntimeWorkbenchReferenceManagementSnapshot({
+            activeProjectId: projectId,
+            blockedReason: "runtime_unavailable",
+            path: requestPath,
+            runtimeAvailable: false,
+            status: "blocked",
+            disposed,
+          });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+      referenceManagementSnapshot =
+        createRuntimeWorkbenchReferenceManagementSnapshot({
+          activeProjectId: projectId,
+          entries: referenceManagementSnapshot.entries,
+          indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+          method: "POST",
+          path: requestPath,
+          runtimeAvailable: true,
+          status: "importing",
+          disposed,
+        });
+      publishIfChanged(true);
+      try {
+        const multipart = buildRuntimeWorkbenchReferenceMultipartBody({
+          autoChunk: input.autoChunk ?? true,
+          fileContentBase64,
+          fileName,
+          kind: input.kind,
+          sensitive: input.sensitive ?? false,
+          sourceUrl,
+        });
+        const response = await options.runtime.fetch(requestPath, {
+          method: "POST",
+          headers: { "Content-Type": multipart.contentType },
+          bodyBase64: multipart.bodyBase64,
+        });
+        if (!response.ok) {
+          referenceManagementSnapshot =
+            createRuntimeWorkbenchReferenceManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries: referenceManagementSnapshot.entries,
+              indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+              method: "POST",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const entry = parseRuntimeWorkbenchReferenceEntry(response.body);
+        if (entry === null) {
+          referenceManagementSnapshot =
+            createRuntimeWorkbenchReferenceManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "response_invalid",
+              method: "POST",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error("Runtime workbench reference response is invalid");
+        }
+        referenceManagementSnapshot =
+          createRuntimeWorkbenchReferenceManagementSnapshot({
+            activeProjectId: projectId,
+            entries: upsertRuntimeWorkbenchReferenceEntry(
+              referenceManagementSnapshot.entries,
+              entry,
+            ),
+            indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+            lastReferenceId: entry.referenceId,
+            method: "POST",
+            path: requestPath,
+            runtimeAvailable: true,
+            status: "succeeded",
+            statusCode: response.status,
+            disposed,
+          });
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (referenceManagementSnapshot.status !== "failed") {
+          referenceManagementSnapshot =
+            createRuntimeWorkbenchReferenceManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries: referenceManagementSnapshot.entries,
+              indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+              method: "POST",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              disposed,
+            });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
+    setReferenceEnabled: async (input) => {
+      assertActive();
+      const projectId = normalizeRuntimeWorkbenchReferencePathSegment(
+        input.projectId,
+      );
+      const referenceId = normalizeRuntimeWorkbenchReferencePathSegment(
+        input.referenceId,
+      );
+      if (projectId === null || referenceId === null) {
+        referenceManagementSnapshot =
+          createRuntimeWorkbenchReferenceManagementSnapshot({
+            blockedReason: "invalid_input",
+            runtimeAvailable: options.runtime !== undefined,
+            status: "blocked",
+            disposed,
+          });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench reference update input is invalid");
+      }
+      const requestPath = buildRuntimeWorkbenchReferencePath(
+        projectId,
+        referenceId,
+      );
+      if (options.runtime === undefined) {
+        referenceManagementSnapshot =
+          createRuntimeWorkbenchReferenceManagementSnapshot({
+            activeProjectId: projectId,
+            blockedReason: "runtime_unavailable",
+            lastReferenceId: referenceId,
+            path: requestPath,
+            runtimeAvailable: false,
+            status: "blocked",
+            disposed,
+          });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+      referenceManagementSnapshot =
+        createRuntimeWorkbenchReferenceManagementSnapshot({
+          activeProjectId: projectId,
+          entries: referenceManagementSnapshot.entries,
+          indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+          lastReferenceId: referenceId,
+          method: "PATCH",
+          path: requestPath,
+          runtimeAvailable: true,
+          status: "updating",
+          disposed,
+        });
+      publishIfChanged(true);
+      try {
+        const response = await options.runtime.fetch(requestPath, {
+          method: "PATCH",
+          body: JSON.stringify({
+            schema_version: "0.1.0",
+            enabled: input.enabled,
+          }),
+        });
+        if (!response.ok) {
+          referenceManagementSnapshot =
+            createRuntimeWorkbenchReferenceManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries: referenceManagementSnapshot.entries,
+              indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+              lastReferenceId: referenceId,
+              method: "PATCH",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const entry = parseRuntimeWorkbenchReferenceEntry(response.body);
+        if (entry === null) {
+          referenceManagementSnapshot =
+            createRuntimeWorkbenchReferenceManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "response_invalid",
+              lastReferenceId: referenceId,
+              method: "PATCH",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error("Runtime workbench reference response is invalid");
+        }
+        referenceManagementSnapshot =
+          createRuntimeWorkbenchReferenceManagementSnapshot({
+            activeProjectId: projectId,
+            entries: upsertRuntimeWorkbenchReferenceEntry(
+              referenceManagementSnapshot.entries,
+              entry,
+            ),
+            indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+            lastReferenceId: entry.referenceId,
+            method: "PATCH",
+            path: requestPath,
+            runtimeAvailable: true,
+            status: "succeeded",
+            statusCode: response.status,
+            disposed,
+          });
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (referenceManagementSnapshot.status !== "failed") {
+          referenceManagementSnapshot =
+            createRuntimeWorkbenchReferenceManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries: referenceManagementSnapshot.entries,
+              indexSnapshotId: referenceManagementSnapshot.indexSnapshotId,
+              lastReferenceId: referenceId,
+              method: "PATCH",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              disposed,
+            });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
     openLifecyclePanelSession: (sessionOptions) => {
       assertActive();
       const session = runWithSuppressedControllerPublish(() =>
@@ -818,6 +1303,35 @@ function createRuntimeWorkbenchProjectCreationSnapshot(
   });
 }
 
+function createRuntimeWorkbenchReferenceManagementSnapshot(
+  input: Partial<RuntimeWorkbenchReferenceManagementSnapshot> & {
+    readonly status: RuntimeWorkbenchReferenceManagementStatus;
+    readonly runtimeAvailable: boolean;
+    readonly disposed: boolean;
+  },
+): RuntimeWorkbenchReferenceManagementSnapshot {
+  const entries = Object.freeze([...(input.entries ?? [])]);
+  return Object.freeze({
+    status: input.status,
+    activeProjectId: input.activeProjectId ?? null,
+    method: input.method ?? null,
+    path: input.path ?? null,
+    entries,
+    indexSnapshotId: input.indexSnapshotId ?? null,
+    lastReferenceId: input.lastReferenceId ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    canRefreshReferences:
+      !input.disposed &&
+      input.runtimeAvailable &&
+      input.status !== "refreshing",
+    canImportReference:
+      !input.disposed && input.runtimeAvailable && input.status !== "importing",
+    canUpdateReference:
+      !input.disposed && input.runtimeAvailable && input.status !== "updating",
+  });
+}
+
 function buildRuntimeWorkbenchRunOncePath(
   runId: string,
   nodeId: string,
@@ -851,6 +1365,25 @@ function buildRuntimeWorkbenchProjectCreationPath(): RuntimeRequestPath {
   const requestPath = "/projects";
   assertRuntimeRequestPath(requestPath);
   return requestPath;
+}
+
+function buildRuntimeWorkbenchReferencesPath(
+  projectId: string,
+): RuntimeRequestPath {
+  const requestPath = `/projects/${encodeURIComponent(projectId)}/references`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
+function buildRuntimeWorkbenchReferencePath(
+  projectId: string,
+  referenceId: string,
+): RuntimeRequestPath {
+  const requestPath = `${buildRuntimeWorkbenchReferencesPath(
+    projectId,
+  )}/${encodeURIComponent(referenceId)}`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
 }
 
 function buildRuntimeWorkbenchProjectCreationRequestBody(options: {
@@ -890,6 +1423,92 @@ function normalizeRuntimeWorkbenchProjectHostPath(
     return null;
   }
   return trimmed;
+}
+
+function normalizeRuntimeWorkbenchReferencePathSegment(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.includes("?") ||
+    trimmed.includes("#") ||
+    trimmed.includes("..") ||
+    /[\u0000-\u001f\u007f\s]/u.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeRuntimeWorkbenchReferenceFileName(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > 180 ||
+    /[\\/:*?"<>|\u0000-\u001f\u007f]/u.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeRuntimeWorkbenchReferenceOptionalText(
+  value: string | undefined,
+): string | null {
+  if (value === undefined) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || /[\u0000-\u001f\u007f]/u.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeRuntimeWorkbenchReferenceBase64(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length % 4 !== 0 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(
+      trimmed,
+    )
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function isRuntimeWorkbenchReferenceKind(
+  value: string,
+): value is RuntimeWorkbenchReferenceKind {
+  return (
+    value === "pdf" ||
+    value === "md" ||
+    value === "txt" ||
+    value === "csv" ||
+    value === "xlsx" ||
+    value === "image" ||
+    value === "web_url"
+  );
+}
+
+function isRuntimeWorkbenchReferenceChunkStatus(
+  value: string,
+): value is RuntimeWorkbenchReferenceChunkStatus {
+  return (
+    value === "none" ||
+    value === "chunked" ||
+    value === "indexed" ||
+    value === "stale"
+  );
 }
 
 interface ParsedRuntimeWorkbenchProjectCreationResponse {
@@ -938,6 +1557,195 @@ function parseRuntimeWorkbenchProjectCreationResponse(
   };
 }
 
+interface ParsedRuntimeWorkbenchReferenceManifest {
+  readonly entries: readonly RuntimeWorkbenchReferenceEntrySnapshot[];
+  readonly indexSnapshotId: string;
+}
+
+function parseRuntimeWorkbenchReferenceManifest(
+  body: unknown,
+): ParsedRuntimeWorkbenchReferenceManifest | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  const entries = body.entries;
+  const indexSnapshotId = body.index_snapshot_id;
+  if (!Array.isArray(entries) || typeof indexSnapshotId !== "string") {
+    return null;
+  }
+  const parsedEntries: RuntimeWorkbenchReferenceEntrySnapshot[] = [];
+  for (const entry of entries) {
+    const parsed = parseRuntimeWorkbenchReferenceEntry(entry);
+    if (parsed === null) {
+      return null;
+    }
+    parsedEntries.push(parsed);
+  }
+  return {
+    entries: Object.freeze(parsedEntries),
+    indexSnapshotId,
+  };
+}
+
+function parseRuntimeWorkbenchReferenceEntry(
+  body: unknown,
+): RuntimeWorkbenchReferenceEntrySnapshot | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  const referenceId = body.reference_id;
+  const path = body.path;
+  const kind = body.kind;
+  const enabled = body.enabled;
+  const sourceUrl = body.source_url;
+  const contentHash = body.content_hash;
+  const chunkStatus = body.chunk_status;
+  const chunkSizeTokens = body.chunk_size_tokens;
+  const sensitive = body.sensitive;
+  const importedAt = body.imported_at;
+  if (
+    typeof referenceId !== "string" ||
+    referenceId.trim().length === 0 ||
+    typeof path !== "string" ||
+    path.trim().length === 0 ||
+    typeof kind !== "string" ||
+    !isRuntimeWorkbenchReferenceKind(kind) ||
+    typeof enabled !== "boolean" ||
+    !(
+      sourceUrl === undefined ||
+      sourceUrl === null ||
+      typeof sourceUrl === "string"
+    ) ||
+    typeof contentHash !== "string" ||
+    contentHash.trim().length === 0 ||
+    typeof chunkStatus !== "string" ||
+    !isRuntimeWorkbenchReferenceChunkStatus(chunkStatus) ||
+    !(
+      chunkSizeTokens === undefined ||
+      chunkSizeTokens === null ||
+      (typeof chunkSizeTokens === "number" &&
+        Number.isInteger(chunkSizeTokens) &&
+        chunkSizeTokens > 0)
+    ) ||
+    typeof sensitive !== "boolean" ||
+    typeof importedAt !== "string" ||
+    importedAt.trim().length === 0
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    referenceId,
+    path,
+    kind,
+    enabled,
+    sourceUrl: sourceUrl ?? null,
+    contentHash,
+    chunkStatus,
+    chunkSizeTokens: chunkSizeTokens ?? null,
+    sensitive,
+    importedAt,
+  });
+}
+
+function upsertRuntimeWorkbenchReferenceEntry(
+  entries: readonly RuntimeWorkbenchReferenceEntrySnapshot[],
+  entry: RuntimeWorkbenchReferenceEntrySnapshot,
+): readonly RuntimeWorkbenchReferenceEntrySnapshot[] {
+  let replaced = false;
+  const nextEntries = entries.map((candidate) => {
+    if (candidate.referenceId !== entry.referenceId) {
+      return candidate;
+    }
+    replaced = true;
+    return entry;
+  });
+  if (!replaced) {
+    nextEntries.push(entry);
+  }
+  return Object.freeze(nextEntries);
+}
+
+function buildRuntimeWorkbenchReferenceMultipartBody(options: {
+  readonly kind: RuntimeWorkbenchReferenceKind;
+  readonly sensitive: boolean;
+  readonly autoChunk: boolean;
+  readonly sourceUrl: string | null;
+  readonly fileName: string;
+  readonly fileContentBase64: string;
+}): { readonly contentType: string; readonly bodyBase64: string } {
+  const boundary = `----cw-reference-${Date.now().toString(36)}`;
+  const metadata: Record<string, unknown> = {
+    schema_version: "0.1.0",
+    kind: options.kind,
+    sensitive: options.sensitive,
+    auto_chunk: options.autoChunk,
+    ...(options.sourceUrl !== null ? { source_url: options.sourceUrl } : {}),
+  };
+  const prefix = [
+    `--${boundary}`,
+    'Content-Disposition: form-data; name="metadata"',
+    "Content-Type: application/json",
+    "",
+    JSON.stringify(metadata),
+    `--${boundary}`,
+    `Content-Disposition: form-data; name="file"; filename="${escapeRuntimeWorkbenchMultipartQuotedString(
+      options.fileName,
+    )}"`,
+    "Content-Type: application/octet-stream",
+    "",
+  ].join("\r\n");
+  const suffix = `\r\n--${boundary}--\r\n`;
+  const bodyBytes = concatRuntimeWorkbenchBytes([
+    runtimeWorkbenchUtf8Bytes(`${prefix}\r\n`),
+    runtimeWorkbenchBase64ToBytes(options.fileContentBase64),
+    runtimeWorkbenchUtf8Bytes(suffix),
+  ]);
+  return {
+    contentType: `multipart/form-data; boundary=${boundary}`,
+    bodyBase64: runtimeWorkbenchBytesToBase64(bodyBytes),
+  };
+}
+
+function escapeRuntimeWorkbenchMultipartQuotedString(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function runtimeWorkbenchUtf8Bytes(value: string): Uint8Array {
+  return new TextEncoder().encode(value);
+}
+
+function runtimeWorkbenchBase64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function runtimeWorkbenchBytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function concatRuntimeWorkbenchBytes(
+  chunks: readonly Uint8Array[],
+): Uint8Array {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
 function requireRuntimeWorkbenchPanelId(
   panel: string,
 ): RuntimeWorkbenchPanelId {
@@ -964,6 +1772,17 @@ function freezeRuntimeWorkbenchSessionSnapshot(
       runtimeAvailable:
         snapshot.projectCreation.canCreateProject ||
         snapshot.projectCreation.status === "running",
+      disposed: snapshot.disposed,
+    }),
+    referenceManagement: createRuntimeWorkbenchReferenceManagementSnapshot({
+      ...snapshot.referenceManagement,
+      runtimeAvailable:
+        snapshot.referenceManagement.canRefreshReferences ||
+        snapshot.referenceManagement.canImportReference ||
+        snapshot.referenceManagement.canUpdateReference ||
+        snapshot.referenceManagement.status === "refreshing" ||
+        snapshot.referenceManagement.status === "importing" ||
+        snapshot.referenceManagement.status === "updating",
       disposed: snapshot.disposed,
     }),
   });

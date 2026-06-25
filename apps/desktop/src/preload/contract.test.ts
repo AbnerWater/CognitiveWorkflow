@@ -190,6 +190,23 @@ function createDefaultRuntimeWorkbenchProjectCreation(): RuntimeWorkbenchShellSn
   });
 }
 
+function createDefaultRuntimeWorkbenchReferenceManagement(): RuntimeWorkbenchShellSnapshot["referenceManagement"] {
+  return Object.freeze({
+    status: "idle",
+    activeProjectId: null,
+    method: null,
+    path: null,
+    entries: Object.freeze([]),
+    indexSnapshotId: null,
+    lastReferenceId: null,
+    statusCode: null,
+    blockedReason: null,
+    canRefreshReferences: false,
+    canImportReference: false,
+    canUpdateReference: false,
+  });
+}
+
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
   assert.doesNotThrow(() => assertRuntimeRequestPath("/runs/run_123/stream"));
@@ -3512,6 +3529,7 @@ test("renderer runtime workbench session composes lifecycle and stream stores", 
     activePanel: "lifecycle",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
+    referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     lifecyclePanel: {
       activeSession: null,
       disposed: false,
@@ -3880,6 +3898,9 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "set_execution_mode",
     "run_node_once",
     "create_project",
+    "refresh_references",
+    "import_reference",
+    "set_reference_enabled",
     "dispatch_lifecycle_panel",
     "dispatch_runtime_stream",
   ]);
@@ -3890,6 +3911,9 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "open_runtime_stream_session",
     "set_execution_mode",
     "create_project",
+    "refresh_references",
+    "import_reference",
+    "set_reference_enabled",
   ]);
   assert.equal(Object.isFrozen(initialSnapshot), true);
   assert.equal(Object.isFrozen(initialSnapshot.availableCommandIds), true);
@@ -5159,6 +5183,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     activePanel: "stream",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
+    referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     lifecyclePanel: {
       active: true,
       disposed: false,
@@ -5678,6 +5703,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["active_panel", "Stream", "neutral"],
       ["execution_mode", "Semi-auto", "neutral"],
       ["project_creation", "Not created", "neutral"],
+      ["reference_management", "Ready", "neutral"],
       ["lifecycle_panel", "Active", "success"],
       ["runtime_stream", "Run run_shell", "success"],
       ["last_shortcut", "Show stream", "accent"],
@@ -5738,6 +5764,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     activePanel: "lifecycle",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
+    referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     lifecyclePanel: { active: false, disposed: false, activeSession: null },
     runtimeStream: { active: false, activeChannel: null, disposed: false },
     runtimeStreamPanel: null,
@@ -5755,6 +5782,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     activePanel: "lifecycle",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
+    referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     lifecyclePanel: {
       active: true,
       disposed: false,
@@ -5862,6 +5890,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       activePanel: "lifecycle",
       executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
       projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
+      referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
       lifecyclePanel: { active: false, disposed: true, activeSession: null },
       runtimeStream: { active: false, activeChannel: null, disposed: true },
       runtimeStreamPanel: null,
@@ -5899,6 +5928,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["active_panel", "Lifecycle", "danger"],
       ["execution_mode", "Semi-auto", "neutral"],
       ["project_creation", "Disposed", "danger"],
+      ["reference_management", "Disposed", "danger"],
       ["lifecycle_panel", "Disposed", "danger"],
       ["runtime_stream", "Disposed", "danger"],
       ["last_shortcut", "None", "neutral"],

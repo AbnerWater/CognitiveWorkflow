@@ -1677,6 +1677,165 @@ button {
   font-weight: 700;
 }
 
+.cw-workbench__reference-management {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d7dde5;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__reference-management-form {
+  display: grid;
+  grid-template-columns:
+    minmax(120px, 0.8fr) minmax(110px, 0.6fr) minmax(150px, 1fr)
+    minmax(160px, 1fr) auto auto auto auto;
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+}
+
+.cw-workbench__reference-field,
+.cw-workbench__reference-check {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cw-workbench__reference-field span,
+.cw-workbench__reference-check span,
+.cw-workbench__reference-status dt,
+.cw-workbench__reference-entry-meta dt {
+  color: #657487;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__reference-field input,
+.cw-workbench__reference-field select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #17202a;
+  font: inherit;
+  font-size: 14px;
+}
+
+.cw-workbench__reference-field input {
+  padding: 0 8px;
+}
+
+.cw-workbench__reference-field select {
+  padding: 0 6px;
+}
+
+.cw-workbench__reference-check {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 34px;
+}
+
+.cw-workbench__reference-refresh,
+.cw-workbench__reference-import,
+.cw-workbench__reference-toggle {
+  min-height: 36px;
+  border: 1px solid #3d6fa7;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2c3a;
+  cursor: pointer;
+  padding: 0 12px;
+}
+
+.cw-workbench__reference-status {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+
+.cw-workbench__reference-status div {
+  min-width: 0;
+}
+
+.cw-workbench__reference-status dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cw-workbench__reference-empty {
+  margin: 0;
+  color: #657487;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cw-workbench__reference-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cw-workbench__reference-entry {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(260px, 1.4fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #d7dde5;
+  border-left-width: 4px;
+  border-left-color: #4f8cc9;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.cw-workbench__reference-entry[data-reference-entry-enabled="false"] {
+  border-left-color: #c9a24f;
+}
+
+.cw-workbench__reference-entry-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cw-workbench__reference-entry-main strong,
+.cw-workbench__reference-entry-main span {
+  overflow-wrap: anywhere;
+}
+
+.cw-workbench__reference-entry-main span {
+  color: #526173;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__reference-entry-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+
+.cw-workbench__reference-entry-meta dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .cw-workbench__execution-controls-label {
   color: #526173;
   font-size: 12px;
@@ -1735,7 +1894,10 @@ button {
 .cw-workbench__action:disabled,
 .cw-workbench__execution-mode-option:disabled,
 .cw-workbench__execution-run-once:disabled,
-.cw-workbench__project-create-submit:disabled {
+.cw-workbench__project-create-submit:disabled,
+.cw-workbench__reference-refresh:disabled,
+.cw-workbench__reference-import:disabled,
+.cw-workbench__reference-toggle:disabled {
   cursor: not-allowed;
   opacity: 0.48;
 }
@@ -2850,6 +3012,8 @@ button {
   .cw-workbench__header,
   .cw-workbench__chat-compose,
   .cw-workbench__project-creation,
+  .cw-workbench__reference-management-form,
+  .cw-workbench__reference-entry,
   .cw-workbench__stream-options,
   .cw-workbench__stream-controls,
   .cw-workbench__stream-panel-header,
@@ -2866,6 +3030,8 @@ button {
 
   .cw-workbench__status-grid,
   .cw-workbench__project-creation-status,
+  .cw-workbench__reference-status,
+  .cw-workbench__reference-entry-meta,
   .cw-workbench__stream-metrics,
   .cw-workbench__workflow-canvas-summary dl,
   .cw-workbench__version-snapshot-items,
@@ -2900,6 +3066,8 @@ button {
   .cw-workbench__task-drawer-header,
   .cw-workbench__status-grid,
   .cw-workbench__project-creation-status,
+  .cw-workbench__reference-status,
+  .cw-workbench__reference-entry-meta,
   .cw-workbench__stream-metrics,
   .cw-workbench__stream-controls-body,
   .cw-workbench__stream-event-detail dl,

@@ -86,6 +86,7 @@ export interface RuntimeWorkbenchShellStatusItem {
     | "active_panel"
     | "execution_mode"
     | "project_creation"
+    | "reference_management"
     | "lifecycle_panel"
     | "runtime_stream"
     | "last_shortcut";
@@ -286,11 +287,15 @@ export type RuntimeWorkbenchShellExecutionPolicySnapshot =
 export type RuntimeWorkbenchShellProjectCreationSnapshot =
   RuntimeWorkbenchHostSessionSnapshot["projectCreation"];
 
+export type RuntimeWorkbenchShellReferenceManagementSnapshot =
+  RuntimeWorkbenchHostSessionSnapshot["referenceManagement"];
+
 export interface RuntimeWorkbenchShellSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly activePanelLabel: string;
   readonly executionPolicy: RuntimeWorkbenchShellExecutionPolicySnapshot;
   readonly projectCreation: RuntimeWorkbenchShellProjectCreationSnapshot;
+  readonly referenceManagement: RuntimeWorkbenchShellReferenceManagementSnapshot;
   readonly lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus;
   readonly lifecyclePanel: RuntimeWorkbenchShellLifecyclePanelSnapshot | null;
   readonly runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus;
@@ -549,6 +554,9 @@ export function buildRuntimeWorkbenchShellSnapshot(
     ),
     projectCreation: cloneRuntimeWorkbenchShellProjectCreation(
       host.projectCreation,
+    ),
+    referenceManagement: cloneRuntimeWorkbenchShellReferenceManagement(
+      host.referenceManagement,
     ),
     lifecyclePanelStatus,
     lifecyclePanel,
@@ -1004,6 +1012,16 @@ function buildStatusItems(
       tone: disposed ? "danger" : projectCreationTone(host.projectCreation),
     }),
     statusItem({
+      id: "reference_management",
+      label: "References",
+      value: disposed
+        ? "Disposed"
+        : referenceManagementStatusLabel(host.referenceManagement),
+      tone: disposed
+        ? "danger"
+        : referenceManagementTone(host.referenceManagement),
+    }),
+    statusItem({
       id: "lifecycle_panel",
       label: "Lifecycle",
       value: panelStatusLabel(lifecyclePanelStatus),
@@ -1347,6 +1365,45 @@ function projectCreationTone(
   }
 }
 
+function referenceManagementStatusLabel(
+  referenceManagement: RuntimeWorkbenchShellReferenceManagementSnapshot,
+): string {
+  switch (referenceManagement.status) {
+    case "blocked":
+      return "Blocked";
+    case "failed":
+      return "Failed";
+    case "refreshing":
+      return "Refreshing";
+    case "importing":
+      return "Importing";
+    case "updating":
+      return "Updating";
+    case "succeeded":
+      return `${referenceManagement.entries.length} refs`;
+    case "idle":
+      return "Ready";
+  }
+}
+
+function referenceManagementTone(
+  referenceManagement: RuntimeWorkbenchShellReferenceManagementSnapshot,
+): RuntimeWorkbenchShellTone {
+  switch (referenceManagement.status) {
+    case "blocked":
+    case "failed":
+      return "danger";
+    case "refreshing":
+    case "importing":
+    case "updating":
+      return "accent";
+    case "succeeded":
+      return "success";
+    case "idle":
+      return "neutral";
+  }
+}
+
 function formatRuntimeStreamChannelLabel(
   channel: NonNullable<
     RuntimeWorkbenchHostSessionSnapshot["runtimeStream"]["activeChannel"]
@@ -1479,6 +1536,9 @@ function freezeRuntimeWorkbenchShellSnapshot(
     projectCreation: cloneRuntimeWorkbenchShellProjectCreation(
       snapshot.projectCreation,
     ),
+    referenceManagement: cloneRuntimeWorkbenchShellReferenceManagement(
+      snapshot.referenceManagement,
+    ),
     runtimeStreamPanel:
       snapshot.runtimeStreamPanel === null
         ? null
@@ -1512,6 +1572,15 @@ function cloneRuntimeWorkbenchShellProjectCreation(
   projectCreation: RuntimeWorkbenchShellProjectCreationSnapshot,
 ): RuntimeWorkbenchShellProjectCreationSnapshot {
   return Object.freeze({ ...projectCreation });
+}
+
+function cloneRuntimeWorkbenchShellReferenceManagement(
+  referenceManagement: RuntimeWorkbenchShellReferenceManagementSnapshot,
+): RuntimeWorkbenchShellReferenceManagementSnapshot {
+  return Object.freeze({
+    ...referenceManagement,
+    entries: Object.freeze([...referenceManagement.entries]),
+  });
 }
 
 function freezeRuntimeWorkbenchShellChrome(

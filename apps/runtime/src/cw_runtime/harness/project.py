@@ -16,6 +16,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable, Mapping
+from hashlib import sha256
 from http.client import HTTPResponse
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol, TextIO, cast
@@ -23,7 +24,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from cw_runtime import __version__
 from cw_runtime.persistence import ensure_runtime_databases, record_initial_git_snapshot
@@ -33,6 +34,7 @@ from cw_schemas import WorkflowGraph
 AGENT_WORKFLOW_DIR: Final = ".agent-workflow"
 MANIFEST_REVISION_FILE: Final = "manifest_revision.json"
 RUNTIME_LOCK_FILE: Final = "runtime.lock"
+GIT_LOCK_FILE: Final = "git.lock"
 
 _CROCKFORD_ALPHABET: Final = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _INVALID_PATH_CHARS: Final = set('/\\:*?"<>|')
@@ -104,6 +106,12 @@ _TRACKED_INIT_PATHS: Final = [
     ".agent-workflow/artifacts/index.jsonl",
     ".agent-workflow/snapshots/snapshots.jsonl",
 ]
+_REFERENCE_KINDS: Final = {"pdf", "md", "txt", "csv", "xlsx", "image", "web_url"}
+_REFERENCE_CHUNK_STATUSES: Final = {"none", "chunked", "indexed", "stale"}
+_REFERENCE_COMMIT_PATHS: Final = [
+    ".agent-workflow/references.manifest.json",
+    ".agent-workflow/manifest_revision.json",
+]
 
 
 class HarnessError(RuntimeError):
@@ -163,6 +171,53 @@ class ProjectDocument(BaseModel):
     last_opened_at: str
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectReferenceEntry(BaseModel):
+    """Entry stored in ``references.manifest.json``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reference_id: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    kind: Literal["pdf", "md", "txt", "csv", "xlsx", "image", "web_url"]
+    enabled: bool
+    source_url: str | None = None
+    content_hash: str = Field(min_length=1)
+    chunk_status: Literal["none", "chunked", "indexed", "stale"]
+    chunk_size_tokens: int | None = Field(default=None, ge=1)
+    sensitive: bool
+    imported_at: str
+
+
+class ProjectReferenceManifest(BaseModel):
+    """Project reference manifest from runtime_harness.md §2.7."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entries: list[ProjectReferenceEntry] = Field(default_factory=list)
+    index_snapshot_id: str
+
+
+class ProjectReferenceImportMetadata(BaseModel):
+    """Metadata part for POST /cw/v1/projects/{project_id}/references."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["0.1.0"]
+    kind: Literal["pdf", "md", "txt", "csv", "xlsx", "image", "web_url"]
+    sensitive: bool = False
+    auto_chunk: bool = True
+    source_url: str | None = None
+
+
+class ProjectReferencePatchRequest(BaseModel):
+    """Request body for PATCH /cw/v1/projects/{project_id}/references/{reference_id}."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["0.1.0"]
+    enabled: bool
 
 
 class ProjectToolAvailability(BaseModel):
@@ -1276,7 +1331,7 @@ class RuntimeLock:
                 if time.monotonic() >= deadline:
                     raise HarnessError(
                         "RH_LOCK_TIMEOUT",
-                        "Timed out acquiring runtime.lock.",
+                        f"Timed out acquiring {self._lock_path.name}.",
                         status_code=423,
                         details={"lock_path": _to_posix(self._lock_path)},
                     ) from exc
@@ -1342,6 +1397,118 @@ def read_project(project_root: Path) -> ProjectDocument:
     resolved_root = project_root.resolve()
     project_json = _read_json(resolved_root / AGENT_WORKFLOW_DIR / "project.json")
     return ProjectDocument.model_validate({**project_json, "host_path": _to_posix(resolved_root)})
+
+
+def read_project_references(project_root: Path) -> ProjectReferenceManifest:
+    """Read the project reference manifest with spec-limited fields."""
+
+    return _read_project_reference_manifest(project_root)
+
+
+def import_project_reference(
+    project_root: Path,
+    *,
+    metadata: ProjectReferenceImportMetadata,
+    filename: str,
+    content: bytes,
+) -> ProjectReferenceEntry:
+    """Import a reference file and update ``references.manifest.json``."""
+
+    resolved_root = project_root.resolve()
+    reference_id = _new_ulid()
+    stored_filename = _reference_stored_filename(reference_id, filename, kind=metadata.kind)
+    relative_path = f"references/{stored_filename}"
+    _validate_project_relative_path(relative_path)
+    now = _utc_now()
+    content_hash = sha256(content).hexdigest()
+    entry = ProjectReferenceEntry(
+        reference_id=reference_id,
+        path=relative_path,
+        kind=metadata.kind,
+        enabled=True,
+        source_url=_normalized_optional_string(metadata.source_url),
+        content_hash=f"sha256:{content_hash}",
+        chunk_status="stale" if metadata.auto_chunk else "none",
+        sensitive=metadata.sensitive,
+        imported_at=now,
+    )
+
+    paths = [*_REFERENCE_COMMIT_PATHS]
+    if not entry.sensitive:
+        paths.append(relative_path)
+    agent_root = resolved_root / AGENT_WORKFLOW_DIR
+    with _acquire_git_lock(resolved_root):
+        with acquire_runtime_lock(resolved_root):
+            manifest = _read_project_reference_manifest(resolved_root)
+            payload = ProjectReferenceManifest(
+                entries=[*manifest.entries, entry],
+                index_snapshot_id=manifest.index_snapshot_id,
+            )
+            _write_bytes_atomic(resolved_root / relative_path, content)
+            _update_manifest_json_locked(
+                agent_root,
+                "references.manifest.json",
+                payload.model_dump(mode="json", exclude_none=True),
+            )
+        _commit_reference_manifest_change_locked(resolved_root, action="import", reference_id=reference_id, paths=paths)
+    return entry
+
+
+def update_project_reference_enabled(
+    project_root: Path,
+    *,
+    reference_id: str,
+    enabled: bool,
+) -> ProjectReferenceEntry:
+    """Enable or disable a project reference entry."""
+
+    normalized_reference_id = _normalize_reference_id(reference_id)
+    resolved_root = project_root.resolve()
+    agent_root = resolved_root / AGENT_WORKFLOW_DIR
+    action: Literal["enable", "disable"] = "enable" if enabled else "disable"
+    changed = False
+    with _acquire_git_lock(resolved_root):
+        with acquire_runtime_lock(resolved_root):
+            manifest = _read_project_reference_manifest(resolved_root)
+            updated_entries: list[ProjectReferenceEntry] = []
+            updated_entry: ProjectReferenceEntry | None = None
+            for entry in manifest.entries:
+                if entry.reference_id != normalized_reference_id:
+                    updated_entries.append(entry)
+                    continue
+                if entry.enabled == enabled:
+                    updated_entry = entry
+                    updated_entries.append(entry)
+                    continue
+                updated_entry = entry.model_copy(update={"enabled": enabled})
+                updated_entries.append(updated_entry)
+                changed = True
+            if updated_entry is None:
+                raise HarnessError(
+                    "RES_NOT_FOUND",
+                    "Project reference is not registered.",
+                    status_code=404,
+                    details={"reference_id": normalized_reference_id},
+                )
+            if changed:
+                payload = ProjectReferenceManifest(
+                    entries=updated_entries,
+                    index_snapshot_id=manifest.index_snapshot_id,
+                )
+                _update_manifest_json_locked(
+                    agent_root,
+                    "references.manifest.json",
+                    payload.model_dump(mode="json", exclude_none=True),
+                )
+
+        if changed:
+            _commit_reference_manifest_change_locked(
+                resolved_root,
+                action=action,
+                reference_id=normalized_reference_id,
+                paths=_REFERENCE_COMMIT_PATHS,
+            )
+    return updated_entry
 
 
 def load_project_tool_availability(project_root: Path) -> ProjectToolAvailability:
@@ -1460,31 +1627,40 @@ def update_manifest_json(
 
     agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
     with acquire_runtime_lock(project_root, timeout_seconds=timeout_seconds):
-        revision = _read_json(agent_root / MANIFEST_REVISION_FILE)
-        if manifest_name not in revision:
-            raise HarnessError(
-                "RH_MANIFEST_REVISION_MISMATCH",
-                "manifest_revision.json does not track manifest.",
-                status_code=409,
-                details={"manifest_name": manifest_name},
-            )
-        _write_json_atomic(agent_root / manifest_name, dict(payload))
-        current = revision[manifest_name]
-        if not isinstance(current, dict) or "revision" not in current:
-            raise HarnessError(
-                "RH_MANIFEST_REVISION_MISMATCH",
-                "manifest_revision.json entry is invalid.",
-                status_code=409,
-                details={"manifest_name": manifest_name},
-            )
-        current_revision = int(current["revision"])
-        revision[manifest_name] = {"revision": current_revision + 1, "modified_at": _utc_now()}
-        _write_json_atomic(agent_root / MANIFEST_REVISION_FILE, revision)
+        _update_manifest_json_locked(agent_root, manifest_name, payload)
 
 
 def acquire_runtime_lock(project_root: Path, *, timeout_seconds: float = 60.0) -> RuntimeLock:
     agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
     return RuntimeLock(agent_root / "locks" / RUNTIME_LOCK_FILE, timeout_seconds=timeout_seconds)
+
+
+def _acquire_git_lock(project_root: Path, *, timeout_seconds: float = 60.0) -> RuntimeLock:
+    agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
+    return RuntimeLock(agent_root / "locks" / GIT_LOCK_FILE, timeout_seconds=timeout_seconds)
+
+
+def _update_manifest_json_locked(agent_root: Path, manifest_name: str, payload: Mapping[str, Any]) -> None:
+    revision = _read_json(agent_root / MANIFEST_REVISION_FILE)
+    if manifest_name not in revision:
+        raise HarnessError(
+            "RH_MANIFEST_REVISION_MISMATCH",
+            "manifest_revision.json does not track manifest.",
+            status_code=409,
+            details={"manifest_name": manifest_name},
+        )
+    _write_json_atomic(agent_root / manifest_name, dict(payload))
+    current = revision[manifest_name]
+    if not isinstance(current, dict) or "revision" not in current:
+        raise HarnessError(
+            "RH_MANIFEST_REVISION_MISMATCH",
+            "manifest_revision.json entry is invalid.",
+            status_code=409,
+            details={"manifest_name": manifest_name},
+        )
+    current_revision = int(current["revision"])
+    revision[manifest_name] = {"revision": current_revision + 1, "modified_at": _utc_now()}
+    _write_json_atomic(agent_root / MANIFEST_REVISION_FILE, revision)
 
 
 def _resolve_project_root(host_path: str) -> Path:
@@ -1819,6 +1995,27 @@ def _read_json(path: Path) -> dict[str, Any]:
             details={"path": _to_posix(path)},
         )
     return loaded
+
+
+def _read_project_reference_manifest(project_root: Path) -> ProjectReferenceManifest:
+    manifest_path = project_root.resolve() / AGENT_WORKFLOW_DIR / "references.manifest.json"
+    try:
+        payload = _read_json(manifest_path)
+        return ProjectReferenceManifest.model_validate(payload)
+    except FileNotFoundError as exc:
+        raise HarnessError(
+            "RES_NOT_FOUND",
+            "Project reference manifest was not found.",
+            status_code=404,
+            details={"manifest_name": "references.manifest.json"},
+        ) from exc
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise HarnessError(
+            "RES_NOT_FOUND",
+            "Project reference manifest is not available.",
+            status_code=404,
+            details={"manifest_name": "references.manifest.json"},
+        ) from exc
 
 
 def _read_json_list(path: Path) -> list[object]:
@@ -2205,6 +2402,224 @@ def _optional_string_manifest_field(entry: Mapping[str, object], field: str) -> 
     return None
 
 
+def _normalized_optional_string(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped if stripped else None
+
+
+def _normalize_reference_id(reference_id: str) -> str:
+    normalized = reference_id.strip()
+    if (
+        normalized == ""
+        or any(char in normalized for char in "/\\?#")
+        or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in normalized)
+    ):
+        raise HarnessError(
+            "RES_NOT_FOUND",
+            "Project reference is not registered.",
+            status_code=404,
+            details={"reference_id": reference_id},
+        )
+    return normalized
+
+
+def _reference_stored_filename(
+    reference_id: str,
+    filename: str,
+    *,
+    kind: Literal["pdf", "md", "txt", "csv", "xlsx", "image", "web_url"],
+) -> str:
+    safe_name = Path(filename).name.strip()
+    if safe_name in {"", ".", ".."}:
+        safe_name = f"reference.{_default_reference_extension(kind)}"
+    cleaned = "".join("_" if char in _INVALID_PATH_CHARS or ord(char) < 32 else char for char in safe_name)
+    cleaned = cleaned.strip(" .")
+    if cleaned == "":
+        cleaned = f"reference.{_default_reference_extension(kind)}"
+    if len(cleaned) > 160:
+        suffix = Path(cleaned).suffix
+        stem_limit = 160 - len(suffix)
+        cleaned = f"{Path(cleaned).stem[:stem_limit]}{suffix}"
+    return f"{reference_id}-{cleaned}"
+
+
+def _default_reference_extension(kind: str) -> str:
+    if kind in _REFERENCE_KINDS and kind != "web_url":
+        return kind
+    return "txt"
+
+
+def _validate_project_relative_path(relative_path: str) -> None:
+    if len(relative_path) > 240:
+        raise HarnessError(
+            "RH_PATH_TOO_LONG",
+            "Reference path exceeds the runtime harness path length limit.",
+            status_code=400,
+            details={"path": relative_path},
+        )
+    for part in Path(relative_path).parts:
+        if part in {"", ".", ".."} or any(char in _INVALID_PATH_CHARS for char in part):
+            raise HarnessError(
+                "RH_PATH_INVALID_CHAR",
+                "Reference path contains an OS-forbidden path character.",
+                status_code=400,
+                details={"path": relative_path, "path_part": part},
+            )
+
+
+def _write_bytes_atomic(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
+    tmp_path.write_bytes(content)
+    tmp_path.replace(path)
+
+
+def _commit_reference_manifest_change(
+    project_root: Path,
+    *,
+    action: Literal["import", "enable", "disable"],
+    reference_id: str,
+    paths: list[str],
+) -> str | None:
+    with _acquire_git_lock(project_root):
+        return _commit_reference_manifest_change_locked(
+            project_root,
+            action=action,
+            reference_id=reference_id,
+            paths=paths,
+        )
+
+
+def _commit_reference_manifest_change_locked(
+    project_root: Path,
+    *,
+    action: Literal["import", "enable", "disable"],
+    reference_id: str,
+    paths: list[str],
+) -> str | None:
+    if _git_paths_have_staged_changes(project_root, paths):
+        raise HarnessError(
+            "RH_GIT_AUTOCOMMIT_BLOCKED",
+            "Reference manifest paths already have staged user changes.",
+            status_code=409,
+            details={"paths": paths},
+        )
+    staged_stash_ref = _stash_staged_changes(project_root, reference_id=reference_id)
+    try:
+        _run_git(project_root, ["add", *paths], error_code="RH_GIT_AUTOCOMMIT_BLOCKED")
+        commit_result = _run_git(
+            project_root,
+            [
+                *_git_identity_args(project_root),
+                "commit",
+                "--only",
+                "-m",
+                f"chore(refs): {action} {reference_id}",
+                "--",
+                *paths,
+            ],
+            check=False,
+            error_code="RH_GIT_AUTOCOMMIT_BLOCKED",
+        )
+        if commit_result.returncode != 0:
+            combined = f"{commit_result.stdout}\n{commit_result.stderr}".lower()
+            if "nothing to commit" in combined or "no changes added" in combined:
+                return None
+            raise HarnessError(
+                "RH_GIT_AUTOCOMMIT_BLOCKED",
+                "Reference manifest git commit failed.",
+                status_code=500,
+                details={"stderr": commit_result.stderr.strip(), "stdout": commit_result.stdout.strip()},
+            )
+        return _run_git(project_root, ["rev-parse", "HEAD"], error_code="RH_GIT_AUTOCOMMIT_BLOCKED").stdout.strip()
+    finally:
+        if staged_stash_ref is not None:
+            _restore_git_stash(project_root, restore_index=True, expected_stash_top=staged_stash_ref)
+
+
+def _git_paths_have_staged_changes(project_root: Path, paths: list[str]) -> bool:
+    result = _run_git(
+        project_root,
+        ["diff", "--cached", "--name-only", "--", *paths],
+        check=False,
+        error_code="RH_GIT_AUTOCOMMIT_BLOCKED",
+    )
+    if result.returncode != 0:
+        raise HarnessError(
+            "RH_GIT_AUTOCOMMIT_BLOCKED",
+            "Reference manifest staged-change inspection failed.",
+            status_code=500,
+            details={"stderr": result.stderr.strip(), "stdout": result.stdout.strip()},
+        )
+    return result.stdout.strip() != ""
+
+
+def _stash_staged_changes(project_root: Path, *, reference_id: str) -> str | None:
+    before_stash = _git_stash_top(project_root)
+    result = _run_git(
+        project_root,
+        [
+            "stash",
+            "push",
+            "--staged",
+            "-m",
+            f"cw reference autocommit {reference_id}",
+            "--",
+            ".",
+        ],
+        check=False,
+        error_code="RH_GIT_AUTOCOMMIT_BLOCKED",
+    )
+    if result.returncode != 0:
+        raise HarnessError(
+            "RH_GIT_AUTOCOMMIT_BLOCKED",
+            "Reference manifest git stash failed.",
+            status_code=500,
+            details={"stderr": result.stderr.strip(), "stdout": result.stdout.strip()},
+        )
+    after_stash = _git_stash_top(project_root)
+    if after_stash == before_stash:
+        return None
+    return after_stash
+
+
+def _git_stash_top(project_root: Path) -> str | None:
+    result = _run_git(
+        project_root,
+        ["rev-parse", "--verify", "--quiet", "refs/stash"],
+        check=False,
+        error_code="RH_GIT_AUTOCOMMIT_BLOCKED",
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def _restore_git_stash(project_root: Path, *, restore_index: bool, expected_stash_top: str) -> None:
+    if _git_stash_top(project_root) != expected_stash_top:
+        raise HarnessError(
+            "RH_GIT_AUTOCOMMIT_BLOCKED",
+            "Reference manifest git stash restore would pop an unexpected stash.",
+            status_code=500,
+            details={"expected_stash": expected_stash_top},
+        )
+    result = _run_git(
+        project_root,
+        ["stash", "pop", *(["--index"] if restore_index else []), "--quiet"],
+        check=False,
+        error_code="RH_GIT_AUTOCOMMIT_BLOCKED",
+    )
+    if result.returncode != 0:
+        raise HarnessError(
+            "RH_GIT_AUTOCOMMIT_BLOCKED",
+            "Reference manifest git stash restore failed.",
+            status_code=500,
+            details={"stderr": result.stderr.strip(), "stdout": result.stdout.strip()},
+        )
+
+
 def _write_json_atomic(path: Path, payload: object) -> None:
     content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     _write_text_atomic(path, content)
@@ -2252,11 +2667,16 @@ __all__ = [
     "ProjectMCPServerConfig",
     "ProjectMCPStdioDiscoveryClient",
     "ProjectMCPToolDiscovery",
+    "ProjectReferenceEntry",
+    "ProjectReferenceImportMetadata",
+    "ProjectReferenceManifest",
+    "ProjectReferencePatchRequest",
     "ProjectSkillLockEntry",
     "ProjectToolAvailability",
     "ProjectToolLockSnapshot",
     "RuntimeLock",
     "acquire_runtime_lock",
+    "import_project_reference",
     "initialize_project",
     "load_enabled_mcp_server_ids",
     "load_enabled_skill_ids",
@@ -2265,5 +2685,7 @@ __all__ = [
     "load_project_tool_availability",
     "load_project_tool_lock_snapshot",
     "read_project",
+    "read_project_references",
     "update_manifest_json",
+    "update_project_reference_enabled",
 ]

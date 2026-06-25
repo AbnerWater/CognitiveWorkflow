@@ -46,6 +46,7 @@ import {
   RuntimeWorkbenchShellReactView,
   bindRuntimeWorkbenchShellReactKeyboardTarget,
   createRuntimeWorkbenchShellReactProjectCreationFormState,
+  createRuntimeWorkbenchShellReactReferenceImportFormState,
   buildRuntimeWorkbenchShellReactStreamSessionOptions,
   createRuntimeWorkbenchShellReactStreamOptionsFormState,
   isRuntimeWorkbenchShellReactActionEnabled,
@@ -74,6 +75,8 @@ test("renderer runtime workbench React shell renders server snapshot without DOM
   assert.match(markup, /Step/u);
   assert.match(markup, /Semi-auto/u);
   assert.match(markup, /Auto/u);
+  assert.match(markup, /Reference management/u);
+  assert.match(markup, /Auto chunk/u);
   assert.match(markup, /File Tree/u);
   assert.match(markup, /Accepted specs/u);
   assert.match(markup, /Status[\s\S]*Open[\s\S]*Path[\s\S]*workspace root/u);
@@ -5305,6 +5308,203 @@ test("renderer runtime workbench React shell dispatches project creation without
   }
 });
 
+test("renderer runtime workbench React shell dispatches reference management commands without rendering file content", async () => {
+  assert.deepEqual(
+    createRuntimeWorkbenchShellReactReferenceImportFormState({
+      fileName: "guide.md",
+      kind: "md",
+      projectId: "project_refs",
+    }),
+    {
+      projectId: "project_refs",
+      kind: "md",
+      fileName: "guide.md",
+      fileContentBase64: "",
+      sourceUrl: "",
+      sensitive: false,
+      autoChunk: true,
+      fileLabel: "guide.md",
+      fileByteLength: null,
+    },
+  );
+  const fileContentBase64 = btoa("raw_reference_content");
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const snapshot = createRuntimeWorkbenchShellReactSnapshot({
+    referenceManagement: {
+      status: "succeeded",
+      activeProjectId: "project_refs",
+      entries: Object.freeze([
+        Object.freeze({
+          referenceId: "ref_docs",
+          path: "references/ref_docs.md",
+          kind: "md",
+          enabled: true,
+          sourceUrl: null,
+          contentHash:
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          chunkStatus: "indexed",
+          chunkSizeTokens: 128,
+          sensitive: false,
+          importedAt: "2026-06-25T00:00:00.000Z",
+        }),
+      ]),
+      indexSnapshotId: "idx_refs",
+      lastReferenceId: "ref_docs",
+    },
+  });
+  const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          defaultReferenceImportFormState={{
+            projectId: " project_refs ",
+            kind: "md",
+            fileName: " guide.md ",
+            fileContentBase64,
+            sourceUrl: " https://example.invalid/spec ",
+            sensitive: true,
+            autoChunk: false,
+            fileLabel: "guide.md",
+            fileByteLength: 21,
+          }}
+          session={session}
+          title="Reference Runtime Workbench"
+        />,
+      );
+    });
+
+    const referenceControl = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "referenceManagementControl",
+      "true",
+    );
+    assert.equal(
+      referenceControl.getAttribute("data-reference-management-status"),
+      "succeeded",
+    );
+    assert.equal(
+      referenceControl.getAttribute("data-reference-management-entry-count"),
+      "1",
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container).includes(
+        "raw_reference_content",
+      ),
+      false,
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchElementAttributeValues(dom.container).includes(
+        fileContentBase64,
+      ),
+      false,
+    );
+
+    const refreshButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "referenceRefreshSubmit",
+      "true",
+    );
+    assert.equal(
+      refreshButton.getAttribute("data-reference-refresh-enabled"),
+      "true",
+    );
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(refreshButton);
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "refresh_references",
+      projectId: "project_refs",
+    });
+
+    const importButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "referenceImportSubmit",
+      "true",
+    );
+    assert.equal(
+      importButton.getAttribute("data-reference-import-enabled"),
+      "true",
+    );
+    assert.equal(
+      importButton.getAttribute("data-reference-import-file-ready"),
+      "true",
+    );
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(importButton);
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "import_reference",
+      projectId: "project_refs",
+      fileName: "guide.md",
+      fileContentBase64,
+      kind: "md",
+      sensitive: true,
+      autoChunk: false,
+      sourceUrl: "https://example.invalid/spec",
+    });
+    const clearedImportButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "referenceImportSubmit",
+      "true",
+    );
+    assert.equal(
+      clearedImportButton.getAttribute("data-reference-import-file-ready"),
+      "false",
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container).includes("No file"),
+      true,
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchElementAttributeValues(dom.container).includes(
+        fileContentBase64,
+      ),
+      false,
+    );
+
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "referenceField",
+          "projectId",
+        ),
+        "project_other",
+      );
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "referenceToggleId",
+          "ref_docs",
+        ),
+      );
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "set_reference_enabled",
+      projectId: "project_refs",
+      referenceId: "ref_docs",
+      enabled: false,
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    session.dispose();
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench session dispatches run-once through runtime fetch", async () => {
   const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
     body: Object.freeze({ raw_model_output: "must not be retained" }),
@@ -5444,6 +5644,170 @@ test("renderer runtime workbench session creates projects through runtime fetch 
   });
   assert.equal(
     JSON.stringify(snapshot.projectCreation).includes("raw_runtime_detail"),
+    false,
+  );
+});
+
+test("renderer runtime workbench session manages references through runtime fetch without retaining file content", async () => {
+  const calls: RuntimeWorkbenchRunOnceRuntimeCall[] = [];
+  const existingEntry = Object.freeze({
+    reference_id: "ref_docs",
+    path: "references/ref_docs.md",
+    kind: "md",
+    enabled: true,
+    source_url: null,
+    content_hash:
+      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    chunk_status: "indexed",
+    chunk_size_tokens: 128,
+    sensitive: false,
+    imported_at: "2026-06-25T00:00:00.000Z",
+  });
+  const importedEntry = Object.freeze({
+    reference_id: "ref_new",
+    path: "references/ref_new.md",
+    kind: "md",
+    enabled: true,
+    source_url: "https://example.invalid/spec",
+    content_hash:
+      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    chunk_status: "stale",
+    chunk_size_tokens: null,
+    sensitive: true,
+    imported_at: "2026-06-25T00:01:00.000Z",
+  });
+  const runtime: Pick<RuntimeBridge, "fetch"> = Object.freeze({
+    fetch: async <TBody,>(
+      path: RuntimeRequestPath,
+      init?: RuntimeRequestInit,
+    ): Promise<RuntimeResponse<TBody>> => {
+      calls.push(
+        init === undefined
+          ? { path }
+          : { path, init: Object.freeze({ ...init }) },
+      );
+      if (path === "/projects/project_refs/references" && init === undefined) {
+        return {
+          ok: true,
+          status: 200,
+          headers: {},
+          body: Object.freeze({
+            schema_version: "0.1.0",
+            entries: Object.freeze([existingEntry]),
+            index_snapshot_id: "idx_refs",
+          }) as TBody,
+        };
+      }
+      if (
+        path === "/projects/project_refs/references" &&
+        init?.method === "POST"
+      ) {
+        return {
+          ok: true,
+          status: 201,
+          headers: {},
+          body: importedEntry as TBody,
+        };
+      }
+      if (
+        path === "/projects/project_refs/references/ref_new" &&
+        init?.method === "PATCH"
+      ) {
+        return {
+          ok: true,
+          status: 200,
+          headers: {},
+          body: Object.freeze({
+            ...importedEntry,
+            enabled: false,
+          }) as TBody,
+        };
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: {},
+        body: null,
+      };
+    },
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const refreshed = await session.refreshReferences({
+    projectId: " project_refs ",
+  });
+  assert.equal(calls[0]?.path, "/projects/project_refs/references");
+  assert.equal(calls[0]?.init, undefined);
+  assert.deepEqual(refreshed.referenceManagement.entries, [
+    {
+      referenceId: "ref_docs",
+      path: "references/ref_docs.md",
+      kind: "md",
+      enabled: true,
+      sourceUrl: null,
+      contentHash:
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      chunkStatus: "indexed",
+      chunkSizeTokens: 128,
+      sensitive: false,
+      importedAt: "2026-06-25T00:00:00.000Z",
+    },
+  ]);
+  assert.equal(refreshed.referenceManagement.indexSnapshotId, "idx_refs");
+
+  const imported = await session.importReference({
+    projectId: "project_refs",
+    fileName: "guide.md",
+    fileContentBase64: btoa("reference bytes"),
+    kind: "md",
+    sensitive: true,
+    autoChunk: false,
+    sourceUrl: "https://example.invalid/spec",
+  });
+  const importCall = calls[1];
+  assert.equal(importCall?.path, "/projects/project_refs/references");
+  assert.equal(importCall?.init?.method, "POST");
+  assert.match(
+    importCall?.init?.headers?.["Content-Type"] ?? "",
+    /^multipart\/form-data; boundary=----cw-reference-/u,
+  );
+  assert.equal(Object.hasOwn(importCall?.init ?? {}, "body"), false);
+  assert.ok(importCall?.init?.bodyBase64 !== undefined);
+  const multipartText = Buffer.from(
+    importCall.init.bodyBase64,
+    "base64",
+  ).toString("utf8");
+  assert.match(multipartText, /"kind":"md"/u);
+  assert.match(multipartText, /"auto_chunk":false/u);
+  assert.match(multipartText, /reference bytes/u);
+  assert.equal(imported.referenceManagement.lastReferenceId, "ref_new");
+  assert.equal(imported.referenceManagement.entries.length, 2);
+  assert.equal(
+    JSON.stringify(imported.referenceManagement).includes("reference bytes"),
+    false,
+  );
+
+  const toggled = await session.setReferenceEnabled({
+    projectId: "project_refs",
+    referenceId: "ref_new",
+    enabled: false,
+  });
+  const toggleCall = calls[2];
+  assert.equal(toggleCall?.path, "/projects/project_refs/references/ref_new");
+  assert.deepEqual(
+    JSON.parse(toggleCall?.init?.body ?? "{}") as Record<string, unknown>,
+    {
+      schema_version: "0.1.0",
+      enabled: false,
+    },
+  );
+  assert.equal(
+    toggled.referenceManagement.entries.find(
+      (entry) => entry.referenceId === "ref_new",
+    )?.enabled,
     false,
   );
 });
@@ -6730,10 +7094,32 @@ function createRuntimeWorkbenchShellReactProjectCreationSnapshot(
   });
 }
 
+function createRuntimeWorkbenchShellReactReferenceManagementSnapshot(
+  input: Partial<RuntimeWorkbenchShellSnapshot["referenceManagement"]> = {},
+): RuntimeWorkbenchShellSnapshot["referenceManagement"] {
+  return Object.freeze({
+    status: input.status ?? "idle",
+    activeProjectId: input.activeProjectId ?? null,
+    method: input.method ?? null,
+    path: input.path ?? null,
+    entries: input.entries ?? Object.freeze([]),
+    indexSnapshotId: input.indexSnapshotId ?? null,
+    lastReferenceId: input.lastReferenceId ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    canRefreshReferences: input.canRefreshReferences ?? true,
+    canImportReference: input.canImportReference ?? true,
+    canUpdateReference: input.canUpdateReference ?? true,
+  });
+}
+
 function createRuntimeWorkbenchShellReactSnapshot(
   options: {
     readonly activePanel?: RuntimeWorkbenchPanelId;
     readonly executionMode?: RuntimeWorkbenchShellSnapshot["executionPolicy"]["mode"];
+    readonly referenceManagement?: Partial<
+      RuntimeWorkbenchShellSnapshot["referenceManagement"]
+    >;
   } = {},
 ): RuntimeWorkbenchShellSnapshot {
   return buildRuntimeWorkbenchShellSnapshot({
@@ -6742,6 +7128,10 @@ function createRuntimeWorkbenchShellReactSnapshot(
       options.executionMode,
     ),
     projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
+    referenceManagement:
+      createRuntimeWorkbenchShellReactReferenceManagementSnapshot(
+        options.referenceManagement,
+      ),
     lifecyclePanel: Object.freeze({
       active: false,
       disposed: false,
@@ -6792,6 +7182,8 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
     activePanel: "stream",
     executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(),
     projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
+    referenceManagement:
+      createRuntimeWorkbenchShellReactReferenceManagementSnapshot(),
     lifecyclePanel: Object.freeze({
       active: false,
       disposed: false,
@@ -7074,6 +7466,8 @@ function createRuntimeWorkbenchShellReactLifecycleSnapshot(): RuntimeWorkbenchSh
     activePanel: "lifecycle",
     executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(),
     projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
+    referenceManagement:
+      createRuntimeWorkbenchShellReactReferenceManagementSnapshot(),
     lifecyclePanel: Object.freeze({
       active: true,
       disposed: false,
@@ -7521,6 +7915,8 @@ class FakeRuntimeWorkbenchElement extends FakeRuntimeWorkbenchNode {
   checked = false;
   className = "";
   disabled = false;
+  multiple = false;
+  selected = false;
   tagName: string;
   title = "";
   type = "";
@@ -7548,6 +7944,12 @@ class FakeRuntimeWorkbenchElement extends FakeRuntimeWorkbenchNode {
     if (name === "disabled") {
       this.disabled = true;
     }
+    if (name === "multiple") {
+      this.multiple = true;
+    }
+    if (name === "selected") {
+      this.selected = true;
+    }
     if (name === "type") {
       this.type = stringValue;
     }
@@ -7574,6 +7976,12 @@ class FakeRuntimeWorkbenchElement extends FakeRuntimeWorkbenchNode {
     if (name === "disabled") {
       this.disabled = false;
     }
+    if (name === "multiple") {
+      this.multiple = false;
+    }
+    if (name === "selected") {
+      this.selected = false;
+    }
     if (name === "type") {
       this.type = "";
     }
@@ -7589,6 +7997,14 @@ class FakeRuntimeWorkbenchElement extends FakeRuntimeWorkbenchNode {
     if (this.ownerDocument !== null) {
       this.ownerDocument.activeElement = this;
     }
+  }
+
+  get options(): readonly FakeRuntimeWorkbenchElement[] {
+    return this.childNodes.filter(
+      (child): child is FakeRuntimeWorkbenchElement =>
+        child instanceof FakeRuntimeWorkbenchElement &&
+        child.tagName === "OPTION",
+    );
   }
 }
 

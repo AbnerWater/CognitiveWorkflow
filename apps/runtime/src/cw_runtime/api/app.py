@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Awaitable, Callable, Iterable
+from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
@@ -30,8 +31,13 @@ from cw_runtime.engine import WorkflowValidationError, load_workflow_graph
 from cw_runtime.harness import (
     HarnessError,
     ProjectCreateRequest,
+    ProjectReferenceImportMetadata,
+    ProjectReferencePatchRequest,
+    import_project_reference,
     initialize_project,
     read_project,
+    read_project_references,
+    update_project_reference_enabled,
     windows_cng_decrypt_aes_gcm,
     windows_credential_manager_master_key_provider,
 )
@@ -67,6 +73,13 @@ from .auth import AuthenticationError, validate_bearer_authorization
 from .contracts import APIErrorCode, HealthStatus, RuntimeInfo, build_error_envelope
 
 _IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
+_REFERENCE_UPLOAD_MAX_BYTES = 16 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class _MultipartPart:
+    filename: str | None
+    content: bytes
 
 
 class RuntimeDependencyError(RuntimeError):
@@ -336,6 +349,111 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
 
     def get_project_adapters(project_id: str) -> Any:
         return _read_project_config(project_id, "adapters.config.json")
+
+    def get_project_references(project_id: str) -> Any:
+        project_root = project_locations.get(project_id)
+        if project_root is None:
+            return _resource_not_found(
+                "Project is not registered in this runtime process.",
+                {"project_id": project_id},
+            )
+        try:
+            manifest = read_project_references(project_root)
+        except HarnessError as exc:
+            return _harness_error_response(exc)
+        return _dump_model(manifest)
+
+    async def post_project_reference(project_id: str, request: Any) -> Any:
+        project_root = project_locations.get(project_id)
+        if project_root is None:
+            return _resource_not_found(
+                "Project is not registered in this runtime process.",
+                {"project_id": project_id},
+            )
+        body = await request.body()
+        if len(body) > _REFERENCE_UPLOAD_MAX_BYTES * 2:
+            return secure_json_response(
+                status_code=413,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.MULTIPART_TOO_LARGE,
+                        message="Reference upload exceeded multipart size limit.",
+                        details={"max_bytes": _REFERENCE_UPLOAD_MAX_BYTES},
+                    )
+                ),
+            )
+        parts = _parse_multipart_form(request.headers.get("content-type"), body)
+        metadata_part = parts.get("metadata")
+        file_part = parts.get("file")
+        metadata_text = _multipart_part_text(metadata_part)
+        file_name = _multipart_file_name(file_part)
+        file_content = _multipart_file_bytes(file_part)
+        if metadata_text is None or file_name is None or file_content is None:
+            return secure_json_response(
+                status_code=400,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.SCHEMA_VERSION_MISSING,
+                        message="Reference upload requires metadata and file parts.",
+                    )
+                ),
+            )
+        if len(file_content) > _REFERENCE_UPLOAD_MAX_BYTES:
+            return secure_json_response(
+                status_code=413,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.MULTIPART_TOO_LARGE,
+                        message="Reference upload exceeded multipart size limit.",
+                        details={"max_bytes": _REFERENCE_UPLOAD_MAX_BYTES},
+                    )
+                ),
+            )
+        try:
+            metadata_body = json.loads(metadata_text)
+            metadata = ProjectReferenceImportMetadata.model_validate(metadata_body)
+            entry = import_project_reference(
+                project_root,
+                metadata=metadata,
+                filename=file_name,
+                content=file_content,
+            )
+        except (json.JSONDecodeError, ValidationError) as exc:
+            envelope = (
+                build_error_envelope(
+                    error_code=APIErrorCode.SCHEMA_VERSION_MISSING,
+                    message="Reference metadata must be valid JSON with schema_version.",
+                )
+                if isinstance(exc, json.JSONDecodeError)
+                else _validation_error_envelope(exc)
+            )
+            return secure_json_response(status_code=400, content=_dump_model(envelope))
+        except HarnessError as exc:
+            return _harness_error_response(exc)
+        return secure_json_response(status_code=201, content=_dump_model(entry))
+
+    async def patch_project_reference(project_id: str, reference_id: str, request: Any) -> Any:
+        project_root = project_locations.get(project_id)
+        if project_root is None:
+            return _resource_not_found(
+                "Project is not registered in this runtime process.",
+                {"project_id": project_id},
+            )
+        body_or_response = await _body_or_error_response(request)
+        if not isinstance(body_or_response, dict):
+            return body_or_response
+        try:
+            patch_request = ProjectReferencePatchRequest.model_validate(body_or_response)
+            entry = update_project_reference_enabled(
+                project_root,
+                reference_id=reference_id,
+                enabled=patch_request.enabled,
+            )
+        except ValidationError as exc:
+            return secure_json_response(status_code=400, content=_dump_model(_validation_error_envelope(exc)))
+        except HarnessError as exc:
+            return _harness_error_response(exc)
+        return _dump_model(entry)
 
     async def post_workflow_run(workflow_id: str, request: Any) -> Any:
         body_or_response = await _body_or_error_response(request)
@@ -818,6 +936,18 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
             content=_dump_model(build_error_envelope(error_code=exc.error_code, message=str(exc), details=exc.details)),
         )
 
+    def _harness_error_response(exc: HarnessError) -> Any:
+        return secure_json_response(
+            status_code=exc.status_code,
+            content=_dump_model(
+                build_error_envelope(
+                    error_code=exc.error_code,
+                    message=str(exc),
+                    details=exc.details,
+                )
+            ),
+        )
+
     def _resource_not_found(message: str, details: dict[str, object]) -> Any:
         return secure_json_response(
             status_code=404,
@@ -850,6 +980,8 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
         return loaded
 
     post_projects.__annotations__["request"] = requests.Request
+    post_project_reference.__annotations__["request"] = requests.Request
+    patch_project_reference.__annotations__["request"] = requests.Request
     post_workflow_run.__annotations__["request"] = requests.Request
     post_workflow_pause.__annotations__["request"] = requests.Request
     post_workflow_resume.__annotations__["request"] = requests.Request
@@ -868,6 +1000,9 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     app.post(f"{settings.api_prefix}/system/shutdown", status_code=202)(post_system_shutdown)
     app.post(f"{settings.api_prefix}/projects")(post_projects)
     app.get(f"{settings.api_prefix}/projects/{{project_id}}")(get_project)
+    app.get(f"{settings.api_prefix}/projects/{{project_id}}/references")(get_project_references)
+    app.post(f"{settings.api_prefix}/projects/{{project_id}}/references")(post_project_reference)
+    app.patch(f"{settings.api_prefix}/projects/{{project_id}}/references/{{reference_id}}")(patch_project_reference)
     app.get(f"{settings.api_prefix}/projects/{{project_id}}/skills")(get_project_skills)
     app.get(f"{settings.api_prefix}/projects/{{project_id}}/mcps")(get_project_mcps)
     app.get(f"{settings.api_prefix}/projects/{{project_id}}/adapters")(get_project_adapters)
@@ -915,6 +1050,124 @@ def _optional_int(raw: str | None) -> int | None:
     if raw is None or raw == "":
         return None
     return int(raw)
+
+
+def _parse_multipart_form(content_type: str | None, body: bytes) -> dict[str, _MultipartPart]:
+    boundary = _multipart_boundary(content_type)
+    if boundary is None:
+        return {}
+    boundary_bytes = f"--{boundary}".encode("ascii")
+    parts: dict[str, _MultipartPart] = {}
+    if not body.startswith(boundary_bytes):
+        return parts
+    position = len(boundary_bytes)
+    if body[position : position + 2] == b"--":
+        return parts
+    if body[position : position + 2] != b"\r\n":
+        return parts
+    position += 2
+    while position < len(body):
+        raw_headers, separator, _remainder = body[position:].partition(b"\r\n\r\n")
+        if separator == b"":
+            break
+        content_start = position + len(raw_headers) + len(separator)
+        next_boundary = _find_multipart_boundary(body, boundary_bytes, content_start)
+        if next_boundary is None:
+            break
+        content = body[content_start:next_boundary]
+        delimiter_start = next_boundary + len(b"\r\n")
+        after_delimiter = delimiter_start + len(boundary_bytes)
+        headers = _multipart_headers(raw_headers)
+        disposition = headers.get("content-disposition")
+        if disposition is not None:
+            name = _content_disposition_param(disposition, "name")
+            if name is not None:
+                filename = _content_disposition_param(disposition, "filename")
+                parts[name] = _MultipartPart(filename=filename, content=content)
+        if body[after_delimiter : after_delimiter + 2] == b"--":
+            break
+        if body[after_delimiter : after_delimiter + 2] != b"\r\n":
+            break
+        position = after_delimiter + 2
+    return parts
+
+
+def _find_multipart_boundary(body: bytes, boundary_bytes: bytes, start: int) -> int | None:
+    marker = b"\r\n" + boundary_bytes
+    search_start = start
+    while True:
+        position = body.find(marker, search_start)
+        if position < 0:
+            return None
+        suffix_start = position + len(marker)
+        suffix = body[suffix_start : suffix_start + 2]
+        if suffix in {b"\r\n", b"--"}:
+            return position
+        search_start = suffix_start
+
+
+def _multipart_boundary(content_type: str | None) -> str | None:
+    if content_type is None:
+        return None
+    parts = [part.strip() for part in content_type.split(";")]
+    if not parts or parts[0].lower() != "multipart/form-data":
+        return None
+    for part in parts[1:]:
+        name, separator, value = part.partition("=")
+        if separator == "" or name.lower() != "boundary":
+            continue
+        boundary = value.strip().strip('"')
+        if boundary != "" and all(32 < ord(char) < 127 for char in boundary):
+            return boundary
+    return None
+
+
+def _multipart_headers(raw_headers: bytes) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for raw_line in raw_headers.split(b"\r\n"):
+        try:
+            line = raw_line.decode("latin-1")
+        except UnicodeDecodeError:
+            continue
+        name, separator, value = line.partition(":")
+        if separator == "":
+            continue
+        headers[name.strip().lower()] = value.strip()
+    return headers
+
+
+def _content_disposition_param(disposition: str, param_name: str) -> str | None:
+    for raw_part in disposition.split(";")[1:]:
+        name, separator, value = raw_part.strip().partition("=")
+        if separator == "" or name.lower() != param_name:
+            continue
+        stripped = value.strip()
+        if len(stripped) >= 2 and stripped[0] == '"' and stripped[-1] == '"':
+            stripped = stripped[1:-1]
+        return stripped if stripped != "" else None
+    return None
+
+
+def _multipart_part_text(part: _MultipartPart | None) -> str | None:
+    if part is None:
+        return None
+    try:
+        return part.content.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def _multipart_file_bytes(part: _MultipartPart | None) -> bytes | None:
+    if part is None:
+        return None
+    return part.content
+
+
+def _multipart_file_name(part: _MultipartPart | None) -> str | None:
+    if part is None or part.filename is None:
+        return None
+    stripped = part.filename.strip()
+    return stripped if stripped else None
 
 
 def _validation_error_envelope(exc: ValidationError) -> BaseModel:

@@ -274,6 +274,34 @@ function buildVisualSmokeSnapshot(
       blockedReason: null,
       canCreateProject: !disposed,
     }),
+    referenceManagement: Object.freeze({
+      status: "succeeded",
+      activeProjectId: "visual-project",
+      method: "GET",
+      path: "/projects/visual-project/references",
+      entries: Object.freeze([
+        Object.freeze({
+          referenceId: "ref-visual-architecture",
+          path: "references/ref-visual-architecture.md",
+          kind: "md",
+          enabled: true,
+          sourceUrl: null,
+          contentHash:
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          chunkStatus: "indexed",
+          chunkSizeTokens: 320,
+          sensitive: false,
+          importedAt: "2026-06-25T00:00:00.000Z",
+        }),
+      ]),
+      indexSnapshotId: "index-visual",
+      lastReferenceId: "ref-visual-architecture",
+      statusCode: 200,
+      blockedReason: null,
+      canRefreshReferences: !disposed,
+      canImportReference: !disposed,
+      canUpdateReference: !disposed,
+    }),
     lifecyclePanelStatus: disposed ? "disposed" : "active",
     lifecyclePanel: disposed
       ? null

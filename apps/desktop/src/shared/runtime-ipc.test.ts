@@ -79,6 +79,26 @@ test("normalizes runtime IPC fetch request payloads without mutating input", () 
     },
   });
   assert.notEqual(request.init?.headers, headers);
+
+  assert.deepEqual(
+    buildRuntimeIpcFetchRequest("/projects/prj_123/references", {
+      method: "POST",
+      headers: {
+        "Content-Type": "multipart/form-data; boundary=cw_boundary",
+      },
+      bodyBase64: "cmVmZXJlbmNlLWJ5dGVz",
+    }),
+    {
+      path: "/projects/prj_123/references",
+      init: {
+        method: "POST",
+        headers: {
+          "Content-Type": "multipart/form-data; boundary=cw_boundary",
+        },
+        bodyBase64: "cmVmZXJlbmNlLWJ5dGVz",
+      },
+    },
+  );
 });
 
 test("rejects unsupported IPC methods and unsafe header payloads", () => {
@@ -116,6 +136,23 @@ test("rejects unsupported IPC methods and unsafe header payloads", () => {
         headers: { Accept: "text/plain\napplication/json" },
       }),
     /Accept/u,
+  );
+  assert.throws(
+    () =>
+      buildRuntimeIpcFetchRequest("/projects/prj_123/references", {
+        method: "POST",
+        bodyBase64: "not base64",
+      }),
+    /bodyBase64/u,
+  );
+  assert.throws(
+    () =>
+      buildRuntimeIpcFetchRequest("/projects/prj_123/references", {
+        method: "POST",
+        body: "plain",
+        bodyBase64: "cGxhaW4=",
+      }),
+    /mutually exclusive/u,
   );
 });
 
@@ -162,6 +199,17 @@ test("parses unknown runtime IPC fetch payloads before main handler dispatch", (
         init: { headers: { Authorization: "Bearer attacker" } },
       }),
     /reserved/u,
+  );
+  assert.throws(
+    () =>
+      parseRuntimeIpcFetchRequestPayload({
+        path: "/projects/prj_123/references",
+        init: {
+          method: "POST",
+          bodyBase64: "not base64",
+        },
+      }),
+    /bodyBase64/u,
   );
 });
 

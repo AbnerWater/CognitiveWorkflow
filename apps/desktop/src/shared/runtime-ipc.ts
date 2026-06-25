@@ -28,6 +28,7 @@ export interface RuntimeIpcFetchInit {
   readonly idempotencyKey?: string;
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: string;
+  readonly bodyBase64?: string;
 }
 
 export interface RuntimeIpcFetchRequest {
@@ -257,6 +258,7 @@ function parseRuntimeIpcFetchInit(
     idempotencyKey?: string;
     headers?: Readonly<Record<string, string>>;
     body?: string;
+    bodyBase64?: string;
   } = {};
 
   if (init.method !== undefined) {
@@ -290,6 +292,20 @@ function parseRuntimeIpcFetchInit(
     }
     parsed.body = init.body;
   }
+  if (init.bodyBase64 !== undefined) {
+    if (typeof init.bodyBase64 !== "string") {
+      throw new Error("Runtime IPC fetch init bodyBase64 must be a string");
+    }
+    if (!isRuntimeIpcBase64Body(init.bodyBase64)) {
+      throw new Error("Runtime IPC fetch init bodyBase64 is invalid");
+    }
+    parsed.bodyBase64 = init.bodyBase64;
+  }
+  if (parsed.body !== undefined && parsed.bodyBase64 !== undefined) {
+    throw new Error(
+      "Runtime IPC fetch init body and bodyBase64 are mutually exclusive",
+    );
+  }
 
   return parsed;
 }
@@ -321,6 +337,7 @@ function normalizeRuntimeIpcFetchInit(
     idempotencyKey?: string;
     headers?: Readonly<Record<string, string>>;
     body?: string;
+    bodyBase64?: string;
   } = {};
 
   if (init.method !== undefined) {
@@ -350,6 +367,17 @@ function normalizeRuntimeIpcFetchInit(
 
   if (init.body !== undefined) {
     normalized.body = init.body;
+  }
+  if (init.bodyBase64 !== undefined) {
+    if (!isRuntimeIpcBase64Body(init.bodyBase64)) {
+      throw new Error("Runtime IPC fetch init bodyBase64 is invalid");
+    }
+    normalized.bodyBase64 = init.bodyBase64;
+  }
+  if (normalized.body !== undefined && normalized.bodyBase64 !== undefined) {
+    throw new Error(
+      "Runtime IPC fetch init body and bodyBase64 are mutually exclusive",
+    );
   }
 
   return normalized;
@@ -400,6 +428,15 @@ function requireSafeToken(value: string): string {
   }
 
   return token;
+}
+
+function isRuntimeIpcBase64Body(value: string): boolean {
+  if (value.length === 0 || value.length % 4 !== 0) {
+    return false;
+  }
+  return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(
+    value,
+  );
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

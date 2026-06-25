@@ -64,6 +64,11 @@ export function createRuntimeIpcMainHandlers(
           ...(normalizedRequest.init?.body !== undefined
             ? { body: normalizedRequest.init.body }
             : {}),
+          ...(normalizedRequest.init?.bodyBase64 !== undefined
+            ? {
+                body: Buffer.from(normalizedRequest.init.bodyBase64, "base64"),
+              }
+            : {}),
         },
       );
 

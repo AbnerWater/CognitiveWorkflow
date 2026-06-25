@@ -38,6 +38,7 @@ import {
   type RuntimeWorkbenchExecutionPolicySnapshot,
   type RuntimeWorkbenchPanelId,
   type RuntimeWorkbenchProjectCreationSnapshot,
+  type RuntimeWorkbenchReferenceManagementSnapshot,
   type RuntimeWorkbenchSession,
 } from "./runtime-workbench-session.js";
 
@@ -140,6 +141,7 @@ export interface RuntimeWorkbenchHostSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
   readonly projectCreation: RuntimeWorkbenchProjectCreationSnapshot;
+  readonly referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot;
   readonly lifecyclePanel: RuntimeWorkbenchHostLifecyclePanelSnapshot;
   readonly runtimeStream: RuntimeWorkbenchHostRuntimeStreamSnapshot;
   readonly runtimeStreamPanel: RuntimeWorkbenchHostRuntimeStreamPanelSnapshot | null;
@@ -430,6 +432,9 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
     projectCreation: cloneRuntimeWorkbenchHostProjectCreation(
       workbench.projectCreation,
     ),
+    referenceManagement: cloneRuntimeWorkbenchHostReferenceManagement(
+      workbench.referenceManagement,
+    ),
     lifecyclePanel: Object.freeze({
       active: lifecyclePanelActiveSession !== null,
       disposed: workbench.lifecyclePanel.disposed,
@@ -471,6 +476,9 @@ function freezeRuntimeWorkbenchHostSessionSnapshot(
     projectCreation: cloneRuntimeWorkbenchHostProjectCreation(
       snapshot.projectCreation,
     ),
+    referenceManagement: cloneRuntimeWorkbenchHostReferenceManagement(
+      snapshot.referenceManagement,
+    ),
   });
 }
 
@@ -502,6 +510,15 @@ function cloneRuntimeWorkbenchHostProjectCreation(
   projectCreation: RuntimeWorkbenchProjectCreationSnapshot,
 ): RuntimeWorkbenchProjectCreationSnapshot {
   return Object.freeze({ ...projectCreation });
+}
+
+function cloneRuntimeWorkbenchHostReferenceManagement(
+  referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot,
+): RuntimeWorkbenchReferenceManagementSnapshot {
+  return Object.freeze({
+    ...referenceManagement,
+    entries: Object.freeze([...referenceManagement.entries]),
+  });
 }
 
 function buildRuntimeWorkbenchHostRuntimeStreamPanelSnapshot(

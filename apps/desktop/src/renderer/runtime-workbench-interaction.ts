@@ -6,6 +6,7 @@ import type { CreateRuntimeStreamInteractionSessionFactorySessionOptions } from 
 import type {
   RuntimeWorkbenchExecutionMode,
   RuntimeWorkbenchPanelId,
+  RuntimeWorkbenchReferenceKind,
   RuntimeWorkbenchSession,
   RuntimeWorkbenchSessionErrorHandler,
   RuntimeWorkbenchSessionSnapshot,
@@ -23,6 +24,9 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "set_execution_mode",
   "run_node_once",
   "create_project",
+  "refresh_references",
+  "import_reference",
+  "set_reference_enabled",
   "dispatch_lifecycle_panel",
   "dispatch_runtime_stream",
 ] as const;
@@ -71,6 +75,26 @@ export type RuntimeWorkbenchInteractionCommand =
       readonly hostPath: string;
       readonly idempotencyKey?: string;
       readonly settingsOverrides?: Readonly<Record<string, unknown>>;
+    }
+  | {
+      readonly type: "refresh_references";
+      readonly projectId: string;
+    }
+  | {
+      readonly type: "import_reference";
+      readonly projectId: string;
+      readonly fileName: string;
+      readonly fileContentBase64: string;
+      readonly kind: RuntimeWorkbenchReferenceKind;
+      readonly sensitive?: boolean;
+      readonly autoChunk?: boolean;
+      readonly sourceUrl?: string;
+    }
+  | {
+      readonly type: "set_reference_enabled";
+      readonly projectId: string;
+      readonly referenceId: string;
+      readonly enabled: boolean;
     }
   | {
       readonly type: "dispatch_lifecycle_panel";
@@ -272,6 +296,35 @@ export function createRuntimeWorkbenchInteraction(
             : {}),
         });
         return completeAction();
+      case "refresh_references":
+        await options.workbench.refreshReferences({
+          projectId: safeCommand.projectId,
+        });
+        return completeAction();
+      case "import_reference":
+        await options.workbench.importReference({
+          projectId: safeCommand.projectId,
+          fileName: safeCommand.fileName,
+          fileContentBase64: safeCommand.fileContentBase64,
+          kind: safeCommand.kind,
+          ...(safeCommand.sensitive !== undefined
+            ? { sensitive: safeCommand.sensitive }
+            : {}),
+          ...(safeCommand.autoChunk !== undefined
+            ? { autoChunk: safeCommand.autoChunk }
+            : {}),
+          ...(safeCommand.sourceUrl !== undefined
+            ? { sourceUrl: safeCommand.sourceUrl }
+            : {}),
+        });
+        return completeAction();
+      case "set_reference_enabled":
+        await options.workbench.setReferenceEnabled({
+          projectId: safeCommand.projectId,
+          referenceId: safeCommand.referenceId,
+          enabled: safeCommand.enabled,
+        });
+        return completeAction();
       case "dispatch_lifecycle_panel": {
         await options.workbench.dispatchLifecyclePanelCommand(
           safeCommand.command,
@@ -353,6 +406,15 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
     if (workbench.projectCreation.canCreateProject) {
       enabledCommandIds.push("create_project");
     }
+    if (workbench.referenceManagement.canRefreshReferences) {
+      enabledCommandIds.push("refresh_references");
+    }
+    if (workbench.referenceManagement.canImportReference) {
+      enabledCommandIds.push("import_reference");
+    }
+    if (workbench.referenceManagement.canUpdateReference) {
+      enabledCommandIds.push("set_reference_enabled");
+    }
     if (workbench.lifecyclePanel.activeSession !== null) {
       enabledCommandIds.push(
         "dispose_lifecycle_panel_session",
@@ -422,6 +484,39 @@ function requireRuntimeWorkbenchInteractionCommand(
         ("settingsOverrides" in command &&
           command.settingsOverrides !== undefined &&
           !isRecord(command.settingsOverrides))
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "refresh_references":
+      if (typeof command.projectId !== "string") {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "import_reference":
+      if (
+        typeof command.projectId !== "string" ||
+        typeof command.fileName !== "string" ||
+        typeof command.fileContentBase64 !== "string" ||
+        typeof command.kind !== "string" ||
+        ("sensitive" in command &&
+          command.sensitive !== undefined &&
+          typeof command.sensitive !== "boolean") ||
+        ("autoChunk" in command &&
+          command.autoChunk !== undefined &&
+          typeof command.autoChunk !== "boolean") ||
+        ("sourceUrl" in command &&
+          command.sourceUrl !== undefined &&
+          typeof command.sourceUrl !== "string")
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "set_reference_enabled":
+      if (
+        typeof command.projectId !== "string" ||
+        typeof command.referenceId !== "string" ||
+        typeof command.enabled !== "boolean"
       ) {
         throw new Error("Invalid runtime workbench interaction command");
       }

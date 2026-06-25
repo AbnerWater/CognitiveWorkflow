@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -102,6 +103,127 @@ def test_read_project_config_endpoints_return_manifest_files(tmp_path: Path) -> 
     assert mcps_response.json() == mcp_payload
     assert adapters_response.status_code == 200
     assert adapters_response.json() == adapters_payload
+
+
+def test_reference_endpoints_import_and_toggle_runtime_manifest(tmp_path: Path) -> None:
+    client = _test_client()
+    host_path = tmp_path / "reference_project"
+    create_response = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "display_name": "Reference Project", "host_path": str(host_path)},
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["project_id"]
+
+    empty_response = client.get(
+        f"/cw/v1/projects/{project_id}/references",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+
+    assert empty_response.status_code == 200
+    assert empty_response.json() == {"entries": [], "index_snapshot_id": ""}
+
+    user_staged = host_path.resolve() / "user-staged.txt"
+    user_untracked = host_path.resolve() / "user-untracked.txt"
+    user_staged.write_text("keep staged\n", encoding="utf-8")
+    user_untracked.write_text("keep untracked\n", encoding="utf-8")
+    subprocess.run(["git", "add", "user-staged.txt"], cwd=host_path.resolve(), check=True)
+
+    boundary = "cw_reference_boundary"
+    file_content = b"reference body\r\n--cw_reference_boundary-not-a-delimiter\r\nmarker"
+    metadata = json.dumps(
+        {
+            "schema_version": "0.1.0",
+            "kind": "txt",
+            "sensitive": False,
+            "auto_chunk": True,
+        }
+    ).encode()
+    multipart_body = b"\r\n".join(
+        [
+            f"--{boundary}".encode(),
+            b'Content-Disposition: form-data; name="metadata"',
+            b"Content-Type: application/json",
+            b"",
+            metadata,
+            f"--{boundary}".encode(),
+            b'Content-Disposition: form-data; name="file"; filename="notes.txt"',
+            b"Content-Type: text/plain",
+            b"",
+            file_content,
+            f"--{boundary}--".encode(),
+            b"",
+        ]
+    )
+    import_response = client.post(
+        f"/cw/v1/projects/{project_id}/references",
+        headers={
+            "Authorization": "Bearer expected-token",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        content=multipart_body,
+    )
+
+    assert import_response.status_code == 201
+    entry = import_response.json()
+    assert entry["kind"] == "txt"
+    assert entry["enabled"] is True
+    assert entry["path"].startswith("references/")
+    assert entry["content_hash"].startswith("sha256:")
+    assert entry["chunk_status"] == "stale"
+    assert (host_path.resolve() / entry["path"]).read_bytes() == file_content
+    assert (host_path.resolve() / ".agent-workflow" / "locks" / "git.lock").exists() is False
+
+    disabled_response = client.patch(
+        f"/cw/v1/projects/{project_id}/references/{entry['reference_id']}",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "enabled": False},
+    )
+    enabled_response = client.patch(
+        f"/cw/v1/projects/{project_id}/references/{entry['reference_id']}",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "enabled": True},
+    )
+    manifest_response = client.get(
+        f"/cw/v1/projects/{project_id}/references",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+
+    assert disabled_response.status_code == 200
+    assert disabled_response.json()["enabled"] is False
+    assert enabled_response.status_code == 200
+    assert enabled_response.json()["enabled"] is True
+    assert manifest_response.status_code == 200
+    assert manifest_response.json()["entries"][0]["enabled"] is True
+    staged_after = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=host_path.resolve(),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    status_after = subprocess.run(
+        ["git", "status", "--short", "--", "user-untracked.txt"],
+        cwd=host_path.resolve(),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert staged_after == ["user-staged.txt"]
+    assert status_after == "?? user-untracked.txt"
+    log = subprocess.run(
+        ["git", "log", "--format=%s", "-3"],
+        cwd=host_path.resolve(),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert log == [
+        f"chore(refs): enable {entry['reference_id']}",
+        f"chore(refs): disable {entry['reference_id']}",
+        f"chore(refs): import {entry['reference_id']}",
+    ]
 
 
 def test_create_project_idempotency_replays_matching_body(tmp_path: Path) -> None:

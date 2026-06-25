@@ -9,6 +9,7 @@ import {
   useRef,
   useSyncExternalStore,
   type MouseEvent,
+  type RefObject,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -36,6 +37,8 @@ import {
   RUNTIME_WORKBENCH_EXECUTION_MODES,
   type RuntimeWorkbenchExecutionMode,
   type RuntimeWorkbenchPanelId,
+  type RuntimeWorkbenchReferenceEntrySnapshot,
+  type RuntimeWorkbenchReferenceKind,
 } from "./runtime-workbench-session.js";
 import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-workbench-shell-keyboard-dom-adapter.js";
 import type {
@@ -89,6 +92,18 @@ export interface RuntimeWorkbenchShellReactProjectCreationFormState {
   readonly taskBackground: string;
 }
 
+export interface RuntimeWorkbenchShellReactReferenceImportFormState {
+  readonly projectId: string;
+  readonly kind: RuntimeWorkbenchReferenceKind;
+  readonly fileName: string;
+  readonly fileContentBase64: string;
+  readonly sourceUrl: string;
+  readonly sensitive: boolean;
+  readonly autoChunk: boolean;
+  readonly fileLabel: string | null;
+  readonly fileByteLength: number | null;
+}
+
 export interface RuntimeWorkbenchShellReactViewProps {
   readonly session: RuntimeWorkbenchShellDomSession;
   readonly title?: string;
@@ -97,6 +112,7 @@ export interface RuntimeWorkbenchShellReactViewProps {
   readonly runtimeStreamSessionOptions?: CreateRuntimeStreamInteractionSessionFactorySessionOptions;
   readonly defaultRuntimeStreamOptionsFormState?: Partial<RuntimeWorkbenchShellReactStreamOptionsFormState>;
   readonly defaultProjectCreationFormState?: Partial<RuntimeWorkbenchShellReactProjectCreationFormState>;
+  readonly defaultReferenceImportFormState?: Partial<RuntimeWorkbenchShellReactReferenceImportFormState>;
   readonly className?: string;
   readonly onActionError?: (error: unknown) => void;
 }
@@ -148,6 +164,9 @@ const RUNTIME_WORKBENCH_EXECUTION_MODE_OPTIONS: readonly {
     title: "Use auto execution policy",
   },
 ]);
+
+const RUNTIME_WORKBENCH_REFERENCE_KIND_OPTIONS: readonly RuntimeWorkbenchReferenceKind[] =
+  ["pdf", "md", "txt", "csv", "xlsx", "image", "web_url"] as const;
 
 export function useRuntimeWorkbenchShellSnapshot(
   session: RuntimeWorkbenchShellDomSession,
@@ -217,6 +236,26 @@ export function createRuntimeWorkbenchShellReactProjectCreationFormState(
     displayName: input.displayName ?? "",
     hostPath: input.hostPath ?? "",
     taskBackground: input.taskBackground ?? "",
+  });
+}
+
+export function createRuntimeWorkbenchShellReactReferenceImportFormState(
+  input: Partial<RuntimeWorkbenchShellReactReferenceImportFormState> = {},
+): RuntimeWorkbenchShellReactReferenceImportFormState {
+  const kind = isRuntimeWorkbenchShellReactReferenceKind(input.kind)
+    ? input.kind
+    : "pdf";
+  const fileName = input.fileName ?? "";
+  return Object.freeze({
+    projectId: input.projectId ?? "",
+    kind,
+    fileName,
+    fileContentBase64: input.fileContentBase64 ?? "",
+    sourceUrl: input.sourceUrl ?? "",
+    sensitive: input.sensitive ?? false,
+    autoChunk: input.autoChunk ?? true,
+    fileLabel: input.fileLabel ?? (fileName.length > 0 ? fileName : null),
+    fileByteLength: input.fileByteLength ?? null,
   });
 }
 
@@ -321,6 +360,13 @@ export function RuntimeWorkbenchShellReactView(
         props.defaultProjectCreationFormState,
       ),
     );
+  const [referenceImportForm, setReferenceImportForm] =
+    useState<RuntimeWorkbenchShellReactReferenceImportFormState>(() =>
+      createRuntimeWorkbenchShellReactReferenceImportFormState(
+        props.defaultReferenceImportFormState,
+      ),
+    );
+  const referenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const formRuntimeStreamSessionOptions = useMemo(
     () =>
       buildRuntimeWorkbenchShellReactStreamSessionOptions(streamOptionsForm),
@@ -380,6 +426,41 @@ export function RuntimeWorkbenchShellReactView(
     projectCreationDisplayName !== null &&
     projectCreationHostPath !== null &&
     projectCreationTaskBackgroundReady;
+  const referenceProjectId = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactPathSegment(
+        referenceImportForm.projectId,
+      ),
+    [referenceImportForm.projectId],
+  );
+  const referenceFileName = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactReferenceFileName(
+        referenceImportForm.fileName,
+      ),
+    [referenceImportForm.fileName],
+  );
+  const referenceSourceUrl = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactOptionalText(
+        referenceImportForm.sourceUrl,
+      ),
+    [referenceImportForm.sourceUrl],
+  );
+  const referenceRefreshReady =
+    snapshot.referenceManagement.canRefreshReferences &&
+    referenceProjectId !== null;
+  const referenceImportReady =
+    snapshot.referenceManagement.canImportReference &&
+    referenceProjectId !== null &&
+    referenceFileName !== null &&
+    referenceImportForm.fileContentBase64.length > 0 &&
+    referenceSourceUrl !== null;
+  const referenceToggleProjectId =
+    snapshot.referenceManagement.activeProjectId ?? referenceProjectId;
+  const referenceUpdateReady =
+    snapshot.referenceManagement.canUpdateReference &&
+    referenceToggleProjectId !== null;
   const handleActionError = useCallback(
     (error: unknown): void => {
       try {
@@ -533,6 +614,86 @@ export function RuntimeWorkbenchShellReactView(
     },
     [],
   );
+  const handleReferenceTextInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      const field = event.currentTarget.dataset.referenceField;
+      if (field !== "projectId" && field !== "sourceUrl") {
+        return;
+      }
+      const value = event.currentTarget.value;
+      setReferenceImportForm((current) =>
+        createRuntimeWorkbenchShellReactReferenceImportFormState({
+          ...current,
+          [field]: value,
+        }),
+      );
+    },
+    [],
+  );
+  const handleReferenceKindChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>): void => {
+      const kind = event.currentTarget.value;
+      if (!isRuntimeWorkbenchShellReactReferenceKind(kind)) {
+        return;
+      }
+      setReferenceImportForm((current) =>
+        createRuntimeWorkbenchShellReactReferenceImportFormState({
+          ...current,
+          kind,
+        }),
+      );
+    },
+    [],
+  );
+  const handleReferenceFlagChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      const flag = event.currentTarget.dataset.referenceFlag;
+      if (flag !== "sensitive" && flag !== "autoChunk") {
+        return;
+      }
+      const checked = event.currentTarget.checked;
+      setReferenceImportForm((current) =>
+        createRuntimeWorkbenchShellReactReferenceImportFormState({
+          ...current,
+          [flag]: checked,
+        }),
+      );
+    },
+    [],
+  );
+  const handleReferenceFileInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      const file = event.currentTarget.files?.[0] ?? null;
+      if (file === null) {
+        setReferenceImportForm((current) =>
+          createRuntimeWorkbenchShellReactReferenceImportFormState({
+            ...current,
+            fileName: "",
+            fileContentBase64: "",
+            fileLabel: null,
+            fileByteLength: null,
+          }),
+        );
+        return;
+      }
+      void file
+        .arrayBuffer()
+        .then((buffer) => {
+          setReferenceImportForm((current) =>
+            createRuntimeWorkbenchShellReactReferenceImportFormState({
+              ...current,
+              fileName: file.name,
+              fileContentBase64:
+                runtimeWorkbenchShellReactArrayBufferToBase64(buffer),
+              fileLabel: file.name,
+              fileByteLength: file.size,
+            }),
+          );
+        })
+        .catch(handleActionError);
+    },
+    [handleActionError],
+  );
   const handleCreateProjectClick = useCallback((): void => {
     if (
       !projectCreationReady ||
@@ -555,6 +716,101 @@ export function RuntimeWorkbenchShellReactView(
     projectCreationReady,
     props.session,
   ]);
+  const handleRefreshReferencesClick = useCallback((): void => {
+    if (!referenceRefreshReady || referenceProjectId === null) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "refresh_references",
+        projectId: referenceProjectId,
+      })
+      .catch(handleActionError);
+  }, [
+    handleActionError,
+    props.session,
+    referenceProjectId,
+    referenceRefreshReady,
+  ]);
+  const handleImportReferenceClick = useCallback((): void => {
+    if (
+      !referenceImportReady ||
+      referenceProjectId === null ||
+      referenceFileName === null ||
+      referenceSourceUrl === null
+    ) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "import_reference",
+        projectId: referenceProjectId,
+        fileName: referenceFileName,
+        fileContentBase64: referenceImportForm.fileContentBase64,
+        kind: referenceImportForm.kind,
+        sensitive: referenceImportForm.sensitive,
+        autoChunk: referenceImportForm.autoChunk,
+        ...(referenceSourceUrl.length > 0
+          ? { sourceUrl: referenceSourceUrl }
+          : {}),
+      })
+      .then(() => {
+        if (referenceFileInputRef.current !== null) {
+          referenceFileInputRef.current.value = "";
+        }
+        setReferenceImportForm((current) =>
+          createRuntimeWorkbenchShellReactReferenceImportFormState({
+            ...current,
+            fileName: "",
+            fileContentBase64: "",
+            fileLabel: null,
+            fileByteLength: null,
+          }),
+        );
+      })
+      .catch(handleActionError);
+  }, [
+    handleActionError,
+    props.session,
+    referenceFileName,
+    referenceImportForm.autoChunk,
+    referenceImportForm.fileContentBase64,
+    referenceImportForm.kind,
+    referenceImportForm.sensitive,
+    referenceImportReady,
+    referenceProjectId,
+    referenceSourceUrl,
+  ]);
+  const handleReferenceToggleClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const referenceId = event.currentTarget.dataset.referenceToggleId;
+      const nextEnabled =
+        event.currentTarget.dataset.referenceToggleNextEnabled;
+      if (
+        !referenceUpdateReady ||
+        referenceToggleProjectId === null ||
+        referenceId === undefined ||
+        referenceId.length === 0 ||
+        (nextEnabled !== "true" && nextEnabled !== "false")
+      ) {
+        return;
+      }
+      void props.session
+        .dispatch({
+          type: "set_reference_enabled",
+          projectId: referenceToggleProjectId,
+          referenceId,
+          enabled: nextEnabled === "true",
+        })
+        .catch(handleActionError);
+    },
+    [
+      handleActionError,
+      props.session,
+      referenceToggleProjectId,
+      referenceUpdateReady,
+    ],
+  );
   const handleStreamDisplayLevelClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const displayLevel = event.currentTarget.dataset.streamDisplayLevel;
@@ -832,6 +1088,21 @@ export function RuntimeWorkbenchShellReactView(
               projectCreationReady={projectCreationReady}
               state={projectCreationForm}
             />
+            <RuntimeWorkbenchShellReferenceManagementControls
+              importReady={referenceImportReady}
+              onFileInputChange={handleReferenceFileInputChange}
+              onFlagChange={handleReferenceFlagChange}
+              onImportClick={handleImportReferenceClick}
+              onKindChange={handleReferenceKindChange}
+              onRefreshClick={handleRefreshReferencesClick}
+              onTextInputChange={handleReferenceTextInputChange}
+              onToggleClick={handleReferenceToggleClick}
+              fileInputRef={referenceFileInputRef}
+              referenceManagement={snapshot.referenceManagement}
+              updateReady={referenceUpdateReady}
+              refreshReady={referenceRefreshReady}
+              state={referenceImportForm}
+            />
             <RuntimeWorkbenchShellExecutionControls
               executionPolicy={snapshot.executionPolicy}
               onExecutionModeClick={handleExecutionModeClick}
@@ -965,6 +1236,208 @@ function RuntimeWorkbenchShellProjectCreationControls(props: {
         </div>
       </dl>
     </section>
+  );
+}
+
+function RuntimeWorkbenchShellReferenceManagementControls(props: {
+  readonly referenceManagement: RuntimeWorkbenchShellSnapshot["referenceManagement"];
+  readonly state: RuntimeWorkbenchShellReactReferenceImportFormState;
+  readonly fileInputRef: RefObject<HTMLInputElement>;
+  readonly refreshReady: boolean;
+  readonly importReady: boolean;
+  readonly updateReady: boolean;
+  readonly onTextInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onKindChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  readonly onFlagChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onFileInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onRefreshClick: () => void;
+  readonly onImportClick: () => void;
+  readonly onToggleClick: (event: MouseEvent<HTMLButtonElement>) => void;
+}): ReactElement {
+  return (
+    <section
+      aria-label="Reference management"
+      className="cw-workbench__reference-management"
+      data-reference-management-active-project-id={
+        props.referenceManagement.activeProjectId ?? undefined
+      }
+      data-reference-management-control="true"
+      data-reference-management-entry-count={String(
+        props.referenceManagement.entries.length,
+      )}
+      data-reference-management-status={props.referenceManagement.status}
+    >
+      <div className="cw-workbench__reference-management-form">
+        <label className="cw-workbench__reference-field">
+          <span>Project id</span>
+          <input
+            data-reference-field="projectId"
+            inputMode="text"
+            onChange={props.onTextInputChange}
+            value={props.state.projectId}
+          />
+        </label>
+        <label className="cw-workbench__reference-field">
+          <span>Kind</span>
+          <select
+            data-reference-field="kind"
+            onChange={props.onKindChange}
+            value={props.state.kind}
+          >
+            {RUNTIME_WORKBENCH_REFERENCE_KIND_OPTIONS.map((kind) => (
+              <option key={kind} value={kind}>
+                {runtimeWorkbenchShellReactReferenceKindLabel(kind)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="cw-workbench__reference-field">
+          <span>Source URL</span>
+          <input
+            data-reference-field="sourceUrl"
+            inputMode="url"
+            onChange={props.onTextInputChange}
+            value={props.state.sourceUrl}
+          />
+        </label>
+        <label className="cw-workbench__reference-field">
+          <span>File</span>
+          <input
+            data-reference-file-input="true"
+            onChange={props.onFileInputChange}
+            ref={props.fileInputRef}
+            type="file"
+          />
+        </label>
+        <label className="cw-workbench__reference-check">
+          <input
+            checked={props.state.autoChunk}
+            data-reference-flag="autoChunk"
+            onChange={props.onFlagChange}
+            type="checkbox"
+          />
+          <span>Auto chunk</span>
+        </label>
+        <label className="cw-workbench__reference-check">
+          <input
+            checked={props.state.sensitive}
+            data-reference-flag="sensitive"
+            onChange={props.onFlagChange}
+            type="checkbox"
+          />
+          <span>Sensitive</span>
+        </label>
+        <button
+          className="cw-workbench__reference-refresh"
+          data-reference-refresh-submit="true"
+          data-reference-refresh-enabled={props.refreshReady ? "true" : "false"}
+          disabled={!props.refreshReady}
+          onClick={props.onRefreshClick}
+          type="button"
+        >
+          Refresh
+        </button>
+        <button
+          className="cw-workbench__reference-import"
+          data-reference-import-submit="true"
+          data-reference-import-enabled={props.importReady ? "true" : "false"}
+          data-reference-import-file-ready={
+            props.state.fileContentBase64.length > 0 ? "true" : "false"
+          }
+          disabled={!props.importReady}
+          onClick={props.onImportClick}
+          type="button"
+        >
+          Import
+        </button>
+      </div>
+      <dl className="cw-workbench__reference-status">
+        <div>
+          <dt>Status</dt>
+          <dd>{props.referenceManagement.status}</dd>
+        </div>
+        <div>
+          <dt>File</dt>
+          <dd>
+            {props.state.fileLabel === null
+              ? "No file"
+              : `${props.state.fileLabel} (${props.state.fileByteLength ?? 0} bytes)`}
+          </dd>
+        </div>
+        <div>
+          <dt>Index snapshot</dt>
+          <dd>{props.referenceManagement.indexSnapshotId ?? "none"}</dd>
+        </div>
+      </dl>
+      <RuntimeWorkbenchShellReferenceEntryList
+        entries={props.referenceManagement.entries}
+        onToggleClick={props.onToggleClick}
+        updateEnabled={props.updateReady}
+      />
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellReferenceEntryList(props: {
+  readonly entries: readonly RuntimeWorkbenchReferenceEntrySnapshot[];
+  readonly updateEnabled: boolean;
+  readonly onToggleClick: (event: MouseEvent<HTMLButtonElement>) => void;
+}): ReactElement {
+  if (props.entries.length === 0) {
+    return (
+      <p className="cw-workbench__reference-empty" data-reference-empty="true">
+        No references
+      </p>
+    );
+  }
+  return (
+    <ul className="cw-workbench__reference-list">
+      {props.entries.map((entry) => (
+        <li
+          className="cw-workbench__reference-entry"
+          data-reference-entry-enabled={entry.enabled ? "true" : "false"}
+          data-reference-entry-id={entry.referenceId}
+          key={entry.referenceId}
+        >
+          <div className="cw-workbench__reference-entry-main">
+            <strong>{entry.referenceId}</strong>
+            <span>{entry.path}</span>
+          </div>
+          <dl className="cw-workbench__reference-entry-meta">
+            <div>
+              <dt>Kind</dt>
+              <dd>
+                {runtimeWorkbenchShellReactReferenceKindLabel(entry.kind)}
+              </dd>
+            </div>
+            <div>
+              <dt>Chunk</dt>
+              <dd>{entry.chunkStatus}</dd>
+            </div>
+            <div>
+              <dt>Hash</dt>
+              <dd>{entry.contentHash}</dd>
+            </div>
+            <div>
+              <dt>Sensitive</dt>
+              <dd>{entry.sensitive ? "yes" : "no"}</dd>
+            </div>
+          </dl>
+          <button
+            className="cw-workbench__reference-toggle"
+            data-reference-toggle-id={entry.referenceId}
+            data-reference-toggle-next-enabled={
+              entry.enabled ? "false" : "true"
+            }
+            disabled={!props.updateEnabled}
+            onClick={props.onToggleClick}
+            type="button"
+          >
+            {entry.enabled ? "Disable" : "Enable"}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -4705,6 +5178,37 @@ function normalizeRuntimeWorkbenchShellReactProjectHostPath(
   return trimmed;
 }
 
+function normalizeRuntimeWorkbenchShellReactReferenceFileName(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > 180 ||
+    trimmed === "." ||
+    trimmed === ".." ||
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    /[\u0000-\u001f\u007f]/u.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeRuntimeWorkbenchShellReactOptionalText(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return "";
+  }
+  if (trimmed.length > 2048 || /[\u0000-\u001f\u007f]/u.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
 function normalizeRuntimeWorkbenchShellReactPathSegment(
   value: string,
 ): string | null {
@@ -4721,6 +5225,17 @@ function normalizeRuntimeWorkbenchShellReactPathSegment(
     return null;
   }
   return trimmed;
+}
+
+function isRuntimeWorkbenchShellReactReferenceKind(
+  value: string | undefined,
+): value is RuntimeWorkbenchReferenceKind {
+  return (
+    value !== undefined &&
+    RUNTIME_WORKBENCH_REFERENCE_KIND_OPTIONS.includes(
+      value as RuntimeWorkbenchReferenceKind,
+    )
+  );
 }
 
 function isRuntimeWorkbenchShellExecutionMode(
@@ -4779,6 +5294,24 @@ function isRuntimeWorkbenchShellReactCategory(
 
 function runtimeWorkbenchShellReactTitleCase(value: string): string {
   return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function runtimeWorkbenchShellReactReferenceKindLabel(
+  value: RuntimeWorkbenchReferenceKind,
+): string {
+  return value.split("_").map(runtimeWorkbenchShellReactTitleCase).join(" ");
+}
+
+function runtimeWorkbenchShellReactArrayBufferToBase64(
+  buffer: ArrayBuffer,
+): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function runtimeWorkbenchShellReactIsKnownStreamEventType(
