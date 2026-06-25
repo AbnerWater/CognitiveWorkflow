@@ -1,0 +1,308 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.176",
+  "bundle_status": "local_ui_evidence_prepared_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-25",
+  "source": {
+    "ux_gap_repair_plan": "docs/04_runbook/m1.5-ux-gap-repair-plan.json",
+    "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
+    "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json",
+    "visual_smoke_single_runner": "apps/desktop/scripts/runtime-workbench-visual-smoke.cjs",
+    "visual_smoke_matrix_runner": "apps/desktop/scripts/runtime-workbench-visual-smoke-matrix.cjs",
+    "react_shell_tests": "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+  },
+  "guardrails": [
+    "This bundle prepares local UI evidence only; it does not claim A4 acceptance.",
+    "Every review item remains pending_a4_review until an A4 reviewer records end-to-end UX acceptance evidence.",
+    "The bundle is limited to TRACK-LOCAL-UI-EVIDENCE from W1.5.174.",
+    "FR-001 packaging and cross-platform launch evidence stays outside this bundle until packaging dependency gates are approved.",
+    "No production runtime, renderer behavior, dependency, spec, ADR, generated schema, packaging, updater, or baseline docx change is included in W1.5.176.",
+    "Visual-smoke evidence must remain sanitized and must not include raw prompts, raw model output, query/hash secrets, or output directory values."
+  ],
+  "review_track": {
+    "source_track_id": "TRACK-LOCAL-UI-EVIDENCE",
+    "source_track_kind": "desktop_ui_acceptance",
+    "source_track_status": "planned_not_implemented",
+    "fr_ids": ["FR-001", "FR-002", "FR-003", "FR-005", "FR-006", "FR-020"],
+    "local_ui_readiness": "partial_requires_ui_evidence"
+  },
+  "runner_contract": {
+    "runner_script": "apps/desktop/scripts/m1-5-local-ui-evidence-bundle.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-local-ui-evidence-bundle.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-local-ui-evidence-bundle.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "visual_smoke_matrix_command": "pnpm --filter @cw/desktop run visual-smoke:matrix",
+    "runner_output_contract": {
+      "status": "local_ui_evidence_prepared_not_accepted",
+      "review_item_count": 6,
+      "accepted_item_count": 0,
+      "local_ui_fr_item_count": 6,
+      "sanitized_summary_only": true
+    }
+  },
+  "review_items": [
+    {
+      "id": "LOCAL-FR-001-SHELL-WINDOW",
+      "fr_id": "FR-001",
+      "review_status": "pending_a4_review",
+      "source_checklist_status": "partial_evidence",
+      "source_acceptance_readiness": "partial_requires_ui_evidence",
+      "review_focus": "Desktop shell window and first viewport workbench surface",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-001",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-001",
+        "docs/04_runbook/m1.5-progress.md#W1.5.80",
+        "apps/desktop/src/main/electron-main.ts",
+        "apps/desktop/scripts/runtime-workbench-visual-smoke.cjs"
+      ],
+      "source_verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke"
+      ],
+      "source_checklist_remaining_gap": [
+        "Desktop menu bar acceptance is not recorded.",
+        "Cross-platform packaged launch evidence is blocked by packaging dependency gates."
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "required_visual_smoke_fields": [
+        "metrics.hasRoot=true",
+        "metrics.hasDock=true",
+        "metrics.hasTaskDrawer=true",
+        "metrics.hasChatBox=true",
+        "metrics.hasWorkflowCanvas=true"
+      ],
+      "required_react_test_markers": [
+        "renderer runtime workbench React shell renders server snapshot without DOM binding"
+      ],
+      "missing_before_acceptance": [
+        "A4 has not recorded menu bar acceptance.",
+        "Cross-platform packaged launch evidence is still blocked by packaging dependency gates."
+      ]
+    },
+    {
+      "id": "LOCAL-FR-002-DOCK-MODULES",
+      "fr_id": "FR-002",
+      "review_status": "pending_a4_review",
+      "source_checklist_status": "partial_scaffold",
+      "source_acceptance_readiness": "partial_requires_ui_evidence",
+      "review_focus": "Left Dock first-level module coverage and panel switching evidence",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-002",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-002",
+        "docs/04_runbook/m1.5-progress.md#W1.5.89",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "source_verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "source_checklist_remaining_gap": [
+        "Complete first-level module coverage has not been accepted by A4.",
+        "Dock collapse behavior is not recorded as a formal FR acceptance item."
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "required_visual_smoke_fields": [
+        "metrics.dockItems=4",
+        "canvasMetrics.canvasDockActive=true",
+        "metrics.lifecycleTabActive=true",
+        "canvasMetrics.canvasTabActive=true"
+      ],
+      "required_react_test_markers": [
+        "Canvas",
+        "Lifecycle",
+        "Stream",
+        "File Tree"
+      ],
+      "missing_before_acceptance": [
+        "All first-level module entries have not been accepted.",
+        "Dock collapse and restore have not been recorded as an A4 path."
+      ]
+    },
+    {
+      "id": "LOCAL-FR-003-FILE-TREE",
+      "fr_id": "FR-003",
+      "review_status": "pending_a4_review",
+      "source_checklist_status": "partial_scaffold",
+      "source_acceptance_readiness": "partial_requires_ui_evidence",
+      "review_focus": "File Tree scaffold selection and detail evidence",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-003",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-003",
+        "docs/04_runbook/m1.5-progress.md#W1.5.92",
+        "docs/04_runbook/m1.5-progress.md#W1.5.105",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+      ],
+      "source_verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "source_checklist_remaining_gap": [
+        "Real filesystem enumeration and project-backed file open actions are not implemented.",
+        "Default-hidden Drawer behavior has not been accepted as an A4 UX path."
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "required_visual_smoke_fields": [
+        "metrics.hasFileTree=true",
+        "initialFileTreeMetrics.fileTreeSelectableNodes=5",
+        "initialFileTreeMetrics.selectedFileTreeNodeId=workspace_root",
+        "fileTreeSelectMetrics.selectedFileTreeNodeId=workflow_graph",
+        "fileTreeSelectMetrics.fileTreeDetailsPath=specs/schemas/workflow_graph.md"
+      ],
+      "required_react_test_markers": [
+        "renderer runtime workbench React shell selects file tree node locally"
+      ],
+      "missing_before_acceptance": [
+        "Project-backed filesystem enumeration is not implemented.",
+        "Default-hidden Drawer interaction has not been accepted by A4."
+      ]
+    },
+    {
+      "id": "LOCAL-FR-005-NODE-SELECTION",
+      "fr_id": "FR-005",
+      "review_status": "pending_a4_review",
+      "source_checklist_status": "partial_scaffold",
+      "source_acceptance_readiness": "partial_requires_ui_evidence",
+      "review_focus": "Local Canvas node selection and inspector binding evidence",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-005",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-005",
+        "docs/04_runbook/m1.5-progress.md#W1.5.96-W1.5.104",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "source_verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "source_checklist_remaining_gap": [
+        "Selection is still local scaffold behavior rather than accepted React Flow behavior.",
+        "Automatic right-side Task binding has not been accepted end to end."
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "required_visual_smoke_fields": [
+        "canvasMetrics.selectedWorkflowCanvasNodes=1",
+        "canvasMetrics.selectedWorkflowCanvasNodeId=repair_task",
+        "canvasRouteMetrics.selectedWorkflowCanvasNodeId=review_task",
+        "canvasBackMetrics.selectedWorkflowCanvasNodeId=repair_task"
+      ],
+      "required_react_test_markers": [
+        "renderer runtime workbench React shell selects focused canvas node locally"
+      ],
+      "missing_before_acceptance": [
+        "Selection is still local scaffold behavior.",
+        "Right Task details have not been accepted as automatically bound to the selected node."
+      ]
+    },
+    {
+      "id": "LOCAL-FR-006-TASK-DRAWER",
+      "fr_id": "FR-006",
+      "review_status": "pending_a4_review",
+      "source_checklist_status": "partial_scaffold",
+      "source_acceptance_readiness": "partial_requires_ui_evidence",
+      "review_focus": "Task Drawer local selection and collapsed/expanded detail evidence",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-006",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-006",
+        "docs/04_runbook/m1.5-progress.md#W1.5.90",
+        "docs/04_runbook/m1.5-progress.md#W1.5.107",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+      ],
+      "source_verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "source_checklist_remaining_gap": [
+        "Full field coverage for inputs, outputs, review rules, Skill, model, and artifacts is not accepted.",
+        "Runtime-backed detail updates are not implemented."
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "required_visual_smoke_fields": [
+        "metrics.hasTaskDrawer=true",
+        "metrics.taskDrawerExpanded=true",
+        "initialTaskDrawerMetrics.taskDrawerSelectableItems=5",
+        "taskDrawerSelectMetrics.selectedTaskDrawerItemId=unread_events",
+        "taskDrawerKeyboardMetrics.selectedTaskDrawerItemId=runtime_stream",
+        "collapsedMetrics.taskDrawerExpanded=false"
+      ],
+      "required_react_test_markers": [
+        "renderer runtime workbench React shell toggles task drawer collapse",
+        "renderer runtime workbench React shell selects task drawer item locally"
+      ],
+      "missing_before_acceptance": [
+        "Inputs, outputs, review rules, Skill, model, and artifact fields are not fully accepted.",
+        "Runtime-backed detail updates are not implemented."
+      ]
+    },
+    {
+      "id": "LOCAL-FR-020-SHORTCUTS",
+      "fr_id": "FR-020",
+      "review_status": "pending_a4_review",
+      "source_checklist_status": "partial_evidence",
+      "source_acceptance_readiness": "partial_requires_ui_evidence",
+      "review_focus": "Shortcut routing, keyboard selection, and command-map evidence",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-020",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-020",
+        "docs/04_runbook/m1.5-progress.md#W1.5.72-W1.5.78",
+        "docs/04_runbook/m1.5-progress.md#W1.5.158-W1.5.169",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "source_verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "source_checklist_remaining_gap": [
+        "A formal common-shortcut acceptance list is not recorded.",
+        "User-facing command discoverability is not implemented."
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "required_visual_smoke_fields": [
+        "taskDrawerSpaceMetrics.selectedTaskDrawerItemId=visible_items",
+        "canvasKeyboardNextMetrics.selectedWorkflowCanvasNodeId=end",
+        "canvasKeyboardPreviousMetrics.selectedWorkflowCanvasNodeId=repair_task",
+        "canvasKeyboardUpMetrics.selectedWorkflowCanvasNodeId=review_task",
+        "canvasKeyboardDownMetrics.selectedWorkflowCanvasNodeId=repair_task",
+        "chatLocalSubmitTriggerMetrics.keyboardDefaultPrevented=true"
+      ],
+      "required_react_test_markers": [
+        "renderer runtime workbench React shell keyboard binding helper owns target lifecycle",
+        "renderer runtime workbench React shell maps actions to commands",
+        "renderer runtime workbench React shell submits chat draft with keyboard shortcut"
+      ],
+      "missing_before_acceptance": [
+        "A formal common-shortcut acceptance list is not recorded.",
+        "User-facing command discoverability is not implemented."
+      ]
+    }
+  ],
+  "summary": {
+    "review_item_count": 6,
+    "local_ui_fr_items": 6,
+    "accepted_items": 0,
+    "pending_a4_review_items": 6,
+    "exit_p1_1_status": "not_ready",
+    "next_required_review": "A4 ux-acceptance-reviewer"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.177",
+      "title": "Runtime-backed desktop flow repair planning",
+      "reason": "Plan Chat Box routing, snapshot restore, artifact actions, and project/runtime bridge work before implementation."
+    },
+    {
+      "id": "W1.5.178",
+      "title": "Desktop runtime bridge repair bundle",
+      "reason": "Prepare project, Git, Skill, execution-mode, and HITL desktop/runtime flow work after local UI evidence is fixed."
+    }
+  ]
+}
