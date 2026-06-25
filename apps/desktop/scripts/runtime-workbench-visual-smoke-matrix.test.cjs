@@ -87,6 +87,11 @@ const result = {
 };
 if (chatBoxMode === "enabled") {
   Object.assign(result, {
+    chatInitialMetrics: {
+      chatBoxExpanded: "true",
+      chatDraftInputs: 1,
+      chatDraftInputFocused: true,
+    },
     chatDraftMetrics: {
       chatDraftValue: "Review repair plan now",
       chatDraftPreviewText: "Review repair plan now raw matrix draft",
@@ -309,6 +314,11 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       streamEventMode: "known",
       chatBoxMode: "enabled",
     });
+    assert.deepEqual(chatEnabled?.chatFocusEvidence, {
+      expandedAfterToggle: "true",
+      draftInputCount: 1,
+      draftInputFocusedAfterExpand: true,
+    });
     assert.deepEqual(chatEnabled?.chatLocalEvidence, {
       firstSubmission: {
         present: true,
@@ -376,6 +386,53 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     assert.deepEqual(
       result.manifest.cases.map((testCase) => testCase.failures),
       [[], [], [], [], [], [], []],
+    );
+    assertSafeOutput(result, [
+      "Review repair plan now",
+      "Confirm workflow handoff",
+      "Resume local request",
+      "query-secret",
+      "hash-secret",
+      "matrix-output-secret",
+      tempDir,
+    ]);
+  });
+});
+
+test("visual smoke matrix rejects unfocused enabled chat evidence", async () => {
+  await withTempDir("cw-visual-smoke-matrix-chat-focus-", async (tempDir) => {
+    const fakeElectronCliPath = await writeFakeElectronCli(
+      tempDir,
+      validFakeElectronCliBody.replace(
+        "chatDraftInputFocused: true",
+        "chatDraftInputFocused: false",
+      ),
+    );
+
+    const result = await runMatrix(tempDir, fakeElectronCliPath, {
+      outputDirName: "matrix-output-secret",
+    });
+    const chatEnabled = result.manifest.cases.find(
+      (testCase) => testCase.name === "chat-enabled-desktop",
+    );
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.manifest.cases.length, 7);
+    assert.equal(result.manifest.failures.length, 1);
+    assert.deepEqual(chatEnabled?.chatFocusEvidence, {
+      expandedAfterToggle: "true",
+      draftInputCount: 1,
+      draftInputFocusedAfterExpand: false,
+    });
+    assert.deepEqual(chatEnabled?.failures, [
+      "expected initial chat draft input focused true, got false",
+    ]);
+    assert.deepEqual(
+      result.manifest.cases
+        .filter((testCase) => testCase.name !== "chat-enabled-desktop")
+        .map((testCase) => testCase.failures),
+      [[], [], [], [], [], []],
     );
     assertSafeOutput(result, [
       "Review repair plan now",
@@ -701,6 +758,11 @@ const result = {
     streamSelectionMetadataKnownType: knownType,
     streamSelectionMetadataText: knownText,
   },
+  chatInitialMetrics: chatBoxMode === "enabled" ? {
+    chatBoxExpanded: "true",
+    chatDraftInputs: 1,
+    chatDraftInputFocused: true,
+  } : null,
   chatLocalSubmitMetrics: chatBoxMode === "enabled" ? {
     chatLocalSubmissionPresent: true,
     chatLocalSubmissionAction: "repair_review",

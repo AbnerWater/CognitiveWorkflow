@@ -176,11 +176,15 @@ function expectMetricList(failures, label, metrics, key, expected) {
 
 function collectEnabledChatBoxFailures(result) {
   const failures = [];
+  const initial = result.chatInitialMetrics;
   const first = result.chatLocalSubmitMetrics;
   const history = result.chatLocalHistoryMetrics;
   const cleared = result.chatLocalHistoryClearedMetrics;
   const resend = result.chatLocalResendMetrics;
 
+  if (!isRecord(initial)) {
+    failures.push("expected initial chat focus metrics");
+  }
   if (!isRecord(first)) {
     failures.push("expected first local chat submission metrics");
   }
@@ -193,6 +197,28 @@ function collectEnabledChatBoxFailures(result) {
   if (!isRecord(resend)) {
     failures.push("expected local chat resend metrics");
   }
+
+  expectMetric(
+    failures,
+    "initial chat box expanded",
+    initial,
+    "chatBoxExpanded",
+    "true",
+  );
+  expectMetric(
+    failures,
+    "initial chat draft input count",
+    initial,
+    "chatDraftInputs",
+    1,
+  );
+  expectMetric(
+    failures,
+    "initial chat draft input focused",
+    initial,
+    "chatDraftInputFocused",
+    true,
+  );
 
   expectMetric(
     failures,
@@ -729,6 +755,21 @@ function summarizeChatLocalEvidence(result) {
   };
 }
 
+function summarizeChatFocusEvidence(result) {
+  if (result?.chatBoxMode !== "enabled") {
+    return null;
+  }
+  const initial = result.chatInitialMetrics;
+  if (!isRecord(initial)) {
+    return null;
+  }
+  return {
+    expandedAfterToggle: readMetric(initial, "chatBoxExpanded"),
+    draftInputCount: readMetric(initial, "chatDraftInputs"),
+    draftInputFocusedAfterExpand: readMetric(initial, "chatDraftInputFocused"),
+  };
+}
+
 function summarizeCase(testCase, outputPath, result, runResult, failures) {
   return {
     name: testCase.name,
@@ -752,6 +793,7 @@ function summarizeCase(testCase, outputPath, result, runResult, failures) {
       : null,
     outputEvidence: summarizeOutputPath(outputPath),
     chatLocalEvidence: summarizeChatLocalEvidence(result),
+    chatFocusEvidence: summarizeChatFocusEvidence(result),
     failures,
   };
 }
