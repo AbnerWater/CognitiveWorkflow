@@ -1,0 +1,219 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.171",
+  "proposal_status": "pending_human_approval",
+  "observed_at": "2026-06-25",
+  "authority": {
+    "roadmap": "docs/roadmap.md#5.2",
+    "phase_exit": "docs/roadmap.md#5.3",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json",
+    "agents_dependency_rule": "AGENTS.md#10"
+  },
+  "guardrails": [
+    "This proposal does not install packages or modify pnpm-lock.yaml.",
+    "Every proposed third-party dependency remains pending human approval before implementation.",
+    "The currently approved W1.5 minimal dependency group remains unchanged.",
+    "No accepted spec, ADR, schema, generated schema, runtime behavior, IPC, renderer storage, packaging, or updater behavior changes are included in W1.5.171."
+  ],
+  "current_approved_minimal_group": [
+    {
+      "name": "react",
+      "version": "18.3.1",
+      "package_json_section": "dependencies"
+    },
+    {
+      "name": "react-dom",
+      "version": "18.3.1",
+      "package_json_section": "dependencies"
+    },
+    {
+      "name": "electron",
+      "version": "35.7.5",
+      "package_json_section": "devDependencies"
+    },
+    {
+      "name": "vite",
+      "version": "5.4.21",
+      "package_json_section": "devDependencies"
+    },
+    {
+      "name": "@vitejs/plugin-react",
+      "version": "4.7.0",
+      "package_json_section": "devDependencies"
+    },
+    {
+      "name": "@types/react",
+      "version": "18.3.31",
+      "package_json_section": "devDependencies"
+    },
+    {
+      "name": "@types/react-dom",
+      "version": "18.3.7",
+      "package_json_section": "devDependencies"
+    }
+  ],
+  "dependency_gates": [
+    {
+      "id": "DEP-FORGE",
+      "status": "pending_human_approval",
+      "roadmap_items": ["M1.5-R1", "EXIT-P1-7"],
+      "proposed_packages": [
+        {
+          "name": "@electron-forge/cli",
+          "version": "7.11.2",
+          "package_json_section": "devDependencies",
+          "registry_check": "pnpm view @electron-forge/cli version",
+          "reason": "Provides the Forge CLI needed to convert the current Electron/Vite shell into a packaged desktop project."
+        },
+        {
+          "name": "@electron-forge/plugin-vite",
+          "version": "7.11.2",
+          "package_json_section": "devDependencies",
+          "registry_check": "pnpm view @electron-forge/plugin-vite version",
+          "reason": "Keeps Forge packaging aligned with the existing Vite renderer and TypeScript build."
+        }
+      ],
+      "install_command_after_approval": "pnpm --filter @cw/desktop add -D @electron-forge/cli@7.11.2 @electron-forge/plugin-vite@7.11.2",
+      "implementation_sequence": [
+        "Add Forge config without changing runtime IPC or renderer storage boundaries.",
+        "Keep hidden-window smoke tests and desktop Node tests green after packaging config is introduced.",
+        "Defer platform makers, signing, publishing, and installer artifacts until the packaging slice explicitly requests them."
+      ],
+      "verification_plan_after_approval": [
+        "pnpm --filter @cw/desktop run typecheck",
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop exec electron-forge --version"
+      ],
+      "risks": [
+        "Forge config can conflict with the existing Vite build output if introduced without a focused packaging slice.",
+        "Cross-platform makers and signing are not covered by this minimal gate."
+      ]
+    },
+    {
+      "id": "DEP-TAILWIND",
+      "status": "pending_human_approval",
+      "roadmap_items": ["M1.5-R1"],
+      "proposed_packages": [
+        {
+          "name": "tailwindcss",
+          "version": "3.4.19",
+          "package_json_section": "devDependencies",
+          "registry_check": "pnpm view tailwindcss@3 version",
+          "reason": "Uses the latest observed Tailwind 3.x line to match the existing PostCSS/autoprefixer gate without adding a Tailwind 4 PostCSS plugin package outside the ledger."
+        },
+        {
+          "name": "postcss",
+          "version": "8.5.15",
+          "package_json_section": "devDependencies",
+          "registry_check": "pnpm view postcss version",
+          "reason": "Required by the Tailwind 3 PostCSS pipeline and compatible with autoprefixer."
+        },
+        {
+          "name": "autoprefixer",
+          "version": "10.5.2",
+          "package_json_section": "devDependencies",
+          "registry_check": "pnpm view autoprefixer version",
+          "reason": "Provides browser prefixing for the Tailwind/PostCSS desktop renderer pipeline."
+        }
+      ],
+      "install_command_after_approval": "pnpm --filter @cw/desktop add -D tailwindcss@3.4.19 postcss@8.5.15 autoprefixer@10.5.2",
+      "implementation_sequence": [
+        "Add Tailwind and PostCSS config in the desktop package only.",
+        "Migrate existing renderer CSS incrementally instead of rewriting the whole shell.",
+        "Keep current visual smoke layout evidence as the acceptance baseline."
+      ],
+      "verification_plan_after_approval": [
+        "pnpm --filter @cw/desktop run typecheck",
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run build"
+      ],
+      "risks": [
+        "Tailwind 4 is newer, but adopting it would require revisiting the ledger package list and PostCSS integration shape.",
+        "A broad CSS migration could invalidate accumulated visual smoke baselines if not split into smaller slices."
+      ]
+    },
+    {
+      "id": "DEP-REACT-FLOW",
+      "status": "pending_human_approval",
+      "roadmap_items": ["M1.5-R4", "EXIT-P1-12"],
+      "proposed_packages": [
+        {
+          "name": "@xyflow/react",
+          "version": "12.11.1",
+          "package_json_section": "dependencies",
+          "registry_check": "pnpm view @xyflow/react version peerDependencies",
+          "reason": "Implements the roadmap React Flow Canvas while matching the existing React 18 dependency boundary through peer dependencies of react >=17 and react-dom >=17."
+        }
+      ],
+      "install_command_after_approval": "pnpm --filter @cw/desktop add @xyflow/react@12.11.1",
+      "implementation_sequence": [
+        "Replace the current focused read-only Canvas scaffold with a React Flow backed view in a dedicated slice.",
+        "Preserve local-only selection semantics until runtime mutation commands are explicitly introduced.",
+        "Add a 100-node performance smoke before claiming EXIT-P1-12 readiness."
+      ],
+      "verification_plan_after_approval": [
+        "pnpm --filter @cw/desktop run typecheck",
+        "pnpm --filter @cw/desktop run test",
+        "Electron visual smoke matrix with 100-node Canvas interaction evidence"
+      ],
+      "risks": [
+        "React Flow can introduce layout and pointer-event regressions in the existing dense desktop shell.",
+        "Drag/connect/edit behavior must remain separate from WorkflowGraph persistence until the runtime command contract is ready."
+      ]
+    },
+    {
+      "id": "DEP-UPDATER",
+      "status": "pending_human_approval",
+      "roadmap_items": ["M1.5-R8", "EXIT-P1-7"],
+      "proposed_packages": [
+        {
+          "name": "electron-updater",
+          "version": "6.8.9",
+          "package_json_section": "dependencies",
+          "registry_check": "pnpm view electron-updater version",
+          "reason": "Provides runtime update checks through GitHub Releases for the packaged Electron app."
+        },
+        {
+          "name": "electron-builder",
+          "version": "26.15.3",
+          "package_json_section": "devDependencies",
+          "registry_check": "pnpm view electron-builder version",
+          "reason": "Provides the builder/publishing toolchain referenced by ADR-0006 and the M1.5 roadmap for installer and update metadata generation."
+        }
+      ],
+      "install_command_after_approval": "pnpm --filter @cw/desktop add electron-updater@6.8.9 && pnpm --filter @cw/desktop add -D electron-builder@26.15.3",
+      "implementation_sequence": [
+        "Add updater configuration only after a packaging slice has a stable app id and artifact naming plan.",
+        "Keep update metadata and credentials out of committed source and secure/cache paths out of git tracking.",
+        "Record cross-platform startup evidence before moving EXIT-P1-7 out of blocked status."
+      ],
+      "verification_plan_after_approval": [
+        "pnpm --filter @cw/desktop run typecheck",
+        "pnpm --filter @cw/desktop run test",
+        "Updater configuration smoke with network calls mocked"
+      ],
+      "risks": [
+        "Updater work depends on packaging identifiers, signing strategy, and GitHub Releases credentials that are not settled in this proposal.",
+        "Misconfigured updater code could violate the repository rule against committing secrets or credential flow details."
+      ]
+    }
+  ],
+  "approval_request": {
+    "required_before": "Any package.json or pnpm-lock.yaml mutation for the proposed packages.",
+    "requested_decision": "Approve, reject, or revise each dependency gate independently.",
+    "default_if_not_approved": "Keep all dependency gates blocked and continue with non-dependency documentation or acceptance-checklist slices."
+  },
+  "next_recommended_slices_after_approval": [
+    {
+      "id": "W1.5.172",
+      "title": "FR-001 through FR-020 UX acceptance checklist extraction",
+      "reason": "Can proceed without dependency installation and is required for EXIT-P1-1."
+    },
+    {
+      "id": "W1.5.173",
+      "title": "Desktop dependency gate implementation after human approval",
+      "reason": "Only valid if one or more W1.5.171 dependency gates receive explicit human approval."
+    }
+  ]
+}
