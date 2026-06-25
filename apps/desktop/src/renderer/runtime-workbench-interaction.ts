@@ -22,6 +22,7 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "dispose_runtime_stream_session",
   "set_execution_mode",
   "run_node_once",
+  "create_project",
   "dispatch_lifecycle_panel",
   "dispatch_runtime_stream",
 ] as const;
@@ -63,6 +64,13 @@ export type RuntimeWorkbenchInteractionCommand =
       readonly nodeId: string;
       readonly projectId?: string;
       readonly idempotencyKey?: string;
+    }
+  | {
+      readonly type: "create_project";
+      readonly displayName: string;
+      readonly hostPath: string;
+      readonly idempotencyKey?: string;
+      readonly settingsOverrides?: Readonly<Record<string, unknown>>;
     }
   | {
       readonly type: "dispatch_lifecycle_panel";
@@ -252,6 +260,18 @@ export function createRuntimeWorkbenchInteraction(
             : {}),
         });
         return completeAction();
+      case "create_project":
+        await options.workbench.createProject({
+          displayName: safeCommand.displayName,
+          hostPath: safeCommand.hostPath,
+          ...(safeCommand.idempotencyKey !== undefined
+            ? { idempotencyKey: safeCommand.idempotencyKey }
+            : {}),
+          ...(safeCommand.settingsOverrides !== undefined
+            ? { settingsOverrides: safeCommand.settingsOverrides }
+            : {}),
+        });
+        return completeAction();
       case "dispatch_lifecycle_panel": {
         await options.workbench.dispatchLifecyclePanelCommand(
           safeCommand.command,
@@ -330,6 +350,9 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
     if (workbench.executionPolicy.canRunOnce) {
       enabledCommandIds.push("run_node_once");
     }
+    if (workbench.projectCreation.canCreateProject) {
+      enabledCommandIds.push("create_project");
+    }
     if (workbench.lifecyclePanel.activeSession !== null) {
       enabledCommandIds.push(
         "dispose_lifecycle_panel_session",
@@ -385,6 +408,20 @@ function requireRuntimeWorkbenchInteractionCommand(
         ("idempotencyKey" in command &&
           command.idempotencyKey !== undefined &&
           typeof command.idempotencyKey !== "string")
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "create_project":
+      if (
+        typeof command.displayName !== "string" ||
+        typeof command.hostPath !== "string" ||
+        ("idempotencyKey" in command &&
+          command.idempotencyKey !== undefined &&
+          typeof command.idempotencyKey !== "string") ||
+        ("settingsOverrides" in command &&
+          command.settingsOverrides !== undefined &&
+          !isRecord(command.settingsOverrides))
       ) {
         throw new Error("Invalid runtime workbench interaction command");
       }

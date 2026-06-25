@@ -55,6 +55,34 @@ export interface RuntimeWorkbenchRunOnceSnapshot {
   readonly blockedReason: RuntimeWorkbenchRunOnceBlockedReason | null;
 }
 
+export type RuntimeWorkbenchProjectCreationStatus =
+  | "idle"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "blocked";
+
+export type RuntimeWorkbenchProjectCreationBlockedReason =
+  | "git_not_initialized"
+  | "invalid_input"
+  | "request_failed"
+  | "response_invalid"
+  | "runtime_unavailable";
+
+export interface RuntimeWorkbenchProjectCreationSnapshot {
+  readonly status: RuntimeWorkbenchProjectCreationStatus;
+  readonly method: "POST";
+  readonly path: RuntimeRequestPath;
+  readonly displayName: string | null;
+  readonly hostPath: string | null;
+  readonly projectId: string | null;
+  readonly gitInitialized: boolean | null;
+  readonly firstCommitSha: string | null;
+  readonly statusCode: number | null;
+  readonly blockedReason: RuntimeWorkbenchProjectCreationBlockedReason | null;
+  readonly canCreateProject: boolean;
+}
+
 export interface RuntimeWorkbenchExecutionPolicySnapshot {
   readonly mode: RuntimeWorkbenchExecutionMode;
   readonly availableModes: readonly RuntimeWorkbenchExecutionMode[];
@@ -70,9 +98,17 @@ export interface RuntimeWorkbenchRunOnceInput {
   readonly idempotencyKey?: string;
 }
 
+export interface RuntimeWorkbenchProjectCreationInput {
+  readonly displayName: string;
+  readonly hostPath: string;
+  readonly idempotencyKey?: string;
+  readonly settingsOverrides?: Readonly<Record<string, unknown>>;
+}
+
 export interface RuntimeWorkbenchSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
+  readonly projectCreation: RuntimeWorkbenchProjectCreationSnapshot;
   readonly lifecyclePanel: RuntimeLifecyclePanelSessionControllerSnapshot;
   readonly runtimeStream: RuntimeStreamInteractionSessionControllerSnapshot;
   readonly disposed: boolean;
@@ -114,6 +150,9 @@ export interface RuntimeWorkbenchSession {
   readonly runNodeOnce: (
     input: RuntimeWorkbenchRunOnceInput,
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly createProject: (
+    input: RuntimeWorkbenchProjectCreationInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly openLifecyclePanelSession: (
     options?: CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
   ) => RuntimeLifecyclePanelSession;
@@ -154,16 +193,26 @@ export function createRuntimeWorkbenchSession(
   let runOnceSnapshot = createRuntimeWorkbenchRunOnceSnapshot({
     status: "idle",
   });
+  let disposed = false;
+  let projectCreationSnapshot = createRuntimeWorkbenchProjectCreationSnapshot({
+    status: "idle",
+    runtimeAvailable: options.runtime !== undefined,
+    disposed,
+  });
   const listeners = new Set<RuntimeWorkbenchSessionStoreChangeListener>();
   let lifecyclePanelUnsubscribe: RuntimeStatusUnsubscribe | undefined;
   let runtimeStreamUnsubscribe: RuntimeStatusUnsubscribe | undefined;
-  let disposed = false;
 
   const initialSnapshot = freezeRuntimeWorkbenchSessionSnapshot({
     activePanel,
     executionPolicy: createRuntimeWorkbenchExecutionPolicySnapshot({
       mode: executionMode,
       runOnce: runOnceSnapshot,
+      runtimeAvailable: options.runtime !== undefined,
+      disposed,
+    }),
+    projectCreation: createRuntimeWorkbenchProjectCreationSnapshot({
+      ...projectCreationSnapshot,
       runtimeAvailable: options.runtime !== undefined,
       disposed,
     }),
@@ -197,6 +246,11 @@ export function createRuntimeWorkbenchSession(
       executionPolicy: createRuntimeWorkbenchExecutionPolicySnapshot({
         mode: executionMode,
         runOnce: runOnceSnapshot,
+        runtimeAvailable: options.runtime !== undefined,
+        disposed,
+      }),
+      projectCreation: createRuntimeWorkbenchProjectCreationSnapshot({
+        ...projectCreationSnapshot,
         runtimeAvailable: options.runtime !== undefined,
         disposed,
       }),
@@ -392,6 +446,184 @@ export function createRuntimeWorkbenchSession(
         throw error;
       }
     },
+    createProject: async (input) => {
+      assertActive();
+      const requestPath = buildRuntimeWorkbenchProjectCreationPath();
+      const displayName = normalizeRuntimeWorkbenchProjectDisplayName(
+        input.displayName,
+      );
+      const hostPath = normalizeRuntimeWorkbenchProjectHostPath(input.hostPath);
+      if (displayName === null || hostPath === null) {
+        projectCreationSnapshot = createRuntimeWorkbenchProjectCreationSnapshot(
+          {
+            blockedReason: "invalid_input",
+            displayName,
+            hostPath,
+            path: requestPath,
+            runtimeAvailable: options.runtime !== undefined,
+            status: "blocked",
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench project creation input is invalid");
+      }
+      if (options.runtime === undefined) {
+        projectCreationSnapshot = createRuntimeWorkbenchProjectCreationSnapshot(
+          {
+            blockedReason: "runtime_unavailable",
+            displayName,
+            hostPath,
+            path: requestPath,
+            runtimeAvailable: false,
+            status: "blocked",
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+
+      projectCreationSnapshot = createRuntimeWorkbenchProjectCreationSnapshot({
+        displayName,
+        hostPath,
+        path: requestPath,
+        runtimeAvailable: true,
+        status: "running",
+        disposed,
+      });
+      publishIfChanged(true);
+      try {
+        const response = await options.runtime.fetch(requestPath, {
+          method: "POST",
+          body: JSON.stringify(
+            buildRuntimeWorkbenchProjectCreationRequestBody(
+              input.settingsOverrides === undefined
+                ? {
+                    displayName,
+                    hostPath,
+                  }
+                : {
+                    displayName,
+                    hostPath,
+                    settingsOverrides: input.settingsOverrides,
+                  },
+            ),
+          ),
+          ...(input.idempotencyKey !== undefined
+            ? { idempotencyKey: input.idempotencyKey }
+            : {}),
+        });
+        if (!response.ok) {
+          projectCreationSnapshot =
+            createRuntimeWorkbenchProjectCreationSnapshot({
+              displayName,
+              hostPath,
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+
+        const parsedResponse = parseRuntimeWorkbenchProjectCreationResponse(
+          response.body,
+        );
+        if (parsedResponse === null) {
+          projectCreationSnapshot =
+            createRuntimeWorkbenchProjectCreationSnapshot({
+              blockedReason: "response_invalid",
+              displayName,
+              hostPath,
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error(
+            "Runtime workbench project creation response is invalid",
+          );
+        }
+        if (parsedResponse.gitInitialized !== true) {
+          projectCreationSnapshot =
+            createRuntimeWorkbenchProjectCreationSnapshot({
+              blockedReason: "git_not_initialized",
+              displayName,
+              gitInitialized: false,
+              hostPath: parsedResponse.hostPath,
+              path: requestPath,
+              projectId: parsedResponse.projectId,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error(
+            "Runtime workbench project creation did not initialize Git",
+          );
+        }
+        if (parsedResponse.firstCommitSha === null) {
+          projectCreationSnapshot =
+            createRuntimeWorkbenchProjectCreationSnapshot({
+              blockedReason: "response_invalid",
+              displayName,
+              gitInitialized: true,
+              hostPath: parsedResponse.hostPath,
+              path: requestPath,
+              projectId: parsedResponse.projectId,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error(
+            "Runtime workbench project creation response is invalid",
+          );
+        }
+
+        projectCreationSnapshot = createRuntimeWorkbenchProjectCreationSnapshot(
+          {
+            displayName,
+            firstCommitSha: parsedResponse.firstCommitSha,
+            gitInitialized: parsedResponse.gitInitialized,
+            hostPath: parsedResponse.hostPath,
+            path: requestPath,
+            projectId: parsedResponse.projectId,
+            runtimeAvailable: true,
+            status: "succeeded",
+            statusCode: response.status,
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (
+          projectCreationSnapshot.status !== "failed" ||
+          projectCreationSnapshot.blockedReason === null
+        ) {
+          projectCreationSnapshot =
+            createRuntimeWorkbenchProjectCreationSnapshot({
+              blockedReason: "request_failed",
+              displayName,
+              hostPath,
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              disposed,
+            });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
     openLifecyclePanelSession: (sessionOptions) => {
       assertActive();
       const session = runWithSuppressedControllerPublish(() =>
@@ -563,6 +795,29 @@ function createRuntimeWorkbenchRunOnceSnapshot(
   });
 }
 
+function createRuntimeWorkbenchProjectCreationSnapshot(
+  input: Partial<RuntimeWorkbenchProjectCreationSnapshot> & {
+    readonly status: RuntimeWorkbenchProjectCreationStatus;
+    readonly runtimeAvailable: boolean;
+    readonly disposed: boolean;
+  },
+): RuntimeWorkbenchProjectCreationSnapshot {
+  return Object.freeze({
+    status: input.status,
+    method: "POST",
+    path: input.path ?? buildRuntimeWorkbenchProjectCreationPath(),
+    displayName: input.displayName ?? null,
+    hostPath: input.hostPath ?? null,
+    projectId: input.projectId ?? null,
+    gitInitialized: input.gitInitialized ?? null,
+    firstCommitSha: input.firstCommitSha ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    canCreateProject:
+      !input.disposed && input.runtimeAvailable && input.status !== "running",
+  });
+}
+
 function buildRuntimeWorkbenchRunOncePath(
   runId: string,
   nodeId: string,
@@ -592,6 +847,97 @@ function normalizeRuntimeWorkbenchRunOncePathSegment(
   return trimmed;
 }
 
+function buildRuntimeWorkbenchProjectCreationPath(): RuntimeRequestPath {
+  const requestPath = "/projects";
+  assertRuntimeRequestPath(requestPath);
+  return requestPath;
+}
+
+function buildRuntimeWorkbenchProjectCreationRequestBody(options: {
+  readonly displayName: string;
+  readonly hostPath: string;
+  readonly settingsOverrides?: Readonly<Record<string, unknown>>;
+}): Record<string, unknown> {
+  return {
+    schema_version: "0.1.0",
+    display_name: options.displayName,
+    host_path: options.hostPath,
+    ...(options.settingsOverrides !== undefined
+      ? { settings_overrides: options.settingsOverrides }
+      : {}),
+  };
+}
+
+function normalizeRuntimeWorkbenchProjectDisplayName(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > 120 ||
+    /[\u0000-\u001f\u007f]/u.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeRuntimeWorkbenchProjectHostPath(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || /[\u0000-\u001f\u007f]/u.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+interface ParsedRuntimeWorkbenchProjectCreationResponse {
+  readonly projectId: string;
+  readonly hostPath: string;
+  readonly gitInitialized: boolean;
+  readonly firstCommitSha: string | null;
+}
+
+function parseRuntimeWorkbenchProjectCreationResponse(
+  body: unknown,
+): ParsedRuntimeWorkbenchProjectCreationResponse | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  const schemaVersion = body.schema_version;
+  const projectId = body.project_id;
+  const hostPath = body.host_path;
+  const gitInitialized = body.git_initialized;
+  const firstCommitSha = body.first_commit_sha;
+  if (
+    schemaVersion !== "0.1.0" ||
+    typeof projectId !== "string" ||
+    projectId.trim().length === 0 ||
+    typeof hostPath !== "string" ||
+    hostPath.trim().length === 0 ||
+    typeof gitInitialized !== "boolean"
+  ) {
+    return null;
+  }
+  let normalizedFirstCommitSha: string | null = null;
+  if (gitInitialized) {
+    if (
+      typeof firstCommitSha !== "string" ||
+      firstCommitSha.trim().length === 0
+    ) {
+      return null;
+    }
+    normalizedFirstCommitSha = firstCommitSha;
+  }
+  return {
+    projectId,
+    hostPath,
+    gitInitialized,
+    firstCommitSha: normalizedFirstCommitSha,
+  };
+}
+
 function requireRuntimeWorkbenchPanelId(
   panel: string,
 ): RuntimeWorkbenchPanelId {
@@ -613,6 +959,13 @@ function freezeRuntimeWorkbenchSessionSnapshot(
     executionPolicy: cloneRuntimeWorkbenchExecutionPolicySnapshot(
       snapshot.executionPolicy,
     ),
+    projectCreation: createRuntimeWorkbenchProjectCreationSnapshot({
+      ...snapshot.projectCreation,
+      runtimeAvailable:
+        snapshot.projectCreation.canCreateProject ||
+        snapshot.projectCreation.status === "running",
+      disposed: snapshot.disposed,
+    }),
   });
 }
 
@@ -630,4 +983,8 @@ function runtimeWorkbenchSessionSnapshotSignature(
   snapshot: RuntimeWorkbenchSessionSnapshot,
 ): string {
   return JSON.stringify(snapshot);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

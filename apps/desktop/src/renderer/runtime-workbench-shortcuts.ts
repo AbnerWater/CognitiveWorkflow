@@ -480,6 +480,7 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
     case "open_runtime_stream_session":
     case "set_execution_mode":
     case "run_node_once":
+    case "create_project":
       return false;
     case "dispatch_lifecycle_panel":
       return (
@@ -648,6 +649,18 @@ function cloneRuntimeWorkbenchInteractionCommand(
           : {}),
         ...(command.idempotencyKey !== undefined
           ? { idempotencyKey: command.idempotencyKey }
+          : {}),
+      });
+    case "create_project":
+      return Object.freeze({
+        type: command.type,
+        displayName: command.displayName,
+        hostPath: command.hostPath,
+        ...(command.idempotencyKey !== undefined
+          ? { idempotencyKey: command.idempotencyKey }
+          : {}),
+        ...(command.settingsOverrides !== undefined
+          ? { settingsOverrides: command.settingsOverrides }
           : {}),
       });
     case "open_lifecycle_panel_session":

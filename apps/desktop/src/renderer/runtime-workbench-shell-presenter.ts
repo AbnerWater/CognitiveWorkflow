@@ -85,6 +85,7 @@ export interface RuntimeWorkbenchShellStatusItem {
   readonly id:
     | "active_panel"
     | "execution_mode"
+    | "project_creation"
     | "lifecycle_panel"
     | "runtime_stream"
     | "last_shortcut";
@@ -282,10 +283,14 @@ export type RuntimeWorkbenchShellLifecyclePanelSnapshot =
 export type RuntimeWorkbenchShellExecutionPolicySnapshot =
   RuntimeWorkbenchHostSessionSnapshot["executionPolicy"];
 
+export type RuntimeWorkbenchShellProjectCreationSnapshot =
+  RuntimeWorkbenchHostSessionSnapshot["projectCreation"];
+
 export interface RuntimeWorkbenchShellSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly activePanelLabel: string;
   readonly executionPolicy: RuntimeWorkbenchShellExecutionPolicySnapshot;
+  readonly projectCreation: RuntimeWorkbenchShellProjectCreationSnapshot;
   readonly lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus;
   readonly lifecyclePanel: RuntimeWorkbenchShellLifecyclePanelSnapshot | null;
   readonly runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus;
@@ -542,6 +547,9 @@ export function buildRuntimeWorkbenchShellSnapshot(
     executionPolicy: cloneRuntimeWorkbenchShellExecutionPolicy(
       host.executionPolicy,
     ),
+    projectCreation: cloneRuntimeWorkbenchShellProjectCreation(
+      host.projectCreation,
+    ),
     lifecyclePanelStatus,
     lifecyclePanel,
     runtimeStreamStatus,
@@ -637,6 +645,10 @@ function buildShellChrome(
   const activePanelLabel = panelLabel(host.activePanel);
   const visibleItems = visibleTaskItemCount(host);
   const unreadEvents = host.runtimeStreamPanel?.read.unreadCount ?? 0;
+  const gitSnapshotValue =
+    host.projectCreation.firstCommitSha === null
+      ? "Not created"
+      : host.projectCreation.firstCommitSha.slice(0, 12);
   return freezeRuntimeWorkbenchShellChrome({
     dockItems: [
       dockItem({
@@ -758,10 +770,13 @@ function buildShellChrome(
         versionSnapshotItem({
           id: "git_snapshot",
           label: "Git snapshot",
-          value: "Not created",
-          statusLabel: "Future",
-          active: false,
-          tone: disposed ? "danger" : "neutral",
+          value: gitSnapshotValue,
+          statusLabel:
+            host.projectCreation.gitInitialized === true
+              ? "Initialized"
+              : projectCreationStatusLabel(host.projectCreation),
+          active: host.projectCreation.gitInitialized === true,
+          tone: disposed ? "danger" : projectCreationTone(host.projectCreation),
         }),
       ],
     },
@@ -979,6 +994,14 @@ function buildStatusItems(
       label: "Mode",
       value: executionModeLabel(host.executionPolicy.mode),
       tone: host.executionPolicy.mode === "step" ? "accent" : "neutral",
+    }),
+    statusItem({
+      id: "project_creation",
+      label: "Project",
+      value: disposed
+        ? "Disposed"
+        : projectCreationStatusLabel(host.projectCreation),
+      tone: disposed ? "danger" : projectCreationTone(host.projectCreation),
     }),
     statusItem({
       id: "lifecycle_panel",
@@ -1290,6 +1313,40 @@ function executionModeLabel(
   }
 }
 
+function projectCreationStatusLabel(
+  projectCreation: RuntimeWorkbenchShellProjectCreationSnapshot,
+): string {
+  switch (projectCreation.status) {
+    case "blocked":
+      return "Blocked";
+    case "failed":
+      return "Failed";
+    case "idle":
+      return "Not created";
+    case "running":
+      return "Creating";
+    case "succeeded":
+      return projectCreation.projectId ?? "Created";
+  }
+}
+
+function projectCreationTone(
+  projectCreation: RuntimeWorkbenchShellProjectCreationSnapshot,
+): RuntimeWorkbenchShellTone {
+  switch (projectCreation.status) {
+    case "blocked":
+      return "warning";
+    case "failed":
+      return "danger";
+    case "idle":
+      return "neutral";
+    case "running":
+      return "accent";
+    case "succeeded":
+      return projectCreation.gitInitialized === true ? "success" : "warning";
+  }
+}
+
 function formatRuntimeStreamChannelLabel(
   channel: NonNullable<
     RuntimeWorkbenchHostSessionSnapshot["runtimeStream"]["activeChannel"]
@@ -1419,6 +1476,9 @@ function freezeRuntimeWorkbenchShellSnapshot(
     executionPolicy: cloneRuntimeWorkbenchShellExecutionPolicy(
       snapshot.executionPolicy,
     ),
+    projectCreation: cloneRuntimeWorkbenchShellProjectCreation(
+      snapshot.projectCreation,
+    ),
     runtimeStreamPanel:
       snapshot.runtimeStreamPanel === null
         ? null
@@ -1446,6 +1506,12 @@ function cloneRuntimeWorkbenchShellExecutionPolicy(
     availableModes: Object.freeze([...policy.availableModes]),
     runOnce: Object.freeze({ ...policy.runOnce }),
   });
+}
+
+function cloneRuntimeWorkbenchShellProjectCreation(
+  projectCreation: RuntimeWorkbenchShellProjectCreationSnapshot,
+): RuntimeWorkbenchShellProjectCreationSnapshot {
+  return Object.freeze({ ...projectCreation });
 }
 
 function freezeRuntimeWorkbenchShellChrome(

@@ -18,6 +18,8 @@ import {
   type CwDesktopApi,
   type RuntimeBridge,
   type RuntimeRequestInit,
+  type RuntimeRequestPath,
+  type RuntimeResponse,
 } from "./contract.js";
 import { CW_PRELOAD_API_KEY, createCwDesktopApi } from "./api.js";
 import {
@@ -169,6 +171,22 @@ function createDefaultRuntimeWorkbenchShellExecutionPolicy(): RuntimeWorkbenchSh
       statusCode: null,
       blockedReason: null,
     }),
+  });
+}
+
+function createDefaultRuntimeWorkbenchProjectCreation(): RuntimeWorkbenchShellSnapshot["projectCreation"] {
+  return Object.freeze({
+    status: "idle",
+    method: "POST",
+    path: "/projects",
+    displayName: null,
+    hostPath: null,
+    projectId: null,
+    gitInitialized: null,
+    firstCommitSha: null,
+    statusCode: null,
+    blockedReason: null,
+    canCreateProject: false,
   });
 }
 
@@ -3493,6 +3511,7 @@ test("renderer runtime workbench session composes lifecycle and stream stores", 
   assert.deepEqual(initialSnapshot, {
     activePanel: "lifecycle",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
+    projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     lifecyclePanel: {
       activeSession: null,
       disposed: false,
@@ -3793,6 +3812,34 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
       token: "token_workbench_interaction",
     }),
   };
+  const projectFetchCalls: Array<{
+    readonly path: RuntimeRequestPath;
+    readonly init?: RuntimeRequestInit;
+  }> = [];
+  const projectRuntime: Pick<RuntimeBridge, "fetch"> = Object.freeze({
+    fetch: async <TBody>(
+      path: RuntimeRequestPath,
+      init?: RuntimeRequestInit,
+    ): Promise<RuntimeResponse<TBody>> => {
+      projectFetchCalls.push(
+        init === undefined
+          ? { path }
+          : { path, init: Object.freeze({ ...init }) },
+      );
+      return Object.freeze({
+        ok: true,
+        status: 201,
+        headers: Object.freeze({}),
+        body: Object.freeze({
+          schema_version: "0.1.0",
+          project_id: "prj_interaction_bridge",
+          host_path: "D:/CW/InteractionProject",
+          git_initialized: true,
+          first_commit_sha: "9a8c7b6d5e4f3210",
+        }) as TBody,
+      });
+    },
+  });
   const lifecyclePanelController = createRuntimeLifecyclePanelSessionController(
     {
       factory: createRuntimeLifecyclePanelSessionFactory({
@@ -3812,6 +3859,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
   const workbench = createRuntimeWorkbenchSession({
     lifecyclePanelController,
     runtimeStreamController,
+    runtime: projectRuntime,
   });
   const interaction = createRuntimeWorkbenchInteraction({ workbench });
   const observed: Array<ReturnType<typeof interaction.snapshot>> = [];
@@ -3831,6 +3879,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "dispose_runtime_stream_session",
     "set_execution_mode",
     "run_node_once",
+    "create_project",
     "dispatch_lifecycle_panel",
     "dispatch_runtime_stream",
   ]);
@@ -3840,6 +3889,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "open_lifecycle_panel_session",
     "open_runtime_stream_session",
     "set_execution_mode",
+    "create_project",
   ]);
   assert.equal(Object.isFrozen(initialSnapshot), true);
   assert.equal(Object.isFrozen(initialSnapshot.availableCommandIds), true);
@@ -3849,6 +3899,40 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
 
   const unsubscribe = interaction.subscribe((snapshot) => {
     observed.push(snapshot);
+  });
+
+  const projectCreated = await interaction.dispatch({
+    type: "create_project",
+    displayName: " Routed project ",
+    hostPath: " D:/CW/InteractionProject ",
+    idempotencyKey: "idem_interaction_project",
+  });
+  assert.deepEqual(projectFetchCalls, [
+    {
+      path: "/projects",
+      init: {
+        method: "POST",
+        body: JSON.stringify({
+          schema_version: "0.1.0",
+          display_name: "Routed project",
+          host_path: "D:/CW/InteractionProject",
+        }),
+        idempotencyKey: "idem_interaction_project",
+      },
+    },
+  ]);
+  assert.deepEqual(projectCreated.workbench.projectCreation, {
+    status: "succeeded",
+    method: "POST",
+    path: "/projects",
+    displayName: "Routed project",
+    hostPath: "D:/CW/InteractionProject",
+    projectId: "prj_interaction_bridge",
+    gitInitialized: true,
+    firstCommitSha: "9a8c7b6d5e4f3210",
+    statusCode: 201,
+    blockedReason: null,
+    canCreateProject: true,
   });
 
   const lifecycleOpened = await interaction.dispatch({
@@ -5074,6 +5158,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   const snapshot = buildRuntimeWorkbenchShellSnapshot({
     activePanel: "stream",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
+    projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     lifecyclePanel: {
       active: true,
       disposed: false,
@@ -5398,7 +5483,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["draft", "v0", "Read-only", false, "neutral"],
       ["validation", "1 visible", "Active", false, "success"],
       ["runtime", "Run run_shell", "Active", true, "success"],
-      ["git_snapshot", "Not created", "Future", false, "neutral"],
+      ["git_snapshot", "Not created", "Not created", false, "neutral"],
     ],
   );
   assert.equal(snapshot.chrome.workflowCanvas.title, "Workflow Canvas");
@@ -5592,6 +5677,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     [
       ["active_panel", "Stream", "neutral"],
       ["execution_mode", "Semi-auto", "neutral"],
+      ["project_creation", "Not created", "neutral"],
       ["lifecycle_panel", "Active", "success"],
       ["runtime_stream", "Run run_shell", "success"],
       ["last_shortcut", "Show stream", "accent"],
@@ -5651,6 +5737,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   const emptySnapshot = buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
+    projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     lifecyclePanel: { active: false, disposed: false, activeSession: null },
     runtimeStream: { active: false, activeChannel: null, disposed: false },
     runtimeStreamPanel: null,
@@ -5667,6 +5754,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   const activeLifecycleSnapshot = buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
+    projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     lifecyclePanel: {
       active: true,
       disposed: false,
@@ -5773,6 +5861,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     {
       activePanel: "lifecycle",
       executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
+      projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
       lifecyclePanel: { active: false, disposed: true, activeSession: null },
       runtimeStream: { active: false, activeChannel: null, disposed: true },
       runtimeStreamPanel: null,
@@ -5809,6 +5898,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     [
       ["active_panel", "Lifecycle", "danger"],
       ["execution_mode", "Semi-auto", "neutral"],
+      ["project_creation", "Disposed", "danger"],
       ["lifecycle_panel", "Disposed", "danger"],
       ["runtime_stream", "Disposed", "danger"],
       ["last_shortcut", "None", "neutral"],
@@ -5830,7 +5920,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["draft", "Read-only", "neutral"],
       ["validation", "Disposed", "danger"],
       ["runtime", "Disposed", "danger"],
-      ["git_snapshot", "Future", "danger"],
+      ["git_snapshot", "Not created", "danger"],
     ],
   );
   assert.equal(disposedSnapshot.chrome.workflowCanvas.statusLabel, "Disposed");

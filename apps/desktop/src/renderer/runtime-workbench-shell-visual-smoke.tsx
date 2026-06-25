@@ -261,6 +261,19 @@ function buildVisualSmokeSnapshot(
     activePanel: state.activePanel,
     activePanelLabel,
     executionPolicy: buildVisualSmokeExecutionPolicySnapshot(),
+    projectCreation: Object.freeze({
+      status: "idle",
+      method: "POST",
+      path: "/projects",
+      displayName: null,
+      hostPath: null,
+      projectId: null,
+      gitInitialized: null,
+      firstCommitSha: null,
+      statusCode: null,
+      blockedReason: null,
+      canCreateProject: !disposed,
+    }),
     lifecyclePanelStatus: disposed ? "disposed" : "active",
     lifecyclePanel: disposed
       ? null
@@ -492,6 +505,12 @@ function buildVisualSmokeSnapshot(
         label: "Panel",
         value: activePanelLabel,
         tone: "neutral",
+      }),
+      Object.freeze({
+        id: "project_creation",
+        label: "Project",
+        value: disposed ? "Disposed" : "Not created",
+        tone: disposed ? "danger" : "neutral",
       }),
       Object.freeze({
         id: "lifecycle_panel",

@@ -37,6 +37,7 @@ import {
   createRuntimeWorkbenchSession,
   type RuntimeWorkbenchExecutionPolicySnapshot,
   type RuntimeWorkbenchPanelId,
+  type RuntimeWorkbenchProjectCreationSnapshot,
   type RuntimeWorkbenchSession,
 } from "./runtime-workbench-session.js";
 
@@ -138,6 +139,7 @@ export interface RuntimeWorkbenchHostRuntimeStreamPanelSnapshot {
 export interface RuntimeWorkbenchHostSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
+  readonly projectCreation: RuntimeWorkbenchProjectCreationSnapshot;
   readonly lifecyclePanel: RuntimeWorkbenchHostLifecyclePanelSnapshot;
   readonly runtimeStream: RuntimeWorkbenchHostRuntimeStreamSnapshot;
   readonly runtimeStreamPanel: RuntimeWorkbenchHostRuntimeStreamPanelSnapshot | null;
@@ -425,6 +427,9 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
     executionPolicy: cloneRuntimeWorkbenchHostExecutionPolicy(
       workbench.executionPolicy,
     ),
+    projectCreation: cloneRuntimeWorkbenchHostProjectCreation(
+      workbench.projectCreation,
+    ),
     lifecyclePanel: Object.freeze({
       active: lifecyclePanelActiveSession !== null,
       disposed: workbench.lifecyclePanel.disposed,
@@ -463,6 +468,9 @@ function freezeRuntimeWorkbenchHostSessionSnapshot(
     executionPolicy: cloneRuntimeWorkbenchHostExecutionPolicy(
       snapshot.executionPolicy,
     ),
+    projectCreation: cloneRuntimeWorkbenchHostProjectCreation(
+      snapshot.projectCreation,
+    ),
   });
 }
 
@@ -488,6 +496,12 @@ function cloneRuntimeWorkbenchHostExecutionPolicy(
     availableModes: Object.freeze([...policy.availableModes]),
     runOnce: Object.freeze({ ...policy.runOnce }),
   });
+}
+
+function cloneRuntimeWorkbenchHostProjectCreation(
+  projectCreation: RuntimeWorkbenchProjectCreationSnapshot,
+): RuntimeWorkbenchProjectCreationSnapshot {
+  return Object.freeze({ ...projectCreation });
 }
 
 function buildRuntimeWorkbenchHostRuntimeStreamPanelSnapshot(

@@ -45,6 +45,7 @@ import {
 import {
   RuntimeWorkbenchShellReactView,
   bindRuntimeWorkbenchShellReactKeyboardTarget,
+  createRuntimeWorkbenchShellReactProjectCreationFormState,
   buildRuntimeWorkbenchShellReactStreamSessionOptions,
   createRuntimeWorkbenchShellReactStreamOptionsFormState,
   isRuntimeWorkbenchShellReactActionEnabled,
@@ -3996,7 +3997,7 @@ test("renderer runtime workbench React shell selects version snapshot locally", 
         "versionSnapshotDetails",
         "git_snapshot",
       ).getAttribute("data-version-snapshot-details-status"),
-      "Future",
+      "Not created",
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -4022,7 +4023,7 @@ test("renderer runtime workbench React shell selects version snapshot locally", 
           "git_snapshot",
         ),
       ),
-      /Status[\s\S]*Future[\s\S]*Value[\s\S]*Not created[\s\S]*Active[\s\S]*No/u,
+      /Status[\s\S]*Not created[\s\S]*Value[\s\S]*Not created[\s\S]*Active[\s\S]*No/u,
     );
     assert.equal(
       countFakeRuntimeWorkbenchElements(
@@ -5181,6 +5182,129 @@ test("renderer runtime workbench React shell dispatches execution mode controls"
   }
 });
 
+test("renderer runtime workbench React shell dispatches project creation without task background payload", async () => {
+  assert.deepEqual(
+    createRuntimeWorkbenchShellReactProjectCreationFormState({
+      displayName: "Draft",
+    }),
+    {
+      displayName: "Draft",
+      hostPath: "",
+      taskBackground: "",
+    },
+  );
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const snapshot = createRuntimeWorkbenchShellReactSnapshot();
+  const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Project Creation Runtime Workbench"
+        />,
+      );
+    });
+
+    const projectCreationControl = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "projectCreationControl",
+      "true",
+    );
+    assert.equal(
+      projectCreationControl.getAttribute("data-project-creation-status"),
+      "idle",
+    );
+    assert.equal(
+      projectCreationControl.getAttribute(
+        "data-project-creation-git-initialized",
+      ),
+      "unknown",
+    );
+    const submitButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "projectCreateSubmit",
+      "true",
+    );
+    assert.equal(
+      submitButton.getAttribute("data-project-create-enabled"),
+      "false",
+    );
+    assert.equal(
+      findFakeRuntimeWorkbenchElement(
+        dom.container,
+        (element) => element.dataset.projectCreateGitBypass === "true",
+      ),
+      null,
+    );
+
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "projectCreateField",
+          "displayName",
+        ),
+        " W1.5 project ",
+      );
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "projectCreateField",
+          "hostPath",
+        ),
+        " D:/CW/W1_5_Project ",
+      );
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "projectCreateField",
+          "taskBackground",
+        ),
+        "Create a first runtime-backed workflow",
+      );
+    });
+
+    const readySubmitButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "projectCreateSubmit",
+      "true",
+    );
+    assert.equal(
+      readySubmitButton.getAttribute("data-project-create-enabled"),
+      "true",
+    );
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(readySubmitButton);
+    });
+
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "create_project",
+      displayName: "W1.5 project",
+      hostPath: "D:/CW/W1_5_Project",
+    });
+    assert.equal(
+      JSON.stringify(session.dispatchedCommands().at(-1)).includes(
+        "Create a first runtime-backed workflow",
+      ),
+      false,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    session.dispose();
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench session dispatches run-once through runtime fetch", async () => {
   const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
     body: Object.freeze({ raw_model_output: "must not be retained" }),
@@ -5260,6 +5384,163 @@ test("renderer runtime workbench session records failed run-once status without 
     ),
     false,
   );
+});
+
+test("renderer runtime workbench session creates projects through runtime fetch with mandatory Git evidence", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
+    body: Object.freeze({
+      schema_version: "0.1.0",
+      project_id: "prj_w1_5_181",
+      host_path: "D:/CW/W1_5_Project",
+      git_initialized: true,
+      first_commit_sha: "9a8c7b6d5e4f3210",
+      raw_runtime_detail: "must not be retained",
+    }),
+    ok: true,
+    status: 201,
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const snapshot = await session.createProject({
+    displayName: " W1.5 project ",
+    hostPath: " D:/CW/W1_5_Project ",
+    idempotencyKey: "idem_project_create",
+  });
+
+  const call = requireRuntimeWorkbenchRunOnceRuntimeCall(calls);
+  assert.equal(call.path, "/projects");
+  assert.deepEqual(
+    call.init === undefined ? null : JSON.parse(call.init.body ?? ""),
+    {
+      schema_version: "0.1.0",
+      display_name: "W1.5 project",
+      host_path: "D:/CW/W1_5_Project",
+    },
+  );
+  assert.deepEqual(call.init, {
+    method: "POST",
+    body: JSON.stringify({
+      schema_version: "0.1.0",
+      display_name: "W1.5 project",
+      host_path: "D:/CW/W1_5_Project",
+    }),
+    idempotencyKey: "idem_project_create",
+  });
+  assert.deepEqual(snapshot.projectCreation, {
+    status: "succeeded",
+    method: "POST",
+    path: "/projects",
+    displayName: "W1.5 project",
+    hostPath: "D:/CW/W1_5_Project",
+    projectId: "prj_w1_5_181",
+    gitInitialized: true,
+    firstCommitSha: "9a8c7b6d5e4f3210",
+    statusCode: 201,
+    blockedReason: null,
+    canCreateProject: true,
+  });
+  assert.equal(
+    JSON.stringify(snapshot.projectCreation).includes("raw_runtime_detail"),
+    false,
+  );
+});
+
+test("renderer runtime workbench session blocks project creation without valid input or runtime", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime();
+  const invalidInputSession = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+  await assert.rejects(
+    () =>
+      invalidInputSession.createProject({
+        displayName: "",
+        hostPath: "D:/CW/Project",
+      }),
+    /input is invalid/u,
+  );
+  assert.equal(calls.length, 0);
+  assert.deepEqual(invalidInputSession.snapshot().projectCreation, {
+    status: "blocked",
+    method: "POST",
+    path: "/projects",
+    displayName: null,
+    hostPath: "D:/CW/Project",
+    projectId: null,
+    gitInitialized: null,
+    firstCommitSha: null,
+    statusCode: null,
+    blockedReason: "invalid_input",
+    canCreateProject: true,
+  });
+
+  const unavailableSession = createRuntimeWorkbenchRunOnceSession({
+    executionMode: "semi_auto",
+  });
+  await assert.rejects(
+    () =>
+      unavailableSession.createProject({
+        displayName: "Project",
+        hostPath: "D:/CW/Project",
+      }),
+    /runtime bridge is unavailable/u,
+  );
+  assert.deepEqual(unavailableSession.snapshot().projectCreation, {
+    status: "blocked",
+    method: "POST",
+    path: "/projects",
+    displayName: "Project",
+    hostPath: "D:/CW/Project",
+    projectId: null,
+    gitInitialized: null,
+    firstCommitSha: null,
+    statusCode: null,
+    blockedReason: "runtime_unavailable",
+    canCreateProject: false,
+  });
+});
+
+test("renderer runtime workbench session rejects project creation when Git initialization is not proven", async () => {
+  const { runtime } = createFakeRuntimeWorkbenchRunOnceRuntime({
+    body: Object.freeze({
+      schema_version: "0.1.0",
+      project_id: "prj_without_git",
+      host_path: "D:/CW/NoGit",
+      git_initialized: false,
+      first_commit_sha: null,
+    }),
+    ok: true,
+    status: 201,
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "auto",
+  });
+
+  await assert.rejects(
+    () =>
+      session.createProject({
+        displayName: "No Git project",
+        hostPath: "D:/CW/NoGit",
+      }),
+    /did not initialize Git/u,
+  );
+  assert.deepEqual(session.snapshot().projectCreation, {
+    status: "failed",
+    method: "POST",
+    path: "/projects",
+    displayName: "No Git project",
+    hostPath: "D:/CW/NoGit",
+    projectId: "prj_without_git",
+    gitInitialized: false,
+    firstCommitSha: null,
+    statusCode: 201,
+    blockedReason: "git_not_initialized",
+    canCreateProject: true,
+  });
 });
 
 test("renderer runtime workbench session blocks run-once outside step/runtime availability", async () => {
@@ -6431,6 +6712,24 @@ function createRuntimeWorkbenchShellReactExecutionPolicy(
   });
 }
 
+function createRuntimeWorkbenchShellReactProjectCreationSnapshot(
+  input: Partial<RuntimeWorkbenchShellSnapshot["projectCreation"]> = {},
+): RuntimeWorkbenchShellSnapshot["projectCreation"] {
+  return Object.freeze({
+    status: input.status ?? "idle",
+    method: "POST",
+    path: input.path ?? "/projects",
+    displayName: input.displayName ?? null,
+    hostPath: input.hostPath ?? null,
+    projectId: input.projectId ?? null,
+    gitInitialized: input.gitInitialized ?? null,
+    firstCommitSha: input.firstCommitSha ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    canCreateProject: input.canCreateProject ?? true,
+  });
+}
+
 function createRuntimeWorkbenchShellReactSnapshot(
   options: {
     readonly activePanel?: RuntimeWorkbenchPanelId;
@@ -6442,6 +6741,7 @@ function createRuntimeWorkbenchShellReactSnapshot(
     executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(
       options.executionMode,
     ),
+    projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
     lifecyclePanel: Object.freeze({
       active: false,
       disposed: false,
@@ -6491,6 +6791,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
   return buildRuntimeWorkbenchShellSnapshot({
     activePanel: "stream",
     executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(),
+    projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
     lifecyclePanel: Object.freeze({
       active: false,
       disposed: false,
@@ -6772,6 +7073,7 @@ function createRuntimeWorkbenchShellReactLifecycleSnapshot(): RuntimeWorkbenchSh
   return buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
     executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(),
+    projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
     lifecyclePanel: Object.freeze({
       active: true,
       disposed: false,

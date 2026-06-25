@@ -83,6 +83,12 @@ export interface RuntimeWorkbenchShellReactStreamOptionsFormState {
   readonly untilSeq: string;
 }
 
+export interface RuntimeWorkbenchShellReactProjectCreationFormState {
+  readonly displayName: string;
+  readonly hostPath: string;
+  readonly taskBackground: string;
+}
+
 export interface RuntimeWorkbenchShellReactViewProps {
   readonly session: RuntimeWorkbenchShellDomSession;
   readonly title?: string;
@@ -90,6 +96,7 @@ export interface RuntimeWorkbenchShellReactViewProps {
   readonly keyboardOptions?: RuntimeWorkbenchShellDomSessionKeyboardOptions;
   readonly runtimeStreamSessionOptions?: CreateRuntimeStreamInteractionSessionFactorySessionOptions;
   readonly defaultRuntimeStreamOptionsFormState?: Partial<RuntimeWorkbenchShellReactStreamOptionsFormState>;
+  readonly defaultProjectCreationFormState?: Partial<RuntimeWorkbenchShellReactProjectCreationFormState>;
   readonly className?: string;
   readonly onActionError?: (error: unknown) => void;
 }
@@ -203,6 +210,16 @@ export function createRuntimeWorkbenchShellReactStreamOptionsFormState(
   });
 }
 
+export function createRuntimeWorkbenchShellReactProjectCreationFormState(
+  input: Partial<RuntimeWorkbenchShellReactProjectCreationFormState> = {},
+): RuntimeWorkbenchShellReactProjectCreationFormState {
+  return Object.freeze({
+    displayName: input.displayName ?? "",
+    hostPath: input.hostPath ?? "",
+    taskBackground: input.taskBackground ?? "",
+  });
+}
+
 export function buildRuntimeWorkbenchShellReactStreamSessionOptions(
   state: RuntimeWorkbenchShellReactStreamOptionsFormState,
 ): CreateRuntimeStreamInteractionSessionFactorySessionOptions | null {
@@ -298,6 +315,12 @@ export function RuntimeWorkbenchShellReactView(
         props.defaultRuntimeStreamOptionsFormState,
       ),
     );
+  const [projectCreationForm, setProjectCreationForm] =
+    useState<RuntimeWorkbenchShellReactProjectCreationFormState>(() =>
+      createRuntimeWorkbenchShellReactProjectCreationFormState(
+        props.defaultProjectCreationFormState,
+      ),
+    );
   const formRuntimeStreamSessionOptions = useMemo(
     () =>
       buildRuntimeWorkbenchShellReactStreamSessionOptions(streamOptionsForm),
@@ -336,6 +359,27 @@ export function RuntimeWorkbenchShellReactView(
       normalizeRuntimeWorkbenchShellReactProjectId(streamOptionsForm.projectId),
     [streamOptionsForm.projectId],
   );
+  const projectCreationDisplayName = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactProjectDisplayName(
+        projectCreationForm.displayName,
+      ),
+    [projectCreationForm.displayName],
+  );
+  const projectCreationHostPath = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactProjectHostPath(
+        projectCreationForm.hostPath,
+      ),
+    [projectCreationForm.hostPath],
+  );
+  const projectCreationTaskBackgroundReady =
+    projectCreationForm.taskBackground.trim().length > 0;
+  const projectCreationReady =
+    snapshot.projectCreation.canCreateProject &&
+    projectCreationDisplayName !== null &&
+    projectCreationHostPath !== null &&
+    projectCreationTaskBackgroundReady;
   const handleActionError = useCallback(
     (error: unknown): void => {
       try {
@@ -469,6 +513,48 @@ export function RuntimeWorkbenchShellReactView(
     },
     [],
   );
+  const handleProjectCreationTextInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      const field = event.currentTarget.dataset.projectCreateField;
+      if (
+        field !== "displayName" &&
+        field !== "hostPath" &&
+        field !== "taskBackground"
+      ) {
+        return;
+      }
+      const value = event.currentTarget.value;
+      setProjectCreationForm((current) =>
+        createRuntimeWorkbenchShellReactProjectCreationFormState({
+          ...current,
+          [field]: value,
+        }),
+      );
+    },
+    [],
+  );
+  const handleCreateProjectClick = useCallback((): void => {
+    if (
+      !projectCreationReady ||
+      projectCreationDisplayName === null ||
+      projectCreationHostPath === null
+    ) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "create_project",
+        displayName: projectCreationDisplayName,
+        hostPath: projectCreationHostPath,
+      })
+      .catch(handleActionError);
+  }, [
+    handleActionError,
+    projectCreationDisplayName,
+    projectCreationHostPath,
+    projectCreationReady,
+    props.session,
+  ]);
   const handleStreamDisplayLevelClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const displayLevel = event.currentTarget.dataset.streamDisplayLevel;
@@ -739,6 +825,13 @@ export function RuntimeWorkbenchShellReactView(
             aria-label="Runtime workbench actions"
             className="cw-workbench__actions"
           >
+            <RuntimeWorkbenchShellProjectCreationControls
+              onCreateProjectClick={handleCreateProjectClick}
+              onTextInputChange={handleProjectCreationTextInputChange}
+              projectCreation={snapshot.projectCreation}
+              projectCreationReady={projectCreationReady}
+              state={projectCreationForm}
+            />
             <RuntimeWorkbenchShellExecutionControls
               executionPolicy={snapshot.executionPolicy}
               onExecutionModeClick={handleExecutionModeClick}
@@ -791,6 +884,87 @@ export function RuntimeWorkbenchShellReactView(
         <RuntimeWorkbenchShellChatBox chatBox={snapshot.chrome.chatBox} />
       </div>
     </main>
+  );
+}
+
+function RuntimeWorkbenchShellProjectCreationControls(props: {
+  readonly projectCreation: RuntimeWorkbenchShellSnapshot["projectCreation"];
+  readonly state: RuntimeWorkbenchShellReactProjectCreationFormState;
+  readonly projectCreationReady: boolean;
+  readonly onTextInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onCreateProjectClick: () => void;
+}): ReactElement {
+  return (
+    <section
+      aria-label="Project creation"
+      className="cw-workbench__project-creation"
+      data-project-creation-control="true"
+      data-project-creation-status={props.projectCreation.status}
+      data-project-creation-git-initialized={
+        props.projectCreation.gitInitialized === null
+          ? "unknown"
+          : String(props.projectCreation.gitInitialized)
+      }
+      data-project-creation-project-id={
+        props.projectCreation.projectId ?? undefined
+      }
+    >
+      <label className="cw-workbench__project-creation-field">
+        <span>Project</span>
+        <input
+          data-project-create-field="displayName"
+          inputMode="text"
+          onChange={props.onTextInputChange}
+          value={props.state.displayName}
+        />
+      </label>
+      <label className="cw-workbench__project-creation-field">
+        <span>Path</span>
+        <input
+          data-project-create-field="hostPath"
+          inputMode="text"
+          onChange={props.onTextInputChange}
+          value={props.state.hostPath}
+        />
+      </label>
+      <label className="cw-workbench__project-creation-field">
+        <span>Task background</span>
+        <input
+          data-project-create-field="taskBackground"
+          inputMode="text"
+          onChange={props.onTextInputChange}
+          value={props.state.taskBackground}
+        />
+      </label>
+      <button
+        className="cw-workbench__project-create-submit"
+        data-project-create-submit="true"
+        data-project-create-enabled={
+          props.projectCreationReady ? "true" : "false"
+        }
+        disabled={!props.projectCreationReady}
+        onClick={props.onCreateProjectClick}
+        type="button"
+      >
+        Create project
+      </button>
+      <dl className="cw-workbench__project-creation-status">
+        <div>
+          <dt>Git</dt>
+          <dd>
+            {props.projectCreation.gitInitialized === true
+              ? "Initialized"
+              : "Required"}
+          </dd>
+        </div>
+        <div>
+          <dt>Project id</dt>
+          <dd>
+            {props.projectCreation.projectId ?? props.projectCreation.status}
+          </dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 
@@ -4505,6 +4679,30 @@ function normalizeRuntimeWorkbenchShellReactProjectId(
   return /^[\u0020-\u007e]+$/u.test(trimmed) && !/[\r\n]/u.test(trimmed)
     ? trimmed
     : null;
+}
+
+function normalizeRuntimeWorkbenchShellReactProjectDisplayName(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > 120 ||
+    /[\u0000-\u001f\u007f]/u.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeRuntimeWorkbenchShellReactProjectHostPath(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || /[\u0000-\u001f\u007f]/u.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
 }
 
 function normalizeRuntimeWorkbenchShellReactPathSegment(
