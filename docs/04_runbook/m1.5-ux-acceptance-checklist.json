@@ -1,0 +1,568 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.172",
+  "checklist_status": "extracted_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-25",
+  "authority": {
+    "roadmap": "docs/roadmap.md#5.3",
+    "review_matrix": "docs/roadmap.md#5.4",
+    "uiux_baseline_docx": "AI_Agent_Workflow工作台_UIUX详细设计规范与需求规格说明书_v1.1_新增Workflow编排.docx",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "This checklist extracts FR-001 through FR-020 acceptance scope; it does not claim A4 acceptance.",
+    "Every FR item remains phase-exit required even when the UIUX source priority is SHOULD.",
+    "Scaffold or backend-only evidence is not enough to mark a FR accepted.",
+    "Dependency-gated items remain blocked until the corresponding W1.5.171 dependency gate receives explicit human approval and implementation evidence.",
+    "No accepted spec, ADR, schema, generated schema, dependency, runtime behavior, IPC, renderer storage, packaging, updater, or baseline docx content is changed by W1.5.172."
+  ],
+  "source_extraction": {
+    "method": "read-only OOXML extraction from word/document.xml",
+    "fr_paragraph_range": "UIUX baseline paragraphs 755-839",
+    "principles_paragraph_range": "UIUX baseline paragraphs 65-78",
+    "non_functional_paragraph_range": "UIUX baseline paragraphs 841-859"
+  },
+  "design_principles": [
+    {
+      "id": "P1",
+      "description": "中央主视图必须是 Workflow Canvas，不再使用流程列表作为主执行视图。",
+      "acceptance_focus": "Primary viewport is Canvas-first, with list/table execution views secondary or absent."
+    },
+    {
+      "id": "P2",
+      "description": "Chat Box 固定在底部，用于自然语言输入；所有 AI 输出显示进入流式输出面板。",
+      "acceptance_focus": "Chat input and AI output surfaces are visually and semantically separated."
+    },
+    {
+      "id": "P3",
+      "description": "流式输出面板默认折叠，位于 Chat Box 上方；用户需要时展开查看。",
+      "acceptance_focus": "Stream details remain progressive and do not overload the first viewport."
+    },
+    {
+      "id": "P4",
+      "description": "右侧 Task 详情面板默认隐藏，点击节点后自动显示并绑定当前节点。",
+      "acceptance_focus": "Node selection drives the right-side Task context without manual lookup."
+    },
+    {
+      "id": "P5",
+      "description": "文件树保留入口，但默认折叠隐藏，不抢占主视图。",
+      "acceptance_focus": "Project files remain available without competing with the Canvas."
+    },
+    {
+      "id": "P6",
+      "description": "执行模式切换必须放在主执行按钮附近，可随时调整。",
+      "acceptance_focus": "Run mode is visible and adjustable at the execution control point."
+    },
+    {
+      "id": "P7",
+      "description": "所有复杂信息采用渐进呈现，避免用户迷失。",
+      "acceptance_focus": "Dense details use Drawer, collapse, disclosure, or focused drill-down patterns."
+    }
+  ],
+  "non_functional_ui_requirements": [
+    {
+      "id": "NFR-PERF-CANVAS",
+      "description": "Canvas 100 个节点以内操作应保持流畅；节点拖拽、选择反馈应小于 100ms。",
+      "exit_link": "EXIT-P1-12",
+      "status": "blocked_by_dependency_gate"
+    },
+    {
+      "id": "NFR-STREAM-LATENCY",
+      "description": "StreamEvent 到达后 UI 更新延迟建议小于 200ms。",
+      "exit_link": "EXIT-P1-12",
+      "status": "not_ready"
+    },
+    {
+      "id": "NFR-RECOVERY",
+      "description": "执行过程中断后，重新打开项目可恢复 Workflow、节点状态、最近产物与快照。",
+      "exit_link": "EXIT-P1-11",
+      "status": "not_ready"
+    },
+    {
+      "id": "NFR-PRIVACY",
+      "description": "参考资料和项目文件默认本地保存；敏感资料不得未经授权发送到云端模型。",
+      "exit_link": "EXIT-P1-6",
+      "status": "not_ready"
+    },
+    {
+      "id": "NFR-A11Y",
+      "description": "关键按钮具备文本标签；颜色状态需有文字辅助；支持键盘导航基础能力。",
+      "exit_link": "A4",
+      "status": "partial_evidence"
+    },
+    {
+      "id": "NFR-CROSS-PLATFORM",
+      "description": "Windows、macOS、Linux 桌面端应尽量保持一致布局。",
+      "exit_link": "EXIT-P1-7",
+      "status": "blocked_by_dependency_gate"
+    },
+    {
+      "id": "NFR-EXTENSIBILITY",
+      "description": "Canvas 节点类型、Skill、模型路由和工具调用应插件化。",
+      "exit_link": "A1",
+      "status": "not_ready"
+    },
+    {
+      "id": "NFR-OBSERVABILITY",
+      "description": "所有执行动作、工具调用、错误和产物变更必须可追踪。",
+      "exit_link": "EXIT-P1-11",
+      "status": "not_ready"
+    }
+  ],
+  "fr_acceptance_items": [
+    {
+      "id": "FR-001",
+      "module": "应用 Shell",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须提供跨平台桌面应用 Shell，包含窗口区域与菜单栏。",
+      "linked_principles": ["P1", "P7"],
+      "acceptance_checks": [
+        "Electron app opens a desktop window with the workbench as the first screen.",
+        "Application menu bar exists for file/edit/view/window/help level commands.",
+        "Windows, macOS, and Linux launch evidence is captured before Phase 1 exit."
+      ],
+      "current_evidence_status": "partial_evidence",
+      "current_evidence": [
+        "W1.5.80 established real Electron BrowserWindow and preload/window wiring.",
+        "W1.5 visual smoke exercises the workbench shell inside Electron."
+      ],
+      "remaining_gap": [
+        "Desktop menu bar acceptance is not recorded.",
+        "Cross-platform packaged launch evidence is blocked by packaging dependency gates."
+      ]
+    },
+    {
+      "id": "FR-002",
+      "module": "左侧 Dock",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须提供可折叠左侧 Dock，包含所有一级模块入口。",
+      "linked_principles": ["P1", "P7"],
+      "acceptance_checks": [
+        "Left Dock is present in the first viewport.",
+        "Dock collapse and restore are keyboard and pointer accessible.",
+        "All first-level module entries required by M1.5 are reachable."
+      ],
+      "current_evidence_status": "partial_scaffold",
+      "current_evidence": [
+        "W1.5.89 introduced the shell chrome and left Dock scaffold.",
+        "Visual smoke checks the Dock surface presence."
+      ],
+      "remaining_gap": [
+        "Complete first-level module coverage has not been accepted by A4.",
+        "Dock collapse behavior is not recorded as a formal FR acceptance item."
+      ]
+    },
+    {
+      "id": "FR-003",
+      "module": "文件树入口",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须保留文件树入口，默认隐藏，点击后打开文件树 Drawer。",
+      "linked_principles": ["P5", "P7"],
+      "acceptance_checks": [
+        "File Tree entry remains available from the Dock or equivalent shell control.",
+        "File Tree content is hidden by default and opens through a Drawer interaction.",
+        "The Drawer displays the real project file structure, not only local fixture data."
+      ],
+      "current_evidence_status": "partial_scaffold",
+      "current_evidence": [
+        "W1.5.92 added a read-only File Tree scaffold.",
+        "W1.5.105 added local file tree selection details."
+      ],
+      "remaining_gap": [
+        "Real filesystem enumeration and project-backed file open actions are not implemented.",
+        "Default-hidden Drawer behavior has not been accepted as an A4 UX path."
+      ]
+    },
+    {
+      "id": "FR-004",
+      "module": "Workflow Canvas",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须以 Node Canvas 显示 Workflow，并支持分支、并行与反馈回路。",
+      "linked_principles": ["P1", "P7"],
+      "acceptance_checks": [
+        "Canvas is the central primary view.",
+        "Nodes and edges represent a real WorkflowGraph with branch, parallel, and feedback-loop topology.",
+        "Canvas rendering uses the approved implementation path after the React Flow dependency gate."
+      ],
+      "current_evidence_status": "blocked_by_dependency_gate",
+      "current_evidence": [
+        "W1.5.94-W1.5.104 provide a focused read-only Canvas scaffold and local navigation evidence."
+      ],
+      "remaining_gap": [
+        "@xyflow/react is not approved or installed.",
+        "Real React Flow Canvas, drag/connect/edit behavior, and graph persistence remain outside current evidence."
+      ]
+    },
+    {
+      "id": "FR-005",
+      "module": "节点选择",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "用户点击节点后，节点高亮且右侧详情面板自动打开。",
+      "linked_principles": ["P4", "P7"],
+      "acceptance_checks": [
+        "Pointer selection highlights the selected node.",
+        "Keyboard selection path has equivalent focus evidence.",
+        "Right Task details open automatically and bind to the selected node."
+      ],
+      "current_evidence_status": "partial_scaffold",
+      "current_evidence": [
+        "W1.5.96-W1.5.104 cover local Canvas node selection, traversal, history, summary, and type focus evidence."
+      ],
+      "remaining_gap": [
+        "Selection is still local scaffold behavior rather than accepted React Flow behavior.",
+        "Automatic right-side Task binding has not been accepted end to end."
+      ]
+    },
+    {
+      "id": "FR-006",
+      "module": "右侧 Task 详情",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "Task 详情必须展示节点名称、状态、输入、输出、审查规则、Skill、模型、产物。",
+      "linked_principles": ["P4", "P7"],
+      "acceptance_checks": [
+        "Task Drawer opens on node selection.",
+        "Task details include node name, status, inputs, outputs, review rules, Skill, model, and artifacts.",
+        "Details are project-backed and update as runtime state changes."
+      ],
+      "current_evidence_status": "partial_scaffold",
+      "current_evidence": [
+        "W1.5.90 added Task Drawer collapse behavior.",
+        "W1.5.107 added local Task Drawer selection details."
+      ],
+      "remaining_gap": [
+        "Full field coverage for inputs, outputs, review rules, Skill, model, and artifacts is not accepted.",
+        "Runtime-backed detail updates are not implemented."
+      ]
+    },
+    {
+      "id": "FR-007",
+      "module": "执行模式切换",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须支持单步、半自动、自动三种模式，并放在执行按钮旁边。",
+      "linked_principles": ["P6"],
+      "acceptance_checks": [
+        "Step, semi-auto, and auto modes are visible near the primary execution button.",
+        "Mode changes are persisted or applied to the active Workflow execution policy.",
+        "Single-node run-once behavior is reachable for step mode."
+      ],
+      "current_evidence_status": "backend_or_schema_evidence_only",
+      "current_evidence": [
+        "WorkflowGraph schema defines mode values step, semi_auto, and auto.",
+        "HTTP API includes a run-once node endpoint for step-mode semantics."
+      ],
+      "remaining_gap": [
+        "Desktop execution mode control near the run button is not accepted.",
+        "Mode-to-runtime behavior has not been proven through the workbench UI."
+      ]
+    },
+    {
+      "id": "FR-008",
+      "module": "Chat Box",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须提供固定底部 Chat Box，支持针对当前节点或全局 Workflow 输入指令。",
+      "linked_principles": ["P2", "P7"],
+      "acceptance_checks": [
+        "Chat Box is fixed at the bottom of the workbench.",
+        "User can choose current-node versus global Workflow intent.",
+        "Submitted instructions route to real runtime command handling without leaking raw prompt text into unsafe evidence."
+      ],
+      "current_evidence_status": "partial_scaffold",
+      "current_evidence": [
+        "W1.5.108-W1.5.112 added local draft, intent, preview, and send guard.",
+        "W1.5.150-W1.5.169 added metadata-only local send/history/focus and visual smoke matrix evidence."
+      ],
+      "remaining_gap": [
+        "Real chat command routing and runtime mutation are not implemented.",
+        "Persistence and project-backed command history remain out of scope."
+      ]
+    },
+    {
+      "id": "FR-009",
+      "module": "流式输出折叠",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须提供默认折叠的流式输出面板。",
+      "linked_principles": ["P3", "P7"],
+      "acceptance_checks": [
+        "Stream panel is located above the Chat Box.",
+        "Stream panel defaults to a collapsed state without hiding critical status.",
+        "Collapsed state preserves unread and summary affordances."
+      ],
+      "current_evidence_status": "candidate_evidence_available",
+      "current_evidence": [
+        "W1.5.113-W1.5.118 cover stream panel collapse, group collapse, selection collapse, controls collapse, and selected metadata behavior."
+      ],
+      "remaining_gap": [
+        "A4 has not yet accepted the first-viewport default collapsed layout.",
+        "Phase-level UI recording is still missing."
+      ]
+    },
+    {
+      "id": "FR-010",
+      "module": "流式输出展开",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须支持展开显示思考摘要、工具调用、阶段结果和 AI 回复。",
+      "linked_principles": ["P3", "P7"],
+      "acceptance_checks": [
+        "Expanded Stream panel shows thought summary, tool calls, phase results, and AI reply classes distinctly.",
+        "Unknown event types degrade safely without exposing raw payload.",
+        "Expanded content remains readable on desktop and mobile visual smoke routes."
+      ],
+      "current_evidence_status": "candidate_evidence_available",
+      "current_evidence": [
+        "W1.5.119-W1.5.149 cover stream event details, content fallback, unknown event handling, and visual smoke matrix hardening."
+      ],
+      "remaining_gap": [
+        "A4 has not yet accepted the full expanded event taxonomy as an end-user UX path.",
+        "Phase-level demo with real workflow stream remains missing."
+      ]
+    },
+    {
+      "id": "FR-011",
+      "module": "新建项目",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须支持工作台模式项目初始化，输入任务背景并上传参考资料。",
+      "linked_principles": ["P5", "P7"],
+      "acceptance_checks": [
+        "Workbench project creation flow collects task background.",
+        "Reference upload/import is available during project initialization.",
+        "Created project opens into the desktop workbench with runtime connection metadata."
+      ],
+      "current_evidence_status": "backend_evidence_only",
+      "current_evidence": [
+        "Runtime project initialization APIs and harness structures exist from M1.3 work."
+      ],
+      "remaining_gap": [
+        "Desktop new-project UX is not implemented.",
+        "Reference upload during initialization is not implemented."
+      ]
+    },
+    {
+      "id": "FR-012",
+      "module": "Git 初始化",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "每个工作台项目必须默认初始化 Git 仓库，不允许用户取消。",
+      "linked_principles": ["P7"],
+      "acceptance_checks": [
+        "Project creation initializes Git by default.",
+        "The user cannot bypass Git initialization in the workbench flow.",
+        "Initial commit/tag behavior matches runtime_harness.md."
+      ],
+      "current_evidence_status": "backend_evidence_only",
+      "current_evidence": [
+        "runtime_harness.md and M1.3 project initialization work define Git initialization behavior."
+      ],
+      "remaining_gap": [
+        "Desktop project-creation path and A8 git-history audit evidence are not recorded.",
+        "Automatic commit/tag behavior remains a Phase 1 exit audit item."
+      ]
+    },
+    {
+      "id": "FR-013",
+      "module": "参考资料管理",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须支持导入、启用、禁用、查看项目参考资料。",
+      "linked_principles": ["P5", "P7"],
+      "acceptance_checks": [
+        "References can be imported into the project.",
+        "References can be enabled and disabled without deleting source files.",
+        "Reference content and metadata can be viewed from the workbench."
+      ],
+      "current_evidence_status": "not_started",
+      "current_evidence": [],
+      "remaining_gap": [
+        "Desktop reference import, enable, disable, and view actions are not implemented.",
+        "Runtime-backed reference manifest UX is not accepted."
+      ]
+    },
+    {
+      "id": "FR-014",
+      "module": "Skill 管理",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须支持启用 Skill、查看候选 Skill 与 Skill 配置。",
+      "linked_principles": ["P7"],
+      "acceptance_checks": [
+        "Candidate Skills are discoverable from the workbench.",
+        "Skills can be enabled or disabled per project.",
+        "Skill configuration is viewable without exposing secrets."
+      ],
+      "current_evidence_status": "backend_evidence_only",
+      "current_evidence": [
+        "M1.4 project config and skills API work exposes runtime-side Skill information."
+      ],
+      "remaining_gap": [
+        "Desktop Skill management UI is not implemented.",
+        "Secret-safe configuration display remains unaccepted."
+      ]
+    },
+    {
+      "id": "FR-015",
+      "module": "版本快照",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须支持自动快照、查看时间线、恢复到此处、继续执行。",
+      "linked_principles": ["P7"],
+      "acceptance_checks": [
+        "Version timeline is visible in the workbench.",
+        "Automatic snapshots are created at required workflow boundaries.",
+        "Restore and continue execution actions work against project state."
+      ],
+      "current_evidence_status": "partial_scaffold",
+      "current_evidence": [
+        "W1.5.93 introduced the Version Snapshot scaffold.",
+        "W1.5.106 added local Version Snapshot selection details."
+      ],
+      "remaining_gap": [
+        "Automatic snapshot creation, restore, and continue execution are not implemented.",
+        "Git-backed snapshot semantics remain unaccepted."
+      ]
+    },
+    {
+      "id": "FR-016",
+      "module": "流式事件类型",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须区分展示工具调用、阶段结果、AI 回复等事件类型。",
+      "linked_principles": ["P3", "P7"],
+      "acceptance_checks": [
+        "Tool call, phase result, and AI reply events have distinct labels and grouping.",
+        "Event classification follows stream_event.md categories and event types.",
+        "Unknown events remain visible but clearly marked as unknown."
+      ],
+      "current_evidence_status": "candidate_evidence_available",
+      "current_evidence": [
+        "W1.5.121-W1.5.131 cover StreamEvent phase, context ids, provenance, classification, identity display, payload summary, markdown restrictions, fallback, and unknown event ingestion."
+      ],
+      "remaining_gap": [
+        "A4 has not accepted final user-facing labels for every event class.",
+        "Phase-level demo stream evidence remains missing."
+      ]
+    },
+    {
+      "id": "FR-017",
+      "module": "节点产物",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "系统必须将节点生成的产物记录并在详情面板中展示。",
+      "linked_principles": ["P4", "P7"],
+      "acceptance_checks": [
+        "Runtime-generated artifacts are recorded with node association.",
+        "Task details show artifact references for the selected node.",
+        "Artifact open/download behavior is safe and project-scoped."
+      ],
+      "current_evidence_status": "partial_evidence",
+      "current_evidence": [
+        "W1.5.120 added Stream panel artifact ref display evidence.",
+        "runtime_harness.md defines artifacts and outputs directories."
+      ],
+      "remaining_gap": [
+        "Artifact references are not yet accepted in right-side Task details.",
+        "Artifact open/download actions are not implemented."
+      ]
+    },
+    {
+      "id": "FR-018",
+      "module": "半自动审查",
+      "source_priority": "MUST",
+      "phase_exit_required": true,
+      "requirement": "半自动模式下，审查节点或高风险节点必须能暂停等待用户确认。",
+      "linked_principles": ["P6", "P7"],
+      "acceptance_checks": [
+        "Semi-auto mode pauses at review or high-risk nodes.",
+        "Human confirmation UI clearly shows the pending decision and safe actions.",
+        "Resume path is recorded and reflected in runtime state."
+      ],
+      "current_evidence_status": "backend_evidence_only",
+      "current_evidence": [
+        "M1.3 and M1.4 HITL/resumption and approval bridge work exists on the runtime side."
+      ],
+      "remaining_gap": [
+        "Desktop semi-auto mode UI and confirmation flow are not accepted.",
+        "End-to-end pause/resume UX evidence is missing."
+      ]
+    },
+    {
+      "id": "FR-019",
+      "module": "画布操作",
+      "source_priority": "SHOULD",
+      "phase_exit_required": true,
+      "requirement": "系统应支持平移、缩放、适配视图、锁定编辑。",
+      "linked_principles": ["P1", "P7"],
+      "acceptance_checks": [
+        "Canvas supports pan, zoom, fit view, and edit lock controls.",
+        "Controls are accessible by pointer and keyboard where applicable.",
+        "100-node interaction performance meets the UIUX non-functional requirement."
+      ],
+      "current_evidence_status": "blocked_by_dependency_gate",
+      "current_evidence": ["Current Canvas is a local read-only scaffold."],
+      "remaining_gap": [
+        "@xyflow/react dependency gate is not approved.",
+        "Pan, zoom, fit view, edit lock, and 100-node performance evidence are missing."
+      ]
+    },
+    {
+      "id": "FR-020",
+      "module": "快捷键",
+      "source_priority": "SHOULD",
+      "phase_exit_required": true,
+      "requirement": "系统应支持常用快捷键。",
+      "linked_principles": ["P7"],
+      "acceptance_checks": [
+        "Common shortcuts are defined in a user-visible command map.",
+        "Keyboard handlers do not conflict with text input editing.",
+        "Shortcut behavior is covered by React tests and visual smoke where applicable."
+      ],
+      "current_evidence_status": "partial_evidence",
+      "current_evidence": [
+        "W1.5.72-W1.5.78 established runtime workbench shortcut routing and DOM keyboard binding.",
+        "W1.5.158-W1.5.169 added Chat Box keyboard/focus visual smoke matrix evidence."
+      ],
+      "remaining_gap": [
+        "A formal common-shortcut acceptance list is not recorded.",
+        "User-facing command discoverability is not implemented."
+      ]
+    }
+  ],
+  "acceptance_summary": {
+    "total_fr_items": 20,
+    "phase_exit_required_items": 20,
+    "source_must_items": 18,
+    "source_should_items": 2,
+    "accepted_items": 0,
+    "candidate_evidence_available_items": 3,
+    "partial_or_scaffold_items": 9,
+    "backend_or_schema_only_items": 5,
+    "blocked_by_dependency_gate_items": 2,
+    "not_started_items": 1,
+    "next_required_review": "A4 ux-acceptance-reviewer",
+    "phase_exit_claim": "EXIT-P1-1 remains not_ready until all 20 FR items have A4 acceptance evidence."
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.173",
+      "title": "FR-001 through FR-020 checklist evidence mapper",
+      "reason": "Map each FR acceptance check to concrete test, visual smoke, or missing implementation evidence before A4 review."
+    },
+    {
+      "id": "W1.5.174",
+      "title": "Desktop UX acceptance gaps repair plan",
+      "reason": "Group missing FR evidence into dependency-gated, runtime-backed, and local UI repair tracks."
+    }
+  ]
+}
