@@ -220,6 +220,24 @@ function normalizeChatLocalSubmitTriggerEvidence(metrics) {
   return { evidence, failures };
 }
 
+function normalizeChatLocalHistoryClearFocusEvidence(metrics) {
+  if (!isRecord(metrics)) {
+    return {
+      evidence: null,
+      failures: ["expected cleared local chat history focus metrics"],
+    };
+  }
+  const evidence = {
+    draftInputFocusedAfterClear:
+      metrics.chatDraftInputFocused === true ? true : null,
+  };
+  const failures = [];
+  if (evidence.draftInputFocusedAfterClear !== true) {
+    failures.push("expected cleared local history draft input focused true");
+  }
+  return { evidence, failures };
+}
+
 function collectEnabledChatBoxFailures(result, requestedWidth) {
   const failures = [];
   const initial = result.chatInitialMetrics;
@@ -487,6 +505,9 @@ function collectEnabledChatBoxFailures(result, requestedWidth) {
     cleared,
     "chatDraftPreviewState",
     "empty",
+  );
+  failures.push(
+    ...normalizeChatLocalHistoryClearFocusEvidence(cleared).failures,
   );
 
   expectMetric(
@@ -836,6 +857,15 @@ function summarizeChatLocalSubmitTriggerEvidence(result) {
   ).evidence;
 }
 
+function summarizeChatLocalHistoryClearFocusEvidence(result) {
+  if (result?.chatBoxMode !== "enabled") {
+    return null;
+  }
+  return normalizeChatLocalHistoryClearFocusEvidence(
+    result.chatLocalHistoryClearedMetrics,
+  ).evidence;
+}
+
 function summarizeChatFocusEvidence(result) {
   if (result?.chatBoxMode !== "enabled") {
     return null;
@@ -880,6 +910,8 @@ function summarizeCase(testCase, outputPath, result, runResult, failures) {
     ),
     chatLocalSubmitTriggerEvidence:
       summarizeChatLocalSubmitTriggerEvidence(result),
+    chatLocalHistoryClearFocusEvidence:
+      summarizeChatLocalHistoryClearFocusEvidence(result),
     chatFocusEvidence: summarizeChatFocusEvidence(result),
     failures,
   };

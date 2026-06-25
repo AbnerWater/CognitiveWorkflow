@@ -142,6 +142,7 @@ if (chatBoxMode === "enabled") {
     },
     chatLocalHistoryClearedMetrics: {
       chatDraftIntent: "repair",
+      chatDraftInputFocused: true,
       chatDraftPreviewState: "empty",
       chatDraftSendReason: "empty_draft",
       chatLocalSubmissionClearButtons: 0,
@@ -394,6 +395,9 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       keyboardDefaultPrevented: true,
       draftInputFocusedAfterSubmit: true,
     });
+    assert.deepEqual(chatEnabled?.chatLocalHistoryClearFocusEvidence, {
+      draftInputFocusedAfterClear: true,
+    });
     assert.deepEqual(chatEnabled?.failures, []);
     assert.equal(chatEnabledMobile?.mode, "known");
     assert.equal(chatEnabledMobile?.chatBoxMode, "enabled");
@@ -426,6 +430,10 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     assert.deepEqual(
       chatEnabledMobile?.chatLocalSubmitTriggerEvidence,
       chatEnabled?.chatLocalSubmitTriggerEvidence,
+    );
+    assert.deepEqual(
+      chatEnabledMobile?.chatLocalHistoryClearFocusEvidence,
+      chatEnabled?.chatLocalHistoryClearFocusEvidence,
     );
     assert.deepEqual(chatEnabledMobile?.failures, []);
     assert.equal(unknownDesktop?.mode, "unknown");
@@ -555,6 +563,124 @@ test("visual smoke matrix rejects string chat submit boolean evidence", async ()
       assert.deepEqual(chatEnabledDesktop?.failures, [
         "expected first local submission keyboard default prevented true",
         "expected first local submission draft input focused after submit true",
+      ]);
+      assert.deepEqual(
+        chatEnabledMobile?.failures,
+        chatEnabledDesktop?.failures,
+      );
+      assert.deepEqual(
+        result.manifest.cases
+          .filter((testCase) => testCase.chatBoxMode !== "enabled")
+          .map((testCase) => testCase.failures),
+        [[], [], [], [], [], []],
+      );
+      assertSafeOutput(result, [
+        "Review repair plan now",
+        "Confirm workflow handoff",
+        "Resume local request",
+        "query-secret",
+        "hash-secret",
+        "matrix-output-secret",
+        tempDir,
+      ]);
+    },
+  );
+});
+
+test("visual smoke matrix rejects unfocused cleared chat history evidence", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-chat-clear-focus-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        validFakeElectronCliBody.replace(
+          'chatDraftIntent: "repair",\n      chatDraftInputFocused: true,',
+          'chatDraftIntent: "repair",\n      chatDraftInputFocused: false,',
+        ),
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath, {
+        outputDirName: "matrix-output-secret",
+      });
+      const chatEnabledDesktop = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-desktop",
+      );
+      const chatEnabledMobile = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-mobile",
+      );
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.manifest.cases.length, 8);
+      assert.equal(result.manifest.failures.length, 2);
+      assert.deepEqual(chatEnabledDesktop?.chatLocalHistoryClearFocusEvidence, {
+        draftInputFocusedAfterClear: null,
+      });
+      assert.deepEqual(
+        chatEnabledMobile?.chatLocalHistoryClearFocusEvidence,
+        chatEnabledDesktop?.chatLocalHistoryClearFocusEvidence,
+      );
+      assert.deepEqual(chatEnabledDesktop?.failures, [
+        "expected cleared local history draft input focused true",
+      ]);
+      assert.deepEqual(
+        chatEnabledMobile?.failures,
+        chatEnabledDesktop?.failures,
+      );
+      assert.deepEqual(
+        result.manifest.cases
+          .filter((testCase) => testCase.chatBoxMode !== "enabled")
+          .map((testCase) => testCase.failures),
+        [[], [], [], [], [], []],
+      );
+      assertSafeOutput(result, [
+        "Review repair plan now",
+        "Confirm workflow handoff",
+        "Resume local request",
+        "query-secret",
+        "hash-secret",
+        "matrix-output-secret",
+        tempDir,
+      ]);
+    },
+  );
+});
+
+test("visual smoke matrix rejects string cleared chat focus evidence", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-chat-clear-focus-bool-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        validFakeElectronCliBody.replace(
+          'chatDraftIntent: "repair",\n      chatDraftInputFocused: true,',
+          'chatDraftIntent: "repair",\n      chatDraftInputFocused: "true",',
+        ),
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath, {
+        outputDirName: "matrix-output-secret",
+      });
+      const chatEnabledDesktop = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-desktop",
+      );
+      const chatEnabledMobile = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-mobile",
+      );
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.manifest.cases.length, 8);
+      assert.equal(result.manifest.failures.length, 2);
+      assert.deepEqual(chatEnabledDesktop?.chatLocalHistoryClearFocusEvidence, {
+        draftInputFocusedAfterClear: null,
+      });
+      assert.deepEqual(
+        chatEnabledMobile?.chatLocalHistoryClearFocusEvidence,
+        chatEnabledDesktop?.chatLocalHistoryClearFocusEvidence,
+      );
+      assert.deepEqual(chatEnabledDesktop?.failures, [
+        "expected cleared local history draft input focused true",
       ]);
       assert.deepEqual(
         chatEnabledMobile?.failures,
@@ -1112,6 +1238,7 @@ const result = {
   } : null,
   chatLocalHistoryClearedMetrics: chatBoxMode === "enabled" ? {
     chatDraftIntent: "repair",
+    chatDraftInputFocused: true,
     chatDraftPreviewState: "empty",
     chatDraftSendReason: "empty_draft",
     chatLocalSubmissionClearButtons: 0,

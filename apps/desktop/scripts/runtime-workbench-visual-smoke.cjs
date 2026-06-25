@@ -5049,6 +5049,11 @@ function collectVisualSmokeFailures(
         `expected local history clear to leave empty preview, got ${chatLocalHistoryClearedMetrics?.chatDraftPreviewState}`,
       );
     }
+    if (chatLocalHistoryClearedMetrics?.chatDraftInputFocused !== true) {
+      failures.push(
+        `expected local history clear to keep draft input focused true, got ${chatLocalHistoryClearedMetrics?.chatDraftInputFocused}`,
+      );
+    }
     const resendHistoryIds = Array.isArray(
       chatLocalResendMetrics?.chatLocalSubmissionHistoryItemIds,
     )
