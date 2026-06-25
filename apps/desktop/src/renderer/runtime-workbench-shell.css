@@ -1602,6 +1602,58 @@ button {
   padding: 0 12px;
 }
 
+.cw-workbench__execution-controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.cw-workbench__execution-controls-label {
+  color: #526173;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cw-workbench__execution-mode-options {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid #cbd4df;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cw-workbench__execution-mode-option,
+.cw-workbench__execution-run-once {
+  min-height: 36px;
+  border: 0;
+  background: #ffffff;
+  color: #1f2c3a;
+  cursor: pointer;
+}
+
+.cw-workbench__execution-mode-option {
+  padding: 0 10px;
+  border-right: 1px solid #d7dde5;
+}
+
+.cw-workbench__execution-mode-option:last-child {
+  border-right: 0;
+}
+
+.cw-workbench__execution-mode-option--active {
+  background: #eaf2fb;
+  color: #224f7e;
+  font-weight: 700;
+}
+
+.cw-workbench__execution-run-once {
+  padding: 0 12px;
+  border: 1px solid #3d6fa7;
+  border-radius: 6px;
+}
+
 .cw-workbench__action--primary,
 .cw-workbench__action--accent {
   border-color: #3d6fa7;
@@ -1613,7 +1665,9 @@ button {
 }
 
 .cw-workbench__tab:disabled,
-.cw-workbench__action:disabled {
+.cw-workbench__action:disabled,
+.cw-workbench__execution-mode-option:disabled,
+.cw-workbench__execution-run-once:disabled {
   cursor: not-allowed;
   opacity: 0.48;
 }

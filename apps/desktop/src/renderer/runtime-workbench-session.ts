@@ -1,4 +1,9 @@
-import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
+import {
+  assertRuntimeRequestPath,
+  type RuntimeBridge,
+  type RuntimeRequestPath,
+  type RuntimeStatusUnsubscribe,
+} from "../preload/contract.js";
 import type {
   CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
   RuntimeLifecyclePanelSession,
@@ -18,8 +23,56 @@ import type { RuntimeStreamInteractionCommand } from "./runtime-stream-interacti
 
 export type RuntimeWorkbenchPanelId = "canvas" | "lifecycle" | "stream";
 
+export const RUNTIME_WORKBENCH_EXECUTION_MODES = [
+  "step",
+  "semi_auto",
+  "auto",
+] as const;
+
+export type RuntimeWorkbenchExecutionMode =
+  (typeof RUNTIME_WORKBENCH_EXECUTION_MODES)[number];
+
+export type RuntimeWorkbenchRunOnceStatus =
+  | "idle"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "blocked";
+
+export type RuntimeWorkbenchRunOnceBlockedReason =
+  | "invalid_target"
+  | "mode_not_step"
+  | "request_failed"
+  | "runtime_unavailable";
+
+export interface RuntimeWorkbenchRunOnceSnapshot {
+  readonly status: RuntimeWorkbenchRunOnceStatus;
+  readonly method: "POST";
+  readonly path: RuntimeRequestPath | null;
+  readonly runId: string | null;
+  readonly nodeId: string | null;
+  readonly statusCode: number | null;
+  readonly blockedReason: RuntimeWorkbenchRunOnceBlockedReason | null;
+}
+
+export interface RuntimeWorkbenchExecutionPolicySnapshot {
+  readonly mode: RuntimeWorkbenchExecutionMode;
+  readonly availableModes: readonly RuntimeWorkbenchExecutionMode[];
+  readonly canChangeMode: boolean;
+  readonly canRunOnce: boolean;
+  readonly runOnce: RuntimeWorkbenchRunOnceSnapshot;
+}
+
+export interface RuntimeWorkbenchRunOnceInput {
+  readonly runId: string;
+  readonly nodeId: string;
+  readonly projectId?: string;
+  readonly idempotencyKey?: string;
+}
+
 export interface RuntimeWorkbenchSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
+  readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
   readonly lifecyclePanel: RuntimeLifecyclePanelSessionControllerSnapshot;
   readonly runtimeStream: RuntimeStreamInteractionSessionControllerSnapshot;
   readonly disposed: boolean;
@@ -55,6 +108,12 @@ export interface RuntimeWorkbenchSession {
   readonly setActivePanel: (
     panel: RuntimeWorkbenchPanelId,
   ) => RuntimeWorkbenchSessionSnapshot;
+  readonly setExecutionMode: (
+    mode: RuntimeWorkbenchExecutionMode,
+  ) => RuntimeWorkbenchSessionSnapshot;
+  readonly runNodeOnce: (
+    input: RuntimeWorkbenchRunOnceInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly openLifecyclePanelSession: (
     options?: CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
   ) => RuntimeLifecyclePanelSession;
@@ -77,7 +136,9 @@ export interface RuntimeWorkbenchSession {
 export interface CreateRuntimeWorkbenchSessionOptions {
   readonly lifecyclePanelController: RuntimeLifecyclePanelSessionController;
   readonly runtimeStreamController: RuntimeStreamInteractionSessionController;
+  readonly runtime?: Pick<RuntimeBridge, "fetch">;
   readonly activePanel?: RuntimeWorkbenchPanelId;
+  readonly executionMode?: RuntimeWorkbenchExecutionMode;
   readonly onError?: RuntimeWorkbenchSessionErrorHandler;
 }
 
@@ -87,6 +148,12 @@ export function createRuntimeWorkbenchSession(
   let activePanel = requireRuntimeWorkbenchPanelId(
     options.activePanel ?? "lifecycle",
   );
+  let executionMode = requireRuntimeWorkbenchExecutionMode(
+    options.executionMode ?? "semi_auto",
+  );
+  let runOnceSnapshot = createRuntimeWorkbenchRunOnceSnapshot({
+    status: "idle",
+  });
   const listeners = new Set<RuntimeWorkbenchSessionStoreChangeListener>();
   let lifecyclePanelUnsubscribe: RuntimeStatusUnsubscribe | undefined;
   let runtimeStreamUnsubscribe: RuntimeStatusUnsubscribe | undefined;
@@ -94,6 +161,12 @@ export function createRuntimeWorkbenchSession(
 
   const initialSnapshot = freezeRuntimeWorkbenchSessionSnapshot({
     activePanel,
+    executionPolicy: createRuntimeWorkbenchExecutionPolicySnapshot({
+      mode: executionMode,
+      runOnce: runOnceSnapshot,
+      runtimeAvailable: options.runtime !== undefined,
+      disposed,
+    }),
     lifecyclePanel: options.lifecyclePanelController.getSnapshot(),
     runtimeStream: options.runtimeStreamController.snapshot(),
     disposed,
@@ -121,6 +194,12 @@ export function createRuntimeWorkbenchSession(
   ): RuntimeWorkbenchSessionSnapshot => {
     const nextSnapshot = freezeRuntimeWorkbenchSessionSnapshot({
       activePanel,
+      executionPolicy: createRuntimeWorkbenchExecutionPolicySnapshot({
+        mode: executionMode,
+        runOnce: runOnceSnapshot,
+        runtimeAvailable: options.runtime !== undefined,
+        disposed,
+      }),
       lifecyclePanel: options.lifecyclePanelController.getSnapshot(),
       runtimeStream: options.runtimeStreamController.snapshot(),
       disposed,
@@ -232,6 +311,86 @@ export function createRuntimeWorkbenchSession(
       activePanel = requireRuntimeWorkbenchPanelId(panel);
       publishIfChanged();
       return captureSnapshot();
+    },
+    setExecutionMode: (mode) => {
+      assertActive();
+      executionMode = requireRuntimeWorkbenchExecutionMode(mode);
+      publishIfChanged();
+      return captureSnapshot();
+    },
+    runNodeOnce: async (input) => {
+      assertActive();
+      const runId = normalizeRuntimeWorkbenchRunOncePathSegment(input.runId);
+      const nodeId = normalizeRuntimeWorkbenchRunOncePathSegment(input.nodeId);
+      if (runId === null || nodeId === null) {
+        runOnceSnapshot = createRuntimeWorkbenchRunOnceSnapshot({
+          blockedReason: "invalid_target",
+          status: "blocked",
+        });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench run-once target is invalid");
+      }
+      const requestPath = buildRuntimeWorkbenchRunOncePath(runId, nodeId);
+      if (executionMode !== "step") {
+        runOnceSnapshot = createRuntimeWorkbenchRunOnceSnapshot({
+          blockedReason: "mode_not_step",
+          nodeId,
+          path: requestPath,
+          runId,
+          status: "blocked",
+        });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench run-once requires step mode");
+      }
+      if (options.runtime === undefined) {
+        runOnceSnapshot = createRuntimeWorkbenchRunOnceSnapshot({
+          blockedReason: "runtime_unavailable",
+          nodeId,
+          path: requestPath,
+          runId,
+          status: "blocked",
+        });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+
+      runOnceSnapshot = createRuntimeWorkbenchRunOnceSnapshot({
+        nodeId,
+        path: requestPath,
+        runId,
+        status: "running",
+      });
+      publishIfChanged(true);
+      try {
+        const response = await options.runtime.fetch(requestPath, {
+          method: "POST",
+          ...(input.projectId !== undefined
+            ? { projectId: input.projectId }
+            : {}),
+          ...(input.idempotencyKey !== undefined
+            ? { idempotencyKey: input.idempotencyKey }
+            : {}),
+        });
+        runOnceSnapshot = createRuntimeWorkbenchRunOnceSnapshot({
+          nodeId,
+          path: requestPath,
+          runId,
+          status: response.ok ? "succeeded" : "failed",
+          statusCode: response.status,
+        });
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        runOnceSnapshot = createRuntimeWorkbenchRunOnceSnapshot({
+          blockedReason: "request_failed",
+          nodeId,
+          path: requestPath,
+          runId,
+          status: "failed",
+        });
+        publishIfChanged(true);
+        throw error;
+      }
     },
     openLifecyclePanelSession: (sessionOptions) => {
       assertActive();
@@ -352,6 +511,87 @@ function createRuntimeWorkbenchStreamSessionFacade(
   return Object.freeze(facade);
 }
 
+export function isRuntimeWorkbenchExecutionMode(
+  mode: string,
+): mode is RuntimeWorkbenchExecutionMode {
+  return RUNTIME_WORKBENCH_EXECUTION_MODES.includes(
+    mode as RuntimeWorkbenchExecutionMode,
+  );
+}
+
+function requireRuntimeWorkbenchExecutionMode(
+  mode: string,
+): RuntimeWorkbenchExecutionMode {
+  if (!isRuntimeWorkbenchExecutionMode(mode)) {
+    throw new Error("Invalid runtime workbench execution mode");
+  }
+  return mode;
+}
+
+function createRuntimeWorkbenchExecutionPolicySnapshot(options: {
+  readonly mode: RuntimeWorkbenchExecutionMode;
+  readonly runOnce: RuntimeWorkbenchRunOnceSnapshot;
+  readonly runtimeAvailable: boolean;
+  readonly disposed: boolean;
+}): RuntimeWorkbenchExecutionPolicySnapshot {
+  return Object.freeze({
+    mode: options.mode,
+    availableModes: Object.freeze([...RUNTIME_WORKBENCH_EXECUTION_MODES]),
+    canChangeMode: !options.disposed,
+    canRunOnce:
+      !options.disposed &&
+      options.runtimeAvailable &&
+      options.mode === "step" &&
+      options.runOnce.status !== "running",
+    runOnce: createRuntimeWorkbenchRunOnceSnapshot(options.runOnce),
+  });
+}
+
+function createRuntimeWorkbenchRunOnceSnapshot(
+  input: Partial<RuntimeWorkbenchRunOnceSnapshot> & {
+    readonly status: RuntimeWorkbenchRunOnceStatus;
+  },
+): RuntimeWorkbenchRunOnceSnapshot {
+  return Object.freeze({
+    status: input.status,
+    method: "POST",
+    path: input.path ?? null,
+    runId: input.runId ?? null,
+    nodeId: input.nodeId ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+  });
+}
+
+function buildRuntimeWorkbenchRunOncePath(
+  runId: string,
+  nodeId: string,
+): RuntimeRequestPath {
+  const requestPath = `/runs/${encodeURIComponent(
+    runId,
+  )}/nodes/${encodeURIComponent(nodeId)}:run-once`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
+function normalizeRuntimeWorkbenchRunOncePathSegment(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.includes("?") ||
+    trimmed.includes("#") ||
+    trimmed.includes("..") ||
+    /[\u0000-\u001f\u007f\s]/u.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
 function requireRuntimeWorkbenchPanelId(
   panel: string,
 ): RuntimeWorkbenchPanelId {
@@ -368,7 +608,22 @@ function requireRuntimeWorkbenchPanelId(
 function freezeRuntimeWorkbenchSessionSnapshot(
   snapshot: RuntimeWorkbenchSessionSnapshot,
 ): RuntimeWorkbenchSessionSnapshot {
-  return Object.freeze({ ...snapshot });
+  return Object.freeze({
+    ...snapshot,
+    executionPolicy: cloneRuntimeWorkbenchExecutionPolicySnapshot(
+      snapshot.executionPolicy,
+    ),
+  });
+}
+
+function cloneRuntimeWorkbenchExecutionPolicySnapshot(
+  snapshot: RuntimeWorkbenchExecutionPolicySnapshot,
+): RuntimeWorkbenchExecutionPolicySnapshot {
+  return Object.freeze({
+    ...snapshot,
+    availableModes: Object.freeze([...snapshot.availableModes]),
+    runOnce: createRuntimeWorkbenchRunOnceSnapshot(snapshot.runOnce),
+  });
 }
 
 function runtimeWorkbenchSessionSnapshotSignature(

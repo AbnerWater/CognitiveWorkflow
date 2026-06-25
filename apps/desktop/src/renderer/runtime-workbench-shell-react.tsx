@@ -32,7 +32,11 @@ import type {
   RuntimeWorkbenchInteractionCommand,
   RuntimeWorkbenchInteractionCommandId,
 } from "./runtime-workbench-interaction.js";
-import type { RuntimeWorkbenchPanelId } from "./runtime-workbench-session.js";
+import {
+  RUNTIME_WORKBENCH_EXECUTION_MODES,
+  type RuntimeWorkbenchExecutionMode,
+  type RuntimeWorkbenchPanelId,
+} from "./runtime-workbench-session.js";
 import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-workbench-shell-keyboard-dom-adapter.js";
 import type {
   RuntimeWorkbenchShellAction,
@@ -115,6 +119,28 @@ const RUNTIME_WORKBENCH_PLANNING_STREAM_CATEGORIES: readonly RuntimeStreamCatego
 const RUNTIME_WORKBENCH_STREAM_KNOWN_EVENT_TYPE_SET = new Set<string>(
   RUNTIME_STREAM_ALL_EVENT_TYPES,
 );
+
+const RUNTIME_WORKBENCH_EXECUTION_MODE_OPTIONS: readonly {
+  readonly mode: RuntimeWorkbenchExecutionMode;
+  readonly label: string;
+  readonly title: string;
+}[] = Object.freeze([
+  {
+    mode: "step",
+    label: "Step",
+    title: "Use step execution policy",
+  },
+  {
+    mode: "semi_auto",
+    label: "Semi-auto",
+    title: "Use semi-auto execution policy",
+  },
+  {
+    mode: "auto",
+    label: "Auto",
+    title: "Use auto execution policy",
+  },
+]);
 
 export function useRuntimeWorkbenchShellSnapshot(
   session: RuntimeWorkbenchShellDomSession,
@@ -290,6 +316,26 @@ export function RuntimeWorkbenchShellReactView(
     () => new Map(snapshot.actions.map((action) => [action.id, action])),
     [snapshot.actions],
   );
+  const [workflowCanvasSelectedNodeId, setWorkflowCanvasSelectedNodeId] =
+    useState<RuntimeWorkbenchShellWorkflowCanvasNodeId | null>(null);
+  const selectedWorkflowCanvasNode = useMemo(
+    () =>
+      selectRuntimeWorkbenchShellWorkflowCanvasNode(
+        snapshot.chrome.workflowCanvas,
+        workflowCanvasSelectedNodeId,
+      ),
+    [snapshot.chrome.workflowCanvas, workflowCanvasSelectedNodeId],
+  );
+  const executionRunId = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactPathSegment(streamOptionsForm.runId),
+    [streamOptionsForm.runId],
+  );
+  const executionProjectId = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactProjectId(streamOptionsForm.projectId),
+    [streamOptionsForm.projectId],
+  );
   const handleActionError = useCallback(
     (error: unknown): void => {
       try {
@@ -340,6 +386,48 @@ export function RuntimeWorkbenchShellReactView(
     },
     [actionOptions, actionsById, handleActionError, props.session],
   );
+  const handleExecutionModeClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const mode = event.currentTarget.dataset.executionModeOption;
+      if (!isRuntimeWorkbenchShellExecutionMode(mode)) {
+        return;
+      }
+      void props.session
+        .dispatch({
+          type: "set_execution_mode",
+          mode,
+        })
+        .catch(handleActionError);
+    },
+    [handleActionError, props.session],
+  );
+  const handleRunSelectedNodeOnceClick = useCallback((): void => {
+    if (
+      !snapshot.executionPolicy.canRunOnce ||
+      executionRunId === null ||
+      executionProjectId === null ||
+      selectedWorkflowCanvasNode === null
+    ) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "run_node_once",
+        runId: executionRunId,
+        nodeId: selectedWorkflowCanvasNode.nodeId,
+        ...(executionProjectId.length > 0
+          ? { projectId: executionProjectId }
+          : {}),
+      })
+      .catch(handleActionError);
+  }, [
+    executionProjectId,
+    executionRunId,
+    handleActionError,
+    props.session,
+    selectedWorkflowCanvasNode,
+    snapshot.executionPolicy.canRunOnce,
+  ]);
   const handleStreamChannelKindClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const channelKind = event.currentTarget.dataset.streamChannelKind;
@@ -601,6 +689,8 @@ export function RuntimeWorkbenchShellReactView(
               snapshot.activePanel === "canvas" ? (
                 <RuntimeWorkbenchShellWorkflowCanvas
                   canvas={snapshot.chrome.workflowCanvas}
+                  onSelectedNodeChange={setWorkflowCanvasSelectedNodeId}
+                  selectedNodeId={workflowCanvasSelectedNodeId}
                   surface="focused"
                 />
               ) : snapshot.activePanel === "stream" ? (
@@ -649,6 +739,14 @@ export function RuntimeWorkbenchShellReactView(
             aria-label="Runtime workbench actions"
             className="cw-workbench__actions"
           >
+            <RuntimeWorkbenchShellExecutionControls
+              executionPolicy={snapshot.executionPolicy}
+              onExecutionModeClick={handleExecutionModeClick}
+              onRunSelectedNodeOnceClick={handleRunSelectedNodeOnceClick}
+              projectId={executionProjectId}
+              runId={executionRunId}
+              selectedNode={selectedWorkflowCanvasNode}
+            />
             {snapshot.actions.map((action) => (
               <button
                 className={`cw-workbench__action cw-workbench__action--${action.slot} cw-workbench__action--${action.tone}`}
@@ -693,6 +791,72 @@ export function RuntimeWorkbenchShellReactView(
         <RuntimeWorkbenchShellChatBox chatBox={snapshot.chrome.chatBox} />
       </div>
     </main>
+  );
+}
+
+function RuntimeWorkbenchShellExecutionControls(props: {
+  readonly executionPolicy: RuntimeWorkbenchShellSnapshot["executionPolicy"];
+  readonly selectedNode: RuntimeWorkbenchShellWorkflowCanvasNode | null;
+  readonly runId: string | null;
+  readonly projectId: string | null;
+  readonly onExecutionModeClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onRunSelectedNodeOnceClick: () => void;
+}): ReactElement {
+  const runOnceReady =
+    props.executionPolicy.canRunOnce &&
+    props.runId !== null &&
+    props.projectId !== null &&
+    props.selectedNode !== null;
+  const selectedNodeLabel = props.selectedNode?.title ?? "No node";
+  return (
+    <div
+      aria-label="Execution mode"
+      className="cw-workbench__execution-controls"
+      data-execution-mode-control="true"
+      data-execution-mode={props.executionPolicy.mode}
+      data-execution-run-once-status={props.executionPolicy.runOnce.status}
+    >
+      <span className="cw-workbench__execution-controls-label">Mode</span>
+      <div
+        aria-label="Execution mode options"
+        className="cw-workbench__execution-mode-options"
+        role="group"
+      >
+        {RUNTIME_WORKBENCH_EXECUTION_MODE_OPTIONS.map((option) => (
+          <button
+            aria-pressed={props.executionPolicy.mode === option.mode}
+            className={[
+              "cw-workbench__execution-mode-option",
+              props.executionPolicy.mode === option.mode
+                ? "cw-workbench__execution-mode-option--active"
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            data-execution-mode-option={option.mode}
+            disabled={!props.executionPolicy.canChangeMode}
+            key={option.mode}
+            onClick={props.onExecutionModeClick}
+            title={option.title}
+            type="button"
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <button
+        className="cw-workbench__execution-run-once"
+        data-execution-run-once="true"
+        data-execution-run-once-enabled={runOnceReady ? "true" : "false"}
+        data-execution-run-once-node-id={props.selectedNode?.nodeId ?? ""}
+        disabled={!runOnceReady}
+        onClick={props.onRunSelectedNodeOnceClick}
+        title={`Run ${selectedNodeLabel} once`}
+        type="button"
+      >
+        Run selected once
+      </button>
+    </div>
   );
 }
 
@@ -1036,6 +1200,10 @@ const RUNTIME_WORKBENCH_SHELL_WORKFLOW_CANVAS_EDGE_TYPE_ORDER: readonly RuntimeW
 
 function RuntimeWorkbenchShellWorkflowCanvas(props: {
   readonly canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot;
+  readonly selectedNodeId?: RuntimeWorkbenchShellWorkflowCanvasNodeId | null;
+  readonly onSelectedNodeChange?: (
+    nodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId,
+  ) => void;
   readonly surface: "focused" | "preview";
 }): ReactElement {
   const [selectionState, setSelectionState] =
@@ -1049,13 +1217,16 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
     new Map<RuntimeWorkbenchShellWorkflowCanvasNodeId, HTMLButtonElement>(),
   );
   const selectable = props.surface === "focused";
+  const onSelectedNodeChange = props.onSelectedNodeChange;
+  const effectiveSelectedNodeId =
+    props.selectedNodeId ?? selectionState.selectedNodeId;
   const selectedNode = useMemo(
     () =>
       selectRuntimeWorkbenchShellWorkflowCanvasNode(
         props.canvas,
-        selectionState.selectedNodeId,
+        effectiveSelectedNodeId,
       ),
-    [props.canvas, selectionState.selectedNodeId],
+    [effectiveSelectedNodeId, props.canvas],
   );
   const previousSelectedNodeId =
     selectionState.history[selectionState.history.length - 1] ?? null;
@@ -1099,8 +1270,9 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
           selectedNodeId: nodeId,
         };
       });
+      onSelectedNodeChange?.(nodeId);
     },
-    [props.canvas],
+    [onSelectedNodeChange, props.canvas],
   );
   const handleNodeSelectClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
@@ -1139,17 +1311,17 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
     [props.canvas, selectNode],
   );
   const handleInspectorBackClick = useCallback((): void => {
-    setSelectionState((current) => {
-      const previousNodeId = current.history[current.history.length - 1];
-      if (previousNodeId === undefined) {
-        return current;
-      }
-      return {
-        history: current.history.slice(0, -1),
-        selectedNodeId: previousNodeId,
-      };
+    const previousNodeId =
+      selectionState.history[selectionState.history.length - 1];
+    if (previousNodeId === undefined) {
+      return;
+    }
+    setSelectionState({
+      history: selectionState.history.slice(0, -1),
+      selectedNodeId: previousNodeId,
     });
-  }, []);
+    onSelectedNodeChange?.(previousNodeId);
+  }, [onSelectedNodeChange, selectionState.history]);
   const handleInspectorHistorySelectClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const nodeId = event.currentTarget.dataset.workflowCanvasHistorySelect;
@@ -1164,18 +1336,17 @@ function RuntimeWorkbenchShellWorkflowCanvas(props: {
       if (!Number.isSafeInteger(historyIndex) || historyIndex < 0) {
         return;
       }
-      setSelectionState((current) => {
-        if (current.history[historyIndex] !== nodeId) {
-          return current;
-        }
-        return {
-          history: current.history.slice(0, historyIndex),
-          selectedNodeId: nodeId,
-        };
+      if (selectionState.history[historyIndex] !== nodeId) {
+        return;
+      }
+      setSelectionState({
+        history: selectionState.history.slice(0, historyIndex),
+        selectedNodeId: nodeId,
       });
+      onSelectedNodeChange?.(nodeId);
       nodeButtonRefs.current.get(nodeId)?.focus({ preventScroll: true });
     },
-    [props.canvas],
+    [onSelectedNodeChange, props.canvas, selectionState.history],
   );
   const handleTypeFocusClick = useCallback(
     (focus: RuntimeWorkbenchShellWorkflowCanvasTypeFocus): void => {
@@ -4352,6 +4523,17 @@ function normalizeRuntimeWorkbenchShellReactPathSegment(
     return null;
   }
   return trimmed;
+}
+
+function isRuntimeWorkbenchShellExecutionMode(
+  value: string | undefined,
+): value is RuntimeWorkbenchExecutionMode {
+  return (
+    value !== undefined &&
+    RUNTIME_WORKBENCH_EXECUTION_MODES.includes(
+      value as RuntimeWorkbenchExecutionMode,
+    )
+  );
 }
 
 function normalizeRuntimeWorkbenchShellReactStreamCategories(

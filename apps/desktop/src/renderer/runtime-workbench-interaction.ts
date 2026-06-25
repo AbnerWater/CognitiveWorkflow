@@ -4,11 +4,13 @@ import type { RuntimeStreamInteractionCommand } from "./runtime-stream-interacti
 import type { CreateRuntimeLifecyclePanelSessionFactorySessionOptions } from "./runtime-lifecycle-panel-session.js";
 import type { CreateRuntimeStreamInteractionSessionFactorySessionOptions } from "./runtime-stream-session.js";
 import type {
+  RuntimeWorkbenchExecutionMode,
   RuntimeWorkbenchPanelId,
   RuntimeWorkbenchSession,
   RuntimeWorkbenchSessionErrorHandler,
   RuntimeWorkbenchSessionSnapshot,
 } from "./runtime-workbench-session.js";
+import { isRuntimeWorkbenchExecutionMode } from "./runtime-workbench-session.js";
 
 export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "show_canvas_panel",
@@ -18,6 +20,8 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "dispose_lifecycle_panel_session",
   "open_runtime_stream_session",
   "dispose_runtime_stream_session",
+  "set_execution_mode",
+  "run_node_once",
   "dispatch_lifecycle_panel",
   "dispatch_runtime_stream",
 ] as const;
@@ -48,6 +52,17 @@ export type RuntimeWorkbenchInteractionCommand =
     }
   | {
       readonly type: "dispose_runtime_stream_session";
+    }
+  | {
+      readonly type: "set_execution_mode";
+      readonly mode: RuntimeWorkbenchExecutionMode;
+    }
+  | {
+      readonly type: "run_node_once";
+      readonly runId: string;
+      readonly nodeId: string;
+      readonly projectId?: string;
+      readonly idempotencyKey?: string;
     }
   | {
       readonly type: "dispatch_lifecycle_panel";
@@ -222,6 +237,21 @@ export function createRuntimeWorkbenchInteraction(
       case "dispose_runtime_stream_session":
         options.workbench.disposeRuntimeStreamSession();
         return completeAction();
+      case "set_execution_mode":
+        options.workbench.setExecutionMode(safeCommand.mode);
+        return completeAction();
+      case "run_node_once":
+        await options.workbench.runNodeOnce({
+          runId: safeCommand.runId,
+          nodeId: safeCommand.nodeId,
+          ...(safeCommand.projectId !== undefined
+            ? { projectId: safeCommand.projectId }
+            : {}),
+          ...(safeCommand.idempotencyKey !== undefined
+            ? { idempotencyKey: safeCommand.idempotencyKey }
+            : {}),
+        });
+        return completeAction();
       case "dispatch_lifecycle_panel": {
         await options.workbench.dispatchLifecyclePanelCommand(
           safeCommand.command,
@@ -295,7 +325,11 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
     enabledCommandIds.push(
       "open_lifecycle_panel_session",
       "open_runtime_stream_session",
+      "set_execution_mode",
     );
+    if (workbench.executionPolicy.canRunOnce) {
+      enabledCommandIds.push("run_node_once");
+    }
     if (workbench.lifecyclePanel.activeSession !== null) {
       enabledCommandIds.push(
         "dispose_lifecycle_panel_session",
@@ -332,6 +366,28 @@ function requireRuntimeWorkbenchInteractionCommand(
     case "show_stream_panel":
     case "dispose_lifecycle_panel_session":
     case "dispose_runtime_stream_session":
+      return command;
+    case "set_execution_mode":
+      if (
+        typeof command.mode !== "string" ||
+        !isRuntimeWorkbenchExecutionMode(command.mode)
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "run_node_once":
+      if (
+        typeof command.runId !== "string" ||
+        typeof command.nodeId !== "string" ||
+        ("projectId" in command &&
+          command.projectId !== undefined &&
+          typeof command.projectId !== "string") ||
+        ("idempotencyKey" in command &&
+          command.idempotencyKey !== undefined &&
+          typeof command.idempotencyKey !== "string")
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
       return command;
     case "open_lifecycle_panel_session":
       if (

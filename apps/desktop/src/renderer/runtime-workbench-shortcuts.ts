@@ -478,6 +478,8 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
       );
     case "open_lifecycle_panel_session":
     case "open_runtime_stream_session":
+    case "set_execution_mode":
+    case "run_node_once":
       return false;
     case "dispatch_lifecycle_panel":
       return (
@@ -634,6 +636,20 @@ function cloneRuntimeWorkbenchInteractionCommand(
     case "dispose_lifecycle_panel_session":
     case "dispose_runtime_stream_session":
       return Object.freeze({ type: command.type });
+    case "set_execution_mode":
+      return Object.freeze({ type: command.type, mode: command.mode });
+    case "run_node_once":
+      return Object.freeze({
+        type: command.type,
+        runId: command.runId,
+        nodeId: command.nodeId,
+        ...(command.projectId !== undefined
+          ? { projectId: command.projectId }
+          : {}),
+        ...(command.idempotencyKey !== undefined
+          ? { idempotencyKey: command.idempotencyKey }
+          : {}),
+      });
     case "open_lifecycle_panel_session":
       return Object.freeze({
         type: command.type,

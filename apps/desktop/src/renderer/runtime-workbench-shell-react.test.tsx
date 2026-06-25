@@ -10,18 +10,30 @@ import { renderToString } from "react-dom/server";
 import type {
   RuntimeBridge,
   RuntimeConnectionInfo,
+  RuntimeRequestInit,
+  RuntimeRequestPath,
+  RuntimeResponse,
   RuntimeStatusUnsubscribe,
 } from "../preload/contract.js";
 import type { RuntimeLifecyclePanelSessionSnapshot } from "./runtime-lifecycle-panel-session.js";
+import type { RuntimeLifecyclePanelSessionController } from "./runtime-lifecycle-panel-session.js";
 import type { RuntimeStreamReconnectScheduler } from "./runtime-stream-client.js";
 import { createRuntimeFetchEventSourceFactory } from "./runtime-stream-fetch-event-source.js";
+import type {
+  RuntimeStreamInteractionSessionController,
+  RuntimeStreamInteractionSessionControllerListener,
+} from "./runtime-stream-session.js";
 import { DEFAULT_RUNTIME_WORKBENCH_SHORTCUT_BINDINGS } from "./runtime-workbench-shortcuts.js";
 import type { RuntimeWorkbenchShortcutKeyEvent } from "./runtime-workbench-shortcuts.js";
 import {
   RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS,
   type RuntimeWorkbenchInteractionCommand,
 } from "./runtime-workbench-interaction.js";
-import type { RuntimeWorkbenchPanelId } from "./runtime-workbench-session.js";
+import {
+  createRuntimeWorkbenchSession,
+  type RuntimeWorkbenchExecutionMode,
+  type RuntimeWorkbenchPanelId,
+} from "./runtime-workbench-session.js";
 import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-workbench-shell-keyboard-dom-adapter.js";
 import type { RuntimeWorkbenchShellDomSession } from "./runtime-workbench-shell-dom-session.js";
 import { createRuntimeWorkbenchShellReactSession } from "./runtime-workbench-shell-react-session.js";
@@ -57,6 +69,10 @@ test("renderer runtime workbench React shell renders server snapshot without DOM
   assert.match(markup, /Canvas/u);
   assert.match(markup, /Lifecycle/u);
   assert.match(markup, /Stream/u);
+  assert.match(markup, /Execution mode/u);
+  assert.match(markup, /Step/u);
+  assert.match(markup, /Semi-auto/u);
+  assert.match(markup, /Auto/u);
   assert.match(markup, /File Tree/u);
   assert.match(markup, /Accepted specs/u);
   assert.match(markup, /Status[\s\S]*Open[\s\S]*Path[\s\S]*workspace root/u);
@@ -5079,6 +5095,244 @@ test("renderer runtime workbench React shell binds keyboard lifecycle on client 
   }
 });
 
+test("renderer runtime workbench React shell dispatches execution mode controls", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const snapshot = createRuntimeWorkbenchShellReactSnapshot({
+    activePanel: "canvas",
+    executionMode: "step",
+  });
+  const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          defaultRuntimeStreamOptionsFormState={{
+            runId: " run_step ",
+            projectId: " project_step ",
+          }}
+          session={session}
+          title="Execution Mode Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "executionModeControl",
+        "true",
+      ).getAttribute("data-execution-mode"),
+      "step",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "executionRunOnce",
+        "true",
+      ).getAttribute("data-execution-run-once-enabled"),
+      "true",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "executionModeOption",
+          "auto",
+        ),
+      );
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "set_execution_mode",
+      mode: "auto",
+    });
+
+    const runOnceButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "executionRunOnce",
+      "true",
+    );
+    const nodeId = runOnceButton.dataset.executionRunOnceNodeId;
+    assert.notEqual(nodeId, undefined);
+    assert.notEqual(nodeId, "");
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(runOnceButton);
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "run_node_once",
+      runId: "run_step",
+      nodeId,
+      projectId: "project_step",
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    session.dispose();
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench session dispatches run-once through runtime fetch", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
+    body: Object.freeze({ raw_model_output: "must not be retained" }),
+    ok: true,
+    status: 202,
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "step",
+  });
+
+  const snapshot = await session.runNodeOnce({
+    runId: " run_step_1 ",
+    nodeId: "node_step.1",
+    projectId: "project_exec",
+    idempotencyKey: "idem_exec",
+  });
+
+  const call = requireRuntimeWorkbenchRunOnceRuntimeCall(calls);
+  assert.equal(call.path, "/runs/run_step_1/nodes/node_step.1:run-once");
+  assert.deepEqual(call.init, {
+    method: "POST",
+    projectId: "project_exec",
+    idempotencyKey: "idem_exec",
+  });
+  assert.equal(
+    Object.hasOwn(call.init ?? {}, "body"),
+    false,
+    "run-once dispatch must not send a request body from the workbench",
+  );
+  assert.deepEqual(snapshot.executionPolicy.runOnce, {
+    status: "succeeded",
+    method: "POST",
+    path: "/runs/run_step_1/nodes/node_step.1:run-once",
+    runId: "run_step_1",
+    nodeId: "node_step.1",
+    statusCode: 202,
+    blockedReason: null,
+  });
+  assert.equal(
+    JSON.stringify(snapshot.executionPolicy.runOnce).includes(
+      "must not be retained",
+    ),
+    false,
+  );
+});
+
+test("renderer runtime workbench session records failed run-once status without response body", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
+    body: "raw failure details must not be retained",
+    ok: false,
+    status: 409,
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "step",
+  });
+
+  const snapshot = await session.runNodeOnce({
+    runId: "run_conflict",
+    nodeId: "node_conflict",
+  });
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(snapshot.executionPolicy.runOnce, {
+    status: "failed",
+    method: "POST",
+    path: "/runs/run_conflict/nodes/node_conflict:run-once",
+    runId: "run_conflict",
+    nodeId: "node_conflict",
+    statusCode: 409,
+    blockedReason: null,
+  });
+  assert.equal(
+    JSON.stringify(snapshot.executionPolicy.runOnce).includes(
+      "raw failure details",
+    ),
+    false,
+  );
+});
+
+test("renderer runtime workbench session blocks run-once outside step/runtime availability", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime();
+  const semiAutoSession = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  await assert.rejects(
+    () =>
+      semiAutoSession.runNodeOnce({
+        runId: "run_blocked",
+        nodeId: "node_blocked",
+      }),
+    /requires step mode/u,
+  );
+  assert.equal(calls.length, 0);
+  assert.deepEqual(semiAutoSession.snapshot().executionPolicy.runOnce, {
+    status: "blocked",
+    method: "POST",
+    path: "/runs/run_blocked/nodes/node_blocked:run-once",
+    runId: "run_blocked",
+    nodeId: "node_blocked",
+    statusCode: null,
+    blockedReason: "mode_not_step",
+  });
+
+  const unavailableSession = createRuntimeWorkbenchRunOnceSession({
+    executionMode: "step",
+  });
+  await assert.rejects(
+    () =>
+      unavailableSession.runNodeOnce({
+        runId: "run_unavailable",
+        nodeId: "node_unavailable",
+      }),
+    /runtime bridge is unavailable/u,
+  );
+  assert.deepEqual(unavailableSession.snapshot().executionPolicy.runOnce, {
+    status: "blocked",
+    method: "POST",
+    path: "/runs/run_unavailable/nodes/node_unavailable:run-once",
+    runId: "run_unavailable",
+    nodeId: "node_unavailable",
+    statusCode: null,
+    blockedReason: "runtime_unavailable",
+  });
+
+  const invalidTargetSession = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "step",
+  });
+  await assert.rejects(
+    () =>
+      invalidTargetSession.runNodeOnce({
+        runId: "../run",
+        nodeId: "node_invalid",
+      }),
+    /target is invalid/u,
+  );
+  assert.equal(calls.length, 0);
+  assert.deepEqual(invalidTargetSession.snapshot().executionPolicy.runOnce, {
+    status: "blocked",
+    method: "POST",
+    path: null,
+    runId: null,
+    nodeId: null,
+    statusCode: null,
+    blockedReason: "invalid_target",
+  });
+});
+
 test("renderer runtime workbench React shell keyboard binding helper owns target lifecycle", () => {
   const session = createFakeRuntimeWorkbenchShellReactSession(
     createRuntimeWorkbenchShellReactSnapshot(),
@@ -5984,6 +6238,137 @@ function createLoopbackRuntimeBridge(
   };
 }
 
+interface RuntimeWorkbenchRunOnceRuntimeCall {
+  readonly path: RuntimeRequestPath;
+  readonly init?: RuntimeRequestInit;
+}
+
+function createRuntimeWorkbenchRunOnceSession(options: {
+  readonly executionMode: RuntimeWorkbenchExecutionMode;
+  readonly runtime?: Pick<RuntimeBridge, "fetch">;
+}) {
+  return createRuntimeWorkbenchSession({
+    lifecyclePanelController:
+      createFakeRuntimeWorkbenchLifecyclePanelController(),
+    runtimeStreamController: createFakeRuntimeWorkbenchStreamController(),
+    ...(options.runtime !== undefined ? { runtime: options.runtime } : {}),
+    executionMode: options.executionMode,
+  });
+}
+
+function createFakeRuntimeWorkbenchRunOnceRuntime(
+  options: {
+    readonly body?: unknown;
+    readonly ok?: boolean;
+    readonly status?: number;
+  } = {},
+): {
+  readonly runtime: Pick<RuntimeBridge, "fetch">;
+  readonly calls: readonly RuntimeWorkbenchRunOnceRuntimeCall[];
+} {
+  const calls: RuntimeWorkbenchRunOnceRuntimeCall[] = [];
+  const runtime: Pick<RuntimeBridge, "fetch"> = Object.freeze({
+    fetch: async <TBody,>(
+      path: RuntimeRequestPath,
+      init?: RuntimeRequestInit,
+    ): Promise<RuntimeResponse<TBody>> => {
+      calls.push(
+        init === undefined
+          ? { path }
+          : { path, init: Object.freeze({ ...init }) },
+      );
+      return Object.freeze({
+        ok: options.ok ?? true,
+        status: options.status ?? 204,
+        headers: Object.freeze({}),
+        body: (options.body ?? null) as TBody | null,
+      });
+    },
+  });
+  return { runtime, calls };
+}
+
+function requireRuntimeWorkbenchRunOnceRuntimeCall(
+  calls: readonly RuntimeWorkbenchRunOnceRuntimeCall[],
+): RuntimeWorkbenchRunOnceRuntimeCall {
+  const call = calls[0];
+  if (call === undefined) {
+    throw new Error("Expected runtime.fetch to be called");
+  }
+  return call;
+}
+
+function createFakeRuntimeWorkbenchLifecyclePanelController(): RuntimeLifecyclePanelSessionController {
+  const listeners = new Set<() => void>();
+  const snapshot = Object.freeze({
+    activeSession: null,
+    disposed: false,
+  });
+  return {
+    activeSession: () => null,
+    getSnapshot: () => snapshot,
+    getServerSnapshot: () => snapshot,
+    snapshot: () => snapshot,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      let subscribed = true;
+      return () => {
+        if (!subscribed) {
+          return false;
+        }
+        subscribed = false;
+        return listeners.delete(listener);
+      };
+    },
+    openSession: () => {
+      throw new Error("Lifecycle panel session is not used in this test");
+    },
+    disposeActiveSession: () => false,
+    listenerCount: () => listeners.size,
+    dispose: () => {
+      listeners.clear();
+      return true;
+    },
+    isDisposed: () => false,
+  };
+}
+
+function createFakeRuntimeWorkbenchStreamController(): RuntimeStreamInteractionSessionController {
+  const listeners =
+    new Set<RuntimeStreamInteractionSessionControllerListener>();
+  const snapshot = Object.freeze({
+    activeChannel: null,
+    activeSession: null,
+    disposed: false,
+  });
+  return {
+    activeSession: () => null,
+    activeChannel: () => null,
+    snapshot: () => snapshot,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      let subscribed = true;
+      return () => {
+        if (!subscribed) {
+          return false;
+        }
+        subscribed = false;
+        return listeners.delete(listener);
+      };
+    },
+    openSession: () => {
+      throw new Error("Runtime stream session is not used in this test");
+    },
+    disposeActiveSession: () => false,
+    listenerCount: () => listeners.size,
+    dispose: () => {
+      listeners.clear();
+      return true;
+    },
+    isDisposed: () => false,
+  };
+}
+
 function createImmediateRuntimeStreamScheduler(): RuntimeStreamReconnectScheduler {
   return (_delayMs, reconnect) => {
     let active = true;
@@ -6026,9 +6411,37 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error("Timed out waiting for condition");
 }
 
-function createRuntimeWorkbenchShellReactSnapshot(): RuntimeWorkbenchShellSnapshot {
+function createRuntimeWorkbenchShellReactExecutionPolicy(
+  mode: RuntimeWorkbenchShellSnapshot["executionPolicy"]["mode"] = "semi_auto",
+): RuntimeWorkbenchShellSnapshot["executionPolicy"] {
+  return Object.freeze({
+    mode,
+    availableModes: Object.freeze(["step", "semi_auto", "auto"] as const),
+    canChangeMode: true,
+    canRunOnce: mode === "step",
+    runOnce: Object.freeze({
+      status: "idle",
+      method: "POST",
+      path: null,
+      runId: null,
+      nodeId: null,
+      statusCode: null,
+      blockedReason: null,
+    }),
+  });
+}
+
+function createRuntimeWorkbenchShellReactSnapshot(
+  options: {
+    readonly activePanel?: RuntimeWorkbenchPanelId;
+    readonly executionMode?: RuntimeWorkbenchShellSnapshot["executionPolicy"]["mode"];
+  } = {},
+): RuntimeWorkbenchShellSnapshot {
   return buildRuntimeWorkbenchShellSnapshot({
-    activePanel: "lifecycle",
+    activePanel: options.activePanel ?? "lifecycle",
+    executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(
+      options.executionMode,
+    ),
     lifecyclePanel: Object.freeze({
       active: false,
       disposed: false,
@@ -6077,6 +6490,7 @@ const RUNTIME_WORKBENCH_SHELL_REACT_MARKDOWN_STREAM_CONTENT = [
 function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShellSnapshot {
   return buildRuntimeWorkbenchShellSnapshot({
     activePanel: "stream",
+    executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(),
     lifecyclePanel: Object.freeze({
       active: false,
       disposed: false,
@@ -6357,6 +6771,7 @@ function createRuntimeWorkbenchShellReactChatEnabledSnapshot(): RuntimeWorkbench
 function createRuntimeWorkbenchShellReactLifecycleSnapshot(): RuntimeWorkbenchShellSnapshot {
   return buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
+    executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(),
     lifecyclePanel: Object.freeze({
       active: true,
       disposed: false,

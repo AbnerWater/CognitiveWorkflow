@@ -84,6 +84,7 @@ export interface RuntimeWorkbenchShellShortcutHint {
 export interface RuntimeWorkbenchShellStatusItem {
   readonly id:
     | "active_panel"
+    | "execution_mode"
     | "lifecycle_panel"
     | "runtime_stream"
     | "last_shortcut";
@@ -278,9 +279,13 @@ export type RuntimeWorkbenchShellRuntimeStreamPanelSnapshot =
 export type RuntimeWorkbenchShellLifecyclePanelSnapshot =
   RuntimeLifecyclePanelInteractionSnapshot;
 
+export type RuntimeWorkbenchShellExecutionPolicySnapshot =
+  RuntimeWorkbenchHostSessionSnapshot["executionPolicy"];
+
 export interface RuntimeWorkbenchShellSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly activePanelLabel: string;
+  readonly executionPolicy: RuntimeWorkbenchShellExecutionPolicySnapshot;
   readonly lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus;
   readonly lifecyclePanel: RuntimeWorkbenchShellLifecyclePanelSnapshot | null;
   readonly runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus;
@@ -534,6 +539,9 @@ export function buildRuntimeWorkbenchShellSnapshot(
   return freezeRuntimeWorkbenchShellSnapshot({
     activePanel: host.activePanel,
     activePanelLabel,
+    executionPolicy: cloneRuntimeWorkbenchShellExecutionPolicy(
+      host.executionPolicy,
+    ),
     lifecyclePanelStatus,
     lifecyclePanel,
     runtimeStreamStatus,
@@ -967,6 +975,12 @@ function buildStatusItems(
       tone: disposed ? "danger" : "neutral",
     }),
     statusItem({
+      id: "execution_mode",
+      label: "Mode",
+      value: executionModeLabel(host.executionPolicy.mode),
+      tone: host.executionPolicy.mode === "step" ? "accent" : "neutral",
+    }),
+    statusItem({
       id: "lifecycle_panel",
       label: "Lifecycle",
       value: panelStatusLabel(lifecyclePanelStatus),
@@ -1263,6 +1277,19 @@ function panelLabel(panel: RuntimeWorkbenchPanelId): string {
   }
 }
 
+function executionModeLabel(
+  mode: RuntimeWorkbenchShellExecutionPolicySnapshot["mode"],
+): string {
+  switch (mode) {
+    case "auto":
+      return "Auto";
+    case "semi_auto":
+      return "Semi-auto";
+    case "step":
+      return "Step";
+  }
+}
+
 function formatRuntimeStreamChannelLabel(
   channel: NonNullable<
     RuntimeWorkbenchHostSessionSnapshot["runtimeStream"]["activeChannel"]
@@ -1389,6 +1416,9 @@ function freezeRuntimeWorkbenchShellSnapshot(
       snapshot.statusItems.map((item) => Object.freeze({ ...item })),
     ),
     chrome: freezeRuntimeWorkbenchShellChrome(snapshot.chrome),
+    executionPolicy: cloneRuntimeWorkbenchShellExecutionPolicy(
+      snapshot.executionPolicy,
+    ),
     runtimeStreamPanel:
       snapshot.runtimeStreamPanel === null
         ? null
@@ -1405,6 +1435,16 @@ function freezeRuntimeWorkbenchShellSnapshot(
       snapshot.emptyState === null
         ? null
         : Object.freeze({ ...snapshot.emptyState }),
+  });
+}
+
+function cloneRuntimeWorkbenchShellExecutionPolicy(
+  policy: RuntimeWorkbenchShellExecutionPolicySnapshot,
+): RuntimeWorkbenchShellExecutionPolicySnapshot {
+  return Object.freeze({
+    ...policy,
+    availableModes: Object.freeze([...policy.availableModes]),
+    runOnce: Object.freeze({ ...policy.runOnce }),
   });
 }
 

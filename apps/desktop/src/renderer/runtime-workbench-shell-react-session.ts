@@ -64,6 +64,7 @@ export function createRuntimeWorkbenchShellReactSession(
   const host = createRuntimeWorkbenchHostSession({
     lifecyclePanelController,
     runtimeStreamController,
+    runtime: options.runtime,
     ...(options.onError !== undefined ? { onError: options.onError } : {}),
   });
   const presenter = createRuntimeWorkbenchShellPresenter({

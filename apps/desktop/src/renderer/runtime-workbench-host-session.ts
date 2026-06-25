@@ -1,4 +1,7 @@
-import type { RuntimeStatusUnsubscribe } from "../preload/contract.js";
+import type {
+  RuntimeBridge,
+  RuntimeStatusUnsubscribe,
+} from "../preload/contract.js";
 import type { RuntimeStreamChannel } from "./runtime-stream-client.js";
 import type { RuntimeLifecyclePanelSessionSnapshot } from "./runtime-lifecycle-panel-session.js";
 import type { RuntimeLifecyclePanelSessionController } from "./runtime-lifecycle-panel-session.js";
@@ -32,6 +35,7 @@ import {
 } from "./runtime-workbench-shortcuts.js";
 import {
   createRuntimeWorkbenchSession,
+  type RuntimeWorkbenchExecutionPolicySnapshot,
   type RuntimeWorkbenchPanelId,
   type RuntimeWorkbenchSession,
 } from "./runtime-workbench-session.js";
@@ -133,6 +137,7 @@ export interface RuntimeWorkbenchHostRuntimeStreamPanelSnapshot {
 
 export interface RuntimeWorkbenchHostSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
+  readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
   readonly lifecyclePanel: RuntimeWorkbenchHostLifecyclePanelSnapshot;
   readonly runtimeStream: RuntimeWorkbenchHostRuntimeStreamSnapshot;
   readonly runtimeStreamPanel: RuntimeWorkbenchHostRuntimeStreamPanelSnapshot | null;
@@ -177,6 +182,7 @@ export interface RuntimeWorkbenchHostSession {
 export interface CreateRuntimeWorkbenchHostSessionOptions {
   readonly lifecyclePanelController: RuntimeLifecyclePanelSessionController;
   readonly runtimeStreamController: RuntimeStreamInteractionSessionController;
+  readonly runtime?: Pick<RuntimeBridge, "fetch">;
   readonly activePanel?: RuntimeWorkbenchPanelId;
   readonly onError?: RuntimeWorkbenchHostSessionErrorHandler;
 }
@@ -189,6 +195,7 @@ export function createRuntimeWorkbenchHostSession(
   const workbench = createRuntimeWorkbenchSession({
     lifecyclePanelController: options.lifecyclePanelController,
     runtimeStreamController: options.runtimeStreamController,
+    ...(options.runtime !== undefined ? { runtime: options.runtime } : {}),
     ...(options.activePanel !== undefined
       ? { activePanel: options.activePanel }
       : {}),
@@ -415,6 +422,9 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
         );
   return {
     activePanel: interaction.activePanel,
+    executionPolicy: cloneRuntimeWorkbenchHostExecutionPolicy(
+      workbench.executionPolicy,
+    ),
     lifecyclePanel: Object.freeze({
       active: lifecyclePanelActiveSession !== null,
       disposed: workbench.lifecyclePanel.disposed,
@@ -448,7 +458,12 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
 function freezeRuntimeWorkbenchHostSessionSnapshot(
   snapshot: RuntimeWorkbenchHostSessionSnapshot,
 ): RuntimeWorkbenchHostSessionSnapshot {
-  return Object.freeze({ ...snapshot });
+  return Object.freeze({
+    ...snapshot,
+    executionPolicy: cloneRuntimeWorkbenchHostExecutionPolicy(
+      snapshot.executionPolicy,
+    ),
+  });
 }
 
 function runtimeWorkbenchHostSessionSnapshotSignature(
@@ -463,6 +478,16 @@ function cloneRuntimeStreamChannel(
   return channel.kind === "planning"
     ? { kind: "planning", sessionId: channel.sessionId }
     : { kind: "run", runId: channel.runId };
+}
+
+function cloneRuntimeWorkbenchHostExecutionPolicy(
+  policy: RuntimeWorkbenchExecutionPolicySnapshot,
+): RuntimeWorkbenchExecutionPolicySnapshot {
+  return Object.freeze({
+    ...policy,
+    availableModes: Object.freeze([...policy.availableModes]),
+    runOnce: Object.freeze({ ...policy.runOnce }),
+  });
 }
 
 function buildRuntimeWorkbenchHostRuntimeStreamPanelSnapshot(

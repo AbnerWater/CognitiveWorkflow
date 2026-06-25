@@ -260,6 +260,7 @@ function buildVisualSmokeSnapshot(
   return Object.freeze({
     activePanel: state.activePanel,
     activePanelLabel,
+    executionPolicy: buildVisualSmokeExecutionPolicySnapshot(),
     lifecyclePanelStatus: disposed ? "disposed" : "active",
     lifecyclePanel: disposed
       ? null
@@ -525,6 +526,24 @@ function buildVisualSmokeSnapshot(
     disposed,
     ariaLive: disposed ? "assertive" : "polite",
     emptyState: null,
+  });
+}
+
+function buildVisualSmokeExecutionPolicySnapshot(): RuntimeWorkbenchShellSnapshot["executionPolicy"] {
+  return Object.freeze({
+    mode: "semi_auto",
+    availableModes: Object.freeze(["step", "semi_auto", "auto"] as const),
+    canChangeMode: true,
+    canRunOnce: false,
+    runOnce: Object.freeze({
+      status: "idle",
+      method: "POST",
+      path: null,
+      runId: null,
+      nodeId: null,
+      statusCode: null,
+      blockedReason: null,
+    }),
   });
 }
 

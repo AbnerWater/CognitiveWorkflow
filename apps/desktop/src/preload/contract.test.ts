@@ -90,6 +90,7 @@ import {
   createRuntimeWorkbenchShellPresenter,
   type RuntimeWorkbenchShellAction,
   type RuntimeWorkbenchShellShortcutHint,
+  type RuntimeWorkbenchShellSnapshot,
 } from "../renderer/runtime-workbench-shell-presenter.js";
 import {
   createRuntimeWorkbenchShellAdapter,
@@ -152,6 +153,24 @@ import {
   defaultRuntimeStreamSessionEventTypes,
   type RuntimeStreamKnownEventType,
 } from "../renderer/runtime-stream-session.js";
+
+function createDefaultRuntimeWorkbenchShellExecutionPolicy(): RuntimeWorkbenchShellSnapshot["executionPolicy"] {
+  return Object.freeze({
+    mode: "semi_auto",
+    availableModes: Object.freeze(["step", "semi_auto", "auto"] as const),
+    canChangeMode: true,
+    canRunOnce: false,
+    runOnce: Object.freeze({
+      status: "idle",
+      method: "POST",
+      path: null,
+      runId: null,
+      nodeId: null,
+      statusCode: null,
+      blockedReason: null,
+    }),
+  });
+}
 
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
@@ -3473,6 +3492,7 @@ test("renderer runtime workbench session composes lifecycle and stream stores", 
   const initialSnapshot = workbench.getSnapshot();
   assert.deepEqual(initialSnapshot, {
     activePanel: "lifecycle",
+    executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
     lifecyclePanel: {
       activeSession: null,
       disposed: false,
@@ -3809,6 +3829,8 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "dispose_lifecycle_panel_session",
     "open_runtime_stream_session",
     "dispose_runtime_stream_session",
+    "set_execution_mode",
+    "run_node_once",
     "dispatch_lifecycle_panel",
     "dispatch_runtime_stream",
   ]);
@@ -3817,6 +3839,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "show_stream_panel",
     "open_lifecycle_panel_session",
     "open_runtime_stream_session",
+    "set_execution_mode",
   ]);
   assert.equal(Object.isFrozen(initialSnapshot), true);
   assert.equal(Object.isFrozen(initialSnapshot.availableCommandIds), true);
@@ -4584,6 +4607,7 @@ test("renderer runtime workbench host session composes interaction and shortcuts
     "show_stream_panel",
     "open_lifecycle_panel_session",
     "open_runtime_stream_session",
+    "set_execution_mode",
   ]);
   assert.deepEqual(initialSnapshot.enabledShortcutIds, [
     "show_canvas_panel",
@@ -5049,6 +5073,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   ];
   const snapshot = buildRuntimeWorkbenchShellSnapshot({
     activePanel: "stream",
+    executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
     lifecyclePanel: {
       active: true,
       disposed: false,
@@ -5566,6 +5591,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     snapshot.statusItems.map((item) => [item.id, item.value, item.tone]),
     [
       ["active_panel", "Stream", "neutral"],
+      ["execution_mode", "Semi-auto", "neutral"],
       ["lifecycle_panel", "Active", "success"],
       ["runtime_stream", "Run run_shell", "success"],
       ["last_shortcut", "Show stream", "accent"],
@@ -5624,6 +5650,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
 
   const emptySnapshot = buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
+    executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
     lifecyclePanel: { active: false, disposed: false, activeSession: null },
     runtimeStream: { active: false, activeChannel: null, disposed: false },
     runtimeStreamPanel: null,
@@ -5639,6 +5666,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
 
   const activeLifecycleSnapshot = buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
+    executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
     lifecyclePanel: {
       active: true,
       disposed: false,
@@ -5744,6 +5772,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   const disposedSnapshot = buildRuntimeWorkbenchShellSnapshot(
     {
       activePanel: "lifecycle",
+      executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
       lifecyclePanel: { active: false, disposed: true, activeSession: null },
       runtimeStream: { active: false, activeChannel: null, disposed: true },
       runtimeStreamPanel: null,
@@ -5779,6 +5808,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     ]),
     [
       ["active_panel", "Lifecycle", "danger"],
+      ["execution_mode", "Semi-auto", "neutral"],
       ["lifecycle_panel", "Disposed", "danger"],
       ["runtime_stream", "Disposed", "danger"],
       ["last_shortcut", "None", "neutral"],
