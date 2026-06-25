@@ -37,6 +37,14 @@ const defaultCases = [
     scrollY: 0,
   },
   {
+    name: "chat-enabled-mobile",
+    mode: "known",
+    chatBoxMode: "enabled",
+    width: 390,
+    height: 844,
+    scrollY: 0,
+  },
+  {
     name: "unknown-desktop",
     mode: "unknown",
     width: 1280,

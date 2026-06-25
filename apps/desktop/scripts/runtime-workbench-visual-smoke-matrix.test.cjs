@@ -260,6 +260,7 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     const knownDesktop = caseByName.get("known-desktop");
     const knownMobile = caseByName.get("known-mobile");
     const chatEnabled = caseByName.get("chat-enabled-desktop");
+    const chatEnabledMobile = caseByName.get("chat-enabled-mobile");
     const unknownDesktop = caseByName.get("unknown-desktop");
     const unknownScroll = caseByName.get("unknown-mobile-scroll-1440");
 
@@ -267,10 +268,10 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     assert.equal(result.signal, null);
     assert.equal(result.stderr, "");
     assert.equal(result.manifest.failures.length, 0);
-    assert.equal(result.manifest.cases.length, 7);
+    assert.equal(result.manifest.cases.length, 8);
     assert.deepEqual(result.manifest.outputEvidence, {
       manifestFileName: "matrix.json",
-      caseCount: 7,
+      caseCount: 8,
     });
     assert.equal("outputDir" in result.manifest, false);
     assert.equal(
@@ -378,6 +379,30 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       },
     });
     assert.deepEqual(chatEnabled?.failures, []);
+    assert.equal(chatEnabledMobile?.mode, "known");
+    assert.equal(chatEnabledMobile?.chatBoxMode, "enabled");
+    assert.deepEqual(chatEnabledMobile?.requestedViewport, {
+      width: 390,
+      height: 844,
+      scrollY: 0,
+    });
+    assert.deepEqual(chatEnabledMobile?.observedViewport, {
+      width: 390,
+      height: 844,
+    });
+    assert.deepEqual(chatEnabledMobile?.targetLocation, {
+      streamEventMode: "known",
+      chatBoxMode: "enabled",
+    });
+    assert.deepEqual(
+      chatEnabledMobile?.chatFocusEvidence,
+      chatEnabled?.chatFocusEvidence,
+    );
+    assert.deepEqual(
+      chatEnabledMobile?.chatLocalEvidence,
+      chatEnabled?.chatLocalEvidence,
+    );
+    assert.deepEqual(chatEnabledMobile?.failures, []);
     assert.equal(unknownDesktop?.mode, "unknown");
     assert.equal(unknownDesktop?.chatBoxMode, "disabled");
     assert.deepEqual(unknownDesktop?.failures, []);
@@ -385,7 +410,7 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     assert.equal(unknownScroll?.observedScroll.maxY, 2000);
     assert.deepEqual(
       result.manifest.cases.map((testCase) => testCase.failures),
-      [[], [], [], [], [], [], []],
+      [[], [], [], [], [], [], [], []],
     );
     assertSafeOutput(result, [
       "Review repair plan now",
@@ -412,25 +437,36 @@ test("visual smoke matrix rejects unfocused enabled chat evidence", async () => 
     const result = await runMatrix(tempDir, fakeElectronCliPath, {
       outputDirName: "matrix-output-secret",
     });
-    const chatEnabled = result.manifest.cases.find(
+    const chatEnabledDesktop = result.manifest.cases.find(
       (testCase) => testCase.name === "chat-enabled-desktop",
+    );
+    const chatEnabledMobile = result.manifest.cases.find(
+      (testCase) => testCase.name === "chat-enabled-mobile",
     );
 
     assert.equal(result.exitCode, 1);
     assert.equal(result.signal, null);
-    assert.equal(result.manifest.cases.length, 7);
-    assert.equal(result.manifest.failures.length, 1);
-    assert.deepEqual(chatEnabled?.chatFocusEvidence, {
+    assert.equal(result.manifest.cases.length, 8);
+    assert.equal(result.manifest.failures.length, 2);
+    assert.deepEqual(chatEnabledDesktop?.chatFocusEvidence, {
       expandedAfterToggle: "true",
       draftInputCount: 1,
       draftInputFocusedAfterExpand: false,
     });
-    assert.deepEqual(chatEnabled?.failures, [
+    assert.deepEqual(chatEnabledMobile?.chatFocusEvidence, {
+      expandedAfterToggle: "true",
+      draftInputCount: 1,
+      draftInputFocusedAfterExpand: false,
+    });
+    assert.deepEqual(chatEnabledDesktop?.failures, [
+      "expected initial chat draft input focused true, got false",
+    ]);
+    assert.deepEqual(chatEnabledMobile?.failures, [
       "expected initial chat draft input focused true, got false",
     ]);
     assert.deepEqual(
       result.manifest.cases
-        .filter((testCase) => testCase.name !== "chat-enabled-desktop")
+        .filter((testCase) => testCase.chatBoxMode !== "enabled")
         .map((testCase) => testCase.failures),
       [[], [], [], [], [], []],
     );
@@ -467,7 +503,7 @@ test("visual smoke matrix prefers matrix URL over legacy URL", async () => {
     assert.equal(result.signal, null);
     assert.equal(result.stderr, "");
     assert.equal(result.manifest.failures.length, 0);
-    assert.equal(result.manifest.cases.length, 7);
+    assert.equal(result.manifest.cases.length, 8);
     assert.equal(
       result.manifest.targetLocation.origin,
       "http://127.0.0.1:5176",
@@ -475,7 +511,7 @@ test("visual smoke matrix prefers matrix URL over legacy URL", async () => {
     assert.equal(result.manifest.targetLocation.pathname, "/matrix-smoke.html");
     assert.deepEqual(
       result.manifest.cases.map((testCase) => testCase.failures),
-      [[], [], [], [], [], [], []],
+      [[], [], [], [], [], [], [], []],
     );
     assertSafeOutput(result, [
       "matrix-secret",
@@ -501,7 +537,7 @@ test("visual smoke matrix accepts legacy single-case URL fallback", async () => 
     assert.equal(result.signal, null);
     assert.equal(result.stderr, "");
     assert.equal(result.manifest.failures.length, 0);
-    assert.equal(result.manifest.cases.length, 7);
+    assert.equal(result.manifest.cases.length, 8);
     assert.deepEqual(
       result.manifest.cases.map((testCase) => [
         testCase.name,
@@ -514,6 +550,7 @@ test("visual smoke matrix accepts legacy single-case URL fallback", async () => 
         ["known-desktop", "known", 1280, 720, 0],
         ["known-mobile", "known", 390, 844, 0],
         ["chat-enabled-desktop", "known", 1280, 720, 0],
+        ["chat-enabled-mobile", "known", 390, 844, 0],
         ["unknown-desktop", "unknown", 1280, 720, 0],
         ["unknown-mobile", "unknown", 390, 844, 0],
         ["unknown-mobile-scroll-900", "unknown", 390, 844, 900],
@@ -681,8 +718,8 @@ process.stderr.write("raw-child-stderr-secret");
 
     assert.equal(result.exitCode, 1);
     assert.equal(result.signal, null);
-    assert.equal(result.manifest.cases.length, 7);
-    assert.equal(result.manifest.failures.length, 7);
+    assert.equal(result.manifest.cases.length, 8);
+    assert.equal(result.manifest.failures.length, 8);
     assert.equal(
       result.manifest.targetLocation.origin,
       "http://127.0.0.1:5174",
@@ -828,15 +865,21 @@ fs.writeFileSync(
       );
 
       const result = await runMatrix(tempDir, fakeElectronCliPath);
-      const childFailureCase = result.manifest.cases.find(
+      const childFailureDesktop = result.manifest.cases.find(
         (testCase) => testCase.name === "chat-enabled-desktop",
+      );
+      const childFailureMobile = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-mobile",
       );
 
       assert.equal(result.exitCode, 1);
       assert.equal(result.signal, null);
-      assert.equal(result.manifest.cases.length, 7);
-      assert.equal(result.manifest.failures.length, 1);
-      assert.deepEqual(childFailureCase?.failures, [
+      assert.equal(result.manifest.cases.length, 8);
+      assert.equal(result.manifest.failures.length, 2);
+      assert.deepEqual(childFailureDesktop?.failures, [
+        "case JSON contains 1 failure(s)",
+      ]);
+      assert.deepEqual(childFailureMobile?.failures, [
         "case JSON contains 1 failure(s)",
       ]);
       assertSafeOutput(result, [
@@ -866,8 +909,8 @@ process.stdout.write("\\n");
     const firstCase = result.manifest.cases[0];
 
     assert.equal(result.exitCode, 1);
-    assert.equal(result.manifest.cases.length, 7);
-    assert.equal(result.manifest.failures.length, 7);
+    assert.equal(result.manifest.cases.length, 8);
+    assert.equal(result.manifest.failures.length, 8);
     assert.deepEqual(firstCase.failures, ["case JSON root was not an object"]);
     assert.equal(firstCase.process.exitCode, 0);
     assert.equal(firstCase.process.stdoutLength, 1);
@@ -892,8 +935,8 @@ process.stderr.write("missing-json-stderr-secret");
 
     assert.equal(result.exitCode, 1);
     assert.equal(result.signal, null);
-    assert.equal(result.manifest.cases.length, 7);
-    assert.equal(result.manifest.failures.length, 7);
+    assert.equal(result.manifest.cases.length, 8);
+    assert.equal(result.manifest.failures.length, 8);
     assert.equal(firstCase.process.exitCode, 0);
     assert.equal(
       firstCase.process.stdoutLength,
@@ -938,8 +981,8 @@ process.exit(7);
 
     assert.equal(result.exitCode, 1);
     assert.equal(result.signal, null);
-    assert.equal(result.manifest.cases.length, 7);
-    assert.equal(result.manifest.failures.length, 7);
+    assert.equal(result.manifest.cases.length, 8);
+    assert.equal(result.manifest.failures.length, 8);
     assert.equal(firstCase.process.exitCode, 7);
     assert.equal(
       firstCase.process.stdoutLength,
@@ -1026,8 +1069,8 @@ fs.writeFileSync(
       const firstCase = result.manifest.cases[0];
 
       assert.equal(result.exitCode, 1);
-      assert.equal(result.manifest.cases.length, 7);
-      assert.equal(result.manifest.failures.length, 7);
+      assert.equal(result.manifest.cases.length, 8);
+      assert.equal(result.manifest.failures.length, 8);
       assert.equal(firstCase.messageCount, 2);
       assert.deepEqual(firstCase.failures, [
         "expected no console warning/error messages, got 2",
