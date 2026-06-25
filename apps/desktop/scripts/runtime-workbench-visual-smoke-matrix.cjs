@@ -238,9 +238,38 @@ function normalizeChatLocalHistoryClearFocusEvidence(metrics) {
   return { evidence, failures };
 }
 
+function normalizeChatIntentSwitchFocusEvidence(metrics) {
+  if (!isRecord(metrics)) {
+    return {
+      evidence: null,
+      failures: ["expected chat intent switch focus metrics"],
+    };
+  }
+  const evidence = {
+    activeIntentAfterSwitch:
+      metrics.activeChatDraftIntent === "repair" ? "repair" : null,
+    detailsIntentAfterSwitch:
+      metrics.chatDraftIntent === "repair" ? "repair" : null,
+    draftInputFocusedAfterSwitch:
+      metrics.chatDraftInputFocused === true ? true : null,
+  };
+  const failures = [];
+  if (evidence.activeIntentAfterSwitch !== "repair") {
+    failures.push("expected intent switch active chat draft intent repair");
+  }
+  if (evidence.detailsIntentAfterSwitch !== "repair") {
+    failures.push("expected intent switch details chat draft intent repair");
+  }
+  if (evidence.draftInputFocusedAfterSwitch !== true) {
+    failures.push("expected intent switch draft input focused true");
+  }
+  return { evidence, failures };
+}
+
 function collectEnabledChatBoxFailures(result, requestedWidth) {
   const failures = [];
   const initial = result.chatInitialMetrics;
+  const intentSwitch = result.chatIntentSwitchFocusMetrics;
   const first = result.chatLocalSubmitMetrics;
   const firstTrigger = result.chatLocalSubmitTriggerMetrics;
   const history = result.chatLocalHistoryMetrics;
@@ -368,6 +397,9 @@ function collectEnabledChatBoxFailures(result, requestedWidth) {
     first,
     "chatLocalSubmissionHistoryItemIds",
     "1",
+  );
+  failures.push(
+    ...normalizeChatIntentSwitchFocusEvidence(intentSwitch).failures,
   );
   failures.push(
     ...normalizeChatLocalSubmitTriggerEvidence(firstTrigger).failures,
@@ -866,6 +898,15 @@ function summarizeChatLocalHistoryClearFocusEvidence(result) {
   ).evidence;
 }
 
+function summarizeChatIntentSwitchFocusEvidence(result) {
+  if (result?.chatBoxMode !== "enabled") {
+    return null;
+  }
+  return normalizeChatIntentSwitchFocusEvidence(
+    result.chatIntentSwitchFocusMetrics,
+  ).evidence;
+}
+
 function summarizeChatFocusEvidence(result) {
   if (result?.chatBoxMode !== "enabled") {
     return null;
@@ -910,6 +951,8 @@ function summarizeCase(testCase, outputPath, result, runResult, failures) {
     ),
     chatLocalSubmitTriggerEvidence:
       summarizeChatLocalSubmitTriggerEvidence(result),
+    chatIntentSwitchFocusEvidence:
+      summarizeChatIntentSwitchFocusEvidence(result),
     chatLocalHistoryClearFocusEvidence:
       summarizeChatLocalHistoryClearFocusEvidence(result),
     chatFocusEvidence: summarizeChatFocusEvidence(result),

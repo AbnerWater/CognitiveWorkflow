@@ -2103,6 +2103,7 @@ function collectVisualSmokeFailures(
   collapsedMetrics,
   chatCollapsedMetrics,
   chatInitialMetrics,
+  chatIntentSwitchFocusMetrics,
   chatDraftMetrics,
   chatClearedMetrics,
   chatLocalSubmitMetrics,
@@ -4668,6 +4669,26 @@ function collectVisualSmokeFailures(
       `expected expanded chat box to focus draft input, got ${chatInitialMetrics.chatDraftInputFocused}`,
     );
   }
+  if (chatIntentSwitchFocusMetrics.activeChatDraftIntent !== "repair") {
+    failures.push(
+      `expected intent switch active chat draft intent repair, got ${chatIntentSwitchFocusMetrics.activeChatDraftIntent}`,
+    );
+  }
+  if (chatIntentSwitchFocusMetrics.chatDraftIntent !== "repair") {
+    failures.push(
+      `expected intent switch details chat draft intent repair, got ${chatIntentSwitchFocusMetrics.chatDraftIntent}`,
+    );
+  }
+  if (chatIntentSwitchFocusMetrics.chatDraftPreviewIntent !== "repair") {
+    failures.push(
+      `expected intent switch preview intent repair, got ${chatIntentSwitchFocusMetrics.chatDraftPreviewIntent}`,
+    );
+  }
+  if (chatIntentSwitchFocusMetrics.chatDraftInputFocused !== true) {
+    failures.push(
+      `expected intent switch draft input focused true, got ${chatIntentSwitchFocusMetrics.chatDraftInputFocused}`,
+    );
+  }
   if (chatInitialMetrics.chatDraftLength !== "0") {
     failures.push(
       `expected initial chat draft length 0, got ${chatInitialMetrics.chatDraftLength}`,
@@ -5503,6 +5524,10 @@ async function main() {
   await runSmokeStep("select repair chat draft intent", () =>
     clickChatDraftIntent(window, "repair"),
   );
+  const chatIntentSwitchFocusMetrics = await runSmokeStep(
+    "read chat intent switch focus metrics",
+    () => readMetrics(window),
+  );
   await runSmokeStep("input chat draft", () =>
     inputChatDraft(window, "Review repair plan now"),
   );
@@ -5750,6 +5775,7 @@ async function main() {
     collapsedMetrics,
     chatCollapsedMetrics,
     chatInitialMetrics,
+    chatIntentSwitchFocusMetrics,
     chatDraftMetrics,
     chatClearedMetrics,
     chatLocalSubmitMetrics,
@@ -5808,6 +5834,7 @@ async function main() {
       collapsedMetrics,
       chatCollapsedMetrics,
       chatInitialMetrics,
+      chatIntentSwitchFocusMetrics,
       chatDraftMetrics,
       chatClearedMetrics,
       chatLocalSubmitMetrics,

@@ -92,6 +92,11 @@ if (chatBoxMode === "enabled") {
       chatDraftInputs: 1,
       chatDraftInputFocused: true,
     },
+    chatIntentSwitchFocusMetrics: {
+      activeChatDraftIntent: "repair",
+      chatDraftIntent: "repair",
+      chatDraftInputFocused: true,
+    },
     chatDraftMetrics: {
       chatDraftValue: "Review repair plan now",
       chatDraftPreviewText: "Review repair plan now raw matrix draft",
@@ -395,6 +400,11 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       keyboardDefaultPrevented: true,
       draftInputFocusedAfterSubmit: true,
     });
+    assert.deepEqual(chatEnabled?.chatIntentSwitchFocusEvidence, {
+      activeIntentAfterSwitch: "repair",
+      detailsIntentAfterSwitch: "repair",
+      draftInputFocusedAfterSwitch: true,
+    });
     assert.deepEqual(chatEnabled?.chatLocalHistoryClearFocusEvidence, {
       draftInputFocusedAfterClear: true,
     });
@@ -430,6 +440,10 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
     assert.deepEqual(
       chatEnabledMobile?.chatLocalSubmitTriggerEvidence,
       chatEnabled?.chatLocalSubmitTriggerEvidence,
+    );
+    assert.deepEqual(
+      chatEnabledMobile?.chatIntentSwitchFocusEvidence,
+      chatEnabled?.chatIntentSwitchFocusEvidence,
     );
     assert.deepEqual(
       chatEnabledMobile?.chatLocalHistoryClearFocusEvidence,
@@ -587,6 +601,128 @@ test("visual smoke matrix rejects string chat submit boolean evidence", async ()
   );
 });
 
+test("visual smoke matrix rejects unfocused intent switch evidence", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-chat-intent-focus-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        validFakeElectronCliBody.replace(
+          'chatIntentSwitchFocusMetrics: {\n      activeChatDraftIntent: "repair",\n      chatDraftIntent: "repair",\n      chatDraftInputFocused: true,\n    },',
+          'chatIntentSwitchFocusMetrics: {\n      activeChatDraftIntent: "repair",\n      chatDraftIntent: "repair",\n      chatDraftInputFocused: false,\n    },',
+        ),
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath, {
+        outputDirName: "matrix-output-secret",
+      });
+      const chatEnabledDesktop = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-desktop",
+      );
+      const chatEnabledMobile = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-mobile",
+      );
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.manifest.cases.length, 8);
+      assert.equal(result.manifest.failures.length, 2);
+      assert.deepEqual(chatEnabledDesktop?.chatIntentSwitchFocusEvidence, {
+        activeIntentAfterSwitch: "repair",
+        detailsIntentAfterSwitch: "repair",
+        draftInputFocusedAfterSwitch: null,
+      });
+      assert.deepEqual(
+        chatEnabledMobile?.chatIntentSwitchFocusEvidence,
+        chatEnabledDesktop?.chatIntentSwitchFocusEvidence,
+      );
+      assert.deepEqual(chatEnabledDesktop?.failures, [
+        "expected intent switch draft input focused true",
+      ]);
+      assert.deepEqual(
+        chatEnabledMobile?.failures,
+        chatEnabledDesktop?.failures,
+      );
+      assert.deepEqual(
+        result.manifest.cases
+          .filter((testCase) => testCase.chatBoxMode !== "enabled")
+          .map((testCase) => testCase.failures),
+        [[], [], [], [], [], []],
+      );
+      assertSafeOutput(result, [
+        "Review repair plan now",
+        "Confirm workflow handoff",
+        "Resume local request",
+        "query-secret",
+        "hash-secret",
+        "matrix-output-secret",
+        tempDir,
+      ]);
+    },
+  );
+});
+
+test("visual smoke matrix rejects string intent focus evidence", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-chat-intent-focus-bool-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        validFakeElectronCliBody.replace(
+          'chatIntentSwitchFocusMetrics: {\n      activeChatDraftIntent: "repair",\n      chatDraftIntent: "repair",\n      chatDraftInputFocused: true,\n    },',
+          'chatIntentSwitchFocusMetrics: {\n      activeChatDraftIntent: "repair",\n      chatDraftIntent: "repair",\n      chatDraftInputFocused: "true",\n    },',
+        ),
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath, {
+        outputDirName: "matrix-output-secret",
+      });
+      const chatEnabledDesktop = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-desktop",
+      );
+      const chatEnabledMobile = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-mobile",
+      );
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.manifest.cases.length, 8);
+      assert.equal(result.manifest.failures.length, 2);
+      assert.deepEqual(chatEnabledDesktop?.chatIntentSwitchFocusEvidence, {
+        activeIntentAfterSwitch: "repair",
+        detailsIntentAfterSwitch: "repair",
+        draftInputFocusedAfterSwitch: null,
+      });
+      assert.deepEqual(
+        chatEnabledMobile?.chatIntentSwitchFocusEvidence,
+        chatEnabledDesktop?.chatIntentSwitchFocusEvidence,
+      );
+      assert.deepEqual(chatEnabledDesktop?.failures, [
+        "expected intent switch draft input focused true",
+      ]);
+      assert.deepEqual(
+        chatEnabledMobile?.failures,
+        chatEnabledDesktop?.failures,
+      );
+      assert.deepEqual(
+        result.manifest.cases
+          .filter((testCase) => testCase.chatBoxMode !== "enabled")
+          .map((testCase) => testCase.failures),
+        [[], [], [], [], [], []],
+      );
+      assertSafeOutput(result, [
+        "Review repair plan now",
+        "Confirm workflow handoff",
+        "Resume local request",
+        "query-secret",
+        "hash-secret",
+        "matrix-output-secret",
+        tempDir,
+      ]);
+    },
+  );
+});
+
 test("visual smoke matrix rejects unfocused cleared chat history evidence", async () => {
   await withTempDir(
     "cw-visual-smoke-matrix-chat-clear-focus-",
@@ -594,8 +730,8 @@ test("visual smoke matrix rejects unfocused cleared chat history evidence", asyn
       const fakeElectronCliPath = await writeFakeElectronCli(
         tempDir,
         validFakeElectronCliBody.replace(
-          'chatDraftIntent: "repair",\n      chatDraftInputFocused: true,',
-          'chatDraftIntent: "repair",\n      chatDraftInputFocused: false,',
+          'chatLocalHistoryClearedMetrics: {\n      chatDraftIntent: "repair",\n      chatDraftInputFocused: true,',
+          'chatLocalHistoryClearedMetrics: {\n      chatDraftIntent: "repair",\n      chatDraftInputFocused: false,',
         ),
       );
 
@@ -653,8 +789,8 @@ test("visual smoke matrix rejects string cleared chat focus evidence", async () 
       const fakeElectronCliPath = await writeFakeElectronCli(
         tempDir,
         validFakeElectronCliBody.replace(
-          'chatDraftIntent: "repair",\n      chatDraftInputFocused: true,',
-          'chatDraftIntent: "repair",\n      chatDraftInputFocused: "true",',
+          'chatLocalHistoryClearedMetrics: {\n      chatDraftIntent: "repair",\n      chatDraftInputFocused: true,',
+          'chatLocalHistoryClearedMetrics: {\n      chatDraftIntent: "repair",\n      chatDraftInputFocused: "true",',
         ),
       );
 
@@ -1192,6 +1328,11 @@ const result = {
   chatInitialMetrics: chatBoxMode === "enabled" ? {
     chatBoxExpanded: "true",
     chatDraftInputs: 1,
+    chatDraftInputFocused: true,
+  } : null,
+  chatIntentSwitchFocusMetrics: chatBoxMode === "enabled" ? {
+    activeChatDraftIntent: "repair",
+    chatDraftIntent: "repair",
     chatDraftInputFocused: true,
   } : null,
   chatLocalSubmitMetrics: chatBoxMode === "enabled" ? {
