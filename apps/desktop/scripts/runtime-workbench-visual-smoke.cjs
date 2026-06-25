@@ -1599,12 +1599,12 @@ async function sendChatDraft(window, draft, expected, options = {}) {
         });
         return;
       }
+      const input = document.querySelector('[data-chat-draft-input="true"]');
+      if (!(input instanceof HTMLTextAreaElement)) {
+        resolve({ ok: false, message: 'Missing chat draft input for local send' });
+        return;
+      }
       if (expected.trigger === 'keyboard') {
-        const input = document.querySelector('[data-chat-draft-input="true"]');
-        if (!(input instanceof HTMLTextAreaElement)) {
-          resolve({ ok: false, message: 'Missing chat draft input for keyboard send' });
-          return;
-        }
         const keydownEvent = new KeyboardEvent('keydown', {
           bubbles: true,
           cancelable: true,
@@ -1622,6 +1622,13 @@ async function sendChatDraft(window, draft, expected, options = {}) {
         }
       } else {
         button.click();
+      }
+      if (document.activeElement !== input) {
+        resolve({
+          ok: false,
+          message: 'Chat draft input did not keep focus after local send',
+        });
+        return;
       }
       const startedAt = Date.now();
       const readSubmission = () => {

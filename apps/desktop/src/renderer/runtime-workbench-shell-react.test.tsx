@@ -2980,14 +2980,15 @@ test("renderer runtime workbench React shell records local chat send receipt", a
       inputFakeRuntimeWorkbenchElement(draftInput, "Ask the workflow status");
     });
 
+    const sendButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatSend",
+      "true",
+    );
+    sendButton.focus();
+    assert.equal(dom.container.ownerDocument?.activeElement, sendButton);
     await act(async () => {
-      clickFakeRuntimeWorkbenchElement(
-        requireFakeRuntimeWorkbenchElementByData(
-          dom.container,
-          "chatSend",
-          "true",
-        ),
-      );
+      clickFakeRuntimeWorkbenchElement(sendButton);
     });
 
     const localSubmission = requireFakeRuntimeWorkbenchElementByData(
@@ -2997,6 +2998,7 @@ test("renderer runtime workbench React shell records local chat send receipt", a
     );
     assert.equal(session.dispatchedCommands().length, 0);
     assert.equal(draftInput.value, "");
+    assert.equal(dom.container.ownerDocument?.activeElement, draftInput);
     assert.equal(
       localSubmission.getAttribute("data-chat-local-submit-status"),
       "queued_local",
@@ -3130,6 +3132,8 @@ test("renderer runtime workbench React shell submits chat draft with keyboard sh
     await act(async () => {
       inputFakeRuntimeWorkbenchElement(draftInput, "Send with keyboard now");
     });
+    draftInput.focus();
+    assert.equal(dom.container.ownerDocument?.activeElement, draftInput);
     await act(async () => {
       assert.equal(
         keydownFakeRuntimeWorkbenchElement(draftInput, "Enter"),
@@ -3160,6 +3164,7 @@ test("renderer runtime workbench React shell submits chat draft with keyboard sh
     );
     assert.equal(session.dispatchedCommands().length, 0);
     assert.equal(draftInput.value, "");
+    assert.equal(dom.container.ownerDocument?.activeElement, draftInput);
     assert.equal(
       localSubmission.getAttribute("data-chat-local-submit-sequence"),
       "1",
@@ -3202,6 +3207,7 @@ test("renderer runtime workbench React shell submits chat draft with keyboard sh
       "chatLocalSubmit",
       "true",
     );
+    assert.equal(dom.container.ownerDocument?.activeElement, draftInput);
     assert.equal(
       localSubmission.getAttribute("data-chat-local-submit-sequence"),
       "2",

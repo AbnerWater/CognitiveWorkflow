@@ -2408,6 +2408,7 @@ function RuntimeWorkbenchShellChatBox(props: {
     readonly RuntimeWorkbenchShellChatLocalSubmission[]
   >([]);
   const localSubmissionSequenceRef = useRef(0);
+  const draftInputRef = useRef<HTMLTextAreaElement | null>(null);
   const draftLength = draft.length;
   const draftWords = runtimeWorkbenchShellChatDraftWordCount(draft);
   const draftIntentLabel =
@@ -2465,6 +2466,7 @@ function RuntimeWorkbenchShellChatBox(props: {
       ),
     );
     setDraft("");
+    draftInputRef.current?.focus({ preventScroll: true });
   }, [
     draftIntent,
     draftIntentContext,
@@ -2550,6 +2552,7 @@ function RuntimeWorkbenchShellChatBox(props: {
               onChange={handleDraftChange}
               onKeyDown={handleDraftKeyDown}
               placeholder={props.chatBox.placeholder}
+              ref={draftInputRef}
               rows={2}
               value={draft}
             />
