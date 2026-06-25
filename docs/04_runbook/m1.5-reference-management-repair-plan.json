@@ -1,0 +1,221 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.179",
+  "plan_status": "reference_management_repair_plan_not_implemented",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-25",
+  "source": {
+    "ux_gap_repair_plan": "docs/04_runbook/m1.5-ux-gap-repair-plan.json#TRACK-REFERENCE-MANAGEMENT",
+    "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
+    "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "runtime_harness": "specs/runtime_harness.md",
+    "http_sse_api": "specs/api/http_sse.md",
+    "workflow_graph_schema": "specs/schemas/workflow_graph.md",
+    "node_contract_schema": "specs/schemas/node_contract.md"
+  },
+  "guardrails": [
+    "This artifact plans FR-013 reference management repair; it does not implement missing desktop/runtime behavior.",
+    "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
+    "W1.5.179 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content.",
+    "Reference lifecycle controls planned here must remain fail-closed until runtime-backed import, enable, disable, delete, and view evidence exists.",
+    "Reference content and metadata evidence must not expose raw sensitive document text, URL secrets, secure paths, cache paths, or prompt/model output.",
+    "Reference source files remain under user-visible references/ while .agent-workflow/cache and .agent-workflow/secure stay internal and untracked."
+  ],
+  "repair_track": {
+    "source_track_id": "TRACK-REFERENCE-MANAGEMENT",
+    "track_kind": "missing_desktop_implementation",
+    "source_track_status": "planned_not_implemented",
+    "priority": 6,
+    "source_acceptance_readiness": "missing_implementation",
+    "fr_ids": ["FR-013"],
+    "blocked_by_dependency_gates": [],
+    "objective": "Implement reference import, enable, disable, and view actions as a new desktop/runtime-backed capability before A4 review.",
+    "entry_criteria": [
+      "Reference manifest and storage boundaries are aligned with runtime_harness.md before UI work starts.",
+      "Sensitive reference material remains local unless an explicit runtime policy allows otherwise."
+    ],
+    "planned_repair_steps": [
+      "Define the project reference manifest contract used by the desktop File Tree/reference surface.",
+      "Add import, enable, disable, and view controls with safe metadata display.",
+      "Capture A4 review evidence for reference lifecycle operations."
+    ],
+    "planned_verification": [
+      "pnpm --filter @cw/desktop run test",
+      "uv run pytest apps/runtime/tests -q",
+      "Reference lifecycle A4 evidence after implementation"
+    ],
+    "next_slice": "W1.5.179"
+  },
+  "reference_management_items": [
+    {
+      "id": "REFERENCE-FR-013-LIFECYCLE",
+      "fr_id": "FR-013",
+      "runtime_boundary_kind": "reference_import_enable_disable_view_lifecycle",
+      "source_checklist_status": "not_started",
+      "source_acceptance_readiness": "missing_implementation",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-013",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-013"
+      ],
+      "source_verification_commands": [],
+      "source_checklist_remaining_gap": [
+        "Desktop reference import, enable, disable, and view actions are not implemented.",
+        "Runtime-backed reference manifest UX is not accepted."
+      ],
+      "missing_before_implementation": [
+        "Desktop reference import, enable, disable, and view actions are not implemented.",
+        "Runtime-backed reference manifest UX is not accepted."
+      ],
+      "source_next_action": "Implement reference management as a new desktop/runtime-backed slice before A4 review.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Define the runtime-backed reference list surface from references.manifest.json rather than local renderer state.",
+        "Plan import controls that write through POST /references and keep raw files in user-visible references/.",
+        "Plan enable, disable, and delete controls that mutate runtime manifest state without deleting source files unless the runtime contract explicitly does so.",
+        "Plan view/details controls that show safe metadata and redacted summaries, not raw sensitive document text or internal secure/cache paths.",
+        "Capture A4 review evidence only after import, enable, disable, view, and manifest refresh behavior is proven through the workbench."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "GET    /{project_id}/references                   \u2192 references.manifest.json",
+          "reason": "Defines the runtime-backed list/read endpoint for the desktop reference surface."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "POST   /{project_id}/references                   \u2192 上传引用资料",
+          "reason": "Defines the import/upload endpoint that desktop controls must call."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "DELETE /{project_id}/references/{reference_id}",
+          "reason": "Defines the reference removal endpoint the lifecycle plan must account for."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "PATCH  /{project_id}/references/{reference_id}    \u2192 enable / disable",
+          "reason": "Defines enable/disable manifest mutation for reference lifecycle controls."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "响应：`ReferenceEntry`（写入 `references/` + 触发索引）。",
+          "reason": "Defines import response and indexing side effects."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "references.manifest.json             \u2190 参考资料注册表（路径 / 启用状态 / hash / chunk 状态）",
+          "reason": "Defines the manifest that the desktop surface must reflect."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "references/                              \u2190 用户上传 / 引用的参考资料原文（用户可见）",
+          "reason": "Defines where user-visible reference source files live."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "### 2.7 `references.manifest.json`",
+          "reason": "Defines the manifest section that backs FR-013 behavior."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "| `entries` | `ReferenceEntry[]` | ✅ | — |",
+          "reason": "Defines manifest entry collection shape."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "| `enabled` | ✅ | 是否参与 EvidenceBuilder 检索 |",
+          "reason": "Defines enable/disable semantics for reference search participation."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "| `chunk_status` | ✅ | none / chunked / indexed / stale |",
+          "reason": "Defines indexing state that the desktop details surface must display safely."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "| `references.manifest.json` 变更 | `chore(refs): import/enable/disable <reference_id>` | — |",
+          "reason": "Defines Git commit message policy for reference manifest mutations."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "| D-RH-11 | `references / outputs / workflow` 是用户可见目录；`.agent-workflow / .git / locks / cache / secure` 是 CW 内部目录 |",
+          "reason": "Keeps desktop reference display away from internal secure/cache paths."
+        },
+        {
+          "source": "specs/schemas/workflow_graph.md",
+          "pattern": "| `global_context_refs` | `string[]` | ❌ | `[]` | 全局生效的参考资料 / 项目记忆引用 ID；详见 §4.1 |",
+          "reason": "Connects reference management to workflow-level context references."
+        },
+        {
+          "source": "specs/schemas/workflow_graph.md",
+          "pattern": "- 项目参考库条目（`reference:<ref_id>`）",
+          "reason": "Defines reference id notation consumed by workflow graph dependencies."
+        },
+        {
+          "source": "specs/schemas/workflow_graph.md",
+          "pattern": "| `WG_L4_REFERENCE_UNRESOLVED` | L4 | `global_context_refs` 解析失败 |",
+          "reason": "Defines unresolved reference validation failure that desktop selection must avoid."
+        },
+        {
+          "source": "specs/schemas/node_contract.md",
+          "pattern": "| `kind` | `enum: upstream_artifact / project_memory / reference / static_text / user_input` | ✅ | 来源类型 |",
+          "reason": "Defines reference as a first-class node dependency source kind."
+        },
+        {
+          "source": "specs/schemas/node_contract.md",
+          "pattern": "| `reference` | `{ \"reference_id\": string, \"chunk_filter\"?: object }` |",
+          "reason": "Defines node-level reference selector metadata."
+        }
+      ]
+    }
+  ],
+  "implementation_sequence": [
+    {
+      "order": 1,
+      "item_id": "REFERENCE-FR-013-LIFECYCLE",
+      "fr_id": "FR-013",
+      "reason": "FR-013 is a standalone missing desktop/runtime-backed lifecycle capability; import, enable, disable, and view evidence should be planned together before A4 review."
+    }
+  ],
+  "runner_contract": {
+    "focused_check": "node apps/desktop/scripts/m1-5-reference-management-repair-plan.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-reference-management-repair-plan.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "runtime_focused_test": "uv run pytest apps/runtime/tests -q",
+    "runner_output_contract": {
+      "status": "reference_management_repair_plan_not_implemented",
+      "reference_item_count": 1,
+      "accepted_item_count": 0,
+      "implemented_item_count": 0,
+      "sanitized_summary_only": true
+    }
+  },
+  "summary": {
+    "reference_item_count": 1,
+    "missing_implementation_fr_items": 1,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "pending_implementation_items": 1,
+    "exit_p1_1_status": "not_ready",
+    "next_required_review": "A4 ux-acceptance-reviewer after implementation evidence"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.180",
+      "title": "Execution mode desktop bridge implementation",
+      "reason": "Implement FR-007 mode controls against workflow execution policy and run-once runtime contracts after reference management planning is locked."
+    },
+    {
+      "id": "W1.5.181",
+      "title": "Project creation and Git initialization desktop bridge implementation",
+      "reason": "Implement FR-011 and FR-012 together so mandatory Git initialization is proven from the desktop project creation path."
+    },
+    {
+      "id": "W1.5.182",
+      "title": "Reference management desktop implementation",
+      "reason": "Implement FR-013 import, enable, disable, and view lifecycle using the locked reference management repair plan."
+    }
+  ]
+}
