@@ -1,0 +1,414 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.173",
+  "map_status": "evidence_mapped_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-25",
+  "source": {
+    "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json",
+    "dependency_gate_proposal": "docs/04_runbook/m1.5-dependency-gate-proposal.json",
+    "roadmap": "docs/roadmap.md#5.3",
+    "uiux_baseline_docx": "AI_Agent_Workflow工作台_UIUX详细设计规范与需求规格说明书_v1.1_新增Workflow编排.docx"
+  },
+  "guardrails": [
+    "This map converts W1.5.172 checklist items into evidence and gap tracks; it does not claim A4 acceptance.",
+    "No FR item is accepted until A4 UX acceptance review has recorded end-to-end user-path evidence.",
+    "Candidate evidence means a reviewer has something concrete to inspect; it is not phase-exit readiness.",
+    "Dependency-gated FR items stay blocked until the corresponding gate is explicitly approved and implemented.",
+    "W1.5.173 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content."
+  ],
+  "allowed_acceptance_readiness": [
+    "candidate_evidence_needs_a4_review",
+    "partial_requires_ui_evidence",
+    "partial_requires_runtime_flow",
+    "backend_only_requires_desktop_flow",
+    "blocked_by_dependency_gate",
+    "missing_implementation"
+  ],
+  "fr_evidence_items": [
+    {
+      "id": "FR-001",
+      "checklist_status": "partial_evidence",
+      "acceptance_readiness": "partial_requires_ui_evidence",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-001",
+        "docs/04_runbook/m1.5-progress.md#W1.5.80",
+        "apps/desktop/src/main/electron-main.ts",
+        "apps/desktop/scripts/runtime-workbench-visual-smoke.cjs"
+      ],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke"
+      ],
+      "missing_evidence": [
+        "A4 has not recorded menu bar acceptance.",
+        "Cross-platform packaged launch evidence is still blocked by packaging dependency gates."
+      ],
+      "next_action": "Capture shell/menu launch evidence after packaging gate implementation."
+    },
+    {
+      "id": "FR-002",
+      "checklist_status": "partial_scaffold",
+      "acceptance_readiness": "partial_requires_ui_evidence",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-002",
+        "docs/04_runbook/m1.5-progress.md#W1.5.89",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "missing_evidence": [
+        "All first-level module entries have not been accepted.",
+        "Dock collapse and restore have not been recorded as an A4 path."
+      ],
+      "next_action": "Define the required first-level module list and capture Dock collapse UX evidence."
+    },
+    {
+      "id": "FR-003",
+      "checklist_status": "partial_scaffold",
+      "acceptance_readiness": "partial_requires_ui_evidence",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-003",
+        "docs/04_runbook/m1.5-progress.md#W1.5.92",
+        "docs/04_runbook/m1.5-progress.md#W1.5.105",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+      ],
+      "verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "missing_evidence": [
+        "Project-backed filesystem enumeration is not implemented.",
+        "Default-hidden Drawer interaction has not been accepted by A4."
+      ],
+      "next_action": "Move File Tree from local scaffold to project-backed Drawer evidence."
+    },
+    {
+      "id": "FR-004",
+      "checklist_status": "blocked_by_dependency_gate",
+      "acceptance_readiness": "blocked_by_dependency_gate",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-004",
+        "docs/04_runbook/m1.5-dependency-gate-proposal.json#DEP-REACT-FLOW",
+        "docs/04_runbook/m1.5-progress.md#W1.5.94-W1.5.104"
+      ],
+      "verification_commands": [],
+      "missing_evidence": [
+        "DEP-REACT-FLOW is not approved or installed.",
+        "Real React Flow Canvas branch, parallel, feedback-loop, drag, connect, edit, and persistence evidence is missing."
+      ],
+      "next_action": "Wait for DEP-REACT-FLOW approval, then replace the read-only Canvas scaffold with React Flow evidence."
+    },
+    {
+      "id": "FR-005",
+      "checklist_status": "partial_scaffold",
+      "acceptance_readiness": "partial_requires_ui_evidence",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-005",
+        "docs/04_runbook/m1.5-progress.md#W1.5.96-W1.5.104",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "missing_evidence": [
+        "Selection is still local scaffold behavior.",
+        "Right Task details have not been accepted as automatically bound to the selected node."
+      ],
+      "next_action": "Capture node selection to Task Drawer binding evidence, then repeat after React Flow implementation."
+    },
+    {
+      "id": "FR-006",
+      "checklist_status": "partial_scaffold",
+      "acceptance_readiness": "partial_requires_ui_evidence",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-006",
+        "docs/04_runbook/m1.5-progress.md#W1.5.90",
+        "docs/04_runbook/m1.5-progress.md#W1.5.107",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+      ],
+      "verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "missing_evidence": [
+        "Inputs, outputs, review rules, Skill, model, and artifact fields are not fully accepted.",
+        "Runtime-backed detail updates are not implemented."
+      ],
+      "next_action": "Bind Task Drawer detail fields to runtime state and capture full-field A4 evidence."
+    },
+    {
+      "id": "FR-007",
+      "checklist_status": "backend_or_schema_evidence_only",
+      "acceptance_readiness": "backend_only_requires_desktop_flow",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-007",
+        "specs/schemas/workflow_graph.md",
+        "specs/api/http_sse.md"
+      ],
+      "verification_commands": ["uv run pytest packages/schemas/tests -q"],
+      "missing_evidence": [
+        "Desktop step, semi-auto, and auto mode control near the run button is not implemented.",
+        "Mode-to-runtime execution behavior has not been proven from the workbench UI."
+      ],
+      "next_action": "Add desktop execution mode control near run actions and bind it to runtime execution policy."
+    },
+    {
+      "id": "FR-008",
+      "checklist_status": "partial_scaffold",
+      "acceptance_readiness": "partial_requires_runtime_flow",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-008",
+        "docs/04_runbook/m1.5-progress.md#W1.5.108-W1.5.112",
+        "docs/04_runbook/m1.5-progress.md#W1.5.150-W1.5.169",
+        "apps/desktop/scripts/runtime-workbench-visual-smoke-matrix.cjs"
+      ],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "missing_evidence": [
+        "Real chat command routing and runtime mutation are not implemented.",
+        "Project-backed command history and persistence remain missing."
+      ],
+      "next_action": "Route Chat Box submissions to runtime commands while preserving metadata-only smoke evidence."
+    },
+    {
+      "id": "FR-009",
+      "checklist_status": "candidate_evidence_available",
+      "acceptance_readiness": "candidate_evidence_needs_a4_review",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-009",
+        "docs/04_runbook/m1.5-progress.md#W1.5.113-W1.5.118",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "missing_evidence": [
+        "A4 has not accepted the first-viewport default collapsed layout.",
+        "Phase-level UX recording is missing."
+      ],
+      "next_action": "Prepare A4 review capture for stream panel default collapsed behavior."
+    },
+    {
+      "id": "FR-010",
+      "checklist_status": "candidate_evidence_available",
+      "acceptance_readiness": "candidate_evidence_needs_a4_review",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-010",
+        "docs/04_runbook/m1.5-progress.md#W1.5.119-W1.5.149",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx",
+        "apps/desktop/scripts/runtime-workbench-visual-smoke-matrix.cjs"
+      ],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "missing_evidence": [
+        "A4 has not accepted the full expanded event taxonomy as an end-user path.",
+        "Real workflow stream demo evidence is missing."
+      ],
+      "next_action": "Capture expanded stream panel review evidence against real or fixture-backed workflow events."
+    },
+    {
+      "id": "FR-011",
+      "checklist_status": "backend_evidence_only",
+      "acceptance_readiness": "backend_only_requires_desktop_flow",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-011",
+        "apps/runtime/tests",
+        "specs/runtime_harness.md"
+      ],
+      "verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "missing_evidence": [
+        "Desktop new-project UX is not implemented.",
+        "Reference upload during initialization is not implemented."
+      ],
+      "next_action": "Implement desktop project creation and reference upload flow."
+    },
+    {
+      "id": "FR-012",
+      "checklist_status": "backend_evidence_only",
+      "acceptance_readiness": "backend_only_requires_desktop_flow",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-012",
+        "specs/runtime_harness.md",
+        "docs/roadmap.md#EXIT-P1-10"
+      ],
+      "verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "missing_evidence": [
+        "Desktop project-creation path is not available.",
+        "A8 git-history audit evidence for automatic commit/tag behavior is not recorded."
+      ],
+      "next_action": "Tie desktop project creation to runtime Git initialization and A8 audit evidence."
+    },
+    {
+      "id": "FR-013",
+      "checklist_status": "not_started",
+      "acceptance_readiness": "missing_implementation",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-013"
+      ],
+      "verification_commands": [],
+      "missing_evidence": [
+        "Desktop reference import, enable, disable, and view actions are not implemented.",
+        "Runtime-backed reference manifest UX is not accepted."
+      ],
+      "next_action": "Implement reference management as a new desktop/runtime-backed slice before A4 review."
+    },
+    {
+      "id": "FR-014",
+      "checklist_status": "backend_evidence_only",
+      "acceptance_readiness": "backend_only_requires_desktop_flow",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-014",
+        "docs/04_runbook/m1.5-progress.md#M1.4",
+        "apps/runtime/tests"
+      ],
+      "verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "missing_evidence": [
+        "Desktop Skill management UI is not implemented.",
+        "Secret-safe Skill configuration display has not been accepted."
+      ],
+      "next_action": "Expose project Skill candidates and configuration through a safe desktop UI."
+    },
+    {
+      "id": "FR-015",
+      "checklist_status": "partial_scaffold",
+      "acceptance_readiness": "partial_requires_runtime_flow",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-015",
+        "docs/04_runbook/m1.5-progress.md#W1.5.93",
+        "docs/04_runbook/m1.5-progress.md#W1.5.106",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+      ],
+      "verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "missing_evidence": [
+        "Automatic snapshot creation, restore, and continue execution are not implemented.",
+        "Git-backed snapshot semantics remain unaccepted."
+      ],
+      "next_action": "Connect Version Snapshot UI to runtime/Git snapshot actions and capture restore evidence."
+    },
+    {
+      "id": "FR-016",
+      "checklist_status": "candidate_evidence_available",
+      "acceptance_readiness": "candidate_evidence_needs_a4_review",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-016",
+        "docs/04_runbook/m1.5-progress.md#W1.5.121-W1.5.131",
+        "specs/schemas/stream_event.md",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "missing_evidence": [
+        "A4 has not accepted final user-facing labels for every event class.",
+        "Phase-level demo stream evidence is missing."
+      ],
+      "next_action": "Prepare StreamEvent classification labels and capture A4 review evidence."
+    },
+    {
+      "id": "FR-017",
+      "checklist_status": "partial_evidence",
+      "acceptance_readiness": "partial_requires_runtime_flow",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-017",
+        "docs/04_runbook/m1.5-progress.md#W1.5.120",
+        "specs/runtime_harness.md"
+      ],
+      "verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "missing_evidence": [
+        "Artifact references are not yet accepted in right-side Task details.",
+        "Artifact open and download actions are not implemented."
+      ],
+      "next_action": "Bind artifacts to Task Drawer details and add project-scoped open/download behavior."
+    },
+    {
+      "id": "FR-018",
+      "checklist_status": "backend_evidence_only",
+      "acceptance_readiness": "backend_only_requires_desktop_flow",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-018",
+        "docs/04_runbook/m1.5-progress.md#M1.3",
+        "docs/04_runbook/m1.5-progress.md#M1.4",
+        "specs/state_machines/workflow_run.md"
+      ],
+      "verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "missing_evidence": [
+        "Desktop semi-auto mode confirmation UI is not accepted.",
+        "End-to-end pause/resume UX evidence is missing."
+      ],
+      "next_action": "Implement desktop semi-auto pause/resume confirmation path and capture A4 evidence."
+    },
+    {
+      "id": "FR-019",
+      "checklist_status": "blocked_by_dependency_gate",
+      "acceptance_readiness": "blocked_by_dependency_gate",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-019",
+        "docs/04_runbook/m1.5-dependency-gate-proposal.json#DEP-REACT-FLOW",
+        "docs/04_runbook/m1.5-progress.md#W1.5.94-W1.5.104"
+      ],
+      "verification_commands": [],
+      "missing_evidence": [
+        "DEP-REACT-FLOW is not approved or installed.",
+        "Pan, zoom, fit view, edit lock, and 100-node performance evidence are missing."
+      ],
+      "next_action": "After DEP-REACT-FLOW approval, add Canvas controls and 100-node performance evidence."
+    },
+    {
+      "id": "FR-020",
+      "checklist_status": "partial_evidence",
+      "acceptance_readiness": "partial_requires_ui_evidence",
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-020",
+        "docs/04_runbook/m1.5-progress.md#W1.5.72-W1.5.78",
+        "docs/04_runbook/m1.5-progress.md#W1.5.158-W1.5.169",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix"
+      ],
+      "missing_evidence": [
+        "A formal common-shortcut acceptance list is not recorded.",
+        "User-facing command discoverability is not implemented."
+      ],
+      "next_action": "Define shortcut command map and add discoverability evidence."
+    }
+  ],
+  "source_status_summary": {
+    "total_fr_items": 20,
+    "phase_exit_required_items": 20,
+    "source_must_items": 18,
+    "source_should_items": 2,
+    "accepted_items": 0,
+    "candidate_evidence_available_items": 3,
+    "partial_or_scaffold_items": 9,
+    "backend_or_schema_only_items": 5,
+    "blocked_by_dependency_gate_items": 2,
+    "not_started_items": 1,
+    "next_required_review": "A4 ux-acceptance-reviewer",
+    "phase_exit_claim": "EXIT-P1-1 remains not_ready until all 20 FR items have A4 acceptance evidence."
+  },
+  "acceptance_readiness_summary": {
+    "candidate_evidence_needs_a4_review_items": 3,
+    "partial_requires_ui_evidence_items": 6,
+    "partial_requires_runtime_flow_items": 3,
+    "backend_only_requires_desktop_flow_items": 5,
+    "blocked_by_dependency_gate_items": 2,
+    "missing_implementation_items": 1,
+    "accepted_items": 0
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.174",
+      "title": "Desktop UX acceptance gaps repair plan",
+      "reason": "Group FR gaps into dependency-gated, runtime-backed, and local UI repair tracks."
+    },
+    {
+      "id": "W1.5.175",
+      "title": "A4 evidence runner and review manifest",
+      "reason": "Turn candidate FR evidence into repeatable UX review captures without claiming acceptance early."
+    }
+  ]
+}
