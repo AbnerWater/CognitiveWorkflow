@@ -111,6 +111,12 @@ if (chatBoxMode === "enabled") {
       chatLocalSubmissionText: "Review repair plan now raw matrix draft",
       chatLocalSubmissionWords: "4",
     },
+    chatLocalSubmitTriggerMetrics: {
+      draftInputFocusedAfterSubmit: true,
+      keyboardDefaultPrevented: true,
+      modifier: "ctrl",
+      trigger: "keyboard",
+    },
     chatLocalHistoryMetrics: {
       chatLocalSubmissionPresent: true,
       chatLocalSubmissionAction: "repair_review",
@@ -382,6 +388,12 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       },
     });
     assert.equal(chatEnabled?.chatLocalHistoryLayoutEvidence, null);
+    assert.deepEqual(chatEnabled?.chatLocalSubmitTriggerEvidence, {
+      trigger: "keyboard",
+      modifier: "ctrl",
+      keyboardDefaultPrevented: true,
+      draftInputFocusedAfterSubmit: true,
+    });
     assert.deepEqual(chatEnabled?.failures, []);
     assert.equal(chatEnabledMobile?.mode, "known");
     assert.equal(chatEnabledMobile?.chatBoxMode, "enabled");
@@ -411,6 +423,10 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       clientWidth: 294,
       scrollWidth: 294,
     });
+    assert.deepEqual(
+      chatEnabledMobile?.chatLocalSubmitTriggerEvidence,
+      chatEnabled?.chatLocalSubmitTriggerEvidence,
+    );
     assert.deepEqual(chatEnabledMobile?.failures, []);
     assert.equal(unknownDesktop?.mode, "unknown");
     assert.equal(unknownDesktop?.chatBoxMode, "disabled");
@@ -431,6 +447,194 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       tempDir,
     ]);
   });
+});
+
+test("visual smoke matrix rejects non-keyboard first chat submit evidence", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-chat-submit-trigger-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        validFakeElectronCliBody.replace(
+          'trigger: "keyboard"',
+          'trigger: "button"',
+        ),
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath, {
+        outputDirName: "matrix-output-secret",
+      });
+      const chatEnabledDesktop = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-desktop",
+      );
+      const chatEnabledMobile = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-mobile",
+      );
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.manifest.cases.length, 8);
+      assert.equal(result.manifest.failures.length, 2);
+      assert.deepEqual(chatEnabledDesktop?.chatLocalSubmitTriggerEvidence, {
+        trigger: null,
+        modifier: "ctrl",
+        keyboardDefaultPrevented: true,
+        draftInputFocusedAfterSubmit: true,
+      });
+      assert.deepEqual(
+        chatEnabledMobile?.chatLocalSubmitTriggerEvidence,
+        chatEnabledDesktop?.chatLocalSubmitTriggerEvidence,
+      );
+      assert.deepEqual(chatEnabledDesktop?.failures, [
+        "expected first local submission trigger keyboard",
+      ]);
+      assert.deepEqual(chatEnabledMobile?.failures, [
+        "expected first local submission trigger keyboard",
+      ]);
+      assert.deepEqual(
+        result.manifest.cases
+          .filter((testCase) => testCase.chatBoxMode !== "enabled")
+          .map((testCase) => testCase.failures),
+        [[], [], [], [], [], []],
+      );
+      assertSafeOutput(result, [
+        "Review repair plan now",
+        "Confirm workflow handoff",
+        "Resume local request",
+        "query-secret",
+        "hash-secret",
+        "matrix-output-secret",
+        "got button",
+        tempDir,
+      ]);
+    },
+  );
+});
+
+test("visual smoke matrix rejects string chat submit boolean evidence", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-chat-submit-bool-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        validFakeElectronCliBody
+          .replace(
+            "keyboardDefaultPrevented: true",
+            'keyboardDefaultPrevented: "true"',
+          )
+          .replace(
+            "draftInputFocusedAfterSubmit: true",
+            'draftInputFocusedAfterSubmit: "true"',
+          ),
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath, {
+        outputDirName: "matrix-output-secret",
+      });
+      const chatEnabledDesktop = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-desktop",
+      );
+      const chatEnabledMobile = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-mobile",
+      );
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.manifest.cases.length, 8);
+      assert.equal(result.manifest.failures.length, 2);
+      assert.deepEqual(chatEnabledDesktop?.chatLocalSubmitTriggerEvidence, {
+        trigger: "keyboard",
+        modifier: "ctrl",
+        keyboardDefaultPrevented: null,
+        draftInputFocusedAfterSubmit: null,
+      });
+      assert.deepEqual(
+        chatEnabledMobile?.chatLocalSubmitTriggerEvidence,
+        chatEnabledDesktop?.chatLocalSubmitTriggerEvidence,
+      );
+      assert.deepEqual(chatEnabledDesktop?.failures, [
+        "expected first local submission keyboard default prevented true",
+        "expected first local submission draft input focused after submit true",
+      ]);
+      assert.deepEqual(
+        chatEnabledMobile?.failures,
+        chatEnabledDesktop?.failures,
+      );
+      assert.deepEqual(
+        result.manifest.cases
+          .filter((testCase) => testCase.chatBoxMode !== "enabled")
+          .map((testCase) => testCase.failures),
+        [[], [], [], [], [], []],
+      );
+      assertSafeOutput(result, [
+        "Review repair plan now",
+        "Confirm workflow handoff",
+        "Resume local request",
+        "query-secret",
+        "hash-secret",
+        "matrix-output-secret",
+        tempDir,
+      ]);
+    },
+  );
+});
+
+test("visual smoke matrix rejects disabled chat submit trigger metrics", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-chat-disabled-trigger-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        validFakeElectronCliBody.replace(
+          "messages: [],",
+          `messages: [],
+  chatLocalSubmitTriggerMetrics: {
+    draftInputFocusedAfterSubmit: true,
+    keyboardDefaultPrevented: true,
+    modifier: "ctrl",
+    trigger: "keyboard",
+  },`,
+        ),
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath, {
+        outputDirName: "matrix-output-secret",
+      });
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.manifest.cases.length, 8);
+      assert.equal(result.manifest.failures.length, 6);
+      assert.deepEqual(
+        result.manifest.cases
+          .filter((testCase) => testCase.chatBoxMode !== "enabled")
+          .map((testCase) => testCase.failures),
+        [
+          ["expected no local chat submission metrics for disabled chat"],
+          ["expected no local chat submission metrics for disabled chat"],
+          ["expected no local chat submission metrics for disabled chat"],
+          ["expected no local chat submission metrics for disabled chat"],
+          ["expected no local chat submission metrics for disabled chat"],
+          ["expected no local chat submission metrics for disabled chat"],
+        ],
+      );
+      assert.deepEqual(
+        result.manifest.cases
+          .filter((testCase) => testCase.chatBoxMode === "enabled")
+          .map((testCase) => testCase.failures),
+        [[], []],
+      );
+      assertSafeOutput(result, [
+        "Review repair plan now",
+        "Confirm workflow handoff",
+        "Resume local request",
+        "query-secret",
+        "hash-secret",
+        "matrix-output-secret",
+        tempDir,
+      ]);
+    },
+  );
 });
 
 test("visual smoke matrix rejects mobile chat history item overflow", async () => {
@@ -877,6 +1081,12 @@ const result = {
     chatLocalSubmissionStatus: "queued_local",
     chatLocalSubmissionTarget: "repair",
     chatLocalSubmissionWords: "4",
+  } : null,
+  chatLocalSubmitTriggerMetrics: chatBoxMode === "enabled" ? {
+    draftInputFocusedAfterSubmit: true,
+    keyboardDefaultPrevented: true,
+    modifier: "ctrl",
+    trigger: "keyboard",
   } : null,
   chatLocalHistoryMetrics: chatBoxMode === "enabled" ? {
     chatLocalSubmissionPresent: true,

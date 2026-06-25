@@ -185,10 +185,46 @@ function expectMetricList(failures, label, metrics, key, expected) {
   }
 }
 
+function normalizeChatLocalSubmitTriggerEvidence(metrics) {
+  if (!isRecord(metrics)) {
+    return {
+      evidence: null,
+      failures: ["expected first local chat submission trigger metrics"],
+    };
+  }
+  const evidence = {
+    trigger: metrics.trigger === "keyboard" ? "keyboard" : null,
+    modifier: metrics.modifier === "ctrl" ? "ctrl" : null,
+    keyboardDefaultPrevented:
+      metrics.keyboardDefaultPrevented === true ? true : null,
+    draftInputFocusedAfterSubmit:
+      metrics.draftInputFocusedAfterSubmit === true ? true : null,
+  };
+  const failures = [];
+  if (evidence.trigger !== "keyboard") {
+    failures.push("expected first local submission trigger keyboard");
+  }
+  if (evidence.modifier !== "ctrl") {
+    failures.push("expected first local submission modifier ctrl");
+  }
+  if (evidence.keyboardDefaultPrevented !== true) {
+    failures.push(
+      "expected first local submission keyboard default prevented true",
+    );
+  }
+  if (evidence.draftInputFocusedAfterSubmit !== true) {
+    failures.push(
+      "expected first local submission draft input focused after submit true",
+    );
+  }
+  return { evidence, failures };
+}
+
 function collectEnabledChatBoxFailures(result, requestedWidth) {
   const failures = [];
   const initial = result.chatInitialMetrics;
   const first = result.chatLocalSubmitMetrics;
+  const firstTrigger = result.chatLocalSubmitTriggerMetrics;
   const history = result.chatLocalHistoryMetrics;
   const cleared = result.chatLocalHistoryClearedMetrics;
   const resend = result.chatLocalResendMetrics;
@@ -314,6 +350,9 @@ function collectEnabledChatBoxFailures(result, requestedWidth) {
     first,
     "chatLocalSubmissionHistoryItemIds",
     "1",
+  );
+  failures.push(
+    ...normalizeChatLocalSubmitTriggerEvidence(firstTrigger).failures,
   );
 
   expectMetric(
@@ -683,6 +722,7 @@ function collectCaseFailures(testCase, result) {
     failures.push(...collectEnabledChatBoxFailures(result, testCase.width));
   } else if (
     result.chatLocalSubmitMetrics != null ||
+    result.chatLocalSubmitTriggerMetrics != null ||
     result.chatLocalHistoryMetrics != null ||
     result.chatLocalHistoryClearedMetrics != null ||
     result.chatLocalResendMetrics != null
@@ -787,6 +827,15 @@ function summarizeChatLocalHistoryLayoutEvidence(result, requestedWidth) {
   };
 }
 
+function summarizeChatLocalSubmitTriggerEvidence(result) {
+  if (result?.chatBoxMode !== "enabled") {
+    return null;
+  }
+  return normalizeChatLocalSubmitTriggerEvidence(
+    result.chatLocalSubmitTriggerMetrics,
+  ).evidence;
+}
+
 function summarizeChatFocusEvidence(result) {
   if (result?.chatBoxMode !== "enabled") {
     return null;
@@ -829,6 +878,8 @@ function summarizeCase(testCase, outputPath, result, runResult, failures) {
       result,
       testCase.width,
     ),
+    chatLocalSubmitTriggerEvidence:
+      summarizeChatLocalSubmitTriggerEvidence(result),
     chatFocusEvidence: summarizeChatFocusEvidence(result),
     failures,
   };

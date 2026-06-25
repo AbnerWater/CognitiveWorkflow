@@ -1628,6 +1628,7 @@ async function sendChatDraft(window, draft, expected, options = {}) {
         resolve({ ok: false, message: 'Missing chat draft input for local send' });
         return;
       }
+      let keyboardDefaultPrevented = null;
       if (expected.trigger === 'keyboard') {
         const keydownEvent = new KeyboardEvent('keydown', {
           bubbles: true,
@@ -1637,6 +1638,7 @@ async function sendChatDraft(window, draft, expected, options = {}) {
           metaKey: expected.modifier === 'meta',
         });
         const defaultAllowed = input.dispatchEvent(keydownEvent);
+        keyboardDefaultPrevented = !defaultAllowed;
         if (defaultAllowed) {
           resolve({
             ok: false,
@@ -1712,7 +1714,13 @@ async function sendChatDraft(window, draft, expected, options = {}) {
           actual.draftValue === '' &&
           actual.containsRawDraft === false
         ) {
-          resolve({ ok: true });
+          resolve({
+            ok: true,
+            trigger: expected.trigger,
+            modifier: expected.trigger === 'keyboard' ? expected.modifier : null,
+            keyboardDefaultPrevented,
+            draftInputFocusedAfterSubmit: document.activeElement === input,
+          });
           return;
         }
         if (Date.now() - startedAt > 2000) {
@@ -1731,6 +1739,12 @@ async function sendChatDraft(window, draft, expected, options = {}) {
   if (result?.ok !== true) {
     throw new Error(JSON.stringify(result));
   }
+  return {
+    trigger: result.trigger ?? null,
+    modifier: result.modifier ?? null,
+    keyboardDefaultPrevented: result.keyboardDefaultPrevented ?? null,
+    draftInputFocusedAfterSubmit: result.draftInputFocusedAfterSubmit ?? null,
+  };
 }
 
 async function clearChatLocalSubmissionHistory(window) {
@@ -2092,6 +2106,7 @@ function collectVisualSmokeFailures(
   chatDraftMetrics,
   chatClearedMetrics,
   chatLocalSubmitMetrics,
+  chatLocalSubmitTriggerMetrics,
   chatLocalHistoryMetrics,
   chatLocalHistoryClearedMetrics,
   chatLocalResendMetrics,
@@ -4919,6 +4934,26 @@ function collectVisualSmokeFailures(
         `expected first local submission history ids 1, got ${firstHistoryIds}`,
       );
     }
+    if (chatLocalSubmitTriggerMetrics?.trigger !== "keyboard") {
+      failures.push(
+        `expected first local send trigger keyboard, got ${chatLocalSubmitTriggerMetrics?.trigger}`,
+      );
+    }
+    if (chatLocalSubmitTriggerMetrics?.modifier !== "ctrl") {
+      failures.push(
+        `expected first local send modifier ctrl, got ${chatLocalSubmitTriggerMetrics?.modifier}`,
+      );
+    }
+    if (chatLocalSubmitTriggerMetrics?.keyboardDefaultPrevented !== true) {
+      failures.push(
+        `expected first local send keyboard default prevented true, got ${chatLocalSubmitTriggerMetrics?.keyboardDefaultPrevented}`,
+      );
+    }
+    if (chatLocalSubmitTriggerMetrics?.draftInputFocusedAfterSubmit !== true) {
+      failures.push(
+        `expected first local send draft input focused after submit true, got ${chatLocalSubmitTriggerMetrics?.draftInputFocusedAfterSubmit}`,
+      );
+    }
     const cappedHistoryIds = Array.isArray(
       chatLocalHistoryMetrics?.chatLocalSubmissionHistoryItemIds,
     )
@@ -5471,24 +5506,27 @@ async function main() {
   );
   let chatClearedMetrics = null;
   let chatLocalSubmitMetrics = null;
+  let chatLocalSubmitTriggerMetrics = null;
   let chatLocalHistoryMetrics = null;
   let chatLocalHistoryClearedMetrics = null;
   let chatLocalResendMetrics = null;
   if (chatBoxMode === "enabled") {
-    await runSmokeStep("send first local chat draft with shortcut", () =>
-      sendChatDraft(
-        window,
-        "Review repair plan now",
-        {
-          sequence: 1,
-          count: 1,
-          status: "queued_local",
-          intent: "repair",
-          target: "repair",
-          action: "repair_review",
-        },
-        { trigger: "keyboard", modifier: "ctrl" },
-      ),
+    chatLocalSubmitTriggerMetrics = await runSmokeStep(
+      "send first local chat draft with shortcut",
+      () =>
+        sendChatDraft(
+          window,
+          "Review repair plan now",
+          {
+            sequence: 1,
+            count: 1,
+            status: "queued_local",
+            intent: "repair",
+            target: "repair",
+            action: "repair_review",
+          },
+          { trigger: "keyboard", modifier: "ctrl" },
+        ),
     );
     chatLocalSubmitMetrics = await runSmokeStep(
       "read first local chat send metrics",
@@ -5710,6 +5748,7 @@ async function main() {
     chatDraftMetrics,
     chatClearedMetrics,
     chatLocalSubmitMetrics,
+    chatLocalSubmitTriggerMetrics,
     chatLocalHistoryMetrics,
     chatLocalHistoryClearedMetrics,
     chatLocalResendMetrics,
@@ -5767,6 +5806,7 @@ async function main() {
       chatDraftMetrics,
       chatClearedMetrics,
       chatLocalSubmitMetrics,
+      chatLocalSubmitTriggerMetrics,
       chatLocalHistoryMetrics,
       chatLocalHistoryClearedMetrics,
       chatLocalResendMetrics,
