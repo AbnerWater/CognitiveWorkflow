@@ -1,0 +1,237 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.174",
+  "plan_status": "repair_plan_not_implemented",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-25",
+  "source": {
+    "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
+    "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "dependency_gate_proposal": "docs/04_runbook/m1.5-dependency-gate-proposal.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json",
+    "roadmap": "docs/roadmap.md#5.3"
+  },
+  "guardrails": [
+    "This artifact plans UX acceptance gap repair; it does not implement missing FR behavior.",
+    "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
+    "Dependency-gated work stays blocked until the corresponding W1.5.171 dependency gate receives explicit human approval.",
+    "A4 candidate evidence is routed to a review manifest before any acceptance claim.",
+    "W1.5.174 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content."
+  ],
+  "repair_tracks": [
+    {
+      "id": "TRACK-A4-CANDIDATE-EVIDENCE",
+      "track_kind": "a4_review_manifest",
+      "status": "ready_for_evidence_runner",
+      "priority": 1,
+      "source_acceptance_readiness": "candidate_evidence_needs_a4_review",
+      "fr_ids": ["FR-009", "FR-010", "FR-016"],
+      "blocked_by_dependency_gates": [],
+      "objective": "Convert already available stream-panel candidate evidence into repeatable A4 UX review captures without marking acceptance early.",
+      "entry_criteria": [
+        "W1.5.173 evidence map has candidate evidence for every FR in this track.",
+        "Focused React tests and visual smoke matrix commands remain available as reviewer evidence inputs."
+      ],
+      "planned_repair_steps": [
+        "Create an A4 evidence runner/review manifest that references existing focused tests and visual smoke matrix cases.",
+        "Capture collapsed stream, expanded stream, and event classification paths as separate review items.",
+        "Keep all review outputs explicit about pending A4 acceptance."
+      ],
+      "planned_verification": [
+        "node --test apps/desktop/scripts/m1-5-fr-evidence-map.test.cjs",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix",
+        "A4 review manifest check introduced by W1.5.175"
+      ],
+      "next_slice": "W1.5.175"
+    },
+    {
+      "id": "TRACK-LOCAL-UI-EVIDENCE",
+      "track_kind": "desktop_ui_acceptance",
+      "status": "planned_not_implemented",
+      "priority": 2,
+      "source_acceptance_readiness": "partial_requires_ui_evidence",
+      "fr_ids": ["FR-001", "FR-002", "FR-003", "FR-005", "FR-006", "FR-020"],
+      "blocked_by_dependency_gates": [],
+      "objective": "Turn local shell, Dock, File Tree, node selection, Task Drawer, and shortcut scaffold evidence into A4-ready desktop UX paths.",
+      "entry_criteria": [
+        "No new dependency is required for the first local UI evidence bundle.",
+        "Any packaging or cross-platform claim for FR-001 stays outside this track until packaging gates are approved."
+      ],
+      "planned_repair_steps": [
+        "Define concrete first-level Dock module coverage and collapse/restore expectations.",
+        "Capture File Tree default-hidden Drawer and node-to-Task Drawer binding evidence.",
+        "Record Task Drawer field coverage gaps and a user-visible shortcut command map."
+      ],
+      "planned_verification": [
+        "pnpm --filter @cw/desktop run test",
+        "pnpm --filter @cw/desktop run visual-smoke:matrix",
+        "Targeted A4 review manifest checks after W1.5.175"
+      ],
+      "next_slice": "W1.5.176"
+    },
+    {
+      "id": "TRACK-RUNTIME-FLOW-REPAIR",
+      "track_kind": "runtime_backed_desktop_flow",
+      "status": "planned_not_implemented",
+      "priority": 3,
+      "source_acceptance_readiness": "partial_requires_runtime_flow",
+      "fr_ids": ["FR-008", "FR-015", "FR-017"],
+      "blocked_by_dependency_gates": [],
+      "objective": "Replace local-only Chat Box, snapshot, and artifact surfaces with project/runtime-backed flows while preserving safe evidence contracts.",
+      "entry_criteria": [
+        "Runtime command, snapshot, and artifact IPC boundaries are reviewed before implementation.",
+        "Chat evidence remains metadata-only and raw-draft-free."
+      ],
+      "planned_repair_steps": [
+        "Route Chat Box submissions to runtime command handling without unsafe prompt persistence.",
+        "Bind Version Snapshot actions to runtime/Git snapshot operations.",
+        "Expose node artifacts in Task Drawer with project-scoped open/download behavior."
+      ],
+      "planned_verification": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests -q",
+        "Targeted visual smoke for runtime-backed desktop flow after implementation"
+      ],
+      "next_slice": "W1.5.177"
+    },
+    {
+      "id": "TRACK-DESKTOP-RUNTIME-BRIDGE",
+      "track_kind": "backend_only_to_desktop_flow",
+      "status": "planned_not_implemented",
+      "priority": 4,
+      "source_acceptance_readiness": "backend_only_requires_desktop_flow",
+      "fr_ids": ["FR-007", "FR-011", "FR-012", "FR-014", "FR-018"],
+      "blocked_by_dependency_gates": [],
+      "objective": "Build desktop UX paths for execution mode, project creation, Git initialization, Skill management, and semi-auto HITL behavior already represented in backend/schema evidence.",
+      "entry_criteria": [
+        "Runtime APIs for the selected flow are available or stubbed behind fail-closed desktop controls.",
+        "Git initialization and HITL flows stay aligned with runtime_harness.md and workflow_run.md."
+      ],
+      "planned_repair_steps": [
+        "Add execution mode controls near the run action and bind them to runtime execution policy.",
+        "Implement project creation with mandatory Git initialization and reference upload entry points.",
+        "Expose Skill candidates/configuration safely and capture semi-auto pause/resume confirmation UX."
+      ],
+      "planned_verification": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests -q",
+        "A8 git-history audit evidence after desktop project creation is implemented"
+      ],
+      "next_slice": "W1.5.178"
+    },
+    {
+      "id": "TRACK-REACT-FLOW-DEPENDENCY",
+      "track_kind": "dependency_gated_canvas",
+      "status": "blocked_pending_human_approval",
+      "priority": 5,
+      "source_acceptance_readiness": "blocked_by_dependency_gate",
+      "fr_ids": ["FR-004", "FR-019"],
+      "blocked_by_dependency_gates": ["DEP-REACT-FLOW"],
+      "objective": "Implement real React Flow Canvas behavior and Canvas controls only after explicit approval of the React Flow dependency gate.",
+      "entry_criteria": [
+        "DEP-REACT-FLOW status changes from pending_human_approval to approved through a human decision.",
+        "@xyflow/react remains absent until that approval exists."
+      ],
+      "planned_repair_steps": [
+        "Install the approved React Flow package only in the dependency implementation slice.",
+        "Replace read-only Canvas scaffold with React Flow branch, parallel, feedback-loop, pan, zoom, fit view, and edit-lock behavior.",
+        "Add 100-node interaction evidence before claiming EXIT-P1-12 readiness."
+      ],
+      "planned_verification": [
+        "pnpm --filter @cw/desktop run typecheck",
+        "pnpm --filter @cw/desktop run test",
+        "Electron visual smoke matrix with 100-node Canvas interaction evidence"
+      ],
+      "next_slice": "blocked_until_DEP-REACT-FLOW_approval"
+    },
+    {
+      "id": "TRACK-REFERENCE-MANAGEMENT",
+      "track_kind": "missing_desktop_implementation",
+      "status": "planned_not_implemented",
+      "priority": 6,
+      "source_acceptance_readiness": "missing_implementation",
+      "fr_ids": ["FR-013"],
+      "blocked_by_dependency_gates": [],
+      "objective": "Implement reference import, enable, disable, and view actions as a new desktop/runtime-backed capability before A4 review.",
+      "entry_criteria": [
+        "Reference manifest and storage boundaries are aligned with runtime_harness.md before UI work starts.",
+        "Sensitive reference material remains local unless an explicit runtime policy allows otherwise."
+      ],
+      "planned_repair_steps": [
+        "Define the project reference manifest contract used by the desktop File Tree/reference surface.",
+        "Add import, enable, disable, and view controls with safe metadata display.",
+        "Capture A4 review evidence for reference lifecycle operations."
+      ],
+      "planned_verification": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests -q",
+        "Reference lifecycle A4 evidence after implementation"
+      ],
+      "next_slice": "W1.5.179"
+    }
+  ],
+  "track_summary": {
+    "total_fr_items": 20,
+    "repair_track_count": 6,
+    "candidate_evidence_items": 3,
+    "local_ui_evidence_items": 6,
+    "runtime_flow_items": 3,
+    "desktop_runtime_bridge_items": 5,
+    "dependency_gated_items": 2,
+    "missing_implementation_items": 1,
+    "accepted_items": 0,
+    "blocked_dependency_gates": ["DEP-REACT-FLOW"],
+    "exit_p1_1_status": "not_ready"
+  },
+  "implementation_sequence": [
+    {
+      "order": 1,
+      "track_id": "TRACK-A4-CANDIDATE-EVIDENCE",
+      "reason": "Fastest path to convert existing candidate evidence into formal A4 review inputs without implementation drift."
+    },
+    {
+      "order": 2,
+      "track_id": "TRACK-LOCAL-UI-EVIDENCE",
+      "reason": "Can improve A4 readiness inside the approved minimal dependency group."
+    },
+    {
+      "order": 3,
+      "track_id": "TRACK-RUNTIME-FLOW-REPAIR",
+      "reason": "Turns local scaffolds into real project/runtime-backed flows after UI evidence baselines are stable."
+    },
+    {
+      "order": 4,
+      "track_id": "TRACK-DESKTOP-RUNTIME-BRIDGE",
+      "reason": "Requires coordinated runtime/API and desktop UX work across project, Git, Skill, and HITL flows."
+    },
+    {
+      "order": 5,
+      "track_id": "TRACK-REFERENCE-MANAGEMENT",
+      "reason": "FR-013 has no current implementation and needs a dedicated lifecycle slice."
+    },
+    {
+      "order": 6,
+      "track_id": "TRACK-REACT-FLOW-DEPENDENCY",
+      "reason": "Must remain blocked until DEP-REACT-FLOW is explicitly approved."
+    }
+  ],
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.175",
+      "title": "A4 evidence runner and review manifest",
+      "reason": "Convert FR-009, FR-010, and FR-016 candidate evidence into repeatable A4 review inputs."
+    },
+    {
+      "id": "W1.5.176",
+      "title": "Local UI evidence repair bundle",
+      "reason": "Prepare shell, Dock, File Tree, node selection, Task Drawer, and shortcut evidence inside the approved dependency boundary."
+    },
+    {
+      "id": "W1.5.177",
+      "title": "Runtime-backed desktop flow repair planning",
+      "reason": "Plan Chat Box routing, snapshot restore, artifact actions, and project/runtime bridge work before implementation."
+    }
+  ]
+}
