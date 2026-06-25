@@ -1541,7 +1541,8 @@ async function clearChatDraft(window) {
           input instanceof HTMLTextAreaElement &&
           input.value === '' &&
           actualLength === '0' &&
-          actualWords === '0'
+          actualWords === '0' &&
+          document.activeElement === input
         ) {
           resolve({ ok: true });
           return;
@@ -1553,6 +1554,7 @@ async function clearChatDraft(window) {
             actualValue: input instanceof HTMLTextAreaElement ? input.value : null,
             actualLength,
             actualWords,
+            activeTag: document.activeElement?.tagName ?? null,
             bodyText: document.body.textContent?.slice(0, 500) ?? '',
           });
           return;
@@ -1720,6 +1722,7 @@ async function clearChatLocalSubmissionHistory(window) {
       button.click();
       const startedAt = Date.now();
       const waitForClear = () => {
+        const input = document.querySelector('[data-chat-draft-input="true"]');
         const section = document.querySelector('[data-chat-local-submit="true"]');
         const clearButtons = document.querySelectorAll(
           '[data-chat-local-submit-clear="true"]'
@@ -1727,7 +1730,13 @@ async function clearChatLocalSubmissionHistory(window) {
         const historyItems = document.querySelectorAll(
           '[data-chat-local-submit-history-item]'
         ).length;
-        if (section === null && clearButtons === 0 && historyItems === 0) {
+        if (
+          input instanceof HTMLTextAreaElement &&
+          section === null &&
+          clearButtons === 0 &&
+          historyItems === 0 &&
+          document.activeElement === input
+        ) {
           resolve({ ok: true });
           return;
         }
@@ -1738,6 +1747,7 @@ async function clearChatLocalSubmissionHistory(window) {
             present: section !== null,
             clearButtons,
             historyItems,
+            activeTag: document.activeElement?.tagName ?? null,
           });
           return;
         }

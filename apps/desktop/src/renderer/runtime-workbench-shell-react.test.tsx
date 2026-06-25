@@ -2723,23 +2723,22 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
       );
     });
 
-    assert.equal(
-      requireFakeRuntimeWorkbenchElementByData(
-        dom.container,
-        "chatDraftInput",
-        "true",
-      ).value,
-      "Review repair plan now",
+    const expandedChatDraftInput = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftInput",
+      "true",
     );
+    assert.equal(expandedChatDraftInput.value, "Review repair plan now");
 
+    const draftClearButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftClear",
+      "true",
+    );
+    draftClearButton.focus();
+    assert.equal(dom.container.ownerDocument?.activeElement, draftClearButton);
     await act(async () => {
-      clickFakeRuntimeWorkbenchElement(
-        requireFakeRuntimeWorkbenchElementByData(
-          dom.container,
-          "chatDraftClear",
-          "true",
-        ),
-      );
+      clickFakeRuntimeWorkbenchElement(draftClearButton);
     });
 
     assert.equal(
@@ -2749,6 +2748,10 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         "true",
       ).value,
       "",
+    );
+    assert.equal(
+      dom.container.ownerDocument?.activeElement,
+      expandedChatDraftInput,
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -3506,18 +3509,24 @@ test("renderer runtime workbench React shell clears local chat send history", as
     await act(async () => {
       inputFakeRuntimeWorkbenchElement(draftInput, "Revise after clear");
     });
-    await act(async () => {
-      clickFakeRuntimeWorkbenchElement(
-        requireFakeRuntimeWorkbenchElementByData(
-          initialLocalSubmission,
-          "chatLocalSubmitClear",
-          "true",
-        ),
+    const clearLocalSubmissionsButton =
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatLocalSubmitClear",
+        "true",
       );
+    clearLocalSubmissionsButton.focus();
+    assert.equal(
+      dom.container.ownerDocument?.activeElement,
+      clearLocalSubmissionsButton,
+    );
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(clearLocalSubmissionsButton);
     });
 
     assert.equal(session.dispatchedCommands().length, 0);
     assert.equal(draftInput.value, "Revise after clear");
+    assert.equal(dom.container.ownerDocument?.activeElement, draftInput);
     assert.equal(
       countFakeRuntimeWorkbenchElements(
         dom.container,

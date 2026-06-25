@@ -2420,6 +2420,9 @@ function RuntimeWorkbenchShellChatBox(props: {
     draftWords,
   );
   const sendGuard = runtimeWorkbenchShellChatDraftSendGuard(draftPreview);
+  const focusDraftInput = useCallback((): void => {
+    draftInputRef.current?.focus({ preventScroll: true });
+  }, []);
   const handleToggleClick = useCallback((): void => {
     setExpanded((current) => !current);
   }, []);
@@ -2431,10 +2434,12 @@ function RuntimeWorkbenchShellChatBox(props: {
   );
   const handleDraftClearClick = useCallback((): void => {
     setDraft("");
-  }, []);
+    focusDraftInput();
+  }, [focusDraftInput]);
   const handleLocalSubmissionClearClick = useCallback((): void => {
     setLocalSubmissions([]);
-  }, []);
+    focusDraftInput();
+  }, [focusDraftInput]);
   const handleDraftIntentClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const intent = event.currentTarget.dataset.chatDraftIntent;
@@ -2466,13 +2471,14 @@ function RuntimeWorkbenchShellChatBox(props: {
       ),
     );
     setDraft("");
-    draftInputRef.current?.focus({ preventScroll: true });
+    focusDraftInput();
   }, [
     draftIntent,
     draftIntentContext,
     draftIntentLabel,
     draftLength,
     draftWords,
+    focusDraftInput,
     sendGuard.enabled,
   ]);
   const handleDraftKeyDown = useCallback(
