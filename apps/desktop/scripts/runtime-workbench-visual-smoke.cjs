@@ -1789,7 +1789,13 @@ async function clickChatDraftIntent(window, intent) {
         const detailsIntent = document
           .querySelector('[data-chat-draft-details="true"]')
           ?.getAttribute('data-chat-draft-intent') ?? null;
-        if (activeIntent === expectedIntent && detailsIntent === expectedIntent) {
+        const input = document.querySelector('[data-chat-draft-input="true"]');
+        if (
+          input instanceof HTMLTextAreaElement &&
+          activeIntent === expectedIntent &&
+          detailsIntent === expectedIntent &&
+          document.activeElement === input
+        ) {
           resolve({ ok: true });
           return;
         }
@@ -1799,6 +1805,7 @@ async function clickChatDraftIntent(window, intent) {
             message: 'Chat draft intent did not update',
             activeIntent,
             detailsIntent,
+            activeTag: document.activeElement?.tagName ?? null,
             bodyText: document.body.textContent?.slice(0, 500) ?? '',
           });
           return;

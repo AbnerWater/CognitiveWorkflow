@@ -2465,16 +2465,49 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
       /Preview[\s\S]*Empty[\s\S]*No draft text[\s\S]*Intent[\s\S]*Ask[\s\S]*Target[\s\S]*Current workflow[\s\S]*Action[\s\S]*Question[\s\S]*Reason[\s\S]*Draft is empty/u,
     );
 
+    const invalidIntentButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftIntent",
+      "ask",
+    );
+    invalidIntentButton.setAttribute("data-chat-draft-intent", "malformed");
+    invalidIntentButton.focus();
+    assert.equal(
+      dom.container.ownerDocument?.activeElement,
+      invalidIntentButton,
+    );
     await act(async () => {
-      clickFakeRuntimeWorkbenchElement(
-        requireFakeRuntimeWorkbenchElementByData(
-          dom.container,
-          "chatDraftIntent",
-          "revise",
-        ),
-      );
+      clickFakeRuntimeWorkbenchElement(invalidIntentButton);
+    });
+    assert.equal(
+      dom.container.ownerDocument?.activeElement,
+      invalidIntentButton,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-intent"),
+      "ask",
+    );
+    invalidIntentButton.setAttribute("data-chat-draft-intent", "ask");
+
+    const reviseIntentButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftIntent",
+      "revise",
+    );
+    reviseIntentButton.focus();
+    assert.equal(
+      dom.container.ownerDocument?.activeElement,
+      reviseIntentButton,
+    );
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(reviseIntentButton);
     });
 
+    assert.equal(dom.container.ownerDocument?.activeElement, chatDraftInput);
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
         dom.container,
@@ -2518,16 +2551,21 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
       /Target[\s\S]*Workflow draft[\s\S]*Action[\s\S]*Change request/u,
     );
 
+    const repairIntentButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftIntent",
+      "repair",
+    );
+    repairIntentButton.focus();
+    assert.equal(
+      dom.container.ownerDocument?.activeElement,
+      repairIntentButton,
+    );
     await act(async () => {
-      clickFakeRuntimeWorkbenchElement(
-        requireFakeRuntimeWorkbenchElementByData(
-          dom.container,
-          "chatDraftIntent",
-          "repair",
-        ),
-      );
+      clickFakeRuntimeWorkbenchElement(repairIntentButton);
     });
 
+    assert.equal(dom.container.ownerDocument?.activeElement, chatDraftInput);
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
         dom.container,
@@ -2543,6 +2581,66 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         "true",
       ).getAttribute("data-chat-draft-intent-label"),
       "Repair",
+    );
+
+    const askIntentButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftIntent",
+      "ask",
+    );
+    askIntentButton.focus();
+    assert.equal(dom.container.ownerDocument?.activeElement, askIntentButton);
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(askIntentButton);
+    });
+
+    assert.equal(dom.container.ownerDocument?.activeElement, chatDraftInput);
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-intent"),
+      "ask",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-target"),
+      "workflow",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftPreview",
+        "true",
+      ).getAttribute("data-chat-draft-preview-action"),
+      "question",
+    );
+
+    const restoredRepairIntentButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftIntent",
+      "repair",
+    );
+    restoredRepairIntentButton.focus();
+    assert.equal(
+      dom.container.ownerDocument?.activeElement,
+      restoredRepairIntentButton,
+    );
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(restoredRepairIntentButton);
+    });
+    assert.equal(dom.container.ownerDocument?.activeElement, chatDraftInput);
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "chatDraftDetails",
+        "true",
+      ).getAttribute("data-chat-draft-intent"),
+      "repair",
     );
 
     await act(async () => {

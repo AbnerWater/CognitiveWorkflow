@@ -2447,8 +2447,9 @@ function RuntimeWorkbenchShellChatBox(props: {
         return;
       }
       setDraftIntent(intent);
+      focusDraftInput();
     },
-    [],
+    [focusDraftInput],
   );
   const submitChatDraft = useCallback((): void => {
     if (!sendGuard.enabled) {
