@@ -6,6 +6,9 @@ const {
 const {
   resolveVisualSmokePreflight,
 } = require("./runtime-workbench-visual-smoke-preflight.cjs");
+const {
+  collectChatLocalHistoryLayoutFailures,
+} = require("./runtime-workbench-visual-smoke-layout.cjs");
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 
@@ -63,7 +66,18 @@ function countChatDraftWords(draft) {
 
 async function readMetrics(window) {
   return window.webContents.executeJavaScript(`
-    (() => ({
+    (() => {
+      const chatHistoryItem = document.querySelector('[data-chat-local-submit-history-item]');
+      const chatHistoryGridTemplateColumns =
+        chatHistoryItem instanceof HTMLElement
+          ? window.getComputedStyle(chatHistoryItem).gridTemplateColumns
+          : null;
+      const chatHistoryColumnCount =
+        chatHistoryGridTemplateColumns === null ||
+        chatHistoryGridTemplateColumns === 'none'
+          ? null
+          : chatHistoryGridTemplateColumns.split(/\\s+/u).filter(Boolean).length;
+      return ({
       hasRoot: document.querySelector('.cw-workbench') !== null,
       hasDock: document.querySelector('.cw-workbench__dock') !== null,
       hasFileTree: document.querySelector('.cw-workbench__file-tree') !== null,
@@ -729,6 +743,11 @@ async function readMetrics(window) {
         document.querySelector('[data-chat-local-submit-clear="true"]')?.getAttribute('data-chat-local-submit-clear-count') ?? null,
       chatLocalSubmissionHistoryItems:
         document.querySelectorAll('[data-chat-local-submit-history-item]').length,
+      chatLocalSubmissionHistoryColumnCount: chatHistoryColumnCount,
+      chatLocalSubmissionHistoryClientWidth:
+        chatHistoryItem instanceof HTMLElement ? chatHistoryItem.clientWidth : null,
+      chatLocalSubmissionHistoryScrollWidth:
+        chatHistoryItem instanceof HTMLElement ? chatHistoryItem.scrollWidth : null,
       chatLocalSubmissionHistoryItemIds:
         Array.from(
           document.querySelectorAll('[data-chat-local-submit-history-item]'),
@@ -769,7 +788,8 @@ async function readMetrics(window) {
         document.body.textContent?.includes('[plugin:vite]') ||
         false,
       viewport: { width: window.innerWidth, height: window.innerHeight },
-    }))()
+    });
+    })()
   `);
 }
 
@@ -4939,6 +4959,12 @@ function collectVisualSmokeFailures(
         `expected capped local history item count 3, got ${chatLocalHistoryMetrics?.chatLocalSubmissionHistoryItems}`,
       );
     }
+    failures.push(
+      ...collectChatLocalHistoryLayoutFailures({
+        chatLocalHistoryMetrics,
+        requestedWidth,
+      }),
+    );
     if (cappedHistoryIds !== "4,3,2") {
       failures.push(
         `expected capped local history ids 4,3,2, got ${cappedHistoryIds}`,

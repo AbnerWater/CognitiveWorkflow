@@ -14,6 +14,9 @@ const {
   sanitizeVisualSmokeEvidence,
   sanitizeVisualSmokeText,
 } = require("./runtime-workbench-visual-smoke-evidence.cjs");
+const {
+  collectChatLocalHistoryLayoutFailures,
+} = require("./runtime-workbench-visual-smoke-layout.cjs");
 
 const packageRoot = path.resolve(__dirname, "..");
 const smokeScriptPath = path.join(
@@ -227,6 +230,9 @@ test("visual smoke evidence removes persisted chat draft text fields", () => {
       chatLocalSubmissionStatus: "queued_local",
       chatLocalSubmissionCharacters: "22",
       chatLocalSubmissionWords: "4",
+      chatLocalSubmissionHistoryColumnCount: 2,
+      chatLocalSubmissionHistoryClientWidth: 312,
+      chatLocalSubmissionHistoryScrollWidth: 312,
     },
     failures: [
       "expected chat draft value Review repair plan now, got Review repair plan now",
@@ -265,6 +271,18 @@ test("visual smoke evidence removes persisted chat draft text fields", () => {
   assert.equal(
     sanitized.chatLocalSubmitMetrics.chatLocalSubmissionStatus,
     "queued_local",
+  );
+  assert.equal(
+    sanitized.chatLocalSubmitMetrics.chatLocalSubmissionHistoryColumnCount,
+    2,
+  );
+  assert.equal(
+    sanitized.chatLocalSubmitMetrics.chatLocalSubmissionHistoryClientWidth,
+    312,
+  );
+  assert.equal(
+    sanitized.chatLocalSubmitMetrics.chatLocalSubmissionHistoryScrollWidth,
+    312,
   );
   assert.equal(serialized.includes("Review repair plan now"), false);
   assert.equal(serialized.includes("Confirm workflow handoff"), false);
@@ -314,6 +332,44 @@ test("visual smoke evidence redacts escaped chat draft fragments in hard excepti
   assert.equal(sanitized.includes(escapedChatDraft), false);
   assert.equal(sanitized.includes(REDACTED_CHAT_TEXT), true);
   assert.equal(sanitized.includes("Chat draft did not update"), true);
+});
+
+test("visual smoke fails closed on mobile chat history item overflow", () => {
+  assert.deepEqual(
+    collectChatLocalHistoryLayoutFailures({
+      requestedWidth: 390,
+      chatLocalHistoryMetrics: {
+        chatLocalSubmissionHistoryColumnCount: 2,
+        chatLocalSubmissionHistoryClientWidth: 294,
+        chatLocalSubmissionHistoryScrollWidth: 294,
+      },
+    }),
+    [],
+  );
+  assert.deepEqual(
+    collectChatLocalHistoryLayoutFailures({
+      requestedWidth: 390,
+      chatLocalHistoryMetrics: {
+        chatLocalSubmissionHistoryColumnCount: 2,
+        chatLocalSubmissionHistoryClientWidth: 294,
+        chatLocalSubmissionHistoryScrollWidth: 320,
+      },
+    }),
+    [
+      "expected mobile chat local history no horizontal item overflow, got client 294 scroll 320",
+    ],
+  );
+  assert.deepEqual(
+    collectChatLocalHistoryLayoutFailures({
+      requestedWidth: 1280,
+      chatLocalHistoryMetrics: {
+        chatLocalSubmissionHistoryColumnCount: 1,
+        chatLocalSubmissionHistoryClientWidth: 300,
+        chatLocalSubmissionHistoryScrollWidth: 340,
+      },
+    }),
+    [],
+  );
 });
 
 test("visual smoke preflight rejects invalid viewport env without echoing input", () => {
