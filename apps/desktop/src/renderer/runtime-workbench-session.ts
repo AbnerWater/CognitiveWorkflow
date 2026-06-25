@@ -175,6 +175,35 @@ export interface RuntimeWorkbenchSkillManagementSnapshot {
   readonly canUpdateSkill: boolean;
 }
 
+export type RuntimeWorkbenchHumanDecisionStatus =
+  | "idle"
+  | "submitting"
+  | "succeeded"
+  | "failed"
+  | "blocked";
+
+export type RuntimeWorkbenchHumanDecisionBlockedReason =
+  | "invalid_input"
+  | "request_failed"
+  | "response_invalid"
+  | "runtime_unavailable";
+
+export interface RuntimeWorkbenchHumanDecisionSnapshot {
+  readonly status: RuntimeWorkbenchHumanDecisionStatus;
+  readonly method: "POST";
+  readonly path: RuntimeRequestPath | null;
+  readonly runId: string | null;
+  readonly humanNodeId: string | null;
+  readonly decision: string | null;
+  readonly by: string | null;
+  readonly customValuePresent: boolean;
+  readonly statusCode: number | null;
+  readonly blockedReason: RuntimeWorkbenchHumanDecisionBlockedReason | null;
+  readonly decidedAt: string | null;
+  readonly requestedAt: string | null;
+  readonly canSubmitDecision: boolean;
+}
+
 export interface RuntimeWorkbenchExecutionPolicySnapshot {
   readonly mode: RuntimeWorkbenchExecutionMode;
   readonly availableModes: readonly RuntimeWorkbenchExecutionMode[];
@@ -228,12 +257,32 @@ export interface RuntimeWorkbenchSkillEnabledInput {
   readonly version?: string;
 }
 
+export type RuntimeWorkbenchHumanDecisionCustomValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly RuntimeWorkbenchHumanDecisionCustomValue[]
+  | {
+      readonly [key: string]: RuntimeWorkbenchHumanDecisionCustomValue;
+    };
+
+export interface RuntimeWorkbenchHumanDecisionInput {
+  readonly runId: string;
+  readonly humanNodeId: string;
+  readonly decision: string;
+  readonly by: string;
+  readonly customValue?: RuntimeWorkbenchHumanDecisionCustomValue;
+  readonly idempotencyKey?: string;
+}
+
 export interface RuntimeWorkbenchSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
   readonly projectCreation: RuntimeWorkbenchProjectCreationSnapshot;
   readonly referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot;
   readonly skillManagement: RuntimeWorkbenchSkillManagementSnapshot;
+  readonly humanDecision: RuntimeWorkbenchHumanDecisionSnapshot;
   readonly lifecyclePanel: RuntimeLifecyclePanelSessionControllerSnapshot;
   readonly runtimeStream: RuntimeStreamInteractionSessionControllerSnapshot;
   readonly disposed: boolean;
@@ -293,6 +342,9 @@ export interface RuntimeWorkbenchSession {
   readonly setSkillEnabled: (
     input: RuntimeWorkbenchSkillEnabledInput,
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly submitHumanDecision: (
+    input: RuntimeWorkbenchHumanDecisionInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly openLifecyclePanelSession: (
     options?: CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
   ) => RuntimeLifecyclePanelSession;
@@ -350,6 +402,11 @@ export function createRuntimeWorkbenchSession(
     runtimeAvailable: options.runtime !== undefined,
     disposed,
   });
+  let humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+    status: "idle",
+    runtimeAvailable: options.runtime !== undefined,
+    disposed,
+  });
   const listeners = new Set<RuntimeWorkbenchSessionStoreChangeListener>();
   let lifecyclePanelUnsubscribe: RuntimeStatusUnsubscribe | undefined;
   let runtimeStreamUnsubscribe: RuntimeStatusUnsubscribe | undefined;
@@ -374,6 +431,11 @@ export function createRuntimeWorkbenchSession(
     }),
     skillManagement: createRuntimeWorkbenchSkillManagementSnapshot({
       ...skillManagementSnapshot,
+      runtimeAvailable: options.runtime !== undefined,
+      disposed,
+    }),
+    humanDecision: createRuntimeWorkbenchHumanDecisionSnapshot({
+      ...humanDecisionSnapshot,
       runtimeAvailable: options.runtime !== undefined,
       disposed,
     }),
@@ -422,6 +484,11 @@ export function createRuntimeWorkbenchSession(
       }),
       skillManagement: createRuntimeWorkbenchSkillManagementSnapshot({
         ...skillManagementSnapshot,
+        runtimeAvailable: options.runtime !== undefined,
+        disposed,
+      }),
+      humanDecision: createRuntimeWorkbenchHumanDecisionSnapshot({
+        ...humanDecisionSnapshot,
         runtimeAvailable: options.runtime !== undefined,
         disposed,
       }),
@@ -1420,6 +1487,153 @@ export function createRuntimeWorkbenchSession(
         throw error;
       }
     },
+    submitHumanDecision: async (input) => {
+      assertActive();
+      const runId = normalizeRuntimeWorkbenchRunOncePathSegment(input.runId);
+      const humanNodeId = normalizeRuntimeWorkbenchRunOncePathSegment(
+        input.humanNodeId,
+      );
+      const decision = normalizeRuntimeWorkbenchHumanDecisionKey(
+        input.decision,
+      );
+      const by = normalizeRuntimeWorkbenchHumanDecisionText(input.by, 200);
+      const customValue = normalizeRuntimeWorkbenchHumanDecisionCustomValue(
+        input.customValue,
+      );
+      if (
+        runId === null ||
+        humanNodeId === null ||
+        decision === null ||
+        by === null ||
+        customValue === null
+      ) {
+        humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+          blockedReason: "invalid_input",
+          runtimeAvailable: options.runtime !== undefined,
+          status: "blocked",
+          disposed,
+        });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench human decision input is invalid");
+      }
+      const requestPath = buildRuntimeWorkbenchHumanDecisionPath(runId);
+      if (options.runtime === undefined) {
+        humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+          blockedReason: "runtime_unavailable",
+          by,
+          customValuePresent: customValue !== undefined && customValue !== null,
+          decision,
+          humanNodeId,
+          path: requestPath,
+          runId,
+          runtimeAvailable: false,
+          status: "blocked",
+          disposed,
+        });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+      humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+        by,
+        customValuePresent: customValue !== undefined && customValue !== null,
+        decision,
+        humanNodeId,
+        path: requestPath,
+        runId,
+        runtimeAvailable: true,
+        status: "submitting",
+        disposed,
+      });
+      publishIfChanged(true);
+      try {
+        const response = await options.runtime.fetch(requestPath, {
+          method: "POST",
+          body: JSON.stringify({
+            schema_version: "0.1.0",
+            human_node_id: humanNodeId,
+            decision,
+            by,
+            ...(customValue === undefined ? {} : { custom_value: customValue }),
+          }),
+          ...(input.idempotencyKey !== undefined
+            ? { idempotencyKey: input.idempotencyKey }
+            : {}),
+        });
+        if (!response.ok) {
+          humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+            blockedReason: "request_failed",
+            by,
+            customValuePresent:
+              customValue !== undefined && customValue !== null,
+            decision,
+            humanNodeId,
+            path: requestPath,
+            runId,
+            runtimeAvailable: true,
+            status: "failed",
+            statusCode: response.status,
+            disposed,
+          });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const record = parseRuntimeWorkbenchHumanDecisionRecord(response.body);
+        if (record === null) {
+          humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+            blockedReason: "response_invalid",
+            by,
+            customValuePresent:
+              customValue !== undefined && customValue !== null,
+            decision,
+            humanNodeId,
+            path: requestPath,
+            runId,
+            runtimeAvailable: true,
+            status: "failed",
+            statusCode: response.status,
+            disposed,
+          });
+          publishIfChanged(true);
+          throw new Error(
+            "Runtime workbench human decision response is invalid",
+          );
+        }
+        humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+          by: record.by,
+          customValuePresent: record.customValuePresent,
+          decidedAt: record.decidedAt,
+          decision: record.decision,
+          humanNodeId: record.humanNodeId,
+          path: requestPath,
+          requestedAt: record.requestedAt,
+          runId,
+          runtimeAvailable: true,
+          status: "succeeded",
+          statusCode: response.status,
+          disposed,
+        });
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (humanDecisionSnapshot.status !== "failed") {
+          humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+            blockedReason: "request_failed",
+            by,
+            customValuePresent:
+              customValue !== undefined && customValue !== null,
+            decision,
+            humanNodeId,
+            path: requestPath,
+            runId,
+            runtimeAvailable: true,
+            status: "failed",
+            disposed,
+          });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
     openLifecyclePanelSession: (sessionOptions) => {
       assertActive();
       const session = runWithSuppressedControllerPublish(() =>
@@ -1669,6 +1883,33 @@ function createRuntimeWorkbenchSkillManagementSnapshot(
   });
 }
 
+function createRuntimeWorkbenchHumanDecisionSnapshot(
+  input: Partial<RuntimeWorkbenchHumanDecisionSnapshot> & {
+    readonly status: RuntimeWorkbenchHumanDecisionStatus;
+    readonly runtimeAvailable: boolean;
+    readonly disposed: boolean;
+  },
+): RuntimeWorkbenchHumanDecisionSnapshot {
+  return Object.freeze({
+    status: input.status,
+    method: "POST",
+    path: input.path ?? null,
+    runId: input.runId ?? null,
+    humanNodeId: input.humanNodeId ?? null,
+    decision: input.decision ?? null,
+    by: input.by ?? null,
+    customValuePresent: input.customValuePresent ?? false,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    decidedAt: input.decidedAt ?? null,
+    requestedAt: input.requestedAt ?? null,
+    canSubmitDecision:
+      !input.disposed &&
+      input.runtimeAvailable &&
+      input.status !== "submitting",
+  });
+}
+
 function buildRuntimeWorkbenchRunOncePath(
   runId: string,
   nodeId: string,
@@ -1727,6 +1968,14 @@ function buildRuntimeWorkbenchSkillsPath(
   projectId: string,
 ): RuntimeRequestPath {
   const requestPath = `/projects/${encodeURIComponent(projectId)}/skills`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
+function buildRuntimeWorkbenchHumanDecisionPath(
+  runId: string,
+): RuntimeRequestPath {
+  const requestPath = `/runs/${encodeURIComponent(runId)}/decisions`;
   assertRuntimeRequestPath(requestPath);
   return requestPath as RuntimeRequestPath;
 }
@@ -1813,6 +2062,86 @@ function normalizeRuntimeWorkbenchReferenceOptionalText(
     return null;
   }
   return trimmed;
+}
+
+function normalizeRuntimeWorkbenchHumanDecisionKey(
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > 64 ||
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.includes("?") ||
+    trimmed.includes("#") ||
+    trimmed.includes("..") ||
+    /[\u0000-\u001f\u007f\s]/u.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeRuntimeWorkbenchHumanDecisionText(
+  value: string,
+  maxLength: number,
+): string | null {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > maxLength ||
+    /[\u0000-\u001f\u007f]/u.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function normalizeRuntimeWorkbenchHumanDecisionCustomValue(
+  value: RuntimeWorkbenchHumanDecisionCustomValue | undefined,
+): RuntimeWorkbenchHumanDecisionCustomValue | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+  return isRuntimeWorkbenchHumanDecisionCustomValue(value) ? value : null;
+}
+
+function isRuntimeWorkbenchHumanDecisionCustomValue(
+  value: unknown,
+  depth = 0,
+): value is RuntimeWorkbenchHumanDecisionCustomValue {
+  if (depth > 12) {
+    return false;
+  }
+  if (value === null) {
+    return true;
+  }
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return true;
+    case "number":
+      return Number.isFinite(value);
+    case "object":
+      if (Array.isArray(value)) {
+        return value.every((item) =>
+          isRuntimeWorkbenchHumanDecisionCustomValue(item, depth + 1),
+        );
+      }
+      if (!isRecord(value)) {
+        return false;
+      }
+      return Object.values(value).every((item) =>
+        isRuntimeWorkbenchHumanDecisionCustomValue(item, depth + 1),
+      );
+    case "bigint":
+    case "function":
+    case "symbol":
+    case "undefined":
+      return false;
+  }
+  return false;
 }
 
 function normalizeRuntimeWorkbenchReferenceBase64(
@@ -2071,6 +2400,55 @@ function upsertRuntimeWorkbenchSkillEntry(
   return Object.freeze(nextEntries);
 }
 
+interface ParsedRuntimeWorkbenchHumanDecisionRecord {
+  readonly humanNodeId: string;
+  readonly decision: string;
+  readonly by: string;
+  readonly customValuePresent: boolean;
+  readonly decidedAt: string;
+  readonly requestedAt: string;
+}
+
+function parseRuntimeWorkbenchHumanDecisionRecord(
+  body: unknown,
+): ParsedRuntimeWorkbenchHumanDecisionRecord | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  const schemaVersion = body.schema_version;
+  const humanNodeId = body.human_node_id;
+  const status = body.status;
+  const decision = body.decision;
+  const by = body.by;
+  const decidedAt = body.decided_at;
+  const requestedAt = body.requested_at;
+  if (
+    schemaVersion !== "0.1.0" ||
+    typeof humanNodeId !== "string" ||
+    humanNodeId.trim().length === 0 ||
+    status !== "resolved" ||
+    typeof decision !== "string" ||
+    decision.trim().length === 0 ||
+    typeof by !== "string" ||
+    by.trim().length === 0 ||
+    typeof decidedAt !== "string" ||
+    decidedAt.trim().length === 0 ||
+    typeof requestedAt !== "string" ||
+    requestedAt.trim().length === 0
+  ) {
+    return null;
+  }
+  return {
+    humanNodeId,
+    decision,
+    by,
+    customValuePresent:
+      Object.hasOwn(body, "custom_value") && body.custom_value !== null,
+    decidedAt,
+    requestedAt,
+  };
+}
+
 function buildRuntimeWorkbenchReferenceMultipartBody(options: {
   readonly kind: RuntimeWorkbenchReferenceKind;
   readonly sensitive: boolean;
@@ -2198,6 +2576,13 @@ function freezeRuntimeWorkbenchSessionSnapshot(
         snapshot.skillManagement.canUpdateSkill ||
         snapshot.skillManagement.status === "refreshing" ||
         snapshot.skillManagement.status === "updating",
+      disposed: snapshot.disposed,
+    }),
+    humanDecision: createRuntimeWorkbenchHumanDecisionSnapshot({
+      ...snapshot.humanDecision,
+      runtimeAvailable:
+        snapshot.humanDecision.canSubmitDecision ||
+        snapshot.humanDecision.status === "submitting",
       disposed: snapshot.disposed,
     }),
   });

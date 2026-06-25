@@ -88,6 +88,7 @@ export interface RuntimeWorkbenchShellStatusItem {
     | "project_creation"
     | "reference_management"
     | "skill_management"
+    | "human_decision"
     | "lifecycle_panel"
     | "runtime_stream"
     | "last_shortcut";
@@ -294,6 +295,9 @@ export type RuntimeWorkbenchShellReferenceManagementSnapshot =
 export type RuntimeWorkbenchShellSkillManagementSnapshot =
   RuntimeWorkbenchHostSessionSnapshot["skillManagement"];
 
+export type RuntimeWorkbenchShellHumanDecisionSnapshot =
+  RuntimeWorkbenchHostSessionSnapshot["humanDecision"];
+
 export interface RuntimeWorkbenchShellSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly activePanelLabel: string;
@@ -301,6 +305,7 @@ export interface RuntimeWorkbenchShellSnapshot {
   readonly projectCreation: RuntimeWorkbenchShellProjectCreationSnapshot;
   readonly referenceManagement: RuntimeWorkbenchShellReferenceManagementSnapshot;
   readonly skillManagement: RuntimeWorkbenchShellSkillManagementSnapshot;
+  readonly humanDecision: RuntimeWorkbenchShellHumanDecisionSnapshot;
   readonly lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus;
   readonly lifecyclePanel: RuntimeWorkbenchShellLifecyclePanelSnapshot | null;
   readonly runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus;
@@ -566,6 +571,7 @@ export function buildRuntimeWorkbenchShellSnapshot(
     skillManagement: cloneRuntimeWorkbenchShellSkillManagement(
       host.skillManagement,
     ),
+    humanDecision: cloneRuntimeWorkbenchShellHumanDecision(host.humanDecision),
     lifecyclePanelStatus,
     lifecyclePanel,
     runtimeStreamStatus,
@@ -1038,6 +1044,14 @@ function buildStatusItems(
       tone: disposed ? "danger" : skillManagementTone(host.skillManagement),
     }),
     statusItem({
+      id: "human_decision",
+      label: "HITL",
+      value: disposed
+        ? "Disposed"
+        : humanDecisionStatusLabel(host.humanDecision),
+      tone: disposed ? "danger" : humanDecisionTone(host.humanDecision),
+    }),
+    statusItem({
       id: "lifecycle_panel",
       label: "Lifecycle",
       value: panelStatusLabel(lifecyclePanelStatus),
@@ -1456,6 +1470,39 @@ function skillManagementTone(
   }
 }
 
+function humanDecisionStatusLabel(
+  humanDecision: RuntimeWorkbenchShellHumanDecisionSnapshot,
+): string {
+  switch (humanDecision.status) {
+    case "blocked":
+      return "Blocked";
+    case "failed":
+      return "Failed";
+    case "submitting":
+      return "Submitting";
+    case "succeeded":
+      return "Resolved";
+    case "idle":
+      return humanDecision.canSubmitDecision ? "Ready" : "Unavailable";
+  }
+}
+
+function humanDecisionTone(
+  humanDecision: RuntimeWorkbenchShellHumanDecisionSnapshot,
+): RuntimeWorkbenchShellTone {
+  switch (humanDecision.status) {
+    case "blocked":
+    case "failed":
+      return "danger";
+    case "submitting":
+      return "accent";
+    case "succeeded":
+      return "success";
+    case "idle":
+      return humanDecision.canSubmitDecision ? "neutral" : "warning";
+  }
+}
+
 function formatRuntimeStreamChannelLabel(
   channel: NonNullable<
     RuntimeWorkbenchHostSessionSnapshot["runtimeStream"]["activeChannel"]
@@ -1594,6 +1641,9 @@ function freezeRuntimeWorkbenchShellSnapshot(
     skillManagement: cloneRuntimeWorkbenchShellSkillManagement(
       snapshot.skillManagement,
     ),
+    humanDecision: cloneRuntimeWorkbenchShellHumanDecision(
+      snapshot.humanDecision,
+    ),
     runtimeStreamPanel:
       snapshot.runtimeStreamPanel === null
         ? null
@@ -1645,6 +1695,12 @@ function cloneRuntimeWorkbenchShellSkillManagement(
     ...skillManagement,
     entries: Object.freeze([...skillManagement.entries]),
   });
+}
+
+function cloneRuntimeWorkbenchShellHumanDecision(
+  humanDecision: RuntimeWorkbenchShellHumanDecisionSnapshot,
+): RuntimeWorkbenchShellHumanDecisionSnapshot {
+  return Object.freeze({ ...humanDecision });
 }
 
 function freezeRuntimeWorkbenchShellChrome(

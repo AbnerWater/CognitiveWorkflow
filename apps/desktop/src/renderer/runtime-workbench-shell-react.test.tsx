@@ -47,6 +47,7 @@ import {
   bindRuntimeWorkbenchShellReactKeyboardTarget,
   createRuntimeWorkbenchShellReactProjectCreationFormState,
   createRuntimeWorkbenchShellReactReferenceImportFormState,
+  createRuntimeWorkbenchShellReactHumanDecisionFormState,
   createRuntimeWorkbenchShellReactSkillManagementFormState,
   buildRuntimeWorkbenchShellReactStreamSessionOptions,
   createRuntimeWorkbenchShellReactStreamOptionsFormState,
@@ -5652,6 +5653,117 @@ test("renderer runtime workbench React shell dispatches skill management command
   }
 });
 
+test("renderer runtime workbench React shell dispatches human decision commands without rendering custom values", async () => {
+  assert.deepEqual(
+    createRuntimeWorkbenchShellReactHumanDecisionFormState({
+      runId: "run_waiting",
+      humanNodeId: "n_review_gate",
+      decision: "continue",
+      by: "tester",
+    }),
+    {
+      runId: "run_waiting",
+      humanNodeId: "n_review_gate",
+      decision: "continue",
+      by: "tester",
+    },
+  );
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const snapshot = createRuntimeWorkbenchShellReactSnapshot({
+    humanDecision: {
+      status: "succeeded",
+      path: "/runs/run_waiting/decisions",
+      runId: "run_waiting",
+      humanNodeId: "n_review_gate",
+      decision: "continue",
+      by: "reviewer",
+      customValuePresent: true,
+      statusCode: 200,
+      decidedAt: "2026-06-25T06:00:00.000Z",
+      requestedAt: "2026-06-25T05:59:00.000Z",
+      canSubmitDecision: true,
+    },
+  });
+  const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          defaultHumanDecisionFormState={{
+            runId: " run_waiting ",
+            humanNodeId: " n_review_gate ",
+            decision: " continue ",
+            by: " tester ",
+          }}
+          session={session}
+          title="Human Decision Runtime Workbench"
+        />,
+      );
+    });
+
+    const humanDecisionControl = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "humanDecisionControl",
+      "true",
+    );
+    assert.equal(
+      humanDecisionControl.getAttribute("data-human-decision-status"),
+      "succeeded",
+    );
+    assert.equal(
+      humanDecisionControl.getAttribute(
+        "data-human-decision-custom-value-present",
+      ),
+      "true",
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container).includes(
+        "raw_human_custom_value",
+      ),
+      false,
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchElementAttributeValues(dom.container).includes(
+        "raw_human_custom_value",
+      ),
+      false,
+    );
+
+    const submitButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "humanDecisionSubmit",
+      "true",
+    );
+    assert.equal(
+      submitButton.getAttribute("data-human-decision-submit-enabled"),
+      "true",
+    );
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(submitButton);
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "submit_human_decision",
+      runId: "run_waiting",
+      humanNodeId: "n_review_gate",
+      decision: "continue",
+      by: "tester",
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    session.dispose();
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench session dispatches run-once through runtime fetch", async () => {
   const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
     body: Object.freeze({ raw_model_output: "must not be retained" }),
@@ -6062,6 +6174,86 @@ test("renderer runtime workbench session manages skills through runtime fetch wi
   );
   assert.equal(
     JSON.stringify(toggled.skillManagement).includes("raw_skill_param_value"),
+    false,
+  );
+});
+
+test("renderer runtime workbench session submits human decisions through runtime fetch without retaining custom values", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
+    body: Object.freeze({
+      schema_version: "0.1.0",
+      human_node_id: "n_review_gate",
+      status: "resolved",
+      decision: "continue",
+      by: "tester",
+      custom_value: Object.freeze({
+        mode: "edit",
+        nested: Object.freeze({
+          reason: "raw_human_custom_value",
+        }),
+      }),
+      decided_at: "2026-06-25T06:00:00.000Z",
+      requested_at: "2026-06-25T05:59:00.000Z",
+    }),
+    ok: true,
+    status: 200,
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const resolved = await session.submitHumanDecision({
+    runId: " run_waiting ",
+    humanNodeId: " n_review_gate ",
+    decision: "continue",
+    by: " tester ",
+    customValue: {
+      mode: "edit",
+      nested: {
+        reason: "raw_human_custom_value",
+        selectedOptions: ["resume", true, 2],
+      },
+    },
+    idempotencyKey: "idem_human",
+  });
+  const call = requireRuntimeWorkbenchRunOnceRuntimeCall(calls);
+  assert.equal(call.path, "/runs/run_waiting/decisions");
+  assert.equal(call.init?.method, "POST");
+  assert.equal(call.init?.idempotencyKey, "idem_human");
+  assert.deepEqual(
+    JSON.parse(call.init?.body ?? "{}") as Record<string, unknown>,
+    {
+      schema_version: "0.1.0",
+      human_node_id: "n_review_gate",
+      decision: "continue",
+      by: "tester",
+      custom_value: {
+        mode: "edit",
+        nested: {
+          reason: "raw_human_custom_value",
+          selectedOptions: ["resume", true, 2],
+        },
+      },
+    },
+  );
+  assert.deepEqual(resolved.humanDecision, {
+    status: "succeeded",
+    method: "POST",
+    path: "/runs/run_waiting/decisions",
+    runId: "run_waiting",
+    humanNodeId: "n_review_gate",
+    decision: "continue",
+    by: "tester",
+    customValuePresent: true,
+    statusCode: 200,
+    blockedReason: null,
+    decidedAt: "2026-06-25T06:00:00.000Z",
+    requestedAt: "2026-06-25T05:59:00.000Z",
+    canSubmitDecision: true,
+  });
+  assert.equal(
+    JSON.stringify(resolved.humanDecision).includes("raw_human_custom_value"),
     false,
   );
 });
@@ -7384,6 +7576,26 @@ function createRuntimeWorkbenchShellReactSkillManagementSnapshot(
   });
 }
 
+function createRuntimeWorkbenchShellReactHumanDecisionSnapshot(
+  input: Partial<RuntimeWorkbenchShellSnapshot["humanDecision"]> = {},
+): RuntimeWorkbenchShellSnapshot["humanDecision"] {
+  return Object.freeze({
+    status: input.status ?? "idle",
+    method: "POST",
+    path: input.path ?? null,
+    runId: input.runId ?? null,
+    humanNodeId: input.humanNodeId ?? null,
+    decision: input.decision ?? null,
+    by: input.by ?? null,
+    customValuePresent: input.customValuePresent ?? false,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    decidedAt: input.decidedAt ?? null,
+    requestedAt: input.requestedAt ?? null,
+    canSubmitDecision: input.canSubmitDecision ?? true,
+  });
+}
+
 function createRuntimeWorkbenchShellReactSnapshot(
   options: {
     readonly activePanel?: RuntimeWorkbenchPanelId;
@@ -7393,6 +7605,9 @@ function createRuntimeWorkbenchShellReactSnapshot(
     >;
     readonly skillManagement?: Partial<
       RuntimeWorkbenchShellSnapshot["skillManagement"]
+    >;
+    readonly humanDecision?: Partial<
+      RuntimeWorkbenchShellSnapshot["humanDecision"]
     >;
   } = {},
 ): RuntimeWorkbenchShellSnapshot {
@@ -7408,6 +7623,9 @@ function createRuntimeWorkbenchShellReactSnapshot(
       ),
     skillManagement: createRuntimeWorkbenchShellReactSkillManagementSnapshot(
       options.skillManagement,
+    ),
+    humanDecision: createRuntimeWorkbenchShellReactHumanDecisionSnapshot(
+      options.humanDecision,
     ),
     lifecyclePanel: Object.freeze({
       active: false,
@@ -7462,6 +7680,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
     referenceManagement:
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(),
     skillManagement: createRuntimeWorkbenchShellReactSkillManagementSnapshot(),
+    humanDecision: createRuntimeWorkbenchShellReactHumanDecisionSnapshot(),
     lifecyclePanel: Object.freeze({
       active: false,
       disposed: false,
@@ -7747,6 +7966,7 @@ function createRuntimeWorkbenchShellReactLifecycleSnapshot(): RuntimeWorkbenchSh
     referenceManagement:
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(),
     skillManagement: createRuntimeWorkbenchShellReactSkillManagementSnapshot(),
+    humanDecision: createRuntimeWorkbenchShellReactHumanDecisionSnapshot(),
     lifecyclePanel: Object.freeze({
       active: true,
       disposed: false,

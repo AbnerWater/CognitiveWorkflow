@@ -486,6 +486,7 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
     case "set_reference_enabled":
     case "refresh_skills":
     case "set_skill_enabled":
+    case "submit_human_decision":
       return false;
     case "dispatch_lifecycle_panel":
       return (
@@ -709,6 +710,20 @@ function cloneRuntimeWorkbenchInteractionCommand(
         skillId: command.skillId,
         enabled: command.enabled,
         ...(command.version !== undefined ? { version: command.version } : {}),
+      });
+    case "submit_human_decision":
+      return Object.freeze({
+        type: command.type,
+        runId: command.runId,
+        humanNodeId: command.humanNodeId,
+        decision: command.decision,
+        by: command.by,
+        ...(command.customValue !== undefined
+          ? { customValue: command.customValue }
+          : {}),
+        ...(command.idempotencyKey !== undefined
+          ? { idempotencyKey: command.idempotencyKey }
+          : {}),
       });
     case "open_lifecycle_panel_session":
       return Object.freeze({

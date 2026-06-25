@@ -1678,7 +1678,8 @@ button {
 }
 
 .cw-workbench__reference-management,
-.cw-workbench__skill-management {
+.cw-workbench__skill-management,
+.cw-workbench__human-decision {
   display: grid;
   flex: 1 1 100%;
   gap: 10px;
@@ -1709,9 +1710,20 @@ button {
   min-width: 0;
 }
 
+.cw-workbench__human-decision-form {
+  display: grid;
+  grid-template-columns:
+    minmax(120px, 0.9fr) minmax(140px, 1fr) minmax(110px, 0.7fr)
+    minmax(120px, 0.8fr) auto;
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+}
+
 .cw-workbench__reference-field,
 .cw-workbench__reference-check,
-.cw-workbench__skill-field {
+.cw-workbench__skill-field,
+.cw-workbench__human-decision-field {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -1723,7 +1735,9 @@ button {
 .cw-workbench__reference-entry-meta dt,
 .cw-workbench__skill-field span,
 .cw-workbench__skill-status dt,
-.cw-workbench__skill-entry-meta dt {
+.cw-workbench__skill-entry-meta dt,
+.cw-workbench__human-decision-field span,
+.cw-workbench__human-decision-status dt {
   color: #657487;
   font-size: 12px;
   font-weight: 700;
@@ -1731,7 +1745,8 @@ button {
 
 .cw-workbench__reference-field input,
 .cw-workbench__reference-field select,
-.cw-workbench__skill-field input {
+.cw-workbench__skill-field input,
+.cw-workbench__human-decision-field input {
   width: 100%;
   min-height: 34px;
   border: 1px solid #cbd4df;
@@ -1743,7 +1758,8 @@ button {
 }
 
 .cw-workbench__reference-field input,
-.cw-workbench__skill-field input {
+.cw-workbench__skill-field input,
+.cw-workbench__human-decision-field input {
   padding: 0 8px;
 }
 
@@ -1762,7 +1778,8 @@ button {
 .cw-workbench__reference-toggle,
 .cw-workbench__skill-refresh,
 .cw-workbench__skill-set,
-.cw-workbench__skill-toggle {
+.cw-workbench__skill-toggle,
+.cw-workbench__human-decision-submit {
   min-height: 36px;
   border: 1px solid #3d6fa7;
   border-radius: 6px;
@@ -1773,7 +1790,8 @@ button {
 }
 
 .cw-workbench__reference-status,
-.cw-workbench__skill-status {
+.cw-workbench__skill-status,
+.cw-workbench__human-decision-status {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -1782,12 +1800,14 @@ button {
 }
 
 .cw-workbench__reference-status div,
-.cw-workbench__skill-status div {
+.cw-workbench__skill-status div,
+.cw-workbench__human-decision-status div {
   min-width: 0;
 }
 
 .cw-workbench__reference-status dd,
-.cw-workbench__skill-status dd {
+.cw-workbench__skill-status dd,
+.cw-workbench__human-decision-status dd {
   margin: 2px 0 0;
   overflow-wrap: anywhere;
   font-size: 13px;
@@ -3051,6 +3071,7 @@ button {
   .cw-workbench__project-creation,
   .cw-workbench__reference-management-form,
   .cw-workbench__skill-management-form,
+  .cw-workbench__human-decision-form,
   .cw-workbench__reference-entry,
   .cw-workbench__skill-entry,
   .cw-workbench__stream-options,
@@ -3071,6 +3092,7 @@ button {
   .cw-workbench__project-creation-status,
   .cw-workbench__reference-status,
   .cw-workbench__skill-status,
+  .cw-workbench__human-decision-status,
   .cw-workbench__reference-entry-meta,
   .cw-workbench__skill-entry-meta,
   .cw-workbench__stream-metrics,
@@ -3109,6 +3131,7 @@ button {
   .cw-workbench__project-creation-status,
   .cw-workbench__reference-status,
   .cw-workbench__skill-status,
+  .cw-workbench__human-decision-status,
   .cw-workbench__reference-entry-meta,
   .cw-workbench__skill-entry-meta,
   .cw-workbench__stream-metrics,

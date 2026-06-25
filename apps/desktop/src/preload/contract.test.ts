@@ -222,6 +222,24 @@ function createDefaultRuntimeWorkbenchSkillManagement(): RuntimeWorkbenchShellSn
   });
 }
 
+function createDefaultRuntimeWorkbenchHumanDecision(): RuntimeWorkbenchShellSnapshot["humanDecision"] {
+  return Object.freeze({
+    status: "idle",
+    method: "POST",
+    path: null,
+    runId: null,
+    humanNodeId: null,
+    decision: null,
+    by: null,
+    customValuePresent: false,
+    statusCode: null,
+    blockedReason: null,
+    decidedAt: null,
+    requestedAt: null,
+    canSubmitDecision: false,
+  });
+}
+
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
   assert.doesNotThrow(() => assertRuntimeRequestPath("/runs/run_123/stream"));
@@ -3546,6 +3564,7 @@ test("renderer runtime workbench session composes lifecycle and stream stores", 
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
+    humanDecision: createDefaultRuntimeWorkbenchHumanDecision(),
     lifecyclePanel: {
       activeSession: null,
       disposed: false,
@@ -3919,6 +3938,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "set_reference_enabled",
     "refresh_skills",
     "set_skill_enabled",
+    "submit_human_decision",
     "dispatch_lifecycle_panel",
     "dispatch_runtime_stream",
   ]);
@@ -3934,6 +3954,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "set_reference_enabled",
     "refresh_skills",
     "set_skill_enabled",
+    "submit_human_decision",
   ]);
   assert.equal(Object.isFrozen(initialSnapshot), true);
   assert.equal(Object.isFrozen(initialSnapshot.availableCommandIds), true);
@@ -5190,6 +5211,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     "dispose_lifecycle_panel_session",
     "open_runtime_stream_session",
     "dispose_runtime_stream_session",
+    "submit_human_decision",
     "dispatch_lifecycle_panel",
     "dispatch_runtime_stream",
   ];
@@ -5205,6 +5227,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
+    humanDecision: createDefaultRuntimeWorkbenchHumanDecision(),
     lifecyclePanel: {
       active: true,
       disposed: false,
@@ -5726,6 +5749,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["project_creation", "Not created", "neutral"],
       ["reference_management", "Ready", "neutral"],
       ["skill_management", "Ready", "neutral"],
+      ["human_decision", "Unavailable", "warning"],
       ["lifecycle_panel", "Active", "success"],
       ["runtime_stream", "Run run_shell", "success"],
       ["last_shortcut", "Show stream", "accent"],
@@ -5788,6 +5812,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
+    humanDecision: createDefaultRuntimeWorkbenchHumanDecision(),
     lifecyclePanel: { active: false, disposed: false, activeSession: null },
     runtimeStream: { active: false, activeChannel: null, disposed: false },
     runtimeStreamPanel: null,
@@ -5807,6 +5832,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
+    humanDecision: createDefaultRuntimeWorkbenchHumanDecision(),
     lifecyclePanel: {
       active: true,
       disposed: false,
@@ -5916,6 +5942,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
       referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
       skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
+      humanDecision: createDefaultRuntimeWorkbenchHumanDecision(),
       lifecyclePanel: { active: false, disposed: true, activeSession: null },
       runtimeStream: { active: false, activeChannel: null, disposed: true },
       runtimeStreamPanel: null,
@@ -5955,6 +5982,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["project_creation", "Disposed", "danger"],
       ["reference_management", "Disposed", "danger"],
       ["skill_management", "Disposed", "danger"],
+      ["human_decision", "Disposed", "danger"],
       ["lifecycle_panel", "Disposed", "danger"],
       ["runtime_stream", "Disposed", "danger"],
       ["last_shortcut", "None", "neutral"],

@@ -39,6 +39,7 @@ import {
   type RuntimeWorkbenchPanelId,
   type RuntimeWorkbenchProjectCreationSnapshot,
   type RuntimeWorkbenchReferenceManagementSnapshot,
+  type RuntimeWorkbenchHumanDecisionSnapshot,
   type RuntimeWorkbenchSkillManagementSnapshot,
   type RuntimeWorkbenchSession,
 } from "./runtime-workbench-session.js";
@@ -144,6 +145,7 @@ export interface RuntimeWorkbenchHostSessionSnapshot {
   readonly projectCreation: RuntimeWorkbenchProjectCreationSnapshot;
   readonly referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot;
   readonly skillManagement: RuntimeWorkbenchSkillManagementSnapshot;
+  readonly humanDecision: RuntimeWorkbenchHumanDecisionSnapshot;
   readonly lifecyclePanel: RuntimeWorkbenchHostLifecyclePanelSnapshot;
   readonly runtimeStream: RuntimeWorkbenchHostRuntimeStreamSnapshot;
   readonly runtimeStreamPanel: RuntimeWorkbenchHostRuntimeStreamPanelSnapshot | null;
@@ -440,6 +442,9 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
     skillManagement: cloneRuntimeWorkbenchHostSkillManagement(
       workbench.skillManagement,
     ),
+    humanDecision: cloneRuntimeWorkbenchHostHumanDecision(
+      workbench.humanDecision,
+    ),
     lifecyclePanel: Object.freeze({
       active: lifecyclePanelActiveSession !== null,
       disposed: workbench.lifecyclePanel.disposed,
@@ -486,6 +491,9 @@ function freezeRuntimeWorkbenchHostSessionSnapshot(
     ),
     skillManagement: cloneRuntimeWorkbenchHostSkillManagement(
       snapshot.skillManagement,
+    ),
+    humanDecision: cloneRuntimeWorkbenchHostHumanDecision(
+      snapshot.humanDecision,
     ),
   });
 }
@@ -536,6 +544,12 @@ function cloneRuntimeWorkbenchHostSkillManagement(
     ...skillManagement,
     entries: Object.freeze([...skillManagement.entries]),
   });
+}
+
+function cloneRuntimeWorkbenchHostHumanDecision(
+  humanDecision: RuntimeWorkbenchHumanDecisionSnapshot,
+): RuntimeWorkbenchHumanDecisionSnapshot {
+  return Object.freeze({ ...humanDecision });
 }
 
 function buildRuntimeWorkbenchHostRuntimeStreamPanelSnapshot(

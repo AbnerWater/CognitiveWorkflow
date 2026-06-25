@@ -321,6 +321,21 @@ function buildVisualSmokeSnapshot(
       canRefreshSkills: !disposed,
       canUpdateSkill: !disposed,
     }),
+    humanDecision: Object.freeze({
+      status: "idle",
+      method: "POST",
+      path: null,
+      runId: null,
+      humanNodeId: null,
+      decision: null,
+      by: null,
+      customValuePresent: false,
+      statusCode: null,
+      blockedReason: null,
+      decidedAt: null,
+      requestedAt: null,
+      canSubmitDecision: !disposed,
+    }),
     lifecyclePanelStatus: disposed ? "disposed" : "active",
     lifecyclePanel: disposed
       ? null
@@ -570,6 +585,12 @@ function buildVisualSmokeSnapshot(
         label: "Skills",
         value: disposed ? "Disposed" : "1 skills",
         tone: disposed ? "danger" : "success",
+      }),
+      Object.freeze({
+        id: "human_decision",
+        label: "HITL",
+        value: disposed ? "Disposed" : "Ready",
+        tone: disposed ? "danger" : "neutral",
       }),
       Object.freeze({
         id: "lifecycle_panel",

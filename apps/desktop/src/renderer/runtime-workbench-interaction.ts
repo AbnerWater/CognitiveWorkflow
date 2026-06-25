@@ -5,6 +5,7 @@ import type { CreateRuntimeLifecyclePanelSessionFactorySessionOptions } from "./
 import type { CreateRuntimeStreamInteractionSessionFactorySessionOptions } from "./runtime-stream-session.js";
 import type {
   RuntimeWorkbenchExecutionMode,
+  RuntimeWorkbenchHumanDecisionCustomValue,
   RuntimeWorkbenchPanelId,
   RuntimeWorkbenchReferenceKind,
   RuntimeWorkbenchSession,
@@ -29,6 +30,7 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "set_reference_enabled",
   "refresh_skills",
   "set_skill_enabled",
+  "submit_human_decision",
   "dispatch_lifecycle_panel",
   "dispatch_runtime_stream",
 ] as const;
@@ -108,6 +110,15 @@ export type RuntimeWorkbenchInteractionCommand =
       readonly skillId: string;
       readonly enabled: boolean;
       readonly version?: string;
+    }
+  | {
+      readonly type: "submit_human_decision";
+      readonly runId: string;
+      readonly humanNodeId: string;
+      readonly decision: string;
+      readonly by: string;
+      readonly customValue?: RuntimeWorkbenchHumanDecisionCustomValue;
+      readonly idempotencyKey?: string;
     }
   | {
       readonly type: "dispatch_lifecycle_panel";
@@ -353,6 +364,20 @@ export function createRuntimeWorkbenchInteraction(
             : {}),
         });
         return completeAction();
+      case "submit_human_decision":
+        await options.workbench.submitHumanDecision({
+          runId: safeCommand.runId,
+          humanNodeId: safeCommand.humanNodeId,
+          decision: safeCommand.decision,
+          by: safeCommand.by,
+          ...(safeCommand.customValue !== undefined
+            ? { customValue: safeCommand.customValue }
+            : {}),
+          ...(safeCommand.idempotencyKey !== undefined
+            ? { idempotencyKey: safeCommand.idempotencyKey }
+            : {}),
+        });
+        return completeAction();
       case "dispatch_lifecycle_panel": {
         await options.workbench.dispatchLifecyclePanelCommand(
           safeCommand.command,
@@ -448,6 +473,9 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
     }
     if (workbench.skillManagement.canUpdateSkill) {
       enabledCommandIds.push("set_skill_enabled");
+    }
+    if (workbench.humanDecision.canSubmitDecision) {
+      enabledCommandIds.push("submit_human_decision");
     }
     if (workbench.lifecyclePanel.activeSession !== null) {
       enabledCommandIds.push(
@@ -572,6 +600,22 @@ function requireRuntimeWorkbenchInteractionCommand(
         throw new Error("Invalid runtime workbench interaction command");
       }
       return command;
+    case "submit_human_decision":
+      if (
+        typeof command.runId !== "string" ||
+        typeof command.humanNodeId !== "string" ||
+        typeof command.decision !== "string" ||
+        typeof command.by !== "string" ||
+        ("customValue" in command &&
+          command.customValue !== undefined &&
+          !isRuntimeWorkbenchHumanDecisionCustomValue(command.customValue)) ||
+        ("idempotencyKey" in command &&
+          command.idempotencyKey !== undefined &&
+          typeof command.idempotencyKey !== "string")
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
     case "open_lifecycle_panel_session":
       if (
         "options" in command &&
@@ -624,6 +668,43 @@ function runtimeWorkbenchInteractionSnapshotSignature(
   snapshot: RuntimeWorkbenchInteractionSnapshot,
 ): string {
   return JSON.stringify(snapshot);
+}
+
+function isRuntimeWorkbenchHumanDecisionCustomValue(
+  value: unknown,
+  depth = 0,
+): value is RuntimeWorkbenchHumanDecisionCustomValue {
+  if (depth > 12) {
+    return false;
+  }
+  if (value === null) {
+    return true;
+  }
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return true;
+    case "number":
+      return Number.isFinite(value);
+    case "object":
+      if (Array.isArray(value)) {
+        return value.every((item) =>
+          isRuntimeWorkbenchHumanDecisionCustomValue(item, depth + 1),
+        );
+      }
+      if (!isRecord(value)) {
+        return false;
+      }
+      return Object.values(value).every((item) =>
+        isRuntimeWorkbenchHumanDecisionCustomValue(item, depth + 1),
+      );
+    case "bigint":
+    case "function":
+    case "symbol":
+    case "undefined":
+      return false;
+  }
+  return false;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

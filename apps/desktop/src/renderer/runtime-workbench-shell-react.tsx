@@ -111,6 +111,13 @@ export interface RuntimeWorkbenchShellReactSkillManagementFormState {
   readonly version: string;
 }
 
+export interface RuntimeWorkbenchShellReactHumanDecisionFormState {
+  readonly runId: string;
+  readonly humanNodeId: string;
+  readonly decision: string;
+  readonly by: string;
+}
+
 export interface RuntimeWorkbenchShellReactViewProps {
   readonly session: RuntimeWorkbenchShellDomSession;
   readonly title?: string;
@@ -121,6 +128,7 @@ export interface RuntimeWorkbenchShellReactViewProps {
   readonly defaultProjectCreationFormState?: Partial<RuntimeWorkbenchShellReactProjectCreationFormState>;
   readonly defaultReferenceImportFormState?: Partial<RuntimeWorkbenchShellReactReferenceImportFormState>;
   readonly defaultSkillManagementFormState?: Partial<RuntimeWorkbenchShellReactSkillManagementFormState>;
+  readonly defaultHumanDecisionFormState?: Partial<RuntimeWorkbenchShellReactHumanDecisionFormState>;
   readonly className?: string;
   readonly onActionError?: (error: unknown) => void;
 }
@@ -277,6 +285,17 @@ export function createRuntimeWorkbenchShellReactSkillManagementFormState(
   });
 }
 
+export function createRuntimeWorkbenchShellReactHumanDecisionFormState(
+  input: Partial<RuntimeWorkbenchShellReactHumanDecisionFormState> = {},
+): RuntimeWorkbenchShellReactHumanDecisionFormState {
+  return Object.freeze({
+    runId: input.runId ?? "",
+    humanNodeId: input.humanNodeId ?? "",
+    decision: input.decision ?? "",
+    by: input.by ?? "",
+  });
+}
+
 export function buildRuntimeWorkbenchShellReactStreamSessionOptions(
   state: RuntimeWorkbenchShellReactStreamOptionsFormState,
 ): CreateRuntimeStreamInteractionSessionFactorySessionOptions | null {
@@ -388,6 +407,12 @@ export function RuntimeWorkbenchShellReactView(
     useState<RuntimeWorkbenchShellReactSkillManagementFormState>(() =>
       createRuntimeWorkbenchShellReactSkillManagementFormState(
         props.defaultSkillManagementFormState,
+      ),
+    );
+  const [humanDecisionForm, setHumanDecisionForm] =
+    useState<RuntimeWorkbenchShellReactHumanDecisionFormState>(() =>
+      createRuntimeWorkbenchShellReactHumanDecisionFormState(
+        props.defaultHumanDecisionFormState,
       ),
     );
   const referenceFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -518,6 +543,40 @@ export function RuntimeWorkbenchShellReactView(
     skillId !== null &&
     skillVersion !== null &&
     skillVersion.length > 0;
+  const humanDecisionRunId = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactPathSegment(humanDecisionForm.runId),
+    [humanDecisionForm.runId],
+  );
+  const humanDecisionNodeId = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactPathSegment(
+        humanDecisionForm.humanNodeId,
+      ),
+    [humanDecisionForm.humanNodeId],
+  );
+  const humanDecisionChoice = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactPathSegment(
+        humanDecisionForm.decision,
+      ),
+    [humanDecisionForm.decision],
+  );
+  const humanDecisionActor = useMemo(() => {
+    const normalized = normalizeRuntimeWorkbenchShellReactOptionalText(
+      humanDecisionForm.by,
+    );
+    if (normalized === null || normalized.length === 0) {
+      return null;
+    }
+    return normalized.length > 200 ? null : normalized;
+  }, [humanDecisionForm.by]);
+  const humanDecisionReady =
+    snapshot.humanDecision.canSubmitDecision &&
+    humanDecisionRunId !== null &&
+    humanDecisionNodeId !== null &&
+    humanDecisionChoice !== null &&
+    humanDecisionActor !== null;
   const handleActionError = useCallback(
     (error: unknown): void => {
       try {
@@ -727,6 +786,27 @@ export function RuntimeWorkbenchShellReactView(
       const value = event.currentTarget.value;
       setSkillManagementForm((current) =>
         createRuntimeWorkbenchShellReactSkillManagementFormState({
+          ...current,
+          [field]: value,
+        }),
+      );
+    },
+    [],
+  );
+  const handleHumanDecisionTextInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      const field = event.currentTarget.dataset.humanDecisionField;
+      if (
+        field !== "runId" &&
+        field !== "humanNodeId" &&
+        field !== "decision" &&
+        field !== "by"
+      ) {
+        return;
+      }
+      const value = event.currentTarget.value;
+      setHumanDecisionForm((current) =>
+        createRuntimeWorkbenchShellReactHumanDecisionFormState({
           ...current,
           [field]: value,
         }),
@@ -946,6 +1026,34 @@ export function RuntimeWorkbenchShellReactView(
     },
     [handleActionError, props.session, skillToggleProjectId, skillUpdateReady],
   );
+  const handleSubmitHumanDecisionClick = useCallback((): void => {
+    if (
+      !humanDecisionReady ||
+      humanDecisionRunId === null ||
+      humanDecisionNodeId === null ||
+      humanDecisionChoice === null ||
+      humanDecisionActor === null
+    ) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "submit_human_decision",
+        runId: humanDecisionRunId,
+        humanNodeId: humanDecisionNodeId,
+        decision: humanDecisionChoice,
+        by: humanDecisionActor,
+      })
+      .catch(handleActionError);
+  }, [
+    handleActionError,
+    humanDecisionActor,
+    humanDecisionChoice,
+    humanDecisionNodeId,
+    humanDecisionReady,
+    humanDecisionRunId,
+    props.session,
+  ]);
   const handleStreamDisplayLevelClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const displayLevel = event.currentTarget.dataset.streamDisplayLevel;
@@ -1248,6 +1356,13 @@ export function RuntimeWorkbenchShellReactView(
               skillManagement={snapshot.skillManagement}
               state={skillManagementForm}
               updateReady={skillUpdateReady}
+            />
+            <RuntimeWorkbenchShellHumanDecisionControls
+              humanDecision={snapshot.humanDecision}
+              onSubmitClick={handleSubmitHumanDecisionClick}
+              onTextInputChange={handleHumanDecisionTextInputChange}
+              ready={humanDecisionReady}
+              state={humanDecisionForm}
             />
             <RuntimeWorkbenchShellExecutionControls
               executionPolicy={snapshot.executionPolicy}
@@ -1735,6 +1850,108 @@ function RuntimeWorkbenchShellSkillEntryList(props: {
         </li>
       ))}
     </ul>
+  );
+}
+
+function RuntimeWorkbenchShellHumanDecisionControls(props: {
+  readonly humanDecision: RuntimeWorkbenchShellSnapshot["humanDecision"];
+  readonly state: RuntimeWorkbenchShellReactHumanDecisionFormState;
+  readonly ready: boolean;
+  readonly onTextInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onSubmitClick: () => void;
+}): ReactElement {
+  return (
+    <section
+      aria-label="Human decision"
+      className="cw-workbench__human-decision"
+      data-human-decision-can-submit={
+        props.humanDecision.canSubmitDecision ? "true" : "false"
+      }
+      data-human-decision-control="true"
+      data-human-decision-custom-value-present={
+        props.humanDecision.customValuePresent ? "true" : "false"
+      }
+      data-human-decision-status={props.humanDecision.status}
+    >
+      <div className="cw-workbench__human-decision-form">
+        <label className="cw-workbench__human-decision-field">
+          <span>Run id</span>
+          <input
+            data-human-decision-field="runId"
+            inputMode="text"
+            onChange={props.onTextInputChange}
+            value={props.state.runId}
+          />
+        </label>
+        <label className="cw-workbench__human-decision-field">
+          <span>Human node</span>
+          <input
+            data-human-decision-field="humanNodeId"
+            inputMode="text"
+            onChange={props.onTextInputChange}
+            value={props.state.humanNodeId}
+          />
+        </label>
+        <label className="cw-workbench__human-decision-field">
+          <span>Decision</span>
+          <input
+            data-human-decision-field="decision"
+            inputMode="text"
+            onChange={props.onTextInputChange}
+            value={props.state.decision}
+          />
+        </label>
+        <label className="cw-workbench__human-decision-field">
+          <span>By</span>
+          <input
+            data-human-decision-field="by"
+            inputMode="text"
+            onChange={props.onTextInputChange}
+            value={props.state.by}
+          />
+        </label>
+        <button
+          className="cw-workbench__human-decision-submit"
+          data-human-decision-submit="true"
+          data-human-decision-submit-enabled={props.ready ? "true" : "false"}
+          disabled={!props.ready}
+          onClick={props.onSubmitClick}
+          type="button"
+        >
+          Submit
+        </button>
+      </div>
+      <dl className="cw-workbench__human-decision-status">
+        <div>
+          <dt>Status</dt>
+          <dd>{props.humanDecision.status}</dd>
+        </div>
+        <div>
+          <dt>Run</dt>
+          <dd>{props.humanDecision.runId ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Node</dt>
+          <dd>{props.humanDecision.humanNodeId ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Decision</dt>
+          <dd>{props.humanDecision.decision ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>By</dt>
+          <dd>{props.humanDecision.by ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Custom</dt>
+          <dd>
+            {props.humanDecision.customValuePresent === true
+              ? "present"
+              : "none"}
+          </dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 
