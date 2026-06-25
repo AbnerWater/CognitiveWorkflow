@@ -117,8 +117,11 @@ if (chatBoxMode === "enabled") {
       chatLocalSubmissionCharacters: "24",
       chatLocalSubmissionClearCount: "3",
       chatLocalSubmissionCount: "3",
+      chatLocalSubmissionHistoryClientWidth: width <= 520 ? 294 : 640,
+      chatLocalSubmissionHistoryColumnCount: width <= 520 ? 2 : 7,
       chatLocalSubmissionHistoryItemIds: ["4", "3", "2"],
       chatLocalSubmissionHistoryItems: 3,
+      chatLocalSubmissionHistoryScrollWidth: width <= 520 ? 294 : 640,
       chatLocalSubmissionHistoryStatuses: [
         "queued_local",
         "queued_local",
@@ -378,6 +381,7 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
         historyStatuses: null,
       },
     });
+    assert.equal(chatEnabled?.chatLocalHistoryLayoutEvidence, null);
     assert.deepEqual(chatEnabled?.failures, []);
     assert.equal(chatEnabledMobile?.mode, "known");
     assert.equal(chatEnabledMobile?.chatBoxMode, "enabled");
@@ -402,6 +406,11 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       chatEnabledMobile?.chatLocalEvidence,
       chatEnabled?.chatLocalEvidence,
     );
+    assert.deepEqual(chatEnabledMobile?.chatLocalHistoryLayoutEvidence, {
+      columnCount: 2,
+      clientWidth: 294,
+      scrollWidth: 294,
+    });
     assert.deepEqual(chatEnabledMobile?.failures, []);
     assert.equal(unknownDesktop?.mode, "unknown");
     assert.equal(unknownDesktop?.chatBoxMode, "disabled");
@@ -422,6 +431,61 @@ test("visual smoke matrix accepts valid known and unknown evidence", async () =>
       tempDir,
     ]);
   });
+});
+
+test("visual smoke matrix rejects mobile chat history item overflow", async () => {
+  await withTempDir(
+    "cw-visual-smoke-matrix-chat-mobile-layout-",
+    async (tempDir) => {
+      const fakeElectronCliPath = await writeFakeElectronCli(
+        tempDir,
+        validFakeElectronCliBody.replace(
+          "chatLocalSubmissionHistoryScrollWidth: width <= 520 ? 294 : 640",
+          "chatLocalSubmissionHistoryScrollWidth: width <= 520 ? 320 : 640",
+        ),
+      );
+
+      const result = await runMatrix(tempDir, fakeElectronCliPath, {
+        outputDirName: "matrix-output-secret",
+      });
+      const chatEnabledDesktop = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-desktop",
+      );
+      const chatEnabledMobile = result.manifest.cases.find(
+        (testCase) => testCase.name === "chat-enabled-mobile",
+      );
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.manifest.cases.length, 8);
+      assert.equal(result.manifest.failures.length, 1);
+      assert.equal(chatEnabledDesktop?.chatLocalHistoryLayoutEvidence, null);
+      assert.deepEqual(chatEnabledDesktop?.failures, []);
+      assert.deepEqual(chatEnabledMobile?.chatLocalHistoryLayoutEvidence, {
+        columnCount: 2,
+        clientWidth: 294,
+        scrollWidth: 320,
+      });
+      assert.deepEqual(chatEnabledMobile?.failures, [
+        "expected mobile chat local history no horizontal item overflow, got client 294 scroll 320",
+      ]);
+      assert.deepEqual(
+        result.manifest.cases
+          .filter((testCase) => testCase.name !== "chat-enabled-mobile")
+          .map((testCase) => testCase.failures),
+        [[], [], [], [], [], [], []],
+      );
+      assertSafeOutput(result, [
+        "Review repair plan now",
+        "Confirm workflow handoff",
+        "Resume local request",
+        "query-secret",
+        "hash-secret",
+        "matrix-output-secret",
+        tempDir,
+      ]);
+    },
+  );
 });
 
 test("visual smoke matrix rejects unfocused enabled chat evidence", async () => {
@@ -820,8 +884,11 @@ const result = {
     chatLocalSubmissionCharacters: "24",
     chatLocalSubmissionClearCount: "3",
     chatLocalSubmissionCount: "3",
+    chatLocalSubmissionHistoryClientWidth: width <= 520 ? 294 : 640,
+    chatLocalSubmissionHistoryColumnCount: width <= 520 ? 2 : 7,
     chatLocalSubmissionHistoryItemIds: ["4", "3", "2"],
     chatLocalSubmissionHistoryItems: 3,
+    chatLocalSubmissionHistoryScrollWidth: width <= 520 ? 294 : 640,
     chatLocalSubmissionHistoryStatuses: [
       "queued_local",
       "queued_local",

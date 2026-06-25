@@ -5,6 +5,9 @@ const path = require("node:path");
 const {
   summarizeOutputPath,
 } = require("./runtime-workbench-visual-smoke-preflight.cjs");
+const {
+  collectChatLocalHistoryLayoutFailures,
+} = require("./runtime-workbench-visual-smoke-layout.cjs");
 
 const packageRoot = path.resolve(__dirname, "..");
 const smokeScriptPath = path.join(
@@ -182,7 +185,7 @@ function expectMetricList(failures, label, metrics, key, expected) {
   }
 }
 
-function collectEnabledChatBoxFailures(result) {
+function collectEnabledChatBoxFailures(result, requestedWidth) {
   const failures = [];
   const initial = result.chatInitialMetrics;
   const first = result.chatLocalSubmitMetrics;
@@ -396,6 +399,12 @@ function collectEnabledChatBoxFailures(result) {
     history,
     "chatLocalSubmissionHistoryStatuses",
     "queued_local,queued_local,queued_local",
+  );
+  failures.push(
+    ...collectChatLocalHistoryLayoutFailures({
+      chatLocalHistoryMetrics: history,
+      requestedWidth,
+    }),
   );
 
   expectMetric(
@@ -671,7 +680,7 @@ function collectCaseFailures(testCase, result) {
   }
 
   if (expectedChatBoxMode === "enabled") {
-    failures.push(...collectEnabledChatBoxFailures(result));
+    failures.push(...collectEnabledChatBoxFailures(result, testCase.width));
   } else if (
     result.chatLocalSubmitMetrics != null ||
     result.chatLocalHistoryMetrics != null ||
@@ -763,6 +772,21 @@ function summarizeChatLocalEvidence(result) {
   };
 }
 
+function summarizeChatLocalHistoryLayoutEvidence(result, requestedWidth) {
+  if (result?.chatBoxMode !== "enabled" || requestedWidth > 520) {
+    return null;
+  }
+  const history = result.chatLocalHistoryMetrics;
+  if (!isRecord(history)) {
+    return null;
+  }
+  return {
+    columnCount: readMetric(history, "chatLocalSubmissionHistoryColumnCount"),
+    clientWidth: readMetric(history, "chatLocalSubmissionHistoryClientWidth"),
+    scrollWidth: readMetric(history, "chatLocalSubmissionHistoryScrollWidth"),
+  };
+}
+
 function summarizeChatFocusEvidence(result) {
   if (result?.chatBoxMode !== "enabled") {
     return null;
@@ -801,6 +825,10 @@ function summarizeCase(testCase, outputPath, result, runResult, failures) {
       : null,
     outputEvidence: summarizeOutputPath(outputPath),
     chatLocalEvidence: summarizeChatLocalEvidence(result),
+    chatLocalHistoryLayoutEvidence: summarizeChatLocalHistoryLayoutEvidence(
+      result,
+      testCase.width,
+    ),
     chatFocusEvidence: summarizeChatFocusEvidence(result),
     failures,
   };
