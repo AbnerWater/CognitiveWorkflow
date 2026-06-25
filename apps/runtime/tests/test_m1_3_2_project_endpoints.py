@@ -98,11 +98,232 @@ def test_read_project_config_endpoints_return_manifest_files(tmp_path: Path) -> 
     )
 
     assert skills_response.status_code == 200
-    assert skills_response.json() == skills_payload
+    assert skills_response.json() == [
+        {"skill_id": "file_io", "enabled": True, "version": "1.0.0"},
+    ]
     assert mcps_response.status_code == 200
     assert mcps_response.json() == mcp_payload
     assert adapters_response.status_code == 200
     assert adapters_response.json() == adapters_payload
+
+
+def test_project_skill_endpoint_updates_runtime_manifest(tmp_path: Path) -> None:
+    client = _test_client()
+    host_path = tmp_path / "skill_project"
+    create_response = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "display_name": "Skill Project", "host_path": str(host_path)},
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["project_id"]
+
+    empty_response = client.get(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+    assert empty_response.status_code == 200
+    assert empty_response.json() == []
+
+    enable_response = client.patch(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+        json={
+            "schema_version": "0.1.0",
+            "skill_id": "citation_checker",
+            "version": "1.0.0",
+            "enabled": True,
+        },
+    )
+    assert enable_response.status_code == 200
+    assert enable_response.json() == {
+        "skill_id": "citation_checker",
+        "version": "1.0.0",
+        "enabled": True,
+    }
+
+    disable_response = client.patch(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+        json={
+            "schema_version": "0.1.0",
+            "skill_id": "citation_checker",
+            "enabled": False,
+        },
+    )
+    assert disable_response.status_code == 200
+    assert disable_response.json() == {
+        "skill_id": "citation_checker",
+        "version": "1.0.0",
+        "enabled": False,
+    }
+
+    list_response = client.get(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+    assert list_response.status_code == 200
+    assert list_response.json() == [disable_response.json()]
+    manifest = json.loads((host_path.resolve() / ".agent-workflow" / "skills.config.json").read_text(encoding="utf-8"))
+    assert manifest == [
+        {
+            "skill_id": "citation_checker",
+            "version": "1.0.0",
+            "enabled": False,
+            "params": {},
+        }
+    ]
+
+
+def test_project_skill_endpoint_rejects_params_without_echoing_values(tmp_path: Path) -> None:
+    client = _test_client()
+    host_path = tmp_path / "skill_project_params"
+    create_response = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "display_name": "Skill Project Params", "host_path": str(host_path)},
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["project_id"]
+
+    response = client.patch(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+        json={
+            "schema_version": "0.1.0",
+            "skill_id": "citation_checker",
+            "enabled": True,
+            "params": {"api_key": "fake-secret-skill-param"},
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "SCHEMA_VERSION_NOT_SUPPORTED"
+    assert "fake-secret-skill-param" not in str(body)
+
+
+def test_project_skill_endpoint_treats_missing_manifest_as_empty(tmp_path: Path) -> None:
+    client = _test_client()
+    host_path = tmp_path / "skill_project_missing_manifest"
+    create_response = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={
+            "schema_version": "0.1.0",
+            "display_name": "Skill Project Missing Manifest",
+            "host_path": str(host_path),
+        },
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["project_id"]
+    skills_path = host_path.resolve() / ".agent-workflow" / "skills.config.json"
+    skills_path.unlink()
+
+    response = client.get(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_project_skill_endpoint_rejects_corrupted_manifest_without_overwrite(tmp_path: Path) -> None:
+    client = _test_client()
+    host_path = tmp_path / "skill_project_corrupted_manifest"
+    create_response = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={
+            "schema_version": "0.1.0",
+            "display_name": "Skill Project Corrupted Manifest",
+            "host_path": str(host_path),
+        },
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["project_id"]
+    skills_path = host_path.resolve() / ".agent-workflow" / "skills.config.json"
+    skills_path.write_text("{not-json", encoding="utf-8")
+
+    get_response = client.get(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+    assert get_response.status_code == 409
+    assert get_response.json()["error_code"] == "RH_MANIFEST_REVISION_MISMATCH"
+
+    patch_response = client.patch(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "skill_id": "citation_checker", "enabled": True},
+    )
+    assert patch_response.status_code == 409
+    assert patch_response.json()["error_code"] == "RH_MANIFEST_REVISION_MISMATCH"
+    assert skills_path.read_text(encoding="utf-8") == "{not-json"
+
+
+def test_project_skill_endpoint_rejects_non_list_manifest(tmp_path: Path) -> None:
+    client = _test_client()
+    host_path = tmp_path / "skill_project_non_list_manifest"
+    create_response = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={
+            "schema_version": "0.1.0",
+            "display_name": "Skill Project Non List Manifest",
+            "host_path": str(host_path),
+        },
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["project_id"]
+    _write_json_value(host_path.resolve() / ".agent-workflow" / "skills.config.json", {"skill_id": "bad"})
+
+    response = client.get(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error_code"] == "RH_MANIFEST_REVISION_MISMATCH"
+    assert body["details"]["manifest_name"] == "skills.config.json"
+
+
+def test_project_skill_endpoint_rejects_invalid_manifest_entry_without_echoing_values(tmp_path: Path) -> None:
+    client = _test_client()
+    host_path = tmp_path / "skill_project_invalid_entry"
+    create_response = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={
+            "schema_version": "0.1.0",
+            "display_name": "Skill Project Invalid Entry",
+            "host_path": str(host_path),
+        },
+    )
+    assert create_response.status_code == 201
+    project_id = create_response.json()["project_id"]
+    _write_json_value(
+        host_path.resolve() / ".agent-workflow" / "skills.config.json",
+        [
+            {
+                "skill_id": "citation_checker",
+                "version": "1.0.0",
+                "enabled": True,
+                "params": {},
+                "unexpected": "fake-secret-invalid-entry",
+            }
+        ],
+    )
+
+    response = client.get(
+        f"/cw/v1/projects/{project_id}/skills",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error_code"] == "RH_MANIFEST_REVISION_MISMATCH"
+    assert "fake-secret-invalid-entry" not in str(body)
 
 
 def test_reference_endpoints_import_and_toggle_runtime_manifest(tmp_path: Path) -> None:

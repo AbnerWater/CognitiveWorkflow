@@ -39,6 +39,7 @@ import {
   type RuntimeWorkbenchPanelId,
   type RuntimeWorkbenchProjectCreationSnapshot,
   type RuntimeWorkbenchReferenceManagementSnapshot,
+  type RuntimeWorkbenchSkillManagementSnapshot,
   type RuntimeWorkbenchSession,
 } from "./runtime-workbench-session.js";
 
@@ -142,6 +143,7 @@ export interface RuntimeWorkbenchHostSessionSnapshot {
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
   readonly projectCreation: RuntimeWorkbenchProjectCreationSnapshot;
   readonly referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot;
+  readonly skillManagement: RuntimeWorkbenchSkillManagementSnapshot;
   readonly lifecyclePanel: RuntimeWorkbenchHostLifecyclePanelSnapshot;
   readonly runtimeStream: RuntimeWorkbenchHostRuntimeStreamSnapshot;
   readonly runtimeStreamPanel: RuntimeWorkbenchHostRuntimeStreamPanelSnapshot | null;
@@ -435,6 +437,9 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
     referenceManagement: cloneRuntimeWorkbenchHostReferenceManagement(
       workbench.referenceManagement,
     ),
+    skillManagement: cloneRuntimeWorkbenchHostSkillManagement(
+      workbench.skillManagement,
+    ),
     lifecyclePanel: Object.freeze({
       active: lifecyclePanelActiveSession !== null,
       disposed: workbench.lifecyclePanel.disposed,
@@ -479,6 +484,9 @@ function freezeRuntimeWorkbenchHostSessionSnapshot(
     referenceManagement: cloneRuntimeWorkbenchHostReferenceManagement(
       snapshot.referenceManagement,
     ),
+    skillManagement: cloneRuntimeWorkbenchHostSkillManagement(
+      snapshot.skillManagement,
+    ),
   });
 }
 
@@ -518,6 +526,15 @@ function cloneRuntimeWorkbenchHostReferenceManagement(
   return Object.freeze({
     ...referenceManagement,
     entries: Object.freeze([...referenceManagement.entries]),
+  });
+}
+
+function cloneRuntimeWorkbenchHostSkillManagement(
+  skillManagement: RuntimeWorkbenchSkillManagementSnapshot,
+): RuntimeWorkbenchSkillManagementSnapshot {
+  return Object.freeze({
+    ...skillManagement,
+    entries: Object.freeze([...skillManagement.entries]),
   });
 }
 

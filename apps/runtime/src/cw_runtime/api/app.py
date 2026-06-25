@@ -33,11 +33,14 @@ from cw_runtime.harness import (
     ProjectCreateRequest,
     ProjectReferenceImportMetadata,
     ProjectReferencePatchRequest,
+    ProjectSkillPatchRequest,
     import_project_reference,
     initialize_project,
     read_project,
     read_project_references,
+    read_project_skills,
     update_project_reference_enabled,
+    update_project_skill,
     windows_cng_decrypt_aes_gcm,
     windows_credential_manager_master_key_provider,
 )
@@ -342,7 +345,39 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
         return _dump_model(project)
 
     def get_project_skills(project_id: str) -> Any:
-        return _read_project_config(project_id, "skills.config.json")
+        project_root = project_locations.get(project_id)
+        if project_root is None:
+            return _resource_not_found(
+                "Project is not registered in this runtime process.",
+                {"project_id": project_id},
+            )
+        try:
+            entries = read_project_skills(project_root)
+        except HarnessError as exc:
+            return _harness_error_response(exc)
+        return [entry.model_dump(mode="json") for entry in entries]
+
+    async def patch_project_skills(project_id: str, request: Any) -> Any:
+        project_root = project_locations.get(project_id)
+        if project_root is None:
+            return _resource_not_found(
+                "Project is not registered in this runtime process.",
+                {"project_id": project_id},
+            )
+        body_or_response = await _body_or_error_response(request)
+        if not isinstance(body_or_response, dict):
+            return body_or_response
+        try:
+            body = ProjectSkillPatchRequest.model_validate(body_or_response)
+            entry = update_project_skill(project_root, body)
+        except ValidationError as exc:
+            return secure_json_response(
+                status_code=400,
+                content=_dump_model(_validation_error_envelope(exc)),
+            )
+        except HarnessError as exc:
+            return _harness_error_response(exc)
+        return _dump_model(entry)
 
     def get_project_mcps(project_id: str) -> Any:
         return _read_project_config(project_id, "mcp.config.json")
@@ -982,6 +1017,7 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     post_projects.__annotations__["request"] = requests.Request
     post_project_reference.__annotations__["request"] = requests.Request
     patch_project_reference.__annotations__["request"] = requests.Request
+    patch_project_skills.__annotations__["request"] = requests.Request
     post_workflow_run.__annotations__["request"] = requests.Request
     post_workflow_pause.__annotations__["request"] = requests.Request
     post_workflow_resume.__annotations__["request"] = requests.Request
@@ -1004,6 +1040,7 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     app.post(f"{settings.api_prefix}/projects/{{project_id}}/references")(post_project_reference)
     app.patch(f"{settings.api_prefix}/projects/{{project_id}}/references/{{reference_id}}")(patch_project_reference)
     app.get(f"{settings.api_prefix}/projects/{{project_id}}/skills")(get_project_skills)
+    app.patch(f"{settings.api_prefix}/projects/{{project_id}}/skills")(patch_project_skills)
     app.get(f"{settings.api_prefix}/projects/{{project_id}}/mcps")(get_project_mcps)
     app.get(f"{settings.api_prefix}/projects/{{project_id}}/adapters")(get_project_adapters)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/run")(post_workflow_run)
@@ -1171,7 +1208,7 @@ def _multipart_file_name(part: _MultipartPart | None) -> str | None:
 
 
 def _validation_error_envelope(exc: ValidationError) -> BaseModel:
-    errors = exc.errors()
+    errors = exc.errors(include_context=False, include_input=False, include_url=False)
     schema_version_errors = [error for error in errors if tuple(error.get("loc", ())) == ("schema_version",)]
     if any(error.get("type") == "missing" for error in schema_version_errors):
         return build_error_envelope(

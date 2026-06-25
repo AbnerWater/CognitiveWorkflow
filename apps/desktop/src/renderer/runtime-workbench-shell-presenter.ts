@@ -87,6 +87,7 @@ export interface RuntimeWorkbenchShellStatusItem {
     | "execution_mode"
     | "project_creation"
     | "reference_management"
+    | "skill_management"
     | "lifecycle_panel"
     | "runtime_stream"
     | "last_shortcut";
@@ -290,12 +291,16 @@ export type RuntimeWorkbenchShellProjectCreationSnapshot =
 export type RuntimeWorkbenchShellReferenceManagementSnapshot =
   RuntimeWorkbenchHostSessionSnapshot["referenceManagement"];
 
+export type RuntimeWorkbenchShellSkillManagementSnapshot =
+  RuntimeWorkbenchHostSessionSnapshot["skillManagement"];
+
 export interface RuntimeWorkbenchShellSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly activePanelLabel: string;
   readonly executionPolicy: RuntimeWorkbenchShellExecutionPolicySnapshot;
   readonly projectCreation: RuntimeWorkbenchShellProjectCreationSnapshot;
   readonly referenceManagement: RuntimeWorkbenchShellReferenceManagementSnapshot;
+  readonly skillManagement: RuntimeWorkbenchShellSkillManagementSnapshot;
   readonly lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus;
   readonly lifecyclePanel: RuntimeWorkbenchShellLifecyclePanelSnapshot | null;
   readonly runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus;
@@ -557,6 +562,9 @@ export function buildRuntimeWorkbenchShellSnapshot(
     ),
     referenceManagement: cloneRuntimeWorkbenchShellReferenceManagement(
       host.referenceManagement,
+    ),
+    skillManagement: cloneRuntimeWorkbenchShellSkillManagement(
+      host.skillManagement,
     ),
     lifecyclePanelStatus,
     lifecyclePanel,
@@ -1022,6 +1030,14 @@ function buildStatusItems(
         : referenceManagementTone(host.referenceManagement),
     }),
     statusItem({
+      id: "skill_management",
+      label: "Skills",
+      value: disposed
+        ? "Disposed"
+        : skillManagementStatusLabel(host.skillManagement),
+      tone: disposed ? "danger" : skillManagementTone(host.skillManagement),
+    }),
+    statusItem({
       id: "lifecycle_panel",
       label: "Lifecycle",
       value: panelStatusLabel(lifecyclePanelStatus),
@@ -1404,6 +1420,42 @@ function referenceManagementTone(
   }
 }
 
+function skillManagementStatusLabel(
+  skillManagement: RuntimeWorkbenchShellSkillManagementSnapshot,
+): string {
+  switch (skillManagement.status) {
+    case "blocked":
+      return "Blocked";
+    case "failed":
+      return "Failed";
+    case "refreshing":
+      return "Refreshing";
+    case "updating":
+      return "Updating";
+    case "succeeded":
+      return `${skillManagement.entries.length} skills`;
+    case "idle":
+      return "Ready";
+  }
+}
+
+function skillManagementTone(
+  skillManagement: RuntimeWorkbenchShellSkillManagementSnapshot,
+): RuntimeWorkbenchShellTone {
+  switch (skillManagement.status) {
+    case "blocked":
+    case "failed":
+      return "danger";
+    case "refreshing":
+    case "updating":
+      return "accent";
+    case "succeeded":
+      return "success";
+    case "idle":
+      return "neutral";
+  }
+}
+
 function formatRuntimeStreamChannelLabel(
   channel: NonNullable<
     RuntimeWorkbenchHostSessionSnapshot["runtimeStream"]["activeChannel"]
@@ -1539,6 +1591,9 @@ function freezeRuntimeWorkbenchShellSnapshot(
     referenceManagement: cloneRuntimeWorkbenchShellReferenceManagement(
       snapshot.referenceManagement,
     ),
+    skillManagement: cloneRuntimeWorkbenchShellSkillManagement(
+      snapshot.skillManagement,
+    ),
     runtimeStreamPanel:
       snapshot.runtimeStreamPanel === null
         ? null
@@ -1580,6 +1635,15 @@ function cloneRuntimeWorkbenchShellReferenceManagement(
   return Object.freeze({
     ...referenceManagement,
     entries: Object.freeze([...referenceManagement.entries]),
+  });
+}
+
+function cloneRuntimeWorkbenchShellSkillManagement(
+  skillManagement: RuntimeWorkbenchShellSkillManagementSnapshot,
+): RuntimeWorkbenchShellSkillManagementSnapshot {
+  return Object.freeze({
+    ...skillManagement,
+    entries: Object.freeze([...skillManagement.entries]),
   });
 }
 

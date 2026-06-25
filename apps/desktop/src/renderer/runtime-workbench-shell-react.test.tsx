@@ -47,6 +47,7 @@ import {
   bindRuntimeWorkbenchShellReactKeyboardTarget,
   createRuntimeWorkbenchShellReactProjectCreationFormState,
   createRuntimeWorkbenchShellReactReferenceImportFormState,
+  createRuntimeWorkbenchShellReactSkillManagementFormState,
   buildRuntimeWorkbenchShellReactStreamSessionOptions,
   createRuntimeWorkbenchShellReactStreamOptionsFormState,
   isRuntimeWorkbenchShellReactActionEnabled,
@@ -5505,6 +5506,152 @@ test("renderer runtime workbench React shell dispatches reference management com
   }
 });
 
+test("renderer runtime workbench React shell dispatches skill management commands without rendering params", async () => {
+  assert.deepEqual(
+    createRuntimeWorkbenchShellReactSkillManagementFormState({
+      projectId: "project_skills",
+      skillId: "citation_checker",
+    }),
+    {
+      projectId: "project_skills",
+      skillId: "citation_checker",
+      version: "latest",
+    },
+  );
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const snapshot = createRuntimeWorkbenchShellReactSnapshot({
+    skillManagement: {
+      status: "succeeded",
+      activeProjectId: "project_skills",
+      entries: Object.freeze([
+        Object.freeze({
+          skillId: "citation_checker",
+          version: "1.0.0",
+          enabled: true,
+          paramKeys: Object.freeze(["mode", "secret"]),
+        }),
+      ]),
+      lastSkillId: "citation_checker",
+    },
+  });
+  const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          defaultSkillManagementFormState={{
+            projectId: " project_skills ",
+            skillId: " citation_checker ",
+            version: " 1.0.0 ",
+          }}
+          session={session}
+          title="Skill Runtime Workbench"
+        />,
+      );
+    });
+
+    const skillControl = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "skillManagementControl",
+      "true",
+    );
+    assert.equal(
+      skillControl.getAttribute("data-skill-management-status"),
+      "succeeded",
+    );
+    assert.equal(
+      skillControl.getAttribute("data-skill-management-entry-count"),
+      "1",
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container).includes(
+        "raw_skill_param_value",
+      ),
+      false,
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchElementAttributeValues(dom.container).includes(
+        "raw_skill_param_value",
+      ),
+      false,
+    );
+
+    const refreshButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "skillRefreshSubmit",
+      "true",
+    );
+    assert.equal(
+      refreshButton.getAttribute("data-skill-refresh-enabled"),
+      "true",
+    );
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(refreshButton);
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "refresh_skills",
+      projectId: "project_skills",
+    });
+
+    const setButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "skillSetSubmit",
+      "true",
+    );
+    assert.equal(setButton.getAttribute("data-skill-set-enabled"), "true");
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(setButton);
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "set_skill_enabled",
+      projectId: "project_skills",
+      skillId: "citation_checker",
+      enabled: true,
+      version: "1.0.0",
+    });
+
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "skillField",
+          "projectId",
+        ),
+        "project_other",
+      );
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "skillToggleId",
+          "citation_checker",
+        ),
+      );
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "set_skill_enabled",
+      projectId: "project_skills",
+      skillId: "citation_checker",
+      enabled: false,
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    session.dispose();
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench session dispatches run-once through runtime fetch", async () => {
   const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
     body: Object.freeze({ raw_model_output: "must not be retained" }),
@@ -5808,6 +5955,113 @@ test("renderer runtime workbench session manages references through runtime fetc
     toggled.referenceManagement.entries.find(
       (entry) => entry.referenceId === "ref_new",
     )?.enabled,
+    false,
+  );
+});
+
+test("renderer runtime workbench session manages skills through runtime fetch without retaining params", async () => {
+  const calls: RuntimeWorkbenchRunOnceRuntimeCall[] = [];
+  const existingEntry = Object.freeze({
+    skill_id: "citation_checker",
+    version: "1.0.0",
+    enabled: true,
+    params: Object.freeze({
+      mode: "strict",
+      secret: "raw_skill_param_value",
+    }),
+  });
+  const runtime: Pick<RuntimeBridge, "fetch"> = Object.freeze({
+    fetch: async <TBody,>(
+      path: RuntimeRequestPath,
+      init?: RuntimeRequestInit,
+    ): Promise<RuntimeResponse<TBody>> => {
+      calls.push(
+        init === undefined
+          ? { path }
+          : { path, init: Object.freeze({ ...init }) },
+      );
+      if (path === "/projects/project_skills/skills" && init === undefined) {
+        return {
+          ok: true,
+          status: 200,
+          headers: {},
+          body: Object.freeze([existingEntry]) as TBody,
+        };
+      }
+      if (
+        path === "/projects/project_skills/skills" &&
+        init?.method === "PATCH"
+      ) {
+        return {
+          ok: true,
+          status: 200,
+          headers: {},
+          body: Object.freeze({
+            ...existingEntry,
+            enabled: false,
+          }) as TBody,
+        };
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: {},
+        body: null,
+      };
+    },
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const refreshed = await session.refreshSkills({
+    projectId: " project_skills ",
+  });
+  assert.equal(calls[0]?.path, "/projects/project_skills/skills");
+  assert.equal(calls[0]?.init, undefined);
+  assert.deepEqual(refreshed.skillManagement.entries, [
+    {
+      skillId: "citation_checker",
+      version: "1.0.0",
+      enabled: true,
+      paramKeys: [],
+    },
+  ]);
+  assert.equal(
+    JSON.stringify(refreshed.skillManagement).includes("strict"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(refreshed.skillManagement).includes("raw_skill_param_value"),
+    false,
+  );
+
+  const toggled = await session.setSkillEnabled({
+    projectId: "project_skills",
+    skillId: "citation_checker",
+    enabled: false,
+    version: "1.0.0",
+  });
+  const toggleCall = calls[1];
+  assert.equal(toggleCall?.path, "/projects/project_skills/skills");
+  assert.deepEqual(
+    JSON.parse(toggleCall?.init?.body ?? "{}") as Record<string, unknown>,
+    {
+      schema_version: "0.1.0",
+      skill_id: "citation_checker",
+      enabled: false,
+      version: "1.0.0",
+    },
+  );
+  assert.equal(
+    toggled.skillManagement.entries.find(
+      (entry) => entry.skillId === "citation_checker",
+    )?.enabled,
+    false,
+  );
+  assert.equal(
+    JSON.stringify(toggled.skillManagement).includes("raw_skill_param_value"),
     false,
   );
 });
@@ -7113,12 +7367,32 @@ function createRuntimeWorkbenchShellReactReferenceManagementSnapshot(
   });
 }
 
+function createRuntimeWorkbenchShellReactSkillManagementSnapshot(
+  input: Partial<RuntimeWorkbenchShellSnapshot["skillManagement"]> = {},
+): RuntimeWorkbenchShellSnapshot["skillManagement"] {
+  return Object.freeze({
+    status: input.status ?? "idle",
+    activeProjectId: input.activeProjectId ?? null,
+    method: input.method ?? null,
+    path: input.path ?? null,
+    entries: input.entries ?? Object.freeze([]),
+    lastSkillId: input.lastSkillId ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    canRefreshSkills: input.canRefreshSkills ?? true,
+    canUpdateSkill: input.canUpdateSkill ?? true,
+  });
+}
+
 function createRuntimeWorkbenchShellReactSnapshot(
   options: {
     readonly activePanel?: RuntimeWorkbenchPanelId;
     readonly executionMode?: RuntimeWorkbenchShellSnapshot["executionPolicy"]["mode"];
     readonly referenceManagement?: Partial<
       RuntimeWorkbenchShellSnapshot["referenceManagement"]
+    >;
+    readonly skillManagement?: Partial<
+      RuntimeWorkbenchShellSnapshot["skillManagement"]
     >;
   } = {},
 ): RuntimeWorkbenchShellSnapshot {
@@ -7132,6 +7406,9 @@ function createRuntimeWorkbenchShellReactSnapshot(
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(
         options.referenceManagement,
       ),
+    skillManagement: createRuntimeWorkbenchShellReactSkillManagementSnapshot(
+      options.skillManagement,
+    ),
     lifecyclePanel: Object.freeze({
       active: false,
       disposed: false,
@@ -7184,6 +7461,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
     projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
     referenceManagement:
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(),
+    skillManagement: createRuntimeWorkbenchShellReactSkillManagementSnapshot(),
     lifecyclePanel: Object.freeze({
       active: false,
       disposed: false,
@@ -7468,6 +7746,7 @@ function createRuntimeWorkbenchShellReactLifecycleSnapshot(): RuntimeWorkbenchSh
     projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
     referenceManagement:
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(),
+    skillManagement: createRuntimeWorkbenchShellReactSkillManagementSnapshot(),
     lifecyclePanel: Object.freeze({
       active: true,
       disposed: false,

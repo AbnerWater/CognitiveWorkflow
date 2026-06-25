@@ -220,6 +220,38 @@ class ProjectReferencePatchRequest(BaseModel):
     enabled: bool
 
 
+class ProjectSkillEntry(BaseModel):
+    """Project Skill management entry exposed by the project API."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill_id: str = Field(min_length=1)
+    version: str = Field(default="latest", min_length=1)
+    enabled: bool = True
+
+
+class _ProjectSkillManifestEntry(BaseModel):
+    """Project Skill config entry persisted in ``skills.config.json``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill_id: str = Field(min_length=1)
+    version: str = Field(default="latest", min_length=1)
+    enabled: bool = True
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectSkillPatchRequest(BaseModel):
+    """Request body for PATCH /cw/v1/projects/{project_id}/skills."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["0.1.0"]
+    skill_id: str = Field(min_length=1)
+    enabled: bool
+    version: str | None = Field(default=None, min_length=1)
+
+
 class ProjectToolAvailability(BaseModel):
     """Enabled project tool registries used by workflow L4 validation."""
 
@@ -1511,6 +1543,54 @@ def update_project_reference_enabled(
     return updated_entry
 
 
+def read_project_skills(project_root: Path) -> list[ProjectSkillEntry]:
+    """Read project Skill config entries with spec-limited fields."""
+
+    entries = _read_project_skill_manifest_entries(project_root.resolve() / AGENT_WORKFLOW_DIR / "skills.config.json")
+    return [_project_skill_entry(entry) for entry in entries]
+
+
+def update_project_skill(project_root: Path, request: ProjectSkillPatchRequest) -> ProjectSkillEntry:
+    """Upsert a project Skill config entry."""
+
+    resolved_root = project_root.resolve()
+    agent_root = resolved_root / AGENT_WORKFLOW_DIR
+    skill_id = _normalize_manifest_id(request.skill_id, field_name="skill_id")
+    updated_entry: _ProjectSkillManifestEntry | None = None
+    with acquire_runtime_lock(resolved_root):
+        entries = _read_project_skill_manifest_entries(agent_root / "skills.config.json")
+        next_entries: list[_ProjectSkillManifestEntry] = []
+        replaced = False
+        for entry in entries:
+            if entry.skill_id != skill_id:
+                next_entries.append(entry)
+                continue
+            updated_entry = _ProjectSkillManifestEntry(
+                skill_id=skill_id,
+                version=entry.version if request.version is None else request.version.strip(),
+                enabled=request.enabled,
+                params=entry.params,
+            )
+            next_entries.append(updated_entry)
+            replaced = True
+        if not replaced:
+            updated_entry = _ProjectSkillManifestEntry(
+                skill_id=skill_id,
+                version="latest" if request.version is None else request.version.strip(),
+                enabled=request.enabled,
+                params={},
+            )
+            next_entries.append(updated_entry)
+        _update_manifest_payload_locked(
+            agent_root,
+            "skills.config.json",
+            [entry.model_dump(mode="json", exclude_none=True) for entry in next_entries],
+        )
+    if updated_entry is None:
+        raise AssertionError("Skill update did not produce an entry.")
+    return _project_skill_entry(updated_entry)
+
+
 def load_project_tool_availability(project_root: Path) -> ProjectToolAvailability:
     """Load enabled Skill and MCP ids from project manifests without starting tools."""
 
@@ -1641,6 +1721,10 @@ def _acquire_git_lock(project_root: Path, *, timeout_seconds: float = 60.0) -> R
 
 
 def _update_manifest_json_locked(agent_root: Path, manifest_name: str, payload: Mapping[str, Any]) -> None:
+    _update_manifest_payload_locked(agent_root, manifest_name, dict(payload))
+
+
+def _update_manifest_payload_locked(agent_root: Path, manifest_name: str, payload: object) -> None:
     revision = _read_json(agent_root / MANIFEST_REVISION_FILE)
     if manifest_name not in revision:
         raise HarnessError(
@@ -1649,7 +1733,7 @@ def _update_manifest_json_locked(agent_root: Path, manifest_name: str, payload: 
             status_code=409,
             details={"manifest_name": manifest_name},
         )
-    _write_json_atomic(agent_root / manifest_name, dict(payload))
+    _write_json_atomic(agent_root / manifest_name, payload)
     current = revision[manifest_name]
     if not isinstance(current, dict) or "revision" not in current:
         raise HarnessError(
@@ -2029,6 +2113,36 @@ def _read_json_list(path: Path) -> list[object]:
     return cast(list[object], loaded)
 
 
+def _read_json_list_strict(path: Path, *, manifest_name: str) -> list[object]:
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            loaded = json.load(file)
+    except FileNotFoundError:
+        return []
+    except json.JSONDecodeError as exc:
+        raise HarnessError(
+            "RH_MANIFEST_REVISION_MISMATCH",
+            f"{manifest_name} is not valid JSON.",
+            status_code=409,
+            details={"manifest_name": manifest_name},
+        ) from exc
+    except OSError as exc:
+        raise HarnessError(
+            "RES_NOT_FOUND",
+            f"{manifest_name} is not available.",
+            status_code=404,
+            details={"manifest_name": manifest_name},
+        ) from exc
+    if not isinstance(loaded, list):
+        raise HarnessError(
+            "RH_MANIFEST_REVISION_MISMATCH",
+            f"{manifest_name} must be a list.",
+            status_code=409,
+            details={"manifest_name": manifest_name},
+        )
+    return cast(list[object], loaded)
+
+
 def _iter_enabled_manifest_entries(path: Path, *, id_field: str) -> list[tuple[str, Mapping[str, object]]]:
     entries = _read_json_list(path)
     enabled_entries: list[tuple[str, Mapping[str, object]]] = []
@@ -2053,6 +2167,55 @@ def _iter_enabled_manifest_entries(path: Path, *, id_field: str) -> list[tuple[s
 
 def _load_enabled_manifest_ids(path: Path, *, id_field: str) -> set[str]:
     return {entry_id for entry_id, _entry in _iter_enabled_manifest_entries(path, id_field=id_field)}
+
+
+def _read_project_skill_manifest_entries(path: Path) -> list[_ProjectSkillManifestEntry]:
+    raw_entries = _read_json_list_strict(path, manifest_name="skills.config.json")
+    entries: list[_ProjectSkillManifestEntry] = []
+    for raw_entry in raw_entries:
+        try:
+            entry = _ProjectSkillManifestEntry.model_validate(raw_entry)
+        except ValidationError as exc:
+            raise HarnessError(
+                "RH_MANIFEST_REVISION_MISMATCH",
+                "skills.config.json contains an invalid Skill entry.",
+                status_code=409,
+                details={"errors": exc.errors(include_context=False, include_input=False, include_url=False)},
+            ) from exc
+        entries.append(
+            entry.model_copy(
+                update={
+                    "skill_id": _normalize_manifest_id(entry.skill_id, field_name="skill_id"),
+                    "version": entry.version.strip(),
+                }
+            )
+        )
+    return entries
+
+
+def _project_skill_entry(entry: _ProjectSkillManifestEntry) -> ProjectSkillEntry:
+    return ProjectSkillEntry(skill_id=entry.skill_id, version=entry.version, enabled=entry.enabled)
+
+
+def _normalize_manifest_id(value: str, *, field_name: str) -> str:
+    normalized = value.strip()
+    if (
+        normalized == ""
+        or normalized.startswith(".")
+        or normalized.endswith(".")
+        or "/" in normalized
+        or "\\" in normalized
+        or ".." in normalized
+        or any(char in _INVALID_PATH_CHARS for char in normalized)
+        or any(ord(char) < 32 or ord(char) == 127 for char in normalized)
+    ):
+        raise HarnessError(
+            "RH_PATH_INVALID_CHAR",
+            f"{field_name} contains an invalid identifier.",
+            status_code=400,
+            details={field_name: value},
+        )
+    return normalized
 
 
 def _skill_lock_entry(entry: Mapping[str, object]) -> ProjectSkillLockEntry:
@@ -2671,7 +2834,9 @@ __all__ = [
     "ProjectReferenceImportMetadata",
     "ProjectReferenceManifest",
     "ProjectReferencePatchRequest",
+    "ProjectSkillEntry",
     "ProjectSkillLockEntry",
+    "ProjectSkillPatchRequest",
     "ProjectToolAvailability",
     "ProjectToolLockSnapshot",
     "RuntimeLock",
@@ -2686,6 +2851,8 @@ __all__ = [
     "load_project_tool_lock_snapshot",
     "read_project",
     "read_project_references",
+    "read_project_skills",
     "update_manifest_json",
     "update_project_reference_enabled",
+    "update_project_skill",
 ]

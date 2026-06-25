@@ -39,6 +39,7 @@ import {
   type RuntimeWorkbenchPanelId,
   type RuntimeWorkbenchReferenceEntrySnapshot,
   type RuntimeWorkbenchReferenceKind,
+  type RuntimeWorkbenchSkillEntrySnapshot,
 } from "./runtime-workbench-session.js";
 import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-workbench-shell-keyboard-dom-adapter.js";
 import type {
@@ -104,6 +105,12 @@ export interface RuntimeWorkbenchShellReactReferenceImportFormState {
   readonly fileByteLength: number | null;
 }
 
+export interface RuntimeWorkbenchShellReactSkillManagementFormState {
+  readonly projectId: string;
+  readonly skillId: string;
+  readonly version: string;
+}
+
 export interface RuntimeWorkbenchShellReactViewProps {
   readonly session: RuntimeWorkbenchShellDomSession;
   readonly title?: string;
@@ -113,6 +120,7 @@ export interface RuntimeWorkbenchShellReactViewProps {
   readonly defaultRuntimeStreamOptionsFormState?: Partial<RuntimeWorkbenchShellReactStreamOptionsFormState>;
   readonly defaultProjectCreationFormState?: Partial<RuntimeWorkbenchShellReactProjectCreationFormState>;
   readonly defaultReferenceImportFormState?: Partial<RuntimeWorkbenchShellReactReferenceImportFormState>;
+  readonly defaultSkillManagementFormState?: Partial<RuntimeWorkbenchShellReactSkillManagementFormState>;
   readonly className?: string;
   readonly onActionError?: (error: unknown) => void;
 }
@@ -259,6 +267,16 @@ export function createRuntimeWorkbenchShellReactReferenceImportFormState(
   });
 }
 
+export function createRuntimeWorkbenchShellReactSkillManagementFormState(
+  input: Partial<RuntimeWorkbenchShellReactSkillManagementFormState> = {},
+): RuntimeWorkbenchShellReactSkillManagementFormState {
+  return Object.freeze({
+    projectId: input.projectId ?? "",
+    skillId: input.skillId ?? "",
+    version: input.version ?? "latest",
+  });
+}
+
 export function buildRuntimeWorkbenchShellReactStreamSessionOptions(
   state: RuntimeWorkbenchShellReactStreamOptionsFormState,
 ): CreateRuntimeStreamInteractionSessionFactorySessionOptions | null {
@@ -366,6 +384,12 @@ export function RuntimeWorkbenchShellReactView(
         props.defaultReferenceImportFormState,
       ),
     );
+  const [skillManagementForm, setSkillManagementForm] =
+    useState<RuntimeWorkbenchShellReactSkillManagementFormState>(() =>
+      createRuntimeWorkbenchShellReactSkillManagementFormState(
+        props.defaultSkillManagementFormState,
+      ),
+    );
   const referenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const formRuntimeStreamSessionOptions = useMemo(
     () =>
@@ -461,6 +485,39 @@ export function RuntimeWorkbenchShellReactView(
   const referenceUpdateReady =
     snapshot.referenceManagement.canUpdateReference &&
     referenceToggleProjectId !== null;
+  const skillProjectId = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactPathSegment(
+        skillManagementForm.projectId,
+      ),
+    [skillManagementForm.projectId],
+  );
+  const skillId = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactPathSegment(
+        skillManagementForm.skillId,
+      ),
+    [skillManagementForm.skillId],
+  );
+  const skillVersion = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactOptionalText(
+        skillManagementForm.version,
+      ),
+    [skillManagementForm.version],
+  );
+  const skillRefreshReady =
+    snapshot.skillManagement.canRefreshSkills && skillProjectId !== null;
+  const skillToggleProjectId =
+    snapshot.skillManagement.activeProjectId ?? skillProjectId;
+  const skillUpdateReady =
+    snapshot.skillManagement.canUpdateSkill && skillToggleProjectId !== null;
+  const skillSetReady =
+    snapshot.skillManagement.canUpdateSkill &&
+    skillProjectId !== null &&
+    skillId !== null &&
+    skillVersion !== null &&
+    skillVersion.length > 0;
   const handleActionError = useCallback(
     (error: unknown): void => {
       try {
@@ -661,6 +718,22 @@ export function RuntimeWorkbenchShellReactView(
     },
     [],
   );
+  const handleSkillTextInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      const field = event.currentTarget.dataset.skillField;
+      if (field !== "projectId" && field !== "skillId" && field !== "version") {
+        return;
+      }
+      const value = event.currentTarget.value;
+      setSkillManagementForm((current) =>
+        createRuntimeWorkbenchShellReactSkillManagementFormState({
+          ...current,
+          [field]: value,
+        }),
+      );
+    },
+    [],
+  );
   const handleReferenceFileInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>): void => {
       const file = event.currentTarget.files?.[0] ?? null;
@@ -810,6 +883,68 @@ export function RuntimeWorkbenchShellReactView(
       referenceToggleProjectId,
       referenceUpdateReady,
     ],
+  );
+  const handleRefreshSkillsClick = useCallback((): void => {
+    if (!skillRefreshReady || skillProjectId === null) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "refresh_skills",
+        projectId: skillProjectId,
+      })
+      .catch(handleActionError);
+  }, [handleActionError, props.session, skillProjectId, skillRefreshReady]);
+  const handleSetSkillEnabledClick = useCallback((): void => {
+    if (
+      !skillSetReady ||
+      skillProjectId === null ||
+      skillId === null ||
+      skillVersion === null ||
+      skillVersion.length === 0
+    ) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "set_skill_enabled",
+        projectId: skillProjectId,
+        skillId,
+        enabled: true,
+        version: skillVersion,
+      })
+      .catch(handleActionError);
+  }, [
+    handleActionError,
+    props.session,
+    skillId,
+    skillProjectId,
+    skillSetReady,
+    skillVersion,
+  ]);
+  const handleSkillToggleClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const selectedSkillId = event.currentTarget.dataset.skillToggleId;
+      const nextEnabled = event.currentTarget.dataset.skillToggleNextEnabled;
+      if (
+        !skillUpdateReady ||
+        skillToggleProjectId === null ||
+        selectedSkillId === undefined ||
+        selectedSkillId.length === 0 ||
+        (nextEnabled !== "true" && nextEnabled !== "false")
+      ) {
+        return;
+      }
+      void props.session
+        .dispatch({
+          type: "set_skill_enabled",
+          projectId: skillToggleProjectId,
+          skillId: selectedSkillId,
+          enabled: nextEnabled === "true",
+        })
+        .catch(handleActionError);
+    },
+    [handleActionError, props.session, skillToggleProjectId, skillUpdateReady],
   );
   const handleStreamDisplayLevelClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
@@ -1102,6 +1237,17 @@ export function RuntimeWorkbenchShellReactView(
               updateReady={referenceUpdateReady}
               refreshReady={referenceRefreshReady}
               state={referenceImportForm}
+            />
+            <RuntimeWorkbenchShellSkillManagementControls
+              onRefreshClick={handleRefreshSkillsClick}
+              onSetEnabledClick={handleSetSkillEnabledClick}
+              onTextInputChange={handleSkillTextInputChange}
+              onToggleClick={handleSkillToggleClick}
+              refreshReady={skillRefreshReady}
+              setReady={skillSetReady}
+              skillManagement={snapshot.skillManagement}
+              state={skillManagementForm}
+              updateReady={skillUpdateReady}
             />
             <RuntimeWorkbenchShellExecutionControls
               executionPolicy={snapshot.executionPolicy}
@@ -1429,6 +1575,157 @@ function RuntimeWorkbenchShellReferenceEntryList(props: {
             data-reference-toggle-next-enabled={
               entry.enabled ? "false" : "true"
             }
+            disabled={!props.updateEnabled}
+            onClick={props.onToggleClick}
+            type="button"
+          >
+            {entry.enabled ? "Disable" : "Enable"}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RuntimeWorkbenchShellSkillManagementControls(props: {
+  readonly skillManagement: RuntimeWorkbenchShellSnapshot["skillManagement"];
+  readonly state: RuntimeWorkbenchShellReactSkillManagementFormState;
+  readonly refreshReady: boolean;
+  readonly setReady: boolean;
+  readonly updateReady: boolean;
+  readonly onTextInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onRefreshClick: () => void;
+  readonly onSetEnabledClick: () => void;
+  readonly onToggleClick: (event: MouseEvent<HTMLButtonElement>) => void;
+}): ReactElement {
+  return (
+    <section
+      aria-label="Skill management"
+      className="cw-workbench__skill-management"
+      data-skill-management-active-project-id={
+        props.skillManagement.activeProjectId ?? undefined
+      }
+      data-skill-management-control="true"
+      data-skill-management-entry-count={String(
+        props.skillManagement.entries.length,
+      )}
+      data-skill-management-status={props.skillManagement.status}
+    >
+      <div className="cw-workbench__skill-management-form">
+        <label className="cw-workbench__skill-field">
+          <span>Project id</span>
+          <input
+            data-skill-field="projectId"
+            inputMode="text"
+            onChange={props.onTextInputChange}
+            value={props.state.projectId}
+          />
+        </label>
+        <label className="cw-workbench__skill-field">
+          <span>Skill id</span>
+          <input
+            data-skill-field="skillId"
+            inputMode="text"
+            onChange={props.onTextInputChange}
+            value={props.state.skillId}
+          />
+        </label>
+        <label className="cw-workbench__skill-field">
+          <span>Version</span>
+          <input
+            data-skill-field="version"
+            inputMode="text"
+            onChange={props.onTextInputChange}
+            value={props.state.version}
+          />
+        </label>
+        <button
+          className="cw-workbench__skill-refresh"
+          data-skill-refresh-submit="true"
+          data-skill-refresh-enabled={props.refreshReady ? "true" : "false"}
+          disabled={!props.refreshReady}
+          onClick={props.onRefreshClick}
+          type="button"
+        >
+          Refresh
+        </button>
+        <button
+          className="cw-workbench__skill-set"
+          data-skill-set-submit="true"
+          data-skill-set-enabled={props.setReady ? "true" : "false"}
+          disabled={!props.setReady}
+          onClick={props.onSetEnabledClick}
+          type="button"
+        >
+          Enable
+        </button>
+      </div>
+      <dl className="cw-workbench__skill-status">
+        <div>
+          <dt>Status</dt>
+          <dd>{props.skillManagement.status}</dd>
+        </div>
+        <div>
+          <dt>Last skill</dt>
+          <dd>{props.skillManagement.lastSkillId ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Project</dt>
+          <dd>{props.skillManagement.activeProjectId ?? "none"}</dd>
+        </div>
+      </dl>
+      <RuntimeWorkbenchShellSkillEntryList
+        entries={props.skillManagement.entries}
+        onToggleClick={props.onToggleClick}
+        updateEnabled={props.updateReady}
+      />
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellSkillEntryList(props: {
+  readonly entries: readonly RuntimeWorkbenchSkillEntrySnapshot[];
+  readonly updateEnabled: boolean;
+  readonly onToggleClick: (event: MouseEvent<HTMLButtonElement>) => void;
+}): ReactElement {
+  if (props.entries.length === 0) {
+    return (
+      <p className="cw-workbench__skill-empty" data-skill-empty="true">
+        No skills
+      </p>
+    );
+  }
+  return (
+    <ul className="cw-workbench__skill-list">
+      {props.entries.map((entry) => (
+        <li
+          className="cw-workbench__skill-entry"
+          data-skill-entry-enabled={entry.enabled ? "true" : "false"}
+          data-skill-entry-id={entry.skillId}
+          key={entry.skillId}
+        >
+          <div className="cw-workbench__skill-entry-main">
+            <strong>{entry.skillId}</strong>
+            <span>{entry.version}</span>
+          </div>
+          <dl className="cw-workbench__skill-entry-meta">
+            <div>
+              <dt>Enabled</dt>
+              <dd>{entry.enabled ? "yes" : "no"}</dd>
+            </div>
+            <div>
+              <dt>Param keys</dt>
+              <dd>
+                {entry.paramKeys.length === 0
+                  ? "none"
+                  : entry.paramKeys.join(", ")}
+              </dd>
+            </div>
+          </dl>
+          <button
+            className="cw-workbench__skill-toggle"
+            data-skill-toggle-id={entry.skillId}
+            data-skill-toggle-next-enabled={entry.enabled ? "false" : "true"}
             disabled={!props.updateEnabled}
             onClick={props.onToggleClick}
             type="button"

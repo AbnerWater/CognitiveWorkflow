@@ -141,6 +141,40 @@ export interface RuntimeWorkbenchReferenceManagementSnapshot {
   readonly canUpdateReference: boolean;
 }
 
+export type RuntimeWorkbenchSkillManagementStatus =
+  | "idle"
+  | "refreshing"
+  | "updating"
+  | "succeeded"
+  | "failed"
+  | "blocked";
+
+export type RuntimeWorkbenchSkillManagementBlockedReason =
+  | "invalid_input"
+  | "request_failed"
+  | "response_invalid"
+  | "runtime_unavailable";
+
+export interface RuntimeWorkbenchSkillEntrySnapshot {
+  readonly skillId: string;
+  readonly version: string;
+  readonly enabled: boolean;
+  readonly paramKeys: readonly string[];
+}
+
+export interface RuntimeWorkbenchSkillManagementSnapshot {
+  readonly status: RuntimeWorkbenchSkillManagementStatus;
+  readonly activeProjectId: string | null;
+  readonly method: "GET" | "PATCH" | null;
+  readonly path: RuntimeRequestPath | null;
+  readonly entries: readonly RuntimeWorkbenchSkillEntrySnapshot[];
+  readonly lastSkillId: string | null;
+  readonly statusCode: number | null;
+  readonly blockedReason: RuntimeWorkbenchSkillManagementBlockedReason | null;
+  readonly canRefreshSkills: boolean;
+  readonly canUpdateSkill: boolean;
+}
+
 export interface RuntimeWorkbenchExecutionPolicySnapshot {
   readonly mode: RuntimeWorkbenchExecutionMode;
   readonly availableModes: readonly RuntimeWorkbenchExecutionMode[];
@@ -183,11 +217,23 @@ export interface RuntimeWorkbenchReferenceEnabledInput {
   readonly enabled: boolean;
 }
 
+export interface RuntimeWorkbenchSkillRefreshInput {
+  readonly projectId: string;
+}
+
+export interface RuntimeWorkbenchSkillEnabledInput {
+  readonly projectId: string;
+  readonly skillId: string;
+  readonly enabled: boolean;
+  readonly version?: string;
+}
+
 export interface RuntimeWorkbenchSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
   readonly projectCreation: RuntimeWorkbenchProjectCreationSnapshot;
   readonly referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot;
+  readonly skillManagement: RuntimeWorkbenchSkillManagementSnapshot;
   readonly lifecyclePanel: RuntimeLifecyclePanelSessionControllerSnapshot;
   readonly runtimeStream: RuntimeStreamInteractionSessionControllerSnapshot;
   readonly disposed: boolean;
@@ -241,6 +287,12 @@ export interface RuntimeWorkbenchSession {
   readonly setReferenceEnabled: (
     input: RuntimeWorkbenchReferenceEnabledInput,
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly refreshSkills: (
+    input: RuntimeWorkbenchSkillRefreshInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly setSkillEnabled: (
+    input: RuntimeWorkbenchSkillEnabledInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly openLifecyclePanelSession: (
     options?: CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
   ) => RuntimeLifecyclePanelSession;
@@ -293,6 +345,11 @@ export function createRuntimeWorkbenchSession(
       runtimeAvailable: options.runtime !== undefined,
       disposed,
     });
+  let skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot({
+    status: "idle",
+    runtimeAvailable: options.runtime !== undefined,
+    disposed,
+  });
   const listeners = new Set<RuntimeWorkbenchSessionStoreChangeListener>();
   let lifecyclePanelUnsubscribe: RuntimeStatusUnsubscribe | undefined;
   let runtimeStreamUnsubscribe: RuntimeStatusUnsubscribe | undefined;
@@ -312,6 +369,11 @@ export function createRuntimeWorkbenchSession(
     }),
     referenceManagement: createRuntimeWorkbenchReferenceManagementSnapshot({
       ...referenceManagementSnapshot,
+      runtimeAvailable: options.runtime !== undefined,
+      disposed,
+    }),
+    skillManagement: createRuntimeWorkbenchSkillManagementSnapshot({
+      ...skillManagementSnapshot,
       runtimeAvailable: options.runtime !== undefined,
       disposed,
     }),
@@ -355,6 +417,11 @@ export function createRuntimeWorkbenchSession(
       }),
       referenceManagement: createRuntimeWorkbenchReferenceManagementSnapshot({
         ...referenceManagementSnapshot,
+        runtimeAvailable: options.runtime !== undefined,
+        disposed,
+      }),
+      skillManagement: createRuntimeWorkbenchSkillManagementSnapshot({
+        ...skillManagementSnapshot,
         runtimeAvailable: options.runtime !== undefined,
         disposed,
       }),
@@ -1109,6 +1176,250 @@ export function createRuntimeWorkbenchSession(
         throw error;
       }
     },
+    refreshSkills: async (input) => {
+      assertActive();
+      const projectId = normalizeRuntimeWorkbenchReferencePathSegment(
+        input.projectId,
+      );
+      if (projectId === null) {
+        skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot(
+          {
+            blockedReason: "invalid_input",
+            runtimeAvailable: options.runtime !== undefined,
+            status: "blocked",
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench Skill project id is invalid");
+      }
+      const requestPath = buildRuntimeWorkbenchSkillsPath(projectId);
+      if (options.runtime === undefined) {
+        skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot(
+          {
+            activeProjectId: projectId,
+            blockedReason: "runtime_unavailable",
+            path: requestPath,
+            runtimeAvailable: false,
+            status: "blocked",
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+      skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot({
+        activeProjectId: projectId,
+        entries: skillManagementSnapshot.entries,
+        method: "GET",
+        path: requestPath,
+        runtimeAvailable: true,
+        status: "refreshing",
+        disposed,
+      });
+      publishIfChanged(true);
+      try {
+        const response = await options.runtime.fetch(requestPath);
+        if (!response.ok) {
+          skillManagementSnapshot =
+            createRuntimeWorkbenchSkillManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries: skillManagementSnapshot.entries,
+              method: "GET",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const entries = parseRuntimeWorkbenchSkillEntries(response.body);
+        if (entries === null) {
+          skillManagementSnapshot =
+            createRuntimeWorkbenchSkillManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "response_invalid",
+              method: "GET",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error("Runtime workbench Skill manifest is invalid");
+        }
+        skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot(
+          {
+            activeProjectId: projectId,
+            entries,
+            method: "GET",
+            path: requestPath,
+            runtimeAvailable: true,
+            status: "succeeded",
+            statusCode: response.status,
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (skillManagementSnapshot.status !== "failed") {
+          skillManagementSnapshot =
+            createRuntimeWorkbenchSkillManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries: skillManagementSnapshot.entries,
+              method: "GET",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              disposed,
+            });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
+    setSkillEnabled: async (input) => {
+      assertActive();
+      const projectId = normalizeRuntimeWorkbenchReferencePathSegment(
+        input.projectId,
+      );
+      const skillId = normalizeRuntimeWorkbenchReferencePathSegment(
+        input.skillId,
+      );
+      const version =
+        input.version === undefined
+          ? undefined
+          : normalizeRuntimeWorkbenchReferenceOptionalText(input.version);
+      if (
+        projectId === null ||
+        skillId === null ||
+        (input.version !== undefined && (version === null || version === ""))
+      ) {
+        skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot(
+          {
+            blockedReason: "invalid_input",
+            runtimeAvailable: options.runtime !== undefined,
+            status: "blocked",
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench Skill update input is invalid");
+      }
+      const requestPath = buildRuntimeWorkbenchSkillsPath(projectId);
+      if (options.runtime === undefined) {
+        skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot(
+          {
+            activeProjectId: projectId,
+            blockedReason: "runtime_unavailable",
+            lastSkillId: skillId,
+            path: requestPath,
+            runtimeAvailable: false,
+            status: "blocked",
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+      skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot({
+        activeProjectId: projectId,
+        entries: skillManagementSnapshot.entries,
+        lastSkillId: skillId,
+        method: "PATCH",
+        path: requestPath,
+        runtimeAvailable: true,
+        status: "updating",
+        disposed,
+      });
+      publishIfChanged(true);
+      try {
+        const response = await options.runtime.fetch(requestPath, {
+          method: "PATCH",
+          body: JSON.stringify({
+            schema_version: "0.1.0",
+            skill_id: skillId,
+            enabled: input.enabled,
+            ...(version === undefined ? {} : { version }),
+          }),
+        });
+        if (!response.ok) {
+          skillManagementSnapshot =
+            createRuntimeWorkbenchSkillManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries: skillManagementSnapshot.entries,
+              lastSkillId: skillId,
+              method: "PATCH",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const entry = parseRuntimeWorkbenchSkillEntry(response.body);
+        if (entry === null) {
+          skillManagementSnapshot =
+            createRuntimeWorkbenchSkillManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "response_invalid",
+              lastSkillId: skillId,
+              method: "PATCH",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error("Runtime workbench Skill response is invalid");
+        }
+        skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot(
+          {
+            activeProjectId: projectId,
+            entries: upsertRuntimeWorkbenchSkillEntry(
+              skillManagementSnapshot.entries,
+              entry,
+            ),
+            lastSkillId: entry.skillId,
+            method: "PATCH",
+            path: requestPath,
+            runtimeAvailable: true,
+            status: "succeeded",
+            statusCode: response.status,
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (skillManagementSnapshot.status !== "failed") {
+          skillManagementSnapshot =
+            createRuntimeWorkbenchSkillManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries: skillManagementSnapshot.entries,
+              lastSkillId: skillId,
+              method: "PATCH",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              disposed,
+            });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
     openLifecyclePanelSession: (sessionOptions) => {
       assertActive();
       const session = runWithSuppressedControllerPublish(() =>
@@ -1332,6 +1643,32 @@ function createRuntimeWorkbenchReferenceManagementSnapshot(
   });
 }
 
+function createRuntimeWorkbenchSkillManagementSnapshot(
+  input: Partial<RuntimeWorkbenchSkillManagementSnapshot> & {
+    readonly status: RuntimeWorkbenchSkillManagementStatus;
+    readonly runtimeAvailable: boolean;
+    readonly disposed: boolean;
+  },
+): RuntimeWorkbenchSkillManagementSnapshot {
+  const entries = Object.freeze([...(input.entries ?? [])]);
+  return Object.freeze({
+    status: input.status,
+    activeProjectId: input.activeProjectId ?? null,
+    method: input.method ?? null,
+    path: input.path ?? null,
+    entries,
+    lastSkillId: input.lastSkillId ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    canRefreshSkills:
+      !input.disposed &&
+      input.runtimeAvailable &&
+      input.status !== "refreshing",
+    canUpdateSkill:
+      !input.disposed && input.runtimeAvailable && input.status !== "updating",
+  });
+}
+
 function buildRuntimeWorkbenchRunOncePath(
   runId: string,
   nodeId: string,
@@ -1382,6 +1719,14 @@ function buildRuntimeWorkbenchReferencePath(
   const requestPath = `${buildRuntimeWorkbenchReferencesPath(
     projectId,
   )}/${encodeURIComponent(referenceId)}`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
+function buildRuntimeWorkbenchSkillsPath(
+  projectId: string,
+): RuntimeRequestPath {
+  const requestPath = `/projects/${encodeURIComponent(projectId)}/skills`;
   assertRuntimeRequestPath(requestPath);
   return requestPath as RuntimeRequestPath;
 }
@@ -1665,6 +2010,67 @@ function upsertRuntimeWorkbenchReferenceEntry(
   return Object.freeze(nextEntries);
 }
 
+function parseRuntimeWorkbenchSkillEntries(
+  body: unknown,
+): readonly RuntimeWorkbenchSkillEntrySnapshot[] | null {
+  if (!Array.isArray(body)) {
+    return null;
+  }
+  const entries: RuntimeWorkbenchSkillEntrySnapshot[] = [];
+  for (const item of body) {
+    const parsed = parseRuntimeWorkbenchSkillEntry(item);
+    if (parsed === null) {
+      return null;
+    }
+    entries.push(parsed);
+  }
+  return Object.freeze(entries);
+}
+
+function parseRuntimeWorkbenchSkillEntry(
+  body: unknown,
+): RuntimeWorkbenchSkillEntrySnapshot | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  const skillId = body.skill_id;
+  const version = body.version;
+  const enabled = body.enabled;
+  if (
+    typeof skillId !== "string" ||
+    skillId.trim().length === 0 ||
+    typeof version !== "string" ||
+    version.trim().length === 0 ||
+    typeof enabled !== "boolean"
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    skillId,
+    version,
+    enabled,
+    paramKeys: Object.freeze([]),
+  });
+}
+
+function upsertRuntimeWorkbenchSkillEntry(
+  entries: readonly RuntimeWorkbenchSkillEntrySnapshot[],
+  entry: RuntimeWorkbenchSkillEntrySnapshot,
+): readonly RuntimeWorkbenchSkillEntrySnapshot[] {
+  let replaced = false;
+  const nextEntries = entries.map((candidate) => {
+    if (candidate.skillId !== entry.skillId) {
+      return candidate;
+    }
+    replaced = true;
+    return entry;
+  });
+  if (!replaced) {
+    nextEntries.push(entry);
+  }
+  return Object.freeze(nextEntries);
+}
+
 function buildRuntimeWorkbenchReferenceMultipartBody(options: {
   readonly kind: RuntimeWorkbenchReferenceKind;
   readonly sensitive: boolean;
@@ -1783,6 +2189,15 @@ function freezeRuntimeWorkbenchSessionSnapshot(
         snapshot.referenceManagement.status === "refreshing" ||
         snapshot.referenceManagement.status === "importing" ||
         snapshot.referenceManagement.status === "updating",
+      disposed: snapshot.disposed,
+    }),
+    skillManagement: createRuntimeWorkbenchSkillManagementSnapshot({
+      ...snapshot.skillManagement,
+      runtimeAvailable:
+        snapshot.skillManagement.canRefreshSkills ||
+        snapshot.skillManagement.canUpdateSkill ||
+        snapshot.skillManagement.status === "refreshing" ||
+        snapshot.skillManagement.status === "updating",
       disposed: snapshot.disposed,
     }),
   });

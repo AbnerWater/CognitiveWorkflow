@@ -484,6 +484,8 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
     case "refresh_references":
     case "import_reference":
     case "set_reference_enabled":
+    case "refresh_skills":
+    case "set_skill_enabled":
       return false;
     case "dispatch_lifecycle_panel":
       return (
@@ -694,6 +696,19 @@ function cloneRuntimeWorkbenchInteractionCommand(
         projectId: command.projectId,
         referenceId: command.referenceId,
         enabled: command.enabled,
+      });
+    case "refresh_skills":
+      return Object.freeze({
+        type: command.type,
+        projectId: command.projectId,
+      });
+    case "set_skill_enabled":
+      return Object.freeze({
+        type: command.type,
+        projectId: command.projectId,
+        skillId: command.skillId,
+        enabled: command.enabled,
+        ...(command.version !== undefined ? { version: command.version } : {}),
       });
     case "open_lifecycle_panel_session":
       return Object.freeze({

@@ -27,6 +27,8 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "refresh_references",
   "import_reference",
   "set_reference_enabled",
+  "refresh_skills",
+  "set_skill_enabled",
   "dispatch_lifecycle_panel",
   "dispatch_runtime_stream",
 ] as const;
@@ -95,6 +97,17 @@ export type RuntimeWorkbenchInteractionCommand =
       readonly projectId: string;
       readonly referenceId: string;
       readonly enabled: boolean;
+    }
+  | {
+      readonly type: "refresh_skills";
+      readonly projectId: string;
+    }
+  | {
+      readonly type: "set_skill_enabled";
+      readonly projectId: string;
+      readonly skillId: string;
+      readonly enabled: boolean;
+      readonly version?: string;
     }
   | {
       readonly type: "dispatch_lifecycle_panel";
@@ -325,6 +338,21 @@ export function createRuntimeWorkbenchInteraction(
           enabled: safeCommand.enabled,
         });
         return completeAction();
+      case "refresh_skills":
+        await options.workbench.refreshSkills({
+          projectId: safeCommand.projectId,
+        });
+        return completeAction();
+      case "set_skill_enabled":
+        await options.workbench.setSkillEnabled({
+          projectId: safeCommand.projectId,
+          skillId: safeCommand.skillId,
+          enabled: safeCommand.enabled,
+          ...(safeCommand.version !== undefined
+            ? { version: safeCommand.version }
+            : {}),
+        });
+        return completeAction();
       case "dispatch_lifecycle_panel": {
         await options.workbench.dispatchLifecyclePanelCommand(
           safeCommand.command,
@@ -414,6 +442,12 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
     }
     if (workbench.referenceManagement.canUpdateReference) {
       enabledCommandIds.push("set_reference_enabled");
+    }
+    if (workbench.skillManagement.canRefreshSkills) {
+      enabledCommandIds.push("refresh_skills");
+    }
+    if (workbench.skillManagement.canUpdateSkill) {
+      enabledCommandIds.push("set_skill_enabled");
     }
     if (workbench.lifecyclePanel.activeSession !== null) {
       enabledCommandIds.push(
@@ -517,6 +551,23 @@ function requireRuntimeWorkbenchInteractionCommand(
         typeof command.projectId !== "string" ||
         typeof command.referenceId !== "string" ||
         typeof command.enabled !== "boolean"
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "refresh_skills":
+      if (typeof command.projectId !== "string") {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "set_skill_enabled":
+      if (
+        typeof command.projectId !== "string" ||
+        typeof command.skillId !== "string" ||
+        typeof command.enabled !== "boolean" ||
+        ("version" in command &&
+          command.version !== undefined &&
+          typeof command.version !== "string")
       ) {
         throw new Error("Invalid runtime workbench interaction command");
       }

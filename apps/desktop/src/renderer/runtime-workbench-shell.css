@@ -1677,7 +1677,8 @@ button {
   font-weight: 700;
 }
 
-.cw-workbench__reference-management {
+.cw-workbench__reference-management,
+.cw-workbench__skill-management {
   display: grid;
   flex: 1 1 100%;
   gap: 10px;
@@ -1698,8 +1699,19 @@ button {
   min-width: 0;
 }
 
+.cw-workbench__skill-management-form {
+  display: grid;
+  grid-template-columns:
+    minmax(120px, 0.9fr) minmax(150px, 1fr) minmax(110px, 0.6fr)
+    auto auto;
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+}
+
 .cw-workbench__reference-field,
-.cw-workbench__reference-check {
+.cw-workbench__reference-check,
+.cw-workbench__skill-field {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -1708,14 +1720,18 @@ button {
 .cw-workbench__reference-field span,
 .cw-workbench__reference-check span,
 .cw-workbench__reference-status dt,
-.cw-workbench__reference-entry-meta dt {
+.cw-workbench__reference-entry-meta dt,
+.cw-workbench__skill-field span,
+.cw-workbench__skill-status dt,
+.cw-workbench__skill-entry-meta dt {
   color: #657487;
   font-size: 12px;
   font-weight: 700;
 }
 
 .cw-workbench__reference-field input,
-.cw-workbench__reference-field select {
+.cw-workbench__reference-field select,
+.cw-workbench__skill-field input {
   width: 100%;
   min-height: 34px;
   border: 1px solid #cbd4df;
@@ -1726,7 +1742,8 @@ button {
   font-size: 14px;
 }
 
-.cw-workbench__reference-field input {
+.cw-workbench__reference-field input,
+.cw-workbench__skill-field input {
   padding: 0 8px;
 }
 
@@ -1742,7 +1759,10 @@ button {
 
 .cw-workbench__reference-refresh,
 .cw-workbench__reference-import,
-.cw-workbench__reference-toggle {
+.cw-workbench__reference-toggle,
+.cw-workbench__skill-refresh,
+.cw-workbench__skill-set,
+.cw-workbench__skill-toggle {
   min-height: 36px;
   border: 1px solid #3d6fa7;
   border-radius: 6px;
@@ -1752,7 +1772,8 @@ button {
   padding: 0 12px;
 }
 
-.cw-workbench__reference-status {
+.cw-workbench__reference-status,
+.cw-workbench__skill-status {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -1760,25 +1781,29 @@ button {
   margin: 0;
 }
 
-.cw-workbench__reference-status div {
+.cw-workbench__reference-status div,
+.cw-workbench__skill-status div {
   min-width: 0;
 }
 
-.cw-workbench__reference-status dd {
+.cw-workbench__reference-status dd,
+.cw-workbench__skill-status dd {
   margin: 2px 0 0;
   overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 700;
 }
 
-.cw-workbench__reference-empty {
+.cw-workbench__reference-empty,
+.cw-workbench__skill-empty {
   margin: 0;
   color: #657487;
   font-size: 13px;
   font-weight: 700;
 }
 
-.cw-workbench__reference-list {
+.cw-workbench__reference-list,
+.cw-workbench__skill-list {
   display: grid;
   gap: 8px;
   margin: 0;
@@ -1786,7 +1811,8 @@ button {
   list-style: none;
 }
 
-.cw-workbench__reference-entry {
+.cw-workbench__reference-entry,
+.cw-workbench__skill-entry {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) minmax(260px, 1.4fr) auto;
   gap: 10px;
@@ -1800,28 +1826,34 @@ button {
   background: #fbfcfd;
 }
 
-.cw-workbench__reference-entry[data-reference-entry-enabled="false"] {
+.cw-workbench__reference-entry[data-reference-entry-enabled="false"],
+.cw-workbench__skill-entry[data-skill-entry-enabled="false"] {
   border-left-color: #c9a24f;
 }
 
-.cw-workbench__reference-entry-main {
+.cw-workbench__reference-entry-main,
+.cw-workbench__skill-entry-main {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
 
 .cw-workbench__reference-entry-main strong,
-.cw-workbench__reference-entry-main span {
+.cw-workbench__reference-entry-main span,
+.cw-workbench__skill-entry-main strong,
+.cw-workbench__skill-entry-main span {
   overflow-wrap: anywhere;
 }
 
-.cw-workbench__reference-entry-main span {
+.cw-workbench__reference-entry-main span,
+.cw-workbench__skill-entry-main span {
   color: #526173;
   font-size: 12px;
   font-weight: 700;
 }
 
-.cw-workbench__reference-entry-meta {
+.cw-workbench__reference-entry-meta,
+.cw-workbench__skill-entry-meta {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
@@ -1829,7 +1861,12 @@ button {
   margin: 0;
 }
 
-.cw-workbench__reference-entry-meta dd {
+.cw-workbench__skill-entry-meta {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cw-workbench__reference-entry-meta dd,
+.cw-workbench__skill-entry-meta dd {
   margin: 2px 0 0;
   overflow-wrap: anywhere;
   font-size: 12px;
@@ -3013,7 +3050,9 @@ button {
   .cw-workbench__chat-compose,
   .cw-workbench__project-creation,
   .cw-workbench__reference-management-form,
+  .cw-workbench__skill-management-form,
   .cw-workbench__reference-entry,
+  .cw-workbench__skill-entry,
   .cw-workbench__stream-options,
   .cw-workbench__stream-controls,
   .cw-workbench__stream-panel-header,
@@ -3031,7 +3070,9 @@ button {
   .cw-workbench__status-grid,
   .cw-workbench__project-creation-status,
   .cw-workbench__reference-status,
+  .cw-workbench__skill-status,
   .cw-workbench__reference-entry-meta,
+  .cw-workbench__skill-entry-meta,
   .cw-workbench__stream-metrics,
   .cw-workbench__workflow-canvas-summary dl,
   .cw-workbench__version-snapshot-items,
@@ -3067,7 +3108,9 @@ button {
   .cw-workbench__status-grid,
   .cw-workbench__project-creation-status,
   .cw-workbench__reference-status,
+  .cw-workbench__skill-status,
   .cw-workbench__reference-entry-meta,
+  .cw-workbench__skill-entry-meta,
   .cw-workbench__stream-metrics,
   .cw-workbench__stream-controls-body,
   .cw-workbench__stream-event-detail dl,

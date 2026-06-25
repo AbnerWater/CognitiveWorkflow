@@ -302,6 +302,25 @@ function buildVisualSmokeSnapshot(
       canImportReference: !disposed,
       canUpdateReference: !disposed,
     }),
+    skillManagement: Object.freeze({
+      status: "succeeded",
+      activeProjectId: "visual-project",
+      method: "GET",
+      path: "/projects/visual-project/skills",
+      entries: Object.freeze([
+        Object.freeze({
+          skillId: "citation_checker",
+          version: "1.0.0",
+          enabled: true,
+          paramKeys: Object.freeze(["mode"]),
+        }),
+      ]),
+      lastSkillId: "citation_checker",
+      statusCode: 200,
+      blockedReason: null,
+      canRefreshSkills: !disposed,
+      canUpdateSkill: !disposed,
+    }),
     lifecyclePanelStatus: disposed ? "disposed" : "active",
     lifecyclePanel: disposed
       ? null
@@ -539,6 +558,18 @@ function buildVisualSmokeSnapshot(
         label: "Project",
         value: disposed ? "Disposed" : "Not created",
         tone: disposed ? "danger" : "neutral",
+      }),
+      Object.freeze({
+        id: "reference_management",
+        label: "References",
+        value: disposed ? "Disposed" : "1 refs",
+        tone: disposed ? "danger" : "success",
+      }),
+      Object.freeze({
+        id: "skill_management",
+        label: "Skills",
+        value: disposed ? "Disposed" : "1 skills",
+        tone: disposed ? "danger" : "success",
       }),
       Object.freeze({
         id: "lifecycle_panel",
