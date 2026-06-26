@@ -41,6 +41,7 @@ import {
   type RuntimeWorkbenchReferenceManagementSnapshot,
   type RuntimeWorkbenchHumanDecisionSnapshot,
   type RuntimeWorkbenchSkillManagementSnapshot,
+  type RuntimeWorkbenchVersionSnapshotSnapshot,
   type RuntimeWorkbenchSession,
 } from "./runtime-workbench-session.js";
 
@@ -146,6 +147,7 @@ export interface RuntimeWorkbenchHostSessionSnapshot {
   readonly referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot;
   readonly skillManagement: RuntimeWorkbenchSkillManagementSnapshot;
   readonly humanDecision: RuntimeWorkbenchHumanDecisionSnapshot;
+  readonly versionSnapshot: RuntimeWorkbenchVersionSnapshotSnapshot;
   readonly lifecyclePanel: RuntimeWorkbenchHostLifecyclePanelSnapshot;
   readonly runtimeStream: RuntimeWorkbenchHostRuntimeStreamSnapshot;
   readonly runtimeStreamPanel: RuntimeWorkbenchHostRuntimeStreamPanelSnapshot | null;
@@ -445,6 +447,9 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
     humanDecision: cloneRuntimeWorkbenchHostHumanDecision(
       workbench.humanDecision,
     ),
+    versionSnapshot: cloneRuntimeWorkbenchHostVersionSnapshot(
+      workbench.versionSnapshot,
+    ),
     lifecyclePanel: Object.freeze({
       active: lifecyclePanelActiveSession !== null,
       disposed: workbench.lifecyclePanel.disposed,
@@ -494,6 +499,9 @@ function freezeRuntimeWorkbenchHostSessionSnapshot(
     ),
     humanDecision: cloneRuntimeWorkbenchHostHumanDecision(
       snapshot.humanDecision,
+    ),
+    versionSnapshot: cloneRuntimeWorkbenchHostVersionSnapshot(
+      snapshot.versionSnapshot,
     ),
   });
 }
@@ -550,6 +558,12 @@ function cloneRuntimeWorkbenchHostHumanDecision(
   humanDecision: RuntimeWorkbenchHumanDecisionSnapshot,
 ): RuntimeWorkbenchHumanDecisionSnapshot {
   return Object.freeze({ ...humanDecision });
+}
+
+function cloneRuntimeWorkbenchHostVersionSnapshot(
+  versionSnapshot: RuntimeWorkbenchVersionSnapshotSnapshot,
+): RuntimeWorkbenchVersionSnapshotSnapshot {
+  return Object.freeze({ ...versionSnapshot });
 }
 
 function buildRuntimeWorkbenchHostRuntimeStreamPanelSnapshot(

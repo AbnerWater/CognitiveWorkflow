@@ -49,6 +49,7 @@ import {
   createRuntimeWorkbenchShellReactReferenceImportFormState,
   createRuntimeWorkbenchShellReactHumanDecisionFormState,
   createRuntimeWorkbenchShellReactSkillManagementFormState,
+  createRuntimeWorkbenchShellReactVersionSnapshotFormState,
   buildRuntimeWorkbenchShellReactStreamSessionOptions,
   createRuntimeWorkbenchShellReactStreamOptionsFormState,
   isRuntimeWorkbenchShellReactActionEnabled,
@@ -4002,7 +4003,7 @@ test("renderer runtime workbench React shell selects version snapshot locally", 
         "versionSnapshotDetails",
         "git_snapshot",
       ).getAttribute("data-version-snapshot-details-status"),
-      "Not created",
+      "Ready",
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -4028,7 +4029,7 @@ test("renderer runtime workbench React shell selects version snapshot locally", 
           "git_snapshot",
         ),
       ),
-      /Status[\s\S]*Not created[\s\S]*Value[\s\S]*Not created[\s\S]*Active[\s\S]*No/u,
+      /Status[\s\S]*Ready[\s\S]*Value[\s\S]*Not created[\s\S]*Active[\s\S]*No/u,
     );
     assert.equal(
       countFakeRuntimeWorkbenchElements(
@@ -5764,6 +5765,97 @@ test("renderer runtime workbench React shell dispatches human decision commands 
   }
 });
 
+test("renderer runtime workbench React shell dispatches workflow snapshot commands", async () => {
+  assert.deepEqual(
+    createRuntimeWorkbenchShellReactVersionSnapshotFormState({
+      workflowId: "workflow_snapshot",
+    }),
+    {
+      workflowId: "workflow_snapshot",
+    },
+  );
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const snapshot = createRuntimeWorkbenchShellReactSnapshot({
+    versionSnapshot: {
+      status: "succeeded",
+      path: "/workflows/workflow_snapshot/snapshot",
+      workflowId: "workflow_snapshot",
+      snapshotId: "snap_01",
+      commitSha: "1234567890abcdef",
+      createdAt: "2026-06-25T07:00:00.000Z",
+      statusCode: 201,
+      canCreateSnapshot: true,
+    },
+  });
+  const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          defaultVersionSnapshotFormState={{
+            workflowId: " workflow_snapshot ",
+          }}
+          session={session}
+          title="Version Snapshot Runtime Workbench"
+        />,
+      );
+    });
+
+    const versionSnapshotControl = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "versionSnapshotControl",
+      "true",
+    );
+    assert.equal(
+      versionSnapshotControl.getAttribute("data-version-snapshot-status"),
+      "succeeded",
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container).includes(
+        "raw_snapshot_response",
+      ),
+      false,
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchElementAttributeValues(dom.container).includes(
+        "raw_snapshot_response",
+      ),
+      false,
+    );
+
+    const createButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "versionSnapshotCreate",
+      "true",
+    );
+    assert.equal(
+      createButton.getAttribute("data-version-snapshot-create-enabled"),
+      "true",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(createButton);
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "create_workflow_snapshot",
+      workflowId: "workflow_snapshot",
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    session.dispose();
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench session dispatches run-once through runtime fetch", async () => {
   const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
     body: Object.freeze({ raw_model_output: "must not be retained" }),
@@ -5806,6 +5898,185 @@ test("renderer runtime workbench session dispatches run-once through runtime fet
   assert.equal(
     JSON.stringify(snapshot.executionPolicy.runOnce).includes(
       "must not be retained",
+    ),
+    false,
+  );
+});
+
+test("renderer runtime workbench session creates workflow snapshots through runtime fetch", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
+    body: Object.freeze({
+      schema_version: "0.1.0",
+      snapshot_id: "snap_runtime",
+      commit_sha: "abcdef1234567890",
+      created_at: "2026-06-25T07:30:00.000Z",
+      raw_runtime_detail: "must not be retained",
+    }),
+    ok: true,
+    status: 201,
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const snapshot = await session.createWorkflowSnapshot({
+    workflowId: " workflow_runtime ",
+    idempotencyKey: "idem_snapshot",
+  });
+
+  const call = requireRuntimeWorkbenchRunOnceRuntimeCall(calls);
+  assert.equal(call.path, "/workflows/workflow_runtime/snapshot");
+  assert.deepEqual(call.init, {
+    method: "POST",
+    body: JSON.stringify({
+      schema_version: "0.1.0",
+    }),
+    idempotencyKey: "idem_snapshot",
+  });
+  assert.deepEqual(snapshot.versionSnapshot, {
+    status: "succeeded",
+    method: "POST",
+    path: "/workflows/workflow_runtime/snapshot",
+    workflowId: "workflow_runtime",
+    snapshotId: "snap_runtime",
+    commitSha: "abcdef1234567890",
+    createdAt: "2026-06-25T07:30:00.000Z",
+    statusCode: 201,
+    blockedReason: null,
+    canCreateSnapshot: true,
+  });
+  assert.equal(
+    JSON.stringify(snapshot.versionSnapshot).includes("raw_runtime_detail"),
+    false,
+  );
+});
+
+test("renderer runtime workbench session blocks workflow snapshots without valid input or runtime", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime();
+  const invalidInputSession = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  await assert.rejects(
+    () =>
+      invalidInputSession.createWorkflowSnapshot({
+        workflowId: "unsafe/workflow",
+      }),
+    /workflow snapshot input is invalid/u,
+  );
+  assert.equal(calls.length, 0);
+  assert.deepEqual(invalidInputSession.snapshot().versionSnapshot, {
+    status: "blocked",
+    method: "POST",
+    path: null,
+    workflowId: null,
+    snapshotId: null,
+    commitSha: null,
+    createdAt: null,
+    statusCode: null,
+    blockedReason: "invalid_input",
+    canCreateSnapshot: true,
+  });
+
+  const unavailableSession = createRuntimeWorkbenchRunOnceSession({
+    executionMode: "semi_auto",
+  });
+  await assert.rejects(
+    () =>
+      unavailableSession.createWorkflowSnapshot({
+        workflowId: "workflow_unavailable",
+      }),
+    /runtime bridge is unavailable/u,
+  );
+  assert.deepEqual(unavailableSession.snapshot().versionSnapshot, {
+    status: "blocked",
+    method: "POST",
+    path: "/workflows/workflow_unavailable/snapshot",
+    workflowId: "workflow_unavailable",
+    snapshotId: null,
+    commitSha: null,
+    createdAt: null,
+    statusCode: null,
+    blockedReason: "runtime_unavailable",
+    canCreateSnapshot: false,
+  });
+});
+
+test("renderer runtime workbench session fails workflow snapshots without retaining response body", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
+    body: Object.freeze({ raw_runtime_detail: "must not be retained" }),
+    ok: false,
+    status: 409,
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const snapshot = await session.createWorkflowSnapshot({
+    workflowId: "workflow_conflict",
+  });
+
+  const call = requireRuntimeWorkbenchRunOnceRuntimeCall(calls);
+  assert.equal(call.path, "/workflows/workflow_conflict/snapshot");
+  assert.deepEqual(snapshot.versionSnapshot, {
+    status: "failed",
+    method: "POST",
+    path: "/workflows/workflow_conflict/snapshot",
+    workflowId: "workflow_conflict",
+    snapshotId: null,
+    commitSha: null,
+    createdAt: null,
+    statusCode: 409,
+    blockedReason: "request_failed",
+    canCreateSnapshot: true,
+  });
+  assert.equal(
+    JSON.stringify(snapshot.versionSnapshot).includes("raw_runtime_detail"),
+    false,
+  );
+});
+
+test("renderer runtime workbench session rejects invalid workflow snapshot responses", async () => {
+  const { runtime } = createFakeRuntimeWorkbenchRunOnceRuntime({
+    body: Object.freeze({
+      schema_version: "0.1.0",
+      snapshot_id: "snap_invalid",
+      raw_runtime_detail: "must not be retained",
+    }),
+    ok: true,
+    status: 200,
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  await assert.rejects(
+    () =>
+      session.createWorkflowSnapshot({
+        workflowId: "workflow_invalid_response",
+      }),
+    /workflow snapshot response is invalid/u,
+  );
+
+  assert.deepEqual(session.snapshot().versionSnapshot, {
+    status: "failed",
+    method: "POST",
+    path: "/workflows/workflow_invalid_response/snapshot",
+    workflowId: "workflow_invalid_response",
+    snapshotId: null,
+    commitSha: null,
+    createdAt: null,
+    statusCode: 200,
+    blockedReason: "response_invalid",
+    canCreateSnapshot: true,
+  });
+  assert.equal(
+    JSON.stringify(session.snapshot().versionSnapshot).includes(
+      "raw_runtime_detail",
     ),
     false,
   );
@@ -7596,6 +7867,23 @@ function createRuntimeWorkbenchShellReactHumanDecisionSnapshot(
   });
 }
 
+function createRuntimeWorkbenchShellReactVersionSnapshotSnapshot(
+  input: Partial<RuntimeWorkbenchShellSnapshot["versionSnapshot"]> = {},
+): RuntimeWorkbenchShellSnapshot["versionSnapshot"] {
+  return Object.freeze({
+    status: input.status ?? "idle",
+    method: "POST",
+    path: input.path ?? null,
+    workflowId: input.workflowId ?? null,
+    snapshotId: input.snapshotId ?? null,
+    commitSha: input.commitSha ?? null,
+    createdAt: input.createdAt ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    canCreateSnapshot: input.canCreateSnapshot ?? true,
+  });
+}
+
 function createRuntimeWorkbenchShellReactSnapshot(
   options: {
     readonly activePanel?: RuntimeWorkbenchPanelId;
@@ -7608,6 +7896,9 @@ function createRuntimeWorkbenchShellReactSnapshot(
     >;
     readonly humanDecision?: Partial<
       RuntimeWorkbenchShellSnapshot["humanDecision"]
+    >;
+    readonly versionSnapshot?: Partial<
+      RuntimeWorkbenchShellSnapshot["versionSnapshot"]
     >;
   } = {},
 ): RuntimeWorkbenchShellSnapshot {
@@ -7626,6 +7917,9 @@ function createRuntimeWorkbenchShellReactSnapshot(
     ),
     humanDecision: createRuntimeWorkbenchShellReactHumanDecisionSnapshot(
       options.humanDecision,
+    ),
+    versionSnapshot: createRuntimeWorkbenchShellReactVersionSnapshotSnapshot(
+      options.versionSnapshot,
     ),
     lifecyclePanel: Object.freeze({
       active: false,
@@ -7681,6 +7975,7 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(),
     skillManagement: createRuntimeWorkbenchShellReactSkillManagementSnapshot(),
     humanDecision: createRuntimeWorkbenchShellReactHumanDecisionSnapshot(),
+    versionSnapshot: createRuntimeWorkbenchShellReactVersionSnapshotSnapshot(),
     lifecyclePanel: Object.freeze({
       active: false,
       disposed: false,
@@ -7967,6 +8262,7 @@ function createRuntimeWorkbenchShellReactLifecycleSnapshot(): RuntimeWorkbenchSh
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(),
     skillManagement: createRuntimeWorkbenchShellReactSkillManagementSnapshot(),
     humanDecision: createRuntimeWorkbenchShellReactHumanDecisionSnapshot(),
+    versionSnapshot: createRuntimeWorkbenchShellReactVersionSnapshotSnapshot(),
     lifecyclePanel: Object.freeze({
       active: true,
       disposed: false,

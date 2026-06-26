@@ -31,6 +31,7 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "refresh_skills",
   "set_skill_enabled",
   "submit_human_decision",
+  "create_workflow_snapshot",
   "dispatch_lifecycle_panel",
   "dispatch_runtime_stream",
 ] as const;
@@ -118,6 +119,11 @@ export type RuntimeWorkbenchInteractionCommand =
       readonly decision: string;
       readonly by: string;
       readonly customValue?: RuntimeWorkbenchHumanDecisionCustomValue;
+      readonly idempotencyKey?: string;
+    }
+  | {
+      readonly type: "create_workflow_snapshot";
+      readonly workflowId: string;
       readonly idempotencyKey?: string;
     }
   | {
@@ -378,6 +384,14 @@ export function createRuntimeWorkbenchInteraction(
             : {}),
         });
         return completeAction();
+      case "create_workflow_snapshot":
+        await options.workbench.createWorkflowSnapshot({
+          workflowId: safeCommand.workflowId,
+          ...(safeCommand.idempotencyKey !== undefined
+            ? { idempotencyKey: safeCommand.idempotencyKey }
+            : {}),
+        });
+        return completeAction();
       case "dispatch_lifecycle_panel": {
         await options.workbench.dispatchLifecyclePanelCommand(
           safeCommand.command,
@@ -476,6 +490,9 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
     }
     if (workbench.humanDecision.canSubmitDecision) {
       enabledCommandIds.push("submit_human_decision");
+    }
+    if (workbench.versionSnapshot.canCreateSnapshot) {
+      enabledCommandIds.push("create_workflow_snapshot");
     }
     if (workbench.lifecyclePanel.activeSession !== null) {
       enabledCommandIds.push(
@@ -609,6 +626,16 @@ function requireRuntimeWorkbenchInteractionCommand(
         ("customValue" in command &&
           command.customValue !== undefined &&
           !isRuntimeWorkbenchHumanDecisionCustomValue(command.customValue)) ||
+        ("idempotencyKey" in command &&
+          command.idempotencyKey !== undefined &&
+          typeof command.idempotencyKey !== "string")
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "create_workflow_snapshot":
+      if (
+        typeof command.workflowId !== "string" ||
         ("idempotencyKey" in command &&
           command.idempotencyKey !== undefined &&
           typeof command.idempotencyKey !== "string")

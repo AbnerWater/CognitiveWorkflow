@@ -336,6 +336,18 @@ function buildVisualSmokeSnapshot(
       requestedAt: null,
       canSubmitDecision: !disposed,
     }),
+    versionSnapshot: Object.freeze({
+      status: "idle",
+      method: "POST",
+      path: null,
+      workflowId: null,
+      snapshotId: null,
+      commitSha: null,
+      createdAt: null,
+      statusCode: null,
+      blockedReason: null,
+      canCreateSnapshot: !disposed,
+    }),
     lifecyclePanelStatus: disposed ? "disposed" : "active",
     lifecyclePanel: disposed
       ? null

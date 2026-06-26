@@ -86,6 +86,7 @@ export interface RuntimeWorkbenchShellStatusItem {
     | "active_panel"
     | "execution_mode"
     | "project_creation"
+    | "version_snapshot"
     | "reference_management"
     | "skill_management"
     | "human_decision"
@@ -298,6 +299,9 @@ export type RuntimeWorkbenchShellSkillManagementSnapshot =
 export type RuntimeWorkbenchShellHumanDecisionSnapshot =
   RuntimeWorkbenchHostSessionSnapshot["humanDecision"];
 
+export type RuntimeWorkbenchShellVersionSnapshotSnapshot =
+  RuntimeWorkbenchHostSessionSnapshot["versionSnapshot"];
+
 export interface RuntimeWorkbenchShellSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly activePanelLabel: string;
@@ -306,6 +310,7 @@ export interface RuntimeWorkbenchShellSnapshot {
   readonly referenceManagement: RuntimeWorkbenchShellReferenceManagementSnapshot;
   readonly skillManagement: RuntimeWorkbenchShellSkillManagementSnapshot;
   readonly humanDecision: RuntimeWorkbenchShellHumanDecisionSnapshot;
+  readonly versionSnapshot: RuntimeWorkbenchShellVersionSnapshotSnapshot;
   readonly lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus;
   readonly lifecyclePanel: RuntimeWorkbenchShellLifecyclePanelSnapshot | null;
   readonly runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus;
@@ -572,6 +577,9 @@ export function buildRuntimeWorkbenchShellSnapshot(
       host.skillManagement,
     ),
     humanDecision: cloneRuntimeWorkbenchShellHumanDecision(host.humanDecision),
+    versionSnapshot: cloneRuntimeWorkbenchShellVersionSnapshot(
+      host.versionSnapshot,
+    ),
     lifecyclePanelStatus,
     lifecyclePanel,
     runtimeStreamStatus,
@@ -667,10 +675,13 @@ function buildShellChrome(
   const activePanelLabel = panelLabel(host.activePanel);
   const visibleItems = visibleTaskItemCount(host);
   const unreadEvents = host.runtimeStreamPanel?.read.unreadCount ?? 0;
+  const workflowSnapshotValue = host.versionSnapshot.commitSha;
   const gitSnapshotValue =
-    host.projectCreation.firstCommitSha === null
-      ? "Not created"
-      : host.projectCreation.firstCommitSha.slice(0, 12);
+    workflowSnapshotValue !== null
+      ? workflowSnapshotValue.slice(0, 12)
+      : host.projectCreation.firstCommitSha === null
+        ? "Not created"
+        : host.projectCreation.firstCommitSha.slice(0, 12);
   return freezeRuntimeWorkbenchShellChrome({
     dockItems: [
       dockItem({
@@ -793,12 +804,13 @@ function buildShellChrome(
           id: "git_snapshot",
           label: "Git snapshot",
           value: gitSnapshotValue,
-          statusLabel:
-            host.projectCreation.gitInitialized === true
-              ? "Initialized"
-              : projectCreationStatusLabel(host.projectCreation),
-          active: host.projectCreation.gitInitialized === true,
-          tone: disposed ? "danger" : projectCreationTone(host.projectCreation),
+          statusLabel: disposed
+            ? "Disposed"
+            : versionSnapshotStatusLabel(host.versionSnapshot),
+          active:
+            host.versionSnapshot.status === "succeeded" ||
+            host.projectCreation.gitInitialized === true,
+          tone: disposed ? "danger" : versionSnapshotTone(host.versionSnapshot),
         }),
       ],
     },
@@ -1024,6 +1036,14 @@ function buildStatusItems(
         ? "Disposed"
         : projectCreationStatusLabel(host.projectCreation),
       tone: disposed ? "danger" : projectCreationTone(host.projectCreation),
+    }),
+    statusItem({
+      id: "version_snapshot",
+      label: "Snapshot",
+      value: disposed
+        ? "Disposed"
+        : versionSnapshotStatusLabel(host.versionSnapshot),
+      tone: disposed ? "danger" : versionSnapshotTone(host.versionSnapshot),
     }),
     statusItem({
       id: "reference_management",
@@ -1503,6 +1523,39 @@ function humanDecisionTone(
   }
 }
 
+function versionSnapshotStatusLabel(
+  versionSnapshot: RuntimeWorkbenchShellVersionSnapshotSnapshot,
+): string {
+  switch (versionSnapshot.status) {
+    case "blocked":
+      return "Blocked";
+    case "failed":
+      return "Failed";
+    case "creating":
+      return "Creating";
+    case "succeeded":
+      return versionSnapshot.snapshotId ?? "Created";
+    case "idle":
+      return versionSnapshot.canCreateSnapshot ? "Ready" : "Unavailable";
+  }
+}
+
+function versionSnapshotTone(
+  versionSnapshot: RuntimeWorkbenchShellVersionSnapshotSnapshot,
+): RuntimeWorkbenchShellTone {
+  switch (versionSnapshot.status) {
+    case "blocked":
+    case "failed":
+      return "danger";
+    case "creating":
+      return "accent";
+    case "succeeded":
+      return "success";
+    case "idle":
+      return versionSnapshot.canCreateSnapshot ? "neutral" : "warning";
+  }
+}
+
 function formatRuntimeStreamChannelLabel(
   channel: NonNullable<
     RuntimeWorkbenchHostSessionSnapshot["runtimeStream"]["activeChannel"]
@@ -1644,6 +1697,9 @@ function freezeRuntimeWorkbenchShellSnapshot(
     humanDecision: cloneRuntimeWorkbenchShellHumanDecision(
       snapshot.humanDecision,
     ),
+    versionSnapshot: cloneRuntimeWorkbenchShellVersionSnapshot(
+      snapshot.versionSnapshot,
+    ),
     runtimeStreamPanel:
       snapshot.runtimeStreamPanel === null
         ? null
@@ -1701,6 +1757,12 @@ function cloneRuntimeWorkbenchShellHumanDecision(
   humanDecision: RuntimeWorkbenchShellHumanDecisionSnapshot,
 ): RuntimeWorkbenchShellHumanDecisionSnapshot {
   return Object.freeze({ ...humanDecision });
+}
+
+function cloneRuntimeWorkbenchShellVersionSnapshot(
+  versionSnapshot: RuntimeWorkbenchShellVersionSnapshotSnapshot,
+): RuntimeWorkbenchShellVersionSnapshotSnapshot {
+  return Object.freeze({ ...versionSnapshot });
 }
 
 function freezeRuntimeWorkbenchShellChrome(

@@ -204,6 +204,32 @@ export interface RuntimeWorkbenchHumanDecisionSnapshot {
   readonly canSubmitDecision: boolean;
 }
 
+export type RuntimeWorkbenchVersionSnapshotStatus =
+  | "idle"
+  | "creating"
+  | "succeeded"
+  | "failed"
+  | "blocked";
+
+export type RuntimeWorkbenchVersionSnapshotBlockedReason =
+  | "invalid_input"
+  | "request_failed"
+  | "response_invalid"
+  | "runtime_unavailable";
+
+export interface RuntimeWorkbenchVersionSnapshotSnapshot {
+  readonly status: RuntimeWorkbenchVersionSnapshotStatus;
+  readonly method: "POST";
+  readonly path: RuntimeRequestPath | null;
+  readonly workflowId: string | null;
+  readonly snapshotId: string | null;
+  readonly commitSha: string | null;
+  readonly createdAt: string | null;
+  readonly statusCode: number | null;
+  readonly blockedReason: RuntimeWorkbenchVersionSnapshotBlockedReason | null;
+  readonly canCreateSnapshot: boolean;
+}
+
 export interface RuntimeWorkbenchExecutionPolicySnapshot {
   readonly mode: RuntimeWorkbenchExecutionMode;
   readonly availableModes: readonly RuntimeWorkbenchExecutionMode[];
@@ -276,6 +302,11 @@ export interface RuntimeWorkbenchHumanDecisionInput {
   readonly idempotencyKey?: string;
 }
 
+export interface RuntimeWorkbenchVersionSnapshotInput {
+  readonly workflowId: string;
+  readonly idempotencyKey?: string;
+}
+
 export interface RuntimeWorkbenchSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
@@ -283,6 +314,7 @@ export interface RuntimeWorkbenchSessionSnapshot {
   readonly referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot;
   readonly skillManagement: RuntimeWorkbenchSkillManagementSnapshot;
   readonly humanDecision: RuntimeWorkbenchHumanDecisionSnapshot;
+  readonly versionSnapshot: RuntimeWorkbenchVersionSnapshotSnapshot;
   readonly lifecyclePanel: RuntimeLifecyclePanelSessionControllerSnapshot;
   readonly runtimeStream: RuntimeStreamInteractionSessionControllerSnapshot;
   readonly disposed: boolean;
@@ -344,6 +376,9 @@ export interface RuntimeWorkbenchSession {
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly submitHumanDecision: (
     input: RuntimeWorkbenchHumanDecisionInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly createWorkflowSnapshot: (
+    input: RuntimeWorkbenchVersionSnapshotInput,
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly openLifecyclePanelSession: (
     options?: CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
@@ -407,6 +442,11 @@ export function createRuntimeWorkbenchSession(
     runtimeAvailable: options.runtime !== undefined,
     disposed,
   });
+  let versionSnapshotSnapshot = createRuntimeWorkbenchVersionSnapshotSnapshot({
+    status: "idle",
+    runtimeAvailable: options.runtime !== undefined,
+    disposed,
+  });
   const listeners = new Set<RuntimeWorkbenchSessionStoreChangeListener>();
   let lifecyclePanelUnsubscribe: RuntimeStatusUnsubscribe | undefined;
   let runtimeStreamUnsubscribe: RuntimeStatusUnsubscribe | undefined;
@@ -436,6 +476,11 @@ export function createRuntimeWorkbenchSession(
     }),
     humanDecision: createRuntimeWorkbenchHumanDecisionSnapshot({
       ...humanDecisionSnapshot,
+      runtimeAvailable: options.runtime !== undefined,
+      disposed,
+    }),
+    versionSnapshot: createRuntimeWorkbenchVersionSnapshotSnapshot({
+      ...versionSnapshotSnapshot,
       runtimeAvailable: options.runtime !== undefined,
       disposed,
     }),
@@ -489,6 +534,11 @@ export function createRuntimeWorkbenchSession(
       }),
       humanDecision: createRuntimeWorkbenchHumanDecisionSnapshot({
         ...humanDecisionSnapshot,
+        runtimeAvailable: options.runtime !== undefined,
+        disposed,
+      }),
+      versionSnapshot: createRuntimeWorkbenchVersionSnapshotSnapshot({
+        ...versionSnapshotSnapshot,
         runtimeAvailable: options.runtime !== undefined,
         disposed,
       }),
@@ -1634,6 +1684,120 @@ export function createRuntimeWorkbenchSession(
         throw error;
       }
     },
+    createWorkflowSnapshot: async (input) => {
+      assertActive();
+      const workflowId = normalizeRuntimeWorkbenchReferencePathSegment(
+        input.workflowId,
+      );
+      if (workflowId === null) {
+        versionSnapshotSnapshot = createRuntimeWorkbenchVersionSnapshotSnapshot(
+          {
+            blockedReason: "invalid_input",
+            runtimeAvailable: options.runtime !== undefined,
+            status: "blocked",
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench workflow snapshot input is invalid");
+      }
+      const requestPath = buildRuntimeWorkbenchWorkflowSnapshotPath(workflowId);
+      if (options.runtime === undefined) {
+        versionSnapshotSnapshot = createRuntimeWorkbenchVersionSnapshotSnapshot(
+          {
+            blockedReason: "runtime_unavailable",
+            path: requestPath,
+            runtimeAvailable: false,
+            status: "blocked",
+            workflowId,
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+      versionSnapshotSnapshot = createRuntimeWorkbenchVersionSnapshotSnapshot({
+        path: requestPath,
+        runtimeAvailable: true,
+        status: "creating",
+        workflowId,
+        disposed,
+      });
+      publishIfChanged(true);
+      try {
+        const response = await options.runtime.fetch(requestPath, {
+          method: "POST",
+          body: JSON.stringify({
+            schema_version: "0.1.0",
+          }),
+          ...(input.idempotencyKey !== undefined
+            ? { idempotencyKey: input.idempotencyKey }
+            : {}),
+        });
+        if (!response.ok) {
+          versionSnapshotSnapshot =
+            createRuntimeWorkbenchVersionSnapshotSnapshot({
+              blockedReason: "request_failed",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              workflowId,
+              disposed,
+            });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const parsed = parseRuntimeWorkbenchVersionSnapshotRecord(
+          response.body,
+        );
+        if (parsed === null) {
+          versionSnapshotSnapshot =
+            createRuntimeWorkbenchVersionSnapshotSnapshot({
+              blockedReason: "response_invalid",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              workflowId,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error(
+            "Runtime workbench workflow snapshot response is invalid",
+          );
+        }
+        versionSnapshotSnapshot = createRuntimeWorkbenchVersionSnapshotSnapshot(
+          {
+            commitSha: parsed.commitSha,
+            createdAt: parsed.createdAt,
+            path: requestPath,
+            runtimeAvailable: true,
+            snapshotId: parsed.snapshotId,
+            status: "succeeded",
+            statusCode: response.status,
+            workflowId,
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (versionSnapshotSnapshot.status !== "failed") {
+          versionSnapshotSnapshot =
+            createRuntimeWorkbenchVersionSnapshotSnapshot({
+              blockedReason: "request_failed",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              workflowId,
+              disposed,
+            });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
     openLifecyclePanelSession: (sessionOptions) => {
       assertActive();
       const session = runWithSuppressedControllerPublish(() =>
@@ -1910,6 +2074,28 @@ function createRuntimeWorkbenchHumanDecisionSnapshot(
   });
 }
 
+function createRuntimeWorkbenchVersionSnapshotSnapshot(
+  input: Partial<RuntimeWorkbenchVersionSnapshotSnapshot> & {
+    readonly status: RuntimeWorkbenchVersionSnapshotStatus;
+    readonly runtimeAvailable: boolean;
+    readonly disposed: boolean;
+  },
+): RuntimeWorkbenchVersionSnapshotSnapshot {
+  return Object.freeze({
+    status: input.status,
+    method: "POST",
+    path: input.path ?? null,
+    workflowId: input.workflowId ?? null,
+    snapshotId: input.snapshotId ?? null,
+    commitSha: input.commitSha ?? null,
+    createdAt: input.createdAt ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    canCreateSnapshot:
+      !input.disposed && input.runtimeAvailable && input.status !== "creating",
+  });
+}
+
 function buildRuntimeWorkbenchRunOncePath(
   runId: string,
   nodeId: string,
@@ -1976,6 +2162,14 @@ function buildRuntimeWorkbenchHumanDecisionPath(
   runId: string,
 ): RuntimeRequestPath {
   const requestPath = `/runs/${encodeURIComponent(runId)}/decisions`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
+function buildRuntimeWorkbenchWorkflowSnapshotPath(
+  workflowId: string,
+): RuntimeRequestPath {
+  const requestPath = `/workflows/${encodeURIComponent(workflowId)}/snapshot`;
   assertRuntimeRequestPath(requestPath);
   return requestPath as RuntimeRequestPath;
 }
@@ -2449,6 +2643,40 @@ function parseRuntimeWorkbenchHumanDecisionRecord(
   };
 }
 
+interface ParsedRuntimeWorkbenchVersionSnapshotRecord {
+  readonly snapshotId: string;
+  readonly commitSha: string;
+  readonly createdAt: string;
+}
+
+function parseRuntimeWorkbenchVersionSnapshotRecord(
+  body: unknown,
+): ParsedRuntimeWorkbenchVersionSnapshotRecord | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  const schemaVersion = body.schema_version;
+  const snapshotId = body.snapshot_id;
+  const commitSha = body.commit_sha;
+  const createdAt = body.created_at;
+  if (
+    schemaVersion !== "0.1.0" ||
+    typeof snapshotId !== "string" ||
+    snapshotId.trim().length === 0 ||
+    typeof commitSha !== "string" ||
+    commitSha.trim().length === 0 ||
+    typeof createdAt !== "string" ||
+    createdAt.trim().length === 0
+  ) {
+    return null;
+  }
+  return {
+    snapshotId,
+    commitSha,
+    createdAt,
+  };
+}
+
 function buildRuntimeWorkbenchReferenceMultipartBody(options: {
   readonly kind: RuntimeWorkbenchReferenceKind;
   readonly sensitive: boolean;
@@ -2583,6 +2811,13 @@ function freezeRuntimeWorkbenchSessionSnapshot(
       runtimeAvailable:
         snapshot.humanDecision.canSubmitDecision ||
         snapshot.humanDecision.status === "submitting",
+      disposed: snapshot.disposed,
+    }),
+    versionSnapshot: createRuntimeWorkbenchVersionSnapshotSnapshot({
+      ...snapshot.versionSnapshot,
+      runtimeAvailable:
+        snapshot.versionSnapshot.canCreateSnapshot ||
+        snapshot.versionSnapshot.status === "creating",
       disposed: snapshot.disposed,
     }),
   });

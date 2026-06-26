@@ -118,6 +118,10 @@ export interface RuntimeWorkbenchShellReactHumanDecisionFormState {
   readonly by: string;
 }
 
+export interface RuntimeWorkbenchShellReactVersionSnapshotFormState {
+  readonly workflowId: string;
+}
+
 export interface RuntimeWorkbenchShellReactViewProps {
   readonly session: RuntimeWorkbenchShellDomSession;
   readonly title?: string;
@@ -129,6 +133,7 @@ export interface RuntimeWorkbenchShellReactViewProps {
   readonly defaultReferenceImportFormState?: Partial<RuntimeWorkbenchShellReactReferenceImportFormState>;
   readonly defaultSkillManagementFormState?: Partial<RuntimeWorkbenchShellReactSkillManagementFormState>;
   readonly defaultHumanDecisionFormState?: Partial<RuntimeWorkbenchShellReactHumanDecisionFormState>;
+  readonly defaultVersionSnapshotFormState?: Partial<RuntimeWorkbenchShellReactVersionSnapshotFormState>;
   readonly className?: string;
   readonly onActionError?: (error: unknown) => void;
 }
@@ -296,6 +301,14 @@ export function createRuntimeWorkbenchShellReactHumanDecisionFormState(
   });
 }
 
+export function createRuntimeWorkbenchShellReactVersionSnapshotFormState(
+  input: Partial<RuntimeWorkbenchShellReactVersionSnapshotFormState> = {},
+): RuntimeWorkbenchShellReactVersionSnapshotFormState {
+  return Object.freeze({
+    workflowId: input.workflowId ?? "",
+  });
+}
+
 export function buildRuntimeWorkbenchShellReactStreamSessionOptions(
   state: RuntimeWorkbenchShellReactStreamOptionsFormState,
 ): CreateRuntimeStreamInteractionSessionFactorySessionOptions | null {
@@ -413,6 +426,12 @@ export function RuntimeWorkbenchShellReactView(
     useState<RuntimeWorkbenchShellReactHumanDecisionFormState>(() =>
       createRuntimeWorkbenchShellReactHumanDecisionFormState(
         props.defaultHumanDecisionFormState,
+      ),
+    );
+  const [versionSnapshotForm, setVersionSnapshotForm] =
+    useState<RuntimeWorkbenchShellReactVersionSnapshotFormState>(() =>
+      createRuntimeWorkbenchShellReactVersionSnapshotFormState(
+        props.defaultVersionSnapshotFormState,
       ),
     );
   const referenceFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -577,6 +596,16 @@ export function RuntimeWorkbenchShellReactView(
     humanDecisionNodeId !== null &&
     humanDecisionChoice !== null &&
     humanDecisionActor !== null;
+  const versionSnapshotWorkflowId = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactPathSegment(
+        versionSnapshotForm.workflowId,
+      ),
+    [versionSnapshotForm.workflowId],
+  );
+  const versionSnapshotReady =
+    snapshot.versionSnapshot.canCreateSnapshot &&
+    versionSnapshotWorkflowId !== null;
   const handleActionError = useCallback(
     (error: unknown): void => {
       try {
@@ -807,6 +836,22 @@ export function RuntimeWorkbenchShellReactView(
       const value = event.currentTarget.value;
       setHumanDecisionForm((current) =>
         createRuntimeWorkbenchShellReactHumanDecisionFormState({
+          ...current,
+          [field]: value,
+        }),
+      );
+    },
+    [],
+  );
+  const handleVersionSnapshotTextInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      const field = event.currentTarget.dataset.versionSnapshotField;
+      if (field !== "workflowId") {
+        return;
+      }
+      const value = event.currentTarget.value;
+      setVersionSnapshotForm((current) =>
+        createRuntimeWorkbenchShellReactVersionSnapshotFormState({
           ...current,
           [field]: value,
         }),
@@ -1053,6 +1098,22 @@ export function RuntimeWorkbenchShellReactView(
     humanDecisionReady,
     humanDecisionRunId,
     props.session,
+  ]);
+  const handleCreateWorkflowSnapshotClick = useCallback((): void => {
+    if (!versionSnapshotReady || versionSnapshotWorkflowId === null) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "create_workflow_snapshot",
+        workflowId: versionSnapshotWorkflowId,
+      })
+      .catch(handleActionError);
+  }, [
+    handleActionError,
+    props.session,
+    versionSnapshotReady,
+    versionSnapshotWorkflowId,
   ]);
   const handleStreamDisplayLevelClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
@@ -1324,6 +1385,13 @@ export function RuntimeWorkbenchShellReactView(
             aria-label="Runtime workbench actions"
             className="cw-workbench__actions"
           >
+            <RuntimeWorkbenchShellVersionSnapshotControls
+              onCreateSnapshotClick={handleCreateWorkflowSnapshotClick}
+              onTextInputChange={handleVersionSnapshotTextInputChange}
+              ready={versionSnapshotReady}
+              state={versionSnapshotForm}
+              versionSnapshot={snapshot.versionSnapshot}
+            />
             <RuntimeWorkbenchShellProjectCreationControls
               onCreateProjectClick={handleCreateProjectClick}
               onTextInputChange={handleProjectCreationTextInputChange}
@@ -2312,6 +2380,74 @@ function RuntimeWorkbenchShellVersionSnapshotDetails(props: {
         <div>
           <dt>Active</dt>
           <dd>{props.item.active ? "Yes" : "No"}</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellVersionSnapshotControls(props: {
+  readonly versionSnapshot: RuntimeWorkbenchShellSnapshot["versionSnapshot"];
+  readonly state: RuntimeWorkbenchShellReactVersionSnapshotFormState;
+  readonly ready: boolean;
+  readonly onTextInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onCreateSnapshotClick: () => void;
+}): ReactElement {
+  return (
+    <section
+      aria-label="Version snapshot action"
+      className="cw-workbench__version-snapshot-action"
+      data-version-snapshot-can-create={
+        props.versionSnapshot.canCreateSnapshot ? "true" : "false"
+      }
+      data-version-snapshot-control="true"
+      data-version-snapshot-status={props.versionSnapshot.status}
+    >
+      <div className="cw-workbench__version-snapshot-action-form">
+        <label className="cw-workbench__version-snapshot-action-field">
+          <span>Workflow id</span>
+          <input
+            data-version-snapshot-field="workflowId"
+            inputMode="text"
+            onChange={props.onTextInputChange}
+            value={props.state.workflowId}
+          />
+        </label>
+        <button
+          className="cw-workbench__version-snapshot-create"
+          data-version-snapshot-create="true"
+          data-version-snapshot-create-enabled={props.ready ? "true" : "false"}
+          disabled={!props.ready}
+          onClick={props.onCreateSnapshotClick}
+          type="button"
+        >
+          Create snapshot
+        </button>
+      </div>
+      <dl className="cw-workbench__version-snapshot-action-status">
+        <div>
+          <dt>Status</dt>
+          <dd>{props.versionSnapshot.status}</dd>
+        </div>
+        <div>
+          <dt>Workflow</dt>
+          <dd>{props.versionSnapshot.workflowId ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Snapshot</dt>
+          <dd>{props.versionSnapshot.snapshotId ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Commit</dt>
+          <dd>{props.versionSnapshot.commitSha ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Path</dt>
+          <dd>{props.versionSnapshot.path ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Status code</dt>
+          <dd>{props.versionSnapshot.statusCode ?? "none"}</dd>
         </div>
       </dl>
     </section>

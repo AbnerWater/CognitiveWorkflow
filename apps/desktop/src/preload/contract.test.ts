@@ -240,6 +240,21 @@ function createDefaultRuntimeWorkbenchHumanDecision(): RuntimeWorkbenchShellSnap
   });
 }
 
+function createDefaultRuntimeWorkbenchVersionSnapshot(): RuntimeWorkbenchShellSnapshot["versionSnapshot"] {
+  return Object.freeze({
+    status: "idle",
+    method: "POST",
+    path: null,
+    workflowId: null,
+    snapshotId: null,
+    commitSha: null,
+    createdAt: null,
+    statusCode: null,
+    blockedReason: null,
+    canCreateSnapshot: false,
+  });
+}
+
 test("accepts only relative runtime API paths", () => {
   assert.doesNotThrow(() => assertRuntimeRequestPath("/system/info"));
   assert.doesNotThrow(() => assertRuntimeRequestPath("/runs/run_123/stream"));
@@ -3565,6 +3580,7 @@ test("renderer runtime workbench session composes lifecycle and stream stores", 
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
     humanDecision: createDefaultRuntimeWorkbenchHumanDecision(),
+    versionSnapshot: createDefaultRuntimeWorkbenchVersionSnapshot(),
     lifecyclePanel: {
       activeSession: null,
       disposed: false,
@@ -3939,6 +3955,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "refresh_skills",
     "set_skill_enabled",
     "submit_human_decision",
+    "create_workflow_snapshot",
     "dispatch_lifecycle_panel",
     "dispatch_runtime_stream",
   ]);
@@ -3955,6 +3972,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "refresh_skills",
     "set_skill_enabled",
     "submit_human_decision",
+    "create_workflow_snapshot",
   ]);
   assert.equal(Object.isFrozen(initialSnapshot), true);
   assert.equal(Object.isFrozen(initialSnapshot.availableCommandIds), true);
@@ -5228,6 +5246,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
     humanDecision: createDefaultRuntimeWorkbenchHumanDecision(),
+    versionSnapshot: createDefaultRuntimeWorkbenchVersionSnapshot(),
     lifecyclePanel: {
       active: true,
       disposed: false,
@@ -5552,7 +5571,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["draft", "v0", "Read-only", false, "neutral"],
       ["validation", "1 visible", "Active", false, "success"],
       ["runtime", "Run run_shell", "Active", true, "success"],
-      ["git_snapshot", "Not created", "Not created", false, "neutral"],
+      ["git_snapshot", "Not created", "Unavailable", false, "warning"],
     ],
   );
   assert.equal(snapshot.chrome.workflowCanvas.title, "Workflow Canvas");
@@ -5747,6 +5766,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["active_panel", "Stream", "neutral"],
       ["execution_mode", "Semi-auto", "neutral"],
       ["project_creation", "Not created", "neutral"],
+      ["version_snapshot", "Unavailable", "warning"],
       ["reference_management", "Ready", "neutral"],
       ["skill_management", "Ready", "neutral"],
       ["human_decision", "Unavailable", "warning"],
@@ -5813,6 +5833,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
     humanDecision: createDefaultRuntimeWorkbenchHumanDecision(),
+    versionSnapshot: createDefaultRuntimeWorkbenchVersionSnapshot(),
     lifecyclePanel: { active: false, disposed: false, activeSession: null },
     runtimeStream: { active: false, activeChannel: null, disposed: false },
     runtimeStreamPanel: null,
@@ -5833,6 +5854,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
     humanDecision: createDefaultRuntimeWorkbenchHumanDecision(),
+    versionSnapshot: createDefaultRuntimeWorkbenchVersionSnapshot(),
     lifecyclePanel: {
       active: true,
       disposed: false,
@@ -5943,6 +5965,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
       skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
       humanDecision: createDefaultRuntimeWorkbenchHumanDecision(),
+      versionSnapshot: createDefaultRuntimeWorkbenchVersionSnapshot(),
       lifecyclePanel: { active: false, disposed: true, activeSession: null },
       runtimeStream: { active: false, activeChannel: null, disposed: true },
       runtimeStreamPanel: null,
@@ -5980,6 +6003,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["active_panel", "Lifecycle", "danger"],
       ["execution_mode", "Semi-auto", "neutral"],
       ["project_creation", "Disposed", "danger"],
+      ["version_snapshot", "Disposed", "danger"],
       ["reference_management", "Disposed", "danger"],
       ["skill_management", "Disposed", "danger"],
       ["human_decision", "Disposed", "danger"],
@@ -6004,7 +6028,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["draft", "Read-only", "neutral"],
       ["validation", "Disposed", "danger"],
       ["runtime", "Disposed", "danger"],
-      ["git_snapshot", "Not created", "danger"],
+      ["git_snapshot", "Disposed", "danger"],
     ],
   );
   assert.equal(disposedSnapshot.chrome.workflowCanvas.statusLabel, "Disposed");

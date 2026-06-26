@@ -487,6 +487,7 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
     case "refresh_skills":
     case "set_skill_enabled":
     case "submit_human_decision":
+    case "create_workflow_snapshot":
       return false;
     case "dispatch_lifecycle_panel":
       return (
@@ -721,6 +722,14 @@ function cloneRuntimeWorkbenchInteractionCommand(
         ...(command.customValue !== undefined
           ? { customValue: command.customValue }
           : {}),
+        ...(command.idempotencyKey !== undefined
+          ? { idempotencyKey: command.idempotencyKey }
+          : {}),
+      });
+    case "create_workflow_snapshot":
+      return Object.freeze({
+        type: command.type,
+        workflowId: command.workflowId,
         ...(command.idempotencyKey !== undefined
           ? { idempotencyKey: command.idempotencyKey }
           : {}),
