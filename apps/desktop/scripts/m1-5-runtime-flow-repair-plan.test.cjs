@@ -15,12 +15,6 @@ const planPath = path.join(
   "04_runbook",
   "m1.5-runtime-flow-repair-plan.json",
 );
-const repairPlanPath = path.join(
-  repoRoot,
-  "docs",
-  "04_runbook",
-  "m1.5-ux-gap-repair-plan.json",
-);
 const evidenceMapPath = path.join(
   repoRoot,
   "docs",
@@ -33,14 +27,34 @@ const checklistPath = path.join(
   "04_runbook",
   "m1.5-ux-acceptance-checklist.json",
 );
+const a4ManifestPath = path.join(
+  repoRoot,
+  "docs",
+  "04_runbook",
+  "m1.5-a4-evidence-manifest.json",
+);
 const desktopPackagePath = path.join(packageRoot, "package.json");
 
-const expectedRuntimeFlowFrIds = ["FR-008", "FR-015", "FR-017"];
-const expectedCurrentReadinessByFrId = new Map([
-  ["FR-008", "partial_requires_runtime_flow"],
-  ["FR-015", "partial_runtime_bridge_requires_followup"],
-  ["FR-017", "partial_requires_runtime_flow"],
-]);
+const expectedRuntimeFlowGapFrIds = ["FR-008", "FR-017"];
+const expectedPartialBridgeFollowupFrIds = [
+  "FR-011",
+  "FR-014",
+  "FR-015",
+  "FR-018",
+];
+const expectedA4ReadyBridgeFrIds = ["FR-007", "FR-012", "FR-013"];
+const expectedRemainingFrIds = [
+  ...expectedRuntimeFlowGapFrIds,
+  ...expectedPartialBridgeFollowupFrIds,
+].sort((left, right) => left.localeCompare(right));
+const expectedSequenceItemIds = [
+  "RUNTIME-FR-008-CHAT-COMMAND-ROUTING",
+  "RUNTIME-FR-017-ARTIFACT-ACTIONS",
+  "RUNTIME-FR-011-PROJECT-CREATION-REFERENCE-FOLLOWUP",
+  "RUNTIME-FR-014-SKILL-CONFIGURATION-FOLLOWUP",
+  "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
+  "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
+];
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, { encoding: "utf8" }));
@@ -61,60 +75,72 @@ function writeMutatedPlan(mutator) {
   return mutatedPlanPath;
 }
 
-test("M1.5 runtime flow repair plan runner returns a sanitized conservative summary", () => {
+test("M1.5 runtime flow repair plan runner returns a sanitized W1.5.188 summary", () => {
   const summary = validateRuntimeFlowRepairPlan();
 
-  assert.equal(summary.status, "runtime_flow_repair_plan_not_implemented");
+  assert.equal(
+    summary.status,
+    "remaining_runtime_flow_implementation_plan_refreshed_not_implemented",
+  );
   assert.equal(summary.exitP1_1Status, "not_ready");
-  assert.equal(summary.repairItemCount, 3);
-  assert.equal(summary.runtimeFlowItemCount, 3);
-  assert.deepEqual(sorted(summary.frIds), expectedRuntimeFlowFrIds);
+  assert.equal(summary.repairItemCount, 6);
+  assert.deepEqual(sorted(summary.frIds), expectedRemainingFrIds);
+  assert.deepEqual(summary.runtimeFlowGapFrIds, expectedRuntimeFlowGapFrIds);
+  assert.deepEqual(
+    summary.partialBridgeFollowupFrIds,
+    expectedPartialBridgeFollowupFrIds,
+  );
+  assert.deepEqual(summary.a4ReadyBridgeFrIds, expectedA4ReadyBridgeFrIds);
   assert.equal(summary.acceptedItemCount, 0);
   assert.equal(summary.implementedItemCount, 0);
-  assert.equal(summary.pendingImplementationItemCount, 3);
+  assert.equal(summary.pendingImplementationItemCount, 6);
   assert.equal(summary.contractAnchorCount > 0, true);
-  assert.equal(summary.supersededBy, "W1.5.186");
-  assert.deepEqual(summary.nextRecommendedSlices, [
-    "W1.5.178",
-    "W1.5.179",
-    "W1.5.180",
-  ]);
+  assert.equal(summary.refreshedFrom, "W1.5.177");
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.189", "W1.5.190"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });
 
-test("M1.5 runtime flow repair plan is scoped to the W1.5.174 runtime track", () => {
+test("M1.5 runtime flow plan mirrors current W1.5.186 evidence buckets", () => {
   const plan = readJson(planPath);
-  const repairPlan = readJson(repairPlanPath);
-  const runtimeTrack = repairPlan.repair_tracks.find(
-    (track) => track.id === "TRACK-RUNTIME-FLOW-REPAIR",
-  );
+  const evidenceMap = readJson(evidenceMapPath);
+  const runtimeFlowGapFrIds = evidenceMap.fr_evidence_items
+    .filter(
+      (item) => item.acceptance_readiness === "partial_requires_runtime_flow",
+    )
+    .map((item) => item.id)
+    .sort();
+  const partialBridgeFrIds = evidenceMap.fr_evidence_items
+    .filter(
+      (item) =>
+        item.acceptance_readiness ===
+        "partial_runtime_bridge_requires_followup",
+    )
+    .map((item) => item.id)
+    .sort();
 
   assert.equal(plan.schema_version, "0.1.0");
-  assert.equal(plan.slice, "W1.5.177");
-  assert.equal(plan.plan_status, "runtime_flow_repair_plan_not_implemented");
-  assert.equal(plan.exit_p1_1_status, "not_ready");
-  assert.equal(plan.superseded_by?.slice, "W1.5.186");
-  assert.match(plan.superseded_by?.reason ?? "", /no longer mirrors/u);
-  assert.equal(plan.repair_track.source_track_id, runtimeTrack?.id);
-  assert.equal(plan.repair_track.track_kind, runtimeTrack?.track_kind);
-  assert.equal(plan.repair_track.source_track_status, runtimeTrack?.status);
+  assert.equal(plan.slice, "W1.5.188");
   assert.equal(
-    plan.repair_track.source_acceptance_readiness,
-    "partial_requires_runtime_flow",
+    plan.plan_status,
+    "remaining_runtime_flow_implementation_plan_refreshed_not_implemented",
   );
-  assert.deepEqual(sorted(plan.repair_track.fr_ids), expectedRuntimeFlowFrIds);
-  assert.deepEqual(
-    sorted(runtimeTrack?.fr_ids ?? []),
-    expectedRuntimeFlowFrIds,
+  assert.equal(plan.exit_p1_1_status, "not_ready");
+  assert.equal(plan.refreshed_from?.slice, "W1.5.177");
+  assert.equal(
+    plan.repair_track.source_track_id,
+    "TRACK-REMAINING-RUNTIME-FLOW-IMPLEMENTATION",
   );
-  assert.deepEqual(
-    plan.repair_track.planned_verification,
-    runtimeTrack?.planned_verification,
+  assert.equal(
+    plan.repair_track.track_kind,
+    "remaining_runtime_flow_and_partial_bridge_followup",
   );
+  assert.deepEqual(runtimeFlowGapFrIds, expectedRuntimeFlowGapFrIds);
+  assert.deepEqual(partialBridgeFrIds, expectedPartialBridgeFollowupFrIds);
+  assert.deepEqual(sorted(plan.repair_track.fr_ids), expectedRemainingFrIds);
 });
 
-test("M1.5 runtime flow items preserve historical source snapshots", () => {
+test("M1.5 runtime flow items mirror current checklist and evidence map fields", () => {
   const plan = readJson(planPath);
   const evidenceMap = readJson(evidenceMapPath);
   const checklist = readJson(checklistPath);
@@ -127,7 +153,7 @@ test("M1.5 runtime flow items preserve historical source snapshots", () => {
 
   assert.deepEqual(
     sorted(plan.runtime_flow_items.map((item) => item.fr_id)),
-    expectedRuntimeFlowFrIds,
+    expectedRemainingFrIds,
   );
 
   for (const runtimeItem of plan.runtime_flow_items) {
@@ -136,25 +162,48 @@ test("M1.5 runtime flow items preserve historical source snapshots", () => {
     assert.ok(evidenceItem);
     assert.ok(checklistItem);
     assert.equal(
-      evidenceItem.acceptance_readiness,
-      expectedCurrentReadinessByFrId.get(runtimeItem.fr_id),
+      runtimeItem.source_checklist_status,
+      checklistItem.current_evidence_status,
     );
     assert.equal(
       runtimeItem.source_acceptance_readiness,
-      "partial_requires_runtime_flow",
+      evidenceItem.acceptance_readiness,
     );
-    assert.match(runtimeItem.source_checklist_status, /.+/u);
-    assert.equal(
-      runtimeItem.source_evidence_refs[0],
-      `docs/04_runbook/m1.5-fr-evidence-map.json#${runtimeItem.fr_id}`,
+    assert.deepEqual(runtimeItem.source_verification_commands, [
+      ...evidenceItem.verification_commands,
+    ]);
+    assert.deepEqual(
+      runtimeItem.source_checklist_remaining_gap,
+      checklistItem.remaining_gap,
     );
-    assert.equal(Array.isArray(runtimeItem.source_verification_commands), true);
-    assert.equal(runtimeItem.source_checklist_remaining_gap.length > 0, true);
-    assert.equal(runtimeItem.missing_before_implementation.length > 0, true);
-    assert.match(runtimeItem.source_next_action, /.+/u);
+    assert.deepEqual(
+      runtimeItem.missing_before_implementation,
+      evidenceItem.missing_evidence,
+    );
+    assert.equal(runtimeItem.source_next_action, evidenceItem.next_action);
     assert.equal(runtimeItem.planning_status, "planned_not_implemented");
     assert.notEqual(checklistItem.current_evidence_status, "accepted");
   }
+});
+
+test("M1.5 runtime flow plan keeps A4-ready bridge items out of implementation refresh", () => {
+  const plan = readJson(planPath);
+  const a4Manifest = readJson(a4ManifestPath);
+
+  assert.deepEqual(
+    sorted(plan.repair_track.excluded_a4_candidate_bridge_fr_ids),
+    expectedA4ReadyBridgeFrIds,
+  );
+  assert.deepEqual(
+    sorted(a4Manifest.bridge_review_track.fr_ids),
+    expectedA4ReadyBridgeFrIds,
+  );
+  assert.deepEqual(
+    sorted(
+      a4Manifest.bridge_review_track.excluded_partial_runtime_bridge_fr_ids,
+    ),
+    expectedPartialBridgeFollowupFrIds,
+  );
 });
 
 test("M1.5 runtime flow plan references existing runtime and API contract anchors", () => {
@@ -178,23 +227,19 @@ test("M1.5 runtime flow plan keeps implementation sequence conservative", () => 
 
   assert.deepEqual(
     plan.implementation_sequence.map((step) => step.item_id),
-    [
-      "RUNTIME-FR-008-CHAT-COMMAND-ROUTING",
-      "RUNTIME-FR-015-SNAPSHOT-RESTORE",
-      "RUNTIME-FR-017-ARTIFACT-ACTIONS",
-    ],
+    expectedSequenceItemIds,
   );
   assert.deepEqual(
     plan.implementation_sequence.map((step) => step.order),
-    [1, 2, 3],
+    [1, 2, 3, 4, 5, 6],
   );
   assert.deepEqual(
-    plan.implementation_sequence.map((step) => step.fr_id),
-    expectedRuntimeFlowFrIds,
+    sorted(plan.implementation_sequence.map((step) => step.fr_id)),
+    expectedRemainingFrIds,
   );
   assert.deepEqual(
     plan.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.178", "W1.5.179", "W1.5.180"],
+    ["W1.5.189", "W1.5.190"],
   );
 });
 
@@ -203,8 +248,16 @@ test("M1.5 runtime flow plan summary does not claim acceptance or implementation
 
   assert.equal(plan.summary.repair_item_count, plan.runtime_flow_items.length);
   assert.equal(
-    plan.summary.runtime_flow_fr_items,
-    expectedRuntimeFlowFrIds.length,
+    plan.summary.runtime_flow_gap_fr_items,
+    expectedRuntimeFlowGapFrIds.length,
+  );
+  assert.equal(
+    plan.summary.partial_bridge_followup_fr_items,
+    expectedPartialBridgeFollowupFrIds.length,
+  );
+  assert.equal(
+    plan.summary.a4_ready_bridge_fr_items,
+    expectedA4ReadyBridgeFrIds.length,
   );
   assert.equal(plan.summary.accepted_items, 0);
   assert.equal(plan.summary.implemented_items, 0);
@@ -221,31 +274,21 @@ test("M1.5 runtime flow plan summary does not claim acceptance or implementation
   );
 });
 
-test("M1.5 runtime flow plan preserves superseded source evidence drift", () => {
+test("M1.5 runtime flow plan rejects stale source evidence after W1.5.188 refresh", () => {
   const mutatedPlanPath = writeMutatedPlan((plan) => {
-    plan.runtime_flow_items[0].missing_before_implementation[0] =
-      "Real chat command routing is implemented.";
+    plan.runtime_flow_items[0].source_next_action =
+      "Route Chat Box submissions through local-only renderer state.";
   });
 
-  assert.doesNotThrow(() =>
-    validateRuntimeFlowRepairPlan({ planPath: mutatedPlanPath }),
-  );
-});
-
-test("M1.5 runtime flow plan preserves superseded checklist gap drift", () => {
-  const mutatedPlanPath = writeMutatedPlan((plan) => {
-    plan.runtime_flow_items[1].source_checklist_remaining_gap[0] =
-      "Automatic snapshot creation is accepted.";
-  });
-
-  assert.doesNotThrow(() =>
-    validateRuntimeFlowRepairPlan({ planPath: mutatedPlanPath }),
+  assert.throws(
+    () => validateRuntimeFlowRepairPlan({ planPath: mutatedPlanPath }),
+    /RUNTIME-FR-008-CHAT-COMMAND-ROUTING source next action/u,
   );
 });
 
 test("M1.5 runtime flow plan rejects missing runtime contract anchors", () => {
   const mutatedPlanPath = writeMutatedPlan((plan) => {
-    plan.runtime_flow_items[2].required_runtime_contracts[0].pattern =
+    plan.runtime_flow_items[4].required_runtime_contracts[0].pattern =
       "artifacts/unknown-index.jsonl";
   });
 

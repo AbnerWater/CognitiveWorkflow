@@ -9,12 +9,6 @@ const planPath = path.join(
   "04_runbook",
   "m1.5-runtime-flow-repair-plan.json",
 );
-const repairPlanPath = path.join(
-  repoRoot,
-  "docs",
-  "04_runbook",
-  "m1.5-ux-gap-repair-plan.json",
-);
 const evidenceMapPath = path.join(
   repoRoot,
   "docs",
@@ -27,8 +21,16 @@ const checklistPath = path.join(
   "04_runbook",
   "m1.5-ux-acceptance-checklist.json",
 );
+const a4ManifestPath = path.join(
+  repoRoot,
+  "docs",
+  "04_runbook",
+  "m1.5-a4-evidence-manifest.json",
+);
 
-const expectedRuntimeFlowFrIds = ["FR-008", "FR-015", "FR-017"];
+const runtimeFlowReadiness = "partial_requires_runtime_flow";
+const partialBridgeReadiness = "partial_runtime_bridge_requires_followup";
+const a4ReadyBridgeReadiness = "runtime_bridge_needs_a4_review";
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, { encoding: "utf8" }));
@@ -62,50 +64,6 @@ function assertCondition(condition, message) {
   }
 }
 
-function isSupersededByW15186EvidenceRefresh(plan) {
-  return (
-    plan.superseded_by?.slice === "W1.5.186" &&
-    plan.superseded_by?.artifact === "docs/04_runbook/m1.5-fr-evidence-map.json"
-  );
-}
-
-function assertHistoricalSourceSnapshot(item) {
-  assertCondition(
-    typeof item.source_checklist_status === "string" &&
-      item.source_checklist_status.length > 0,
-    `${item.id} historical source checklist status must be recorded`,
-  );
-  assertCondition(
-    typeof item.source_acceptance_readiness === "string" &&
-      item.source_acceptance_readiness.length > 0,
-    `${item.id} historical source acceptance readiness must be recorded`,
-  );
-  assertCondition(
-    Array.isArray(item.source_evidence_refs) &&
-      item.source_evidence_refs.length > 0,
-    `${item.id} historical source evidence refs must be recorded`,
-  );
-  assertCondition(
-    Array.isArray(item.source_verification_commands),
-    `${item.id} historical source verification commands must be recorded`,
-  );
-  assertCondition(
-    Array.isArray(item.source_checklist_remaining_gap) &&
-      item.source_checklist_remaining_gap.length > 0,
-    `${item.id} historical source checklist remaining gap must be recorded`,
-  );
-  assertCondition(
-    Array.isArray(item.missing_before_implementation) &&
-      item.missing_before_implementation.length > 0,
-    `${item.id} historical missing implementation evidence must be recorded`,
-  );
-  assertCondition(
-    typeof item.source_next_action === "string" &&
-      item.source_next_action.length > 0,
-    `${item.id} historical source next action must be recorded`,
-  );
-}
-
 function repoPath(sourcePath) {
   return path.join(repoRoot, ...sourcePath.split("/"));
 }
@@ -118,104 +76,133 @@ function contractText(sourcePath, options) {
   return readText(repoPath(sourcePath));
 }
 
+function frIdsByReadiness(evidenceMap, readiness) {
+  return sorted(
+    evidenceMap.fr_evidence_items
+      .filter((item) => item.acceptance_readiness === readiness)
+      .map((item) => item.id),
+  );
+}
+
+function expectedGapGroup(readiness) {
+  if (readiness === runtimeFlowReadiness) {
+    return "runtime_flow_gap";
+  }
+  if (readiness === partialBridgeReadiness) {
+    return "partial_bridge_followup";
+  }
+  throw new Error(`unexpected readiness for runtime-flow plan: ${readiness}`);
+}
+
+function assertBucket(plan, readiness, expectedFrIds) {
+  const bucket = plan.repair_track.source_buckets.find(
+    (candidate) => candidate.acceptance_readiness === readiness,
+  );
+  assertCondition(Boolean(bucket), `missing source bucket ${readiness}`);
+  assertDeepEqual(
+    sorted(bucket.fr_ids),
+    expectedFrIds,
+    `${readiness} source bucket FR ids`,
+  );
+  assertEqual(
+    bucket.source_map,
+    `docs/04_runbook/m1.5-fr-evidence-map.json#acceptance_readiness=${readiness}`,
+    `${readiness} source bucket map`,
+  );
+}
+
 function validateRuntimeFlowRepairPlan(options = {}) {
   const plan = readJson(options.planPath ?? planPath);
-  const repairPlan = readJson(options.repairPlanPath ?? repairPlanPath);
   const evidenceMap = readJson(options.evidenceMapPath ?? evidenceMapPath);
   const checklist = readJson(options.checklistPath ?? checklistPath);
+  const a4Manifest = readJson(options.a4ManifestPath ?? a4ManifestPath);
+
+  const runtimeFlowFrIds = frIdsByReadiness(evidenceMap, runtimeFlowReadiness);
+  const partialBridgeFrIds = frIdsByReadiness(
+    evidenceMap,
+    partialBridgeReadiness,
+  );
+  const a4ReadyBridgeFrIds = frIdsByReadiness(
+    evidenceMap,
+    a4ReadyBridgeReadiness,
+  );
+  const expectedRemainingFrIds = sorted([
+    ...runtimeFlowFrIds,
+    ...partialBridgeFrIds,
+  ]);
 
   assertEqual(plan.schema_version, "0.1.0", "schema version");
   assertEqual(plan.milestone, "M1.5", "milestone");
-  assertEqual(plan.slice, "W1.5.177", "slice id");
-  const isSuperseded = isSupersededByW15186EvidenceRefresh(plan);
-  if (isSuperseded) {
-    assertCondition(
-      plan.superseded_by.reason.includes("no longer mirrors"),
-      "superseded reason must explain current evidence map drift",
-    );
-  }
+  assertEqual(plan.slice, "W1.5.188", "slice id");
   assertEqual(
     plan.plan_status,
-    "runtime_flow_repair_plan_not_implemented",
+    "remaining_runtime_flow_implementation_plan_refreshed_not_implemented",
     "plan status",
   );
   assertEqual(plan.exit_p1_1_status, "not_ready", "EXIT-P1-1 status");
+  assertEqual(plan.refreshed_from?.slice, "W1.5.177", "refreshed-from slice");
   assertEqual(
     plan.repair_track.source_track_id,
-    "TRACK-RUNTIME-FLOW-REPAIR",
+    "TRACK-REMAINING-RUNTIME-FLOW-IMPLEMENTATION",
     "source track id",
-  );
-
-  const repairTrack = repairPlan.repair_tracks.find(
-    (track) => track.id === plan.repair_track.source_track_id,
-  );
-  assertCondition(Boolean(repairTrack), "missing source repair track");
-  assertEqual(
-    plan.repair_track.source_track_status,
-    repairTrack.status,
-    "source repair track status",
   );
   assertEqual(
     plan.repair_track.track_kind,
-    repairTrack.track_kind,
-    "source repair track kind",
+    "remaining_runtime_flow_and_partial_bridge_followup",
+    "track kind",
   );
   assertEqual(
-    plan.repair_track.priority,
-    repairTrack.priority,
-    "source repair track priority",
+    plan.repair_track.source_track_status,
+    "refreshed_not_implemented",
+    "track status",
   );
-  assertEqual(
-    plan.repair_track.source_acceptance_readiness,
-    repairTrack.source_acceptance_readiness,
-    "source repair track readiness",
+  assertDeepEqual(
+    sorted(plan.repair_track.source_acceptance_readiness),
+    sorted([runtimeFlowReadiness, partialBridgeReadiness]),
+    "source readiness buckets",
   );
   assertDeepEqual(
     sorted(plan.repair_track.fr_ids),
-    sorted(repairTrack.fr_ids),
-    "runtime flow FR ids must match source repair track",
+    expectedRemainingFrIds,
+    "repair track FR ids",
+  );
+  assertBucket(plan, runtimeFlowReadiness, runtimeFlowFrIds);
+  assertBucket(plan, partialBridgeReadiness, partialBridgeFrIds);
+  assertDeepEqual(
+    sorted(plan.repair_track.excluded_a4_candidate_bridge_fr_ids),
+    a4ReadyBridgeFrIds,
+    "A4-ready bridge ids must stay excluded from remaining implementation",
+  );
+  assertDeepEqual(
+    sorted(a4Manifest.bridge_review_track.fr_ids),
+    a4ReadyBridgeFrIds,
+    "A4 manifest bridge ids must match evidence map",
+  );
+  assertDeepEqual(
+    sorted(
+      a4Manifest.bridge_review_track.excluded_partial_runtime_bridge_fr_ids,
+    ),
+    partialBridgeFrIds,
+    "A4 manifest excluded partial bridge ids must match implementation plan",
   );
   assertDeepEqual(
     plan.repair_track.blocked_by_dependency_gates,
-    repairTrack.blocked_by_dependency_gates,
-    "runtime flow dependency gates must match source repair track",
-  );
-  assertEqual(
-    plan.repair_track.objective,
-    repairTrack.objective,
-    "source repair track objective",
-  );
-  assertDeepEqual(
-    plan.repair_track.entry_criteria,
-    repairTrack.entry_criteria,
-    "source repair track entry criteria",
-  );
-  assertDeepEqual(
-    plan.repair_track.planned_repair_steps,
-    repairTrack.planned_repair_steps,
-    "source repair track planned repair steps",
-  );
-  assertDeepEqual(
-    plan.repair_track.planned_verification,
-    repairTrack.planned_verification,
-    "source repair track planned verification",
-  );
-  assertEqual(
-    plan.repair_track.next_slice,
-    repairTrack.next_slice,
-    "source repair track next slice",
+    [],
+    "remaining runtime-flow plan must not be dependency-gated",
   );
 
-  const runtimeFlowFrIds = plan.runtime_flow_items.map((item) => item.fr_id);
+  const runtimeFlowItemFrIds = plan.runtime_flow_items.map(
+    (item) => item.fr_id,
+  );
   const runtimeFlowItemIds = plan.runtime_flow_items.map((item) => item.id);
   assertDeepEqual(
-    sorted(runtimeFlowFrIds),
-    expectedRuntimeFlowFrIds,
+    sorted(runtimeFlowItemFrIds),
+    expectedRemainingFrIds,
     "runtime flow item FR ids",
   );
   assertEqual(
-    new Set(runtimeFlowFrIds).size,
-    runtimeFlowFrIds.length,
+    new Set(runtimeFlowItemFrIds).size,
+    runtimeFlowItemFrIds.length,
     "runtime flow FR ids must be unique",
   );
   assertEqual(
@@ -243,53 +230,60 @@ function validateRuntimeFlowRepairPlan(options = {}) {
       Boolean(checklistItem),
       `missing checklist item ${runtimeItem.fr_id}`,
     );
+    assertCondition(
+      [runtimeFlowReadiness, partialBridgeReadiness].includes(
+        evidenceItem.acceptance_readiness,
+      ),
+      `${runtimeItem.fr_id} must be a remaining implementation gap`,
+    );
     assertEqual(
       evidenceItem.checklist_status,
       checklistItem.current_evidence_status,
       `${runtimeItem.id} checklist/evidence status mirror`,
     );
-    if (isSuperseded) {
-      assertHistoricalSourceSnapshot(runtimeItem);
-    } else {
-      assertEqual(
-        runtimeItem.source_checklist_status,
-        checklistItem.current_evidence_status,
-        `${runtimeItem.id} source checklist status`,
-      );
-      assertEqual(
-        runtimeItem.source_acceptance_readiness,
-        evidenceItem.acceptance_readiness,
-        `${runtimeItem.id} source acceptance readiness`,
-      );
-      assertDeepEqual(
-        runtimeItem.source_evidence_refs,
-        [
-          `docs/04_runbook/m1.5-fr-evidence-map.json#${runtimeItem.fr_id}`,
-          ...evidenceItem.evidence_refs,
-        ],
-        `${runtimeItem.id} source evidence refs`,
-      );
-      assertDeepEqual(
-        runtimeItem.source_verification_commands,
-        evidenceItem.verification_commands,
-        `${runtimeItem.id} source verification commands`,
-      );
-      assertDeepEqual(
-        runtimeItem.source_checklist_remaining_gap,
-        checklistItem.remaining_gap,
-        `${runtimeItem.id} source checklist remaining gap`,
-      );
-      assertDeepEqual(
-        runtimeItem.missing_before_implementation,
-        evidenceItem.missing_evidence,
-        `${runtimeItem.id} source missing implementation evidence`,
-      );
-      assertEqual(
-        runtimeItem.source_next_action,
-        evidenceItem.next_action,
-        `${runtimeItem.id} source next action`,
-      );
-    }
+    assertEqual(
+      runtimeItem.implementation_gap_group,
+      expectedGapGroup(evidenceItem.acceptance_readiness),
+      `${runtimeItem.id} implementation gap group`,
+    );
+    assertEqual(
+      runtimeItem.source_checklist_status,
+      checklistItem.current_evidence_status,
+      `${runtimeItem.id} source checklist status`,
+    );
+    assertEqual(
+      runtimeItem.source_acceptance_readiness,
+      evidenceItem.acceptance_readiness,
+      `${runtimeItem.id} source acceptance readiness`,
+    );
+    assertDeepEqual(
+      runtimeItem.source_evidence_refs,
+      [
+        `docs/04_runbook/m1.5-fr-evidence-map.json#${runtimeItem.fr_id}`,
+        ...evidenceItem.evidence_refs,
+      ],
+      `${runtimeItem.id} source evidence refs`,
+    );
+    assertDeepEqual(
+      runtimeItem.source_verification_commands,
+      evidenceItem.verification_commands,
+      `${runtimeItem.id} source verification commands`,
+    );
+    assertDeepEqual(
+      runtimeItem.source_checklist_remaining_gap,
+      checklistItem.remaining_gap,
+      `${runtimeItem.id} source checklist remaining gap`,
+    );
+    assertDeepEqual(
+      runtimeItem.missing_before_implementation,
+      evidenceItem.missing_evidence,
+      `${runtimeItem.id} source missing implementation evidence`,
+    );
+    assertEqual(
+      runtimeItem.source_next_action,
+      evidenceItem.next_action,
+      `${runtimeItem.id} source next action`,
+    );
     assertEqual(
       runtimeItem.planning_status,
       "planned_not_implemented",
@@ -329,19 +323,23 @@ function validateRuntimeFlowRepairPlan(options = {}) {
     }
   }
 
+  const expectedSequenceItemIds = [
+    "RUNTIME-FR-008-CHAT-COMMAND-ROUTING",
+    "RUNTIME-FR-017-ARTIFACT-ACTIONS",
+    "RUNTIME-FR-011-PROJECT-CREATION-REFERENCE-FOLLOWUP",
+    "RUNTIME-FR-014-SKILL-CONFIGURATION-FOLLOWUP",
+    "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
+    "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
+  ];
   assertDeepEqual(
     plan.implementation_sequence.map((step) => step.item_id),
-    [
-      "RUNTIME-FR-008-CHAT-COMMAND-ROUTING",
-      "RUNTIME-FR-015-SNAPSHOT-RESTORE",
-      "RUNTIME-FR-017-ARTIFACT-ACTIONS",
-    ],
+    expectedSequenceItemIds,
     "implementation sequence item order",
   );
   assertDeepEqual(
-    plan.implementation_sequence.map((step) => step.fr_id),
-    expectedRuntimeFlowFrIds,
-    "implementation sequence FR order",
+    sorted(plan.implementation_sequence.map((step) => step.fr_id)),
+    expectedRemainingFrIds,
+    "implementation sequence FR ids",
   );
   for (const [index, sequenceStep] of plan.implementation_sequence.entries()) {
     assertEqual(sequenceStep.order, index + 1, "implementation sequence order");
@@ -361,9 +359,19 @@ function validateRuntimeFlowRepairPlan(options = {}) {
     "summary repair item count",
   );
   assertEqual(
-    plan.summary.runtime_flow_fr_items,
-    plan.runtime_flow_items.length,
-    "summary runtime flow item count",
+    plan.summary.runtime_flow_gap_fr_items,
+    runtimeFlowFrIds.length,
+    "summary runtime-flow gap count",
+  );
+  assertEqual(
+    plan.summary.partial_bridge_followup_fr_items,
+    partialBridgeFrIds.length,
+    "summary partial bridge follow-up count",
+  );
+  assertEqual(
+    plan.summary.a4_ready_bridge_fr_items,
+    a4ReadyBridgeFrIds.length,
+    "summary A4-ready bridge count",
   );
   assertEqual(plan.summary.accepted_items, 0, "summary accepted item count");
   assertEqual(
@@ -397,9 +405,25 @@ function validateRuntimeFlowRepairPlan(options = {}) {
     "runner accepted item count",
   );
   assertEqual(
-    plan.runner_contract.runner_output_contract.runtime_flow_item_count,
-    plan.runtime_flow_items.length,
-    "runner runtime flow item count",
+    plan.runner_contract.runner_output_contract.implemented_item_count,
+    0,
+    "runner implemented item count",
+  );
+  assertEqual(
+    plan.runner_contract.runner_output_contract.runtime_flow_gap_item_count,
+    runtimeFlowFrIds.length,
+    "runner runtime-flow gap count",
+  );
+  assertEqual(
+    plan.runner_contract.runner_output_contract
+      .partial_bridge_followup_item_count,
+    partialBridgeFrIds.length,
+    "runner partial bridge follow-up count",
+  );
+  assertEqual(
+    plan.runner_contract.runner_output_contract.a4_ready_bridge_item_count,
+    a4ReadyBridgeFrIds.length,
+    "runner A4-ready bridge count",
   );
   assertEqual(
     plan.runner_contract.runner_output_contract.sanitized_summary_only,
@@ -428,7 +452,7 @@ function validateRuntimeFlowRepairPlan(options = {}) {
   );
   assertDeepEqual(
     plan.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.178", "W1.5.179", "W1.5.180"],
+    ["W1.5.189", "W1.5.190"],
     "next recommended slices",
   );
 
@@ -436,13 +460,15 @@ function validateRuntimeFlowRepairPlan(options = {}) {
     status: plan.plan_status,
     exitP1_1Status: plan.exit_p1_1_status,
     repairItemCount: plan.runtime_flow_items.length,
-    runtimeFlowItemCount: plan.summary.runtime_flow_fr_items,
-    frIds: runtimeFlowFrIds,
+    frIds: runtimeFlowItemFrIds,
+    runtimeFlowGapFrIds: runtimeFlowFrIds,
+    partialBridgeFollowupFrIds: partialBridgeFrIds,
+    a4ReadyBridgeFrIds,
     acceptedItemCount: plan.summary.accepted_items,
     implementedItemCount: plan.summary.implemented_items,
     pendingImplementationItemCount: plan.summary.pending_implementation_items,
     contractAnchorCount,
-    supersededBy: plan.superseded_by?.slice ?? null,
+    refreshedFrom: plan.refreshed_from?.slice ?? null,
     nextRecommendedSlices: plan.next_recommended_slices.map(
       (slice) => slice.id,
     ),

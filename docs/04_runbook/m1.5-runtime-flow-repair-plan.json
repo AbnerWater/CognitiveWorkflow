@@ -1,62 +1,88 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.177",
-  "plan_status": "runtime_flow_repair_plan_not_implemented",
+  "slice": "W1.5.188",
+  "plan_status": "remaining_runtime_flow_implementation_plan_refreshed_not_implemented",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-25",
-  "superseded_by": {
-    "slice": "W1.5.186",
-    "artifact": "docs/04_runbook/m1.5-fr-evidence-map.json",
-    "reason": "W1.5.186 refreshes current FR evidence after W1.5.180-W1.5.185 bridge implementations; this artifact preserves the original repair plan snapshot and no longer mirrors the current evidence map."
+  "observed_at": "2026-06-26",
+  "refreshed_from": {
+    "slice": "W1.5.177",
+    "artifact": "docs/04_runbook/m1.5-runtime-flow-repair-plan.json",
+    "reason": "W1.5.188 refreshes the remaining runtime-flow implementation plan after W1.5.186 reconciled W1.5.180-W1.5.185 bridge evidence."
   },
   "source": {
-    "ux_gap_repair_plan": "docs/04_runbook/m1.5-ux-gap-repair-plan.json#TRACK-RUNTIME-FLOW-REPAIR",
+    "ux_gap_repair_plan": "docs/04_runbook/m1.5-ux-gap-repair-plan.json",
     "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
     "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "a4_evidence_manifest": "docs/04_runbook/m1.5-a4-evidence-manifest.json",
+    "desktop_runtime_bridge_plan": "docs/04_runbook/m1.5-desktop-runtime-bridge-plan.json",
     "runtime_harness": "specs/runtime_harness.md",
     "http_sse_api": "specs/api/http_sse.md",
     "failure_taxonomy": "specs/failure_taxonomy.md",
-    "local_ui_evidence_bundle": "docs/04_runbook/m1.5-local-ui-evidence-bundle.json"
+    "workflow_run_state_machine": "specs/state_machines/workflow_run.md",
+    "node_contract_schema": "specs/schemas/node_contract.md",
+    "agent_adapter_protocol": "specs/protocols/agent_adapter.md"
   },
   "guardrails": [
-    "This artifact plans runtime-backed desktop flow repair; it does not implement missing FR behavior.",
+    "This artifact refreshes the remaining implementation plan only; it does not implement missing FR behavior.",
     "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
-    "W1.5.177 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content.",
-    "Chat prompt text, model output text, raw URL query/hash, output directory, and other user-entered freeform text must not appear in runner output or visual evidence.",
-    "secure/** and cache/** remain untracked and must not be added to Git.",
-    "Sensitive artifacts follow the runtime_harness secure/local-token boundary and are not exposed through unsafe desktop evidence."
+    "W1.5.188 mirrors the current W1.5.186 evidence map buckets partial_requires_runtime_flow and partial_runtime_bridge_requires_followup.",
+    "FR-007, FR-012, and FR-013 remain outside this implementation plan because W1.5.187 already moved them to pending A4 review inputs.",
+    "W1.5.188 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content.",
+    "Runtime-flow and bridge follow-up evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, secure paths, cache paths, or output directory values.",
+    "secure/** and cache/** remain untracked and must not be added to Git."
   ],
   "repair_track": {
-    "source_track_id": "TRACK-RUNTIME-FLOW-REPAIR",
-    "track_kind": "runtime_backed_desktop_flow",
-    "source_track_status": "planned_not_implemented",
+    "source_track_id": "TRACK-REMAINING-RUNTIME-FLOW-IMPLEMENTATION",
+    "track_kind": "remaining_runtime_flow_and_partial_bridge_followup",
+    "source_track_status": "refreshed_not_implemented",
     "priority": 3,
-    "source_acceptance_readiness": "partial_requires_runtime_flow",
-    "fr_ids": ["FR-008", "FR-015", "FR-017"],
+    "source_acceptance_readiness": [
+      "partial_requires_runtime_flow",
+      "partial_runtime_bridge_requires_followup"
+    ],
+    "fr_ids": ["FR-008", "FR-011", "FR-014", "FR-015", "FR-017", "FR-018"],
+    "source_buckets": [
+      {
+        "acceptance_readiness": "partial_requires_runtime_flow",
+        "fr_ids": ["FR-008", "FR-017"],
+        "source_map": "docs/04_runbook/m1.5-fr-evidence-map.json#acceptance_readiness=partial_requires_runtime_flow"
+      },
+      {
+        "acceptance_readiness": "partial_runtime_bridge_requires_followup",
+        "fr_ids": ["FR-011", "FR-014", "FR-015", "FR-018"],
+        "source_map": "docs/04_runbook/m1.5-fr-evidence-map.json#acceptance_readiness=partial_runtime_bridge_requires_followup"
+      }
+    ],
+    "excluded_a4_candidate_bridge_fr_ids": ["FR-007", "FR-012", "FR-013"],
     "blocked_by_dependency_gates": [],
-    "objective": "Replace local-only Chat Box, snapshot, and artifact surfaces with project/runtime-backed flows while preserving safe evidence contracts.",
+    "objective": "Re-plan the remaining runtime-backed desktop behavior needed before FR-008, FR-011, FR-014, FR-015, FR-017, and FR-018 can move to A4 acceptance review.",
     "entry_criteria": [
-      "Runtime command, snapshot, and artifact IPC boundaries are reviewed before implementation.",
-      "Chat evidence remains metadata-only and raw-draft-free."
+      "Use W1.5.186 FR evidence map as the current source of truth for remaining implementation gaps.",
+      "Keep W1.5.187 A4-ready bridge items out of this implementation plan.",
+      "Preserve metadata-only evidence boundaries for chat, reference upload, Skill configuration, snapshot, artifact, and HITL paths."
     ],
     "planned_repair_steps": [
-      "Route Chat Box submissions to runtime command handling without unsafe prompt persistence.",
-      "Bind Version Snapshot actions to runtime/Git snapshot operations.",
-      "Expose node artifacts in Task Drawer with project-scoped open/download behavior."
+      "Implement Chat Box runtime command routing without persisting raw prompt text in evidence.",
+      "Complete combined project creation and reference import proof for FR-011.",
+      "Complete Skill registry candidate discovery and secret-safe MCP configuration display for FR-014.",
+      "Implement automatic snapshot creation, restore-to-snapshot, and continue execution for FR-015.",
+      "Bind runtime artifact references to Task Drawer details and add project-scoped open/download actions for FR-017.",
+      "Add pending-decision discovery plus pause/resume UX evidence for semi-auto HITL in FR-018."
     ],
     "planned_verification": [
       "pnpm --filter @cw/desktop run test",
       "uv run pytest apps/runtime/tests -q",
-      "Targeted visual smoke for runtime-backed desktop flow after implementation"
+      "Targeted visual smoke or reviewer capture only after implementation evidence exists"
     ],
-    "next_slice": "W1.5.177"
+    "next_slice": "W1.5.188"
   },
   "runtime_flow_items": [
     {
       "id": "RUNTIME-FR-008-CHAT-COMMAND-ROUTING",
       "fr_id": "FR-008",
+      "implementation_gap_group": "runtime_flow_gap",
       "runtime_boundary_kind": "chat_command_routing",
       "source_checklist_status": "partial_scaffold",
       "source_acceptance_readiness": "partial_requires_runtime_flow",
@@ -115,38 +141,164 @@
       ]
     },
     {
-      "id": "RUNTIME-FR-015-SNAPSHOT-RESTORE",
-      "fr_id": "FR-015",
-      "runtime_boundary_kind": "snapshot_restore_continue",
-      "source_checklist_status": "partial_scaffold",
-      "source_acceptance_readiness": "partial_requires_runtime_flow",
+      "id": "RUNTIME-FR-011-PROJECT-CREATION-REFERENCE-FOLLOWUP",
+      "fr_id": "FR-011",
+      "implementation_gap_group": "partial_bridge_followup",
+      "runtime_boundary_kind": "project_creation_reference_import_followup",
+      "source_checklist_status": "partial_runtime_bridge_evidence",
+      "source_acceptance_readiness": "partial_runtime_bridge_requires_followup",
       "source_evidence_refs": [
-        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-015",
-        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-015",
-        "docs/04_runbook/m1.5-progress.md#W1.5.93",
-        "docs/04_runbook/m1.5-progress.md#W1.5.106",
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-011",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-011",
+        "docs/04_runbook/m1.5-progress.md#W1.5.181",
+        "docs/reviews/m1.5.181-project-creation-git-desktop-bridge-review.md",
+        "apps/desktop/src/renderer/runtime-workbench-session.ts",
         "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
       ],
-      "source_verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "source_verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
+      ],
       "source_checklist_remaining_gap": [
-        "Automatic snapshot creation, restore, and continue execution are not implemented.",
-        "Git-backed snapshot semantics remain unaccepted."
+        "Reference upload during project initialization remains outside the project creation bridge and needs a combined user-path proof.",
+        "A4 UX acceptance evidence for the full new-project path is not recorded."
       ],
       "missing_before_implementation": [
-        "Automatic snapshot creation, restore, and continue execution are not implemented.",
-        "Git-backed snapshot semantics remain unaccepted."
+        "Reference upload during project initialization remains outside the project creation bridge and needs a combined user-path proof.",
+        "A4 UX acceptance evidence for the full new-project path is not recorded."
       ],
-      "source_next_action": "Connect Version Snapshot UI to runtime/Git snapshot actions and capture restore evidence.",
+      "source_next_action": "Combine project creation and reference import into a reviewer-facing user path before FR-011 acceptance.",
       "planning_status": "planned_not_implemented",
       "planned_repair_steps": [
-        "Bind explicit Version Snapshot actions to runtime snapshot APIs.",
-        "Record automatic snapshot boundaries without claiming restore behavior before tests exist.",
-        "Add restore-and-continue evidence only after Git-backed semantics are implemented."
+        "Combine project creation and reference import into one desktop user path.",
+        "Keep create-project success and mandatory Git evidence visible while reference import routes through runtime reference endpoints.",
+        "Capture A4 evidence only after the combined path proves reference upload/import during initialization without raw file content exposure."
       ],
       "required_runtime_contracts": [
         {
           "source": "specs/api/http_sse.md",
-          "pattern": "POST   /{workflow_id}/snapshot",
+          "pattern": "POST   /                                          → 创建项目（FR-011）",
+          "reason": "Defines the runtime project creation entrypoint."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "POST   /{project_id}/references                   → 上传引用资料",
+          "reason": "Defines the reference upload endpoint needed during project initialization."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "references.manifest.json",
+          "reason": "Defines the project reference manifest that desktop import evidence must update."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "references/                              ← 用户上传 / 引用的参考资料原文",
+          "reason": "Defines the user-visible reference material directory for project creation."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "D-RH-11",
+          "reason": "Keeps visible and internal runtime paths separated during project creation."
+        }
+      ]
+    },
+    {
+      "id": "RUNTIME-FR-014-SKILL-CONFIGURATION-FOLLOWUP",
+      "fr_id": "FR-014",
+      "implementation_gap_group": "partial_bridge_followup",
+      "runtime_boundary_kind": "skill_management_configuration_followup",
+      "source_checklist_status": "partial_runtime_bridge_evidence",
+      "source_acceptance_readiness": "partial_runtime_bridge_requires_followup",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-014",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-014",
+        "docs/04_runbook/m1.5-progress.md#W1.5.183",
+        "docs/reviews/m1.5.183-skill-management-desktop-bridge-review.md",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx",
+        "apps/runtime/tests/test_m1_3_2_project_endpoints.py"
+      ],
+      "source_verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
+      ],
+      "source_checklist_remaining_gap": [
+        "Skill registry candidate discovery and MCP configuration UI remain incomplete.",
+        "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
+      ],
+      "missing_before_implementation": [
+        "Skill registry candidate discovery and MCP configuration UI remain incomplete.",
+        "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
+      ],
+      "source_next_action": "Complete candidate/configuration evidence before FR-014 acceptance.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Expose Skill registry candidates from runtime project configuration rather than static renderer state.",
+        "Add secret-safe MCP configuration metadata display without showing secret values or raw credentials.",
+        "Capture A4 evidence only after candidate discovery and configuration display are proven through the workbench."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "GET    /{project_id}/skills                       → skills.config.json",
+          "reason": "Defines the runtime endpoint for reading project Skill configuration."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "PATCH  /{project_id}/skills                       → enable / disable / version",
+          "reason": "Defines the runtime endpoint for enabling, disabling, or changing Skill versions."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "skills.config.json",
+          "reason": "Defines the project-local Skill configuration file."
+        },
+        {
+          "source": "specs/runtime_harness.md",
+          "pattern": "secret_ref",
+          "reason": "Keeps secret-bearing MCP configuration out of desktop display text."
+        },
+        {
+          "source": "specs/schemas/node_contract.md",
+          "pattern": "| `skills` | `SkillRef[]`",
+          "reason": "Defines node-level Skill references that the desktop UI must present safely."
+        }
+      ]
+    },
+    {
+      "id": "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
+      "fr_id": "FR-015",
+      "implementation_gap_group": "partial_bridge_followup",
+      "runtime_boundary_kind": "snapshot_restore_continue",
+      "source_checklist_status": "partial_runtime_bridge_evidence",
+      "source_acceptance_readiness": "partial_runtime_bridge_requires_followup",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-015",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-015",
+        "docs/04_runbook/m1.5-progress.md#W1.5.185",
+        "docs/reviews/m1.5.185-version-snapshot-bridge-review.md",
+        "apps/desktop/src/renderer/runtime-workbench-session.ts",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+      ],
+      "source_verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "source_checklist_remaining_gap": [
+        "Automatic snapshot creation, restore-to-snapshot, and continue execution are not implemented.",
+        "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
+      ],
+      "missing_before_implementation": [
+        "Automatic snapshot creation, restore-to-snapshot, and continue execution are not implemented.",
+        "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
+      ],
+      "source_next_action": "Implement automatic snapshot, restore, and continue evidence before FR-015 acceptance.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Extend the explicit Version Snapshot bridge into automatic snapshot creation at accepted run boundaries.",
+        "Plan restore-to-snapshot and continue-execution behavior against Git-backed runtime contracts.",
+        "Add restore and continue evidence only after runtime state and Git semantics are proven together."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "POST   /{workflow_id}/snapshot                    → 显式 git snapshot",
           "reason": "Defines the explicit runtime snapshot endpoint for desktop actions."
         },
         {
@@ -174,6 +326,7 @@
     {
       "id": "RUNTIME-FR-017-ARTIFACT-ACTIONS",
       "fr_id": "FR-017",
+      "implementation_gap_group": "runtime_flow_gap",
       "runtime_boundary_kind": "artifact_open_download",
       "source_checklist_status": "partial_evidence",
       "source_acceptance_readiness": "partial_requires_runtime_flow",
@@ -207,7 +360,7 @@
         },
         {
           "source": "specs/api/http_sse.md",
-          "pattern": "GET    /{artifact_id}/content",
+          "pattern": "GET    /{artifact_id}/content                     → 二进制 / 文本（按 mime_type）",
           "reason": "Defines the artifact content retrieval endpoint for open/download actions."
         },
         {
@@ -226,6 +379,68 @@
           "reason": "Keeps artifact runtime errors in the accepted runtime-harness namespace."
         }
       ]
+    },
+    {
+      "id": "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
+      "fr_id": "FR-018",
+      "implementation_gap_group": "partial_bridge_followup",
+      "runtime_boundary_kind": "semi_auto_hitl_pause_resume_followup",
+      "source_checklist_status": "partial_runtime_bridge_evidence",
+      "source_acceptance_readiness": "partial_runtime_bridge_requires_followup",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-018",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-018",
+        "docs/04_runbook/m1.5-progress.md#W1.5.184",
+        "docs/reviews/m1.5.184-semi-auto-hitl-desktop-bridge-review.md",
+        "specs/state_machines/workflow_run.md",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+      ],
+      "source_verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_15_langgraph_hitl_bridge.py -q"
+      ],
+      "source_checklist_remaining_gap": [
+        "Pending-decision discovery, full pause/resume user path, and high-risk-node review UX are not complete.",
+        "A4 UX acceptance evidence for semi-auto HITL remains unrecorded."
+      ],
+      "missing_before_implementation": [
+        "Pending-decision discovery, full pause/resume user path, and high-risk-node review UX are not complete.",
+        "A4 UX acceptance evidence for semi-auto HITL remains unrecorded."
+      ],
+      "source_next_action": "Add pending-decision discovery and pause/resume A4 evidence before FR-018 acceptance.",
+      "planning_status": "planned_not_implemented",
+      "planned_repair_steps": [
+        "Add pending-decision discovery for waiting_user runs before claiming a complete semi-auto path.",
+        "Bind pause/resume decisions to the runtime decisions endpoint with status-only desktop evidence.",
+        "Capture A4 evidence only after high-risk-node review UX and pause/resume transitions are visible end-to-end."
+      ],
+      "required_runtime_contracts": [
+        {
+          "source": "specs/state_machines/workflow_run.md",
+          "pattern": "running → waiting_user",
+          "reason": "Defines the runtime transition the desktop confirmation flow must reflect."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "POST   /{run_id}/decisions                        → 提交 Human Checkpoint 决策",
+          "reason": "Defines the endpoint for submitting Human Checkpoint decisions."
+        },
+        {
+          "source": "specs/protocols/agent_adapter.md",
+          "pattern": "AWAITING_HUMAN",
+          "reason": "Defines the adapter state behind HITL pause/resume behavior."
+        },
+        {
+          "source": "specs/schemas/node_contract.md",
+          "pattern": "`human_gate.decisions` / `prompt_to_user`",
+          "reason": "Defines the human gate fields that the desktop confirmation UI must present."
+        },
+        {
+          "source": "specs/schemas/stream_event.md",
+          "pattern": "human.gate_required",
+          "reason": "Defines the stream event that must surface pending human decisions."
+        }
+      ]
     }
   ],
   "implementation_sequence": [
@@ -233,19 +448,37 @@
       "order": 1,
       "item_id": "RUNTIME-FR-008-CHAT-COMMAND-ROUTING",
       "fr_id": "FR-008",
-      "reason": "Chat Box already has metadata-only local evidence; runtime routing can be added without new dependencies if the safe evidence boundary is preserved."
+      "reason": "Chat Box runtime routing is the highest-leverage runtime-flow gap and can preserve the existing metadata-only evidence boundary."
     },
     {
       "order": 2,
-      "item_id": "RUNTIME-FR-015-SNAPSHOT-RESTORE",
-      "fr_id": "FR-015",
-      "reason": "Snapshot actions must follow the runtime/Git boundary before any restore or continue-execution UX is accepted."
+      "item_id": "RUNTIME-FR-017-ARTIFACT-ACTIONS",
+      "fr_id": "FR-017",
+      "reason": "Artifact open/download behavior is the other pure runtime-flow gap and can be verified independently of bridge follow-up items."
     },
     {
       "order": 3,
-      "item_id": "RUNTIME-FR-017-ARTIFACT-ACTIONS",
-      "fr_id": "FR-017",
-      "reason": "Artifact actions depend on project-scoped runtime manifest and sensitive-content policy decisions being visible in Task Drawer evidence."
+      "item_id": "RUNTIME-FR-011-PROJECT-CREATION-REFERENCE-FOLLOWUP",
+      "fr_id": "FR-011",
+      "reason": "The combined project creation and reference import path should precede additional configuration evidence."
+    },
+    {
+      "order": 4,
+      "item_id": "RUNTIME-FR-014-SKILL-CONFIGURATION-FOLLOWUP",
+      "fr_id": "FR-014",
+      "reason": "Skill candidate discovery and safe configuration display depend on a project-backed configuration surface."
+    },
+    {
+      "order": 5,
+      "item_id": "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
+      "fr_id": "FR-015",
+      "reason": "Restore and continue semantics should follow the existing explicit snapshot dispatch bridge."
+    },
+    {
+      "order": 6,
+      "item_id": "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
+      "fr_id": "FR-018",
+      "reason": "Pending-decision discovery and pause/resume evidence should build on the existing submit-decision bridge."
     }
   ],
   "runner_contract": {
@@ -254,37 +487,37 @@
     "standard_desktop_test": "pnpm --filter @cw/desktop run test",
     "runtime_focused_test": "uv run pytest apps/runtime/tests -q",
     "runner_output_contract": {
-      "status": "runtime_flow_repair_plan_not_implemented",
-      "repair_item_count": 3,
+      "status": "remaining_runtime_flow_implementation_plan_refreshed_not_implemented",
+      "repair_item_count": 6,
       "accepted_item_count": 0,
-      "runtime_flow_item_count": 3,
+      "implemented_item_count": 0,
+      "runtime_flow_gap_item_count": 2,
+      "partial_bridge_followup_item_count": 4,
+      "a4_ready_bridge_item_count": 3,
       "sanitized_summary_only": true
     }
   },
   "summary": {
-    "repair_item_count": 3,
-    "runtime_flow_fr_items": 3,
+    "repair_item_count": 6,
+    "runtime_flow_gap_fr_items": 2,
+    "partial_bridge_followup_fr_items": 4,
+    "a4_ready_bridge_fr_items": 3,
     "accepted_items": 0,
     "implemented_items": 0,
-    "pending_implementation_items": 3,
+    "pending_implementation_items": 6,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer after implementation evidence"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.178",
-      "title": "Desktop runtime bridge repair bundle",
-      "reason": "Plan backend-only FR-007/011/012/014/018 desktop runtime bridge implementation after runtime-flow planning is locked."
+      "id": "W1.5.189",
+      "title": "Desktop bridge A4 capture execution",
+      "reason": "Run reviewer-facing captures for W1.5.187 pending A4 bridge and stream review inputs without changing acceptance status prematurely."
     },
     {
-      "id": "W1.5.179",
-      "title": "Runtime-backed Chat Box command routing implementation",
-      "reason": "Implement FR-008 against runtime command handling while preserving metadata-only evidence."
-    },
-    {
-      "id": "W1.5.180",
-      "title": "Version Snapshot runtime action implementation",
-      "reason": "Implement FR-015 snapshot, restore, and continue actions against runtime/Git contracts."
+      "id": "W1.5.190",
+      "title": "Chat and artifact runtime-flow implementation",
+      "reason": "Implement FR-008 and FR-017 before promoting remaining runtime-flow evidence toward A4 review."
     }
   ]
 }
