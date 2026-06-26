@@ -1,0 +1,126 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.193",
+  "gate_status": "pending_human_confirmation",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-26",
+  "source": {
+    "adr": "docs/03_decisions/0011-runtime-flow-desktop-actions-contract.md",
+    "adr_index": "docs/03_decisions/README.md",
+    "runtime_flow_plan": "docs/04_runbook/m1.5-runtime-flow-repair-plan.json",
+    "w1_5_190_review": "docs/reviews/m1.5.190-runtime-flow-actions-review.md",
+    "w1_5_191_review": "docs/reviews/m1.5.191-runtime-flow-contract-adr-review.md",
+    "w1_5_192_review": "docs/reviews/m1.5.192-runtime-flow-cleanup-review.md",
+    "http_sse_api": "specs/api/http_sse.md",
+    "runtime_harness": "specs/runtime_harness.md",
+    "stream_event_schema": "specs/schemas/stream_event.md"
+  },
+  "guardrails": [
+    "ADR-0011 remains Proposed and cannot be used as an implementation contract until human confirmation promotes it to Accepted.",
+    "This gate does not modify accepted specs, schema models, generated schema, runtime behavior, renderer behavior, dependencies, or packaging.",
+    "FR-008 and FR-017 remain unclosed; EXIT-P1-1 remains not_ready.",
+    "The existing FR-007 run-once endpoint must not be overloaded as Chat instruction routing.",
+    "Artifact Open/Download must require observable preload/main native handoff before implementation closure.",
+    "Evidence must remain metadata-only and exclude raw prompt, draft text, model output, uploaded-file bytes, response body, artifact body, secure paths, cache paths, and output directory values.",
+    "Standing dirty CLAUDE.md remains out of slice commits unless explicitly scoped by the user."
+  ],
+  "fr_scope": ["FR-008", "FR-017"],
+  "current_decision_state": {
+    "adr_0011_status": "Proposed",
+    "human_confirmation_required": true,
+    "accepted_spec_changes_allowed": false,
+    "runtime_or_desktop_implementation_allowed": false,
+    "reason": "AGENTS.md requires explicit confirmation before spec contract changes; ADR-0011 has not been accepted."
+  },
+  "required_human_decision": {
+    "decision_id": "HUMAN-ACCEPT-ADR-0011",
+    "prompt": "Accept ADR-0011 as the contract authority for FR-008 Chat instruction command and FR-017 artifact native handoff?",
+    "accepted_response": "ADR-0011 accepted",
+    "on_acceptance_next_steps": [
+      "Update docs/03_decisions/0011-runtime-flow-desktop-actions-contract.md Status to Accepted and add Proposed -> Accepted history.",
+      "Update docs/03_decisions/README.md ADR-0011 status to Accepted.",
+      "Update accepted API/spec/schema contract for Chat instruction command request/response ownership before runtime or desktop implementation.",
+      "Update accepted Desktop artifact action handoff contract before renderer or preload/main implementation.",
+      "Regenerate derived schema types if a schema model changes.",
+      "Only then implement runtime/main/preload/renderer behavior and A4 evidence for FR-008 and FR-017."
+    ],
+    "on_rejection_next_steps": [
+      "Keep ADR-0011 Proposed or mark it Superseded by a replacement ADR.",
+      "Do not modify accepted specs or implementation for FR-008/FR-017 using ADR-0011."
+    ]
+  },
+  "proposed_contract_delta": {
+    "chat_instruction_command": {
+      "fr_id": "FR-008",
+      "decision_status": "not_accepted",
+      "must_not_reuse": "POST /cw/v1/runs/{run_id}/nodes/{node_id}:run-once",
+      "proposed_endpoints": [
+        "POST /cw/v1/runs/{run_id}:submit-instruction",
+        "POST /cw/v1/runs/{run_id}/nodes/{node_id}:submit-instruction"
+      ],
+      "minimum_request_fields": [
+        "schema_version",
+        "scope",
+        "instruction",
+        "intent"
+      ],
+      "required_headers": ["Idempotency-Key", "X-Project-Id"],
+      "sanitization_boundary": "Raw instruction text may exist only in authenticated runtime request and accepted runtime-controlled execution records; it must not enter renderer snapshots, smoke evidence, runbook evidence, OTel attributes, command history, or review artifacts."
+    },
+    "artifact_native_handoff": {
+      "fr_id": "FR-017",
+      "decision_status": "not_accepted",
+      "content_source": "GET /cw/v1/artifacts/{artifact_id}/content",
+      "required_desktop_boundary": "preload/main native handoff",
+      "actions": ["open", "download"],
+      "observable_result_fields": [
+        "status",
+        "artifact_id",
+        "action",
+        "content_type",
+        "byte_count",
+        "content_hash",
+        "destination_kind"
+      ],
+      "sanitization_boundary": "Full absolute paths, response bodies, raw artifact bytes, prompt/model output, secure paths, cache paths, and output directory values must not enter renderer snapshots or evidence."
+    }
+  },
+  "blocked_changes_until_acceptance": [
+    "specs/api/http_sse.md submit-instruction endpoints",
+    "packages/schemas runtime instruction command models",
+    "packages/schemas-ts generated instruction command types",
+    "apps/runtime instruction command endpoint handlers",
+    "apps/desktop runtime Chat command dispatch",
+    "apps/desktop artifact open/download native handoff"
+  ],
+  "summary": {
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "pending_human_decisions": 1,
+    "blocked_fr_items": 2,
+    "exit_p1_1_status": "not_ready"
+  },
+  "runner_contract": {
+    "focused_check": "node apps/desktop/scripts/m1-5-runtime-flow-contract-acceptance-gate.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-runtime-flow-contract-acceptance-gate.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "runner_output_contract": {
+      "status": "pending_human_confirmation",
+      "fr_ids": ["FR-008", "FR-017"],
+      "accepted_item_count": 0,
+      "implemented_item_count": 0,
+      "pending_human_decision_count": 1,
+      "sanitized_summary_only": true
+    }
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.194",
+      "title": "ADR-0011 acceptance and spec delta",
+      "precondition": "Human accepts ADR-0011.",
+      "reason": "Only an accepted contract can unlock real FR-008/FR-017 implementation."
+    }
+  ]
+}
