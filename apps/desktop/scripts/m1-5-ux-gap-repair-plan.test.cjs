@@ -60,6 +60,8 @@ test("M1.5 UX gap repair plan keeps acceptance conservative", () => {
   assert.equal(repairPlan.plan_status, "repair_plan_not_implemented");
   assert.equal(repairPlan.exit_criterion, "EXIT-P1-1");
   assert.equal(repairPlan.exit_p1_1_status, "not_ready");
+  assert.equal(repairPlan.superseded_by?.slice, "W1.5.186");
+  assert.match(repairPlan.superseded_by?.reason ?? "", /no longer mirrors/u);
   assert.equal(evidenceMap.exit_p1_1_status, "not_ready");
   assert.equal(
     repairPlan.source.fr_evidence_map,
@@ -92,20 +94,30 @@ test("M1.5 UX gap repair plan assigns every FR exactly once", () => {
     const track = tracksByReadiness.get(readiness);
     assert.ok(track);
     assert.equal(track.id, expectedTrackId);
-    assert.deepEqual(
-      sorted(track.fr_ids),
-      sorted(
-        evidenceMap.fr_evidence_items
-          .filter((item) => item.acceptance_readiness === readiness)
-          .map((item) => item.id),
-      ),
-    );
+    assert.equal(track.fr_ids.length > 0, true);
     assert.equal(Array.isArray(track.planned_repair_steps), true);
     assert.equal(track.planned_repair_steps.length > 0, true);
     assert.equal(Array.isArray(track.planned_verification), true);
     assert.equal(track.planned_verification.length > 0, true);
     assert.equal(typeof track.next_slice, "string");
   }
+
+  assert.equal(
+    countItems(
+      evidenceMap.fr_evidence_items,
+      (item) => item.acceptance_readiness === "runtime_bridge_needs_a4_review",
+    ),
+    3,
+  );
+  assert.equal(
+    countItems(
+      evidenceMap.fr_evidence_items,
+      (item) =>
+        item.acceptance_readiness ===
+        "partial_runtime_bridge_requires_followup",
+    ),
+    4,
+  );
 });
 
 test("M1.5 UX gap repair plan summary is derived from tracks and evidence map", () => {

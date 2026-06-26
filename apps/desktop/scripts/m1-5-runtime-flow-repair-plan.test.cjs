@@ -36,6 +36,11 @@ const checklistPath = path.join(
 const desktopPackagePath = path.join(packageRoot, "package.json");
 
 const expectedRuntimeFlowFrIds = ["FR-008", "FR-015", "FR-017"];
+const expectedCurrentReadinessByFrId = new Map([
+  ["FR-008", "partial_requires_runtime_flow"],
+  ["FR-015", "partial_runtime_bridge_requires_followup"],
+  ["FR-017", "partial_requires_runtime_flow"],
+]);
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, { encoding: "utf8" }));
@@ -68,6 +73,7 @@ test("M1.5 runtime flow repair plan runner returns a sanitized conservative summ
   assert.equal(summary.implementedItemCount, 0);
   assert.equal(summary.pendingImplementationItemCount, 3);
   assert.equal(summary.contractAnchorCount > 0, true);
+  assert.equal(summary.supersededBy, "W1.5.186");
   assert.deepEqual(summary.nextRecommendedSlices, [
     "W1.5.178",
     "W1.5.179",
@@ -88,6 +94,8 @@ test("M1.5 runtime flow repair plan is scoped to the W1.5.174 runtime track", ()
   assert.equal(plan.slice, "W1.5.177");
   assert.equal(plan.plan_status, "runtime_flow_repair_plan_not_implemented");
   assert.equal(plan.exit_p1_1_status, "not_ready");
+  assert.equal(plan.superseded_by?.slice, "W1.5.186");
+  assert.match(plan.superseded_by?.reason ?? "", /no longer mirrors/u);
   assert.equal(plan.repair_track.source_track_id, runtimeTrack?.id);
   assert.equal(plan.repair_track.track_kind, runtimeTrack?.track_kind);
   assert.equal(plan.repair_track.source_track_status, runtimeTrack?.status);
@@ -106,7 +114,7 @@ test("M1.5 runtime flow repair plan is scoped to the W1.5.174 runtime track", ()
   );
 });
 
-test("M1.5 runtime flow items mirror evidence map and checklist gaps", () => {
+test("M1.5 runtime flow items preserve historical source snapshots", () => {
   const plan = readJson(planPath);
   const evidenceMap = readJson(evidenceMapPath);
   const checklist = readJson(checklistPath);
@@ -129,33 +137,21 @@ test("M1.5 runtime flow items mirror evidence map and checklist gaps", () => {
     assert.ok(checklistItem);
     assert.equal(
       evidenceItem.acceptance_readiness,
-      "partial_requires_runtime_flow",
-    );
-    assert.equal(
-      runtimeItem.source_checklist_status,
-      checklistItem.current_evidence_status,
+      expectedCurrentReadinessByFrId.get(runtimeItem.fr_id),
     );
     assert.equal(
       runtimeItem.source_acceptance_readiness,
-      evidenceItem.acceptance_readiness,
+      "partial_requires_runtime_flow",
     );
-    assert.deepEqual(runtimeItem.source_evidence_refs, [
+    assert.match(runtimeItem.source_checklist_status, /.+/u);
+    assert.equal(
+      runtimeItem.source_evidence_refs[0],
       `docs/04_runbook/m1.5-fr-evidence-map.json#${runtimeItem.fr_id}`,
-      ...evidenceItem.evidence_refs,
-    ]);
-    assert.deepEqual(
-      runtimeItem.source_verification_commands,
-      evidenceItem.verification_commands,
     );
-    assert.deepEqual(
-      runtimeItem.source_checklist_remaining_gap,
-      checklistItem.remaining_gap,
-    );
-    assert.deepEqual(
-      runtimeItem.missing_before_implementation,
-      evidenceItem.missing_evidence,
-    );
-    assert.equal(runtimeItem.source_next_action, evidenceItem.next_action);
+    assert.equal(Array.isArray(runtimeItem.source_verification_commands), true);
+    assert.equal(runtimeItem.source_checklist_remaining_gap.length > 0, true);
+    assert.equal(runtimeItem.missing_before_implementation.length > 0, true);
+    assert.match(runtimeItem.source_next_action, /.+/u);
     assert.equal(runtimeItem.planning_status, "planned_not_implemented");
     assert.notEqual(checklistItem.current_evidence_status, "accepted");
   }
@@ -225,27 +221,25 @@ test("M1.5 runtime flow plan summary does not claim acceptance or implementation
   );
 });
 
-test("M1.5 runtime flow plan rejects source evidence drift", () => {
+test("M1.5 runtime flow plan preserves superseded source evidence drift", () => {
   const mutatedPlanPath = writeMutatedPlan((plan) => {
     plan.runtime_flow_items[0].missing_before_implementation[0] =
       "Real chat command routing is implemented.";
   });
 
-  assert.throws(
-    () => validateRuntimeFlowRepairPlan({ planPath: mutatedPlanPath }),
-    /RUNTIME-FR-008-CHAT-COMMAND-ROUTING source missing implementation evidence/u,
+  assert.doesNotThrow(() =>
+    validateRuntimeFlowRepairPlan({ planPath: mutatedPlanPath }),
   );
 });
 
-test("M1.5 runtime flow plan rejects checklist remaining-gap drift", () => {
+test("M1.5 runtime flow plan preserves superseded checklist gap drift", () => {
   const mutatedPlanPath = writeMutatedPlan((plan) => {
     plan.runtime_flow_items[1].source_checklist_remaining_gap[0] =
       "Automatic snapshot creation is accepted.";
   });
 
-  assert.throws(
-    () => validateRuntimeFlowRepairPlan({ planPath: mutatedPlanPath }),
-    /RUNTIME-FR-015-SNAPSHOT-RESTORE source checklist remaining gap/u,
+  assert.doesNotThrow(() =>
+    validateRuntimeFlowRepairPlan({ planPath: mutatedPlanPath }),
   );
 });
 

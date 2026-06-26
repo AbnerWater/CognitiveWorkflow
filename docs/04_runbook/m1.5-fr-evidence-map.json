@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.173",
-  "map_status": "evidence_mapped_not_accepted",
+  "slice": "W1.5.186",
+  "map_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-25",
+  "observed_at": "2026-06-26",
   "source": {
     "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
     "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json",
@@ -14,14 +14,17 @@
     "uiux_baseline_docx": "AI_Agent_Workflow工作台_UIUX详细设计规范与需求规格说明书_v1.1_新增Workflow编排.docx"
   },
   "guardrails": [
-    "This map converts W1.5.172 checklist items into evidence and gap tracks; it does not claim A4 acceptance.",
+    "This map converts checklist items into evidence and gap tracks; it does not claim A4 acceptance.",
     "No FR item is accepted until A4 UX acceptance review has recorded end-to-end user-path evidence.",
-    "Candidate evidence means a reviewer has something concrete to inspect; it is not phase-exit readiness.",
+    "Runtime bridge evidence means a reviewer has implementation and test artifacts to inspect; it is not phase-exit readiness.",
+    "Partial runtime bridge evidence means a bridge exists but one or more FR-required semantics remain missing.",
     "Dependency-gated FR items stay blocked until the corresponding gate is explicitly approved and implemented.",
-    "W1.5.173 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content."
+    "W1.5.186 refreshes evidence status from W1.5.180-W1.5.185 only; it changes no accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content."
   ],
   "allowed_acceptance_readiness": [
     "candidate_evidence_needs_a4_review",
+    "runtime_bridge_needs_a4_review",
+    "partial_runtime_bridge_requires_followup",
     "partial_requires_ui_evidence",
     "partial_requires_runtime_flow",
     "backend_only_requires_desktop_flow",
@@ -134,19 +137,24 @@
     },
     {
       "id": "FR-007",
-      "checklist_status": "backend_or_schema_evidence_only",
-      "acceptance_readiness": "backend_only_requires_desktop_flow",
+      "checklist_status": "runtime_bridge_evidence_available",
+      "acceptance_readiness": "runtime_bridge_needs_a4_review",
       "evidence_refs": [
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-007",
-        "specs/schemas/workflow_graph.md",
-        "specs/api/http_sse.md"
+        "docs/04_runbook/m1.5-progress.md#W1.5.180",
+        "docs/reviews/m1.5.180-execution-mode-desktop-bridge-review.md",
+        "apps/desktop/src/renderer/runtime-workbench-session.ts",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
       ],
-      "verification_commands": ["uv run pytest packages/schemas/tests -q"],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js"
+      ],
       "missing_evidence": [
-        "Desktop step, semi-auto, and auto mode control near the run button is not implemented.",
-        "Mode-to-runtime execution behavior has not been proven from the workbench UI."
+        "Backend run-once execution success has not been proven end-to-end from the desktop workbench.",
+        "A4 UX acceptance evidence for execution mode placement and behavior is not recorded."
       ],
-      "next_action": "Add desktop execution mode control near run actions and bind it to runtime execution policy."
+      "next_action": "Prepare A4 execution-mode evidence and add backend run-once integration proof before FR-007 acceptance."
     },
     {
       "id": "FR-008",
@@ -209,82 +217,105 @@
     },
     {
       "id": "FR-011",
-      "checklist_status": "backend_evidence_only",
-      "acceptance_readiness": "backend_only_requires_desktop_flow",
+      "checklist_status": "partial_runtime_bridge_evidence",
+      "acceptance_readiness": "partial_runtime_bridge_requires_followup",
       "evidence_refs": [
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-011",
-        "apps/runtime/tests",
-        "specs/runtime_harness.md"
+        "docs/04_runbook/m1.5-progress.md#W1.5.181",
+        "docs/reviews/m1.5.181-project-creation-git-desktop-bridge-review.md",
+        "apps/desktop/src/renderer/runtime-workbench-session.ts",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
       ],
-      "verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
+      ],
       "missing_evidence": [
-        "Desktop new-project UX is not implemented.",
-        "Reference upload during initialization is not implemented."
+        "Reference upload during project initialization remains outside the project creation bridge and needs a combined user-path proof.",
+        "A4 UX acceptance evidence for the full new-project path is not recorded."
       ],
-      "next_action": "Implement desktop project creation and reference upload flow."
+      "next_action": "Combine project creation and reference import into a reviewer-facing user path before FR-011 acceptance."
     },
     {
       "id": "FR-012",
-      "checklist_status": "backend_evidence_only",
-      "acceptance_readiness": "backend_only_requires_desktop_flow",
+      "checklist_status": "runtime_bridge_evidence_available",
+      "acceptance_readiness": "runtime_bridge_needs_a4_review",
       "evidence_refs": [
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-012",
+        "docs/04_runbook/m1.5-progress.md#W1.5.181",
+        "docs/reviews/m1.5.181-project-creation-git-desktop-bridge-review.md",
         "specs/runtime_harness.md",
         "docs/roadmap.md#EXIT-P1-10"
       ],
-      "verification_commands": ["uv run pytest apps/runtime/tests -q"],
-      "missing_evidence": [
-        "Desktop project-creation path is not available.",
-        "A8 git-history audit evidence for automatic commit/tag behavior is not recorded."
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
       ],
-      "next_action": "Tie desktop project creation to runtime Git initialization and A8 audit evidence."
+      "missing_evidence": [
+        "A8 git-history audit evidence for automatic commit/tag behavior is not recorded.",
+        "A4 UX acceptance evidence for the mandatory Git path is not recorded."
+      ],
+      "next_action": "Prepare mandatory-Git A4 evidence and A8 audit material before FR-012 acceptance."
     },
     {
       "id": "FR-013",
-      "checklist_status": "not_started",
-      "acceptance_readiness": "missing_implementation",
+      "checklist_status": "runtime_bridge_evidence_available",
+      "acceptance_readiness": "runtime_bridge_needs_a4_review",
       "evidence_refs": [
-        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-013"
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-013",
+        "docs/04_runbook/m1.5-progress.md#W1.5.182",
+        "docs/reviews/m1.5.182-reference-management-desktop-bridge-review.md",
+        "apps/runtime/tests/test_m1_3_2_project_endpoints.py",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
       ],
-      "verification_commands": [],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
+      ],
       "missing_evidence": [
-        "Desktop reference import, enable, disable, and view actions are not implemented.",
-        "Runtime-backed reference manifest UX is not accepted."
+        "A4 UX acceptance evidence for reference import, enable, disable, and view user paths is not recorded.",
+        "Delete semantics remain intentionally out of scope until accepted spec material defines them."
       ],
-      "next_action": "Implement reference management as a new desktop/runtime-backed slice before A4 review."
+      "next_action": "Prepare A4 reference-management user-path evidence before FR-013 acceptance."
     },
     {
       "id": "FR-014",
-      "checklist_status": "backend_evidence_only",
-      "acceptance_readiness": "backend_only_requires_desktop_flow",
+      "checklist_status": "partial_runtime_bridge_evidence",
+      "acceptance_readiness": "partial_runtime_bridge_requires_followup",
       "evidence_refs": [
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-014",
-        "docs/04_runbook/m1.5-progress.md#M1.4",
-        "apps/runtime/tests"
+        "docs/04_runbook/m1.5-progress.md#W1.5.183",
+        "docs/reviews/m1.5.183-skill-management-desktop-bridge-review.md",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx",
+        "apps/runtime/tests/test_m1_3_2_project_endpoints.py"
       ],
-      "verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
+      ],
       "missing_evidence": [
-        "Desktop Skill management UI is not implemented.",
-        "Secret-safe Skill configuration display has not been accepted."
+        "Skill registry candidate discovery and MCP configuration UI remain incomplete.",
+        "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
       ],
-      "next_action": "Expose project Skill candidates and configuration through a safe desktop UI."
+      "next_action": "Complete candidate/configuration evidence before FR-014 acceptance."
     },
     {
       "id": "FR-015",
-      "checklist_status": "partial_scaffold",
-      "acceptance_readiness": "partial_requires_runtime_flow",
+      "checklist_status": "partial_runtime_bridge_evidence",
+      "acceptance_readiness": "partial_runtime_bridge_requires_followup",
       "evidence_refs": [
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-015",
-        "docs/04_runbook/m1.5-progress.md#W1.5.93",
-        "docs/04_runbook/m1.5-progress.md#W1.5.106",
+        "docs/04_runbook/m1.5-progress.md#W1.5.185",
+        "docs/reviews/m1.5.185-version-snapshot-bridge-review.md",
+        "apps/desktop/src/renderer/runtime-workbench-session.ts",
         "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
       ],
       "verification_commands": ["pnpm --filter @cw/desktop run test"],
       "missing_evidence": [
-        "Automatic snapshot creation, restore, and continue execution are not implemented.",
-        "Git-backed snapshot semantics remain unaccepted."
+        "Automatic snapshot creation, restore-to-snapshot, and continue execution are not implemented.",
+        "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
       ],
-      "next_action": "Connect Version Snapshot UI to runtime/Git snapshot actions and capture restore evidence."
+      "next_action": "Implement automatic snapshot, restore, and continue evidence before FR-015 acceptance."
     },
     {
       "id": "FR-016",
@@ -324,20 +355,24 @@
     },
     {
       "id": "FR-018",
-      "checklist_status": "backend_evidence_only",
-      "acceptance_readiness": "backend_only_requires_desktop_flow",
+      "checklist_status": "partial_runtime_bridge_evidence",
+      "acceptance_readiness": "partial_runtime_bridge_requires_followup",
       "evidence_refs": [
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-018",
-        "docs/04_runbook/m1.5-progress.md#M1.3",
-        "docs/04_runbook/m1.5-progress.md#M1.4",
-        "specs/state_machines/workflow_run.md"
+        "docs/04_runbook/m1.5-progress.md#W1.5.184",
+        "docs/reviews/m1.5.184-semi-auto-hitl-desktop-bridge-review.md",
+        "specs/state_machines/workflow_run.md",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
       ],
-      "verification_commands": ["uv run pytest apps/runtime/tests -q"],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_15_langgraph_hitl_bridge.py -q"
+      ],
       "missing_evidence": [
-        "Desktop semi-auto mode confirmation UI is not accepted.",
-        "End-to-end pause/resume UX evidence is missing."
+        "Pending-decision discovery, full pause/resume user path, and high-risk-node review UX are not complete.",
+        "A4 UX acceptance evidence for semi-auto HITL remains unrecorded."
       ],
-      "next_action": "Implement desktop semi-auto pause/resume confirmation path and capture A4 evidence."
+      "next_action": "Add pending-decision discovery and pause/resume A4 evidence before FR-018 acceptance."
     },
     {
       "id": "FR-019",
@@ -383,32 +418,36 @@
     "source_should_items": 2,
     "accepted_items": 0,
     "candidate_evidence_available_items": 3,
-    "partial_or_scaffold_items": 9,
-    "backend_or_schema_only_items": 5,
+    "runtime_bridge_evidence_available_items": 3,
+    "partial_runtime_bridge_evidence_items": 4,
+    "partial_or_scaffold_items": 8,
+    "backend_or_schema_only_items": 0,
     "blocked_by_dependency_gate_items": 2,
-    "not_started_items": 1,
+    "not_started_items": 0,
     "next_required_review": "A4 ux-acceptance-reviewer",
     "phase_exit_claim": "EXIT-P1-1 remains not_ready until all 20 FR items have A4 acceptance evidence."
   },
   "acceptance_readiness_summary": {
     "candidate_evidence_needs_a4_review_items": 3,
+    "runtime_bridge_needs_a4_review_items": 3,
+    "partial_runtime_bridge_requires_followup_items": 4,
     "partial_requires_ui_evidence_items": 6,
-    "partial_requires_runtime_flow_items": 3,
-    "backend_only_requires_desktop_flow_items": 5,
+    "partial_requires_runtime_flow_items": 2,
+    "backend_only_requires_desktop_flow_items": 0,
     "blocked_by_dependency_gate_items": 2,
-    "missing_implementation_items": 1,
+    "missing_implementation_items": 0,
     "accepted_items": 0
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.174",
-      "title": "Desktop UX acceptance gaps repair plan",
-      "reason": "Group FR gaps into dependency-gated, runtime-backed, and local UI repair tracks."
+      "id": "W1.5.187",
+      "title": "Desktop bridge A4 evidence manifest refresh",
+      "reason": "Turn W1.5.180-W1.5.185 bridge evidence into reviewer-facing A4 candidate bundles without claiming acceptance."
     },
     {
-      "id": "W1.5.175",
-      "title": "A4 evidence runner and review manifest",
-      "reason": "Turn candidate FR evidence into repeatable UX review captures without claiming acceptance early."
+      "id": "W1.5.188",
+      "title": "Remaining runtime-flow implementation plan refresh",
+      "reason": "Re-plan FR-008, FR-015, FR-017, and partial bridge gaps after the W1.5.186 evidence refresh."
     }
   ]
 }

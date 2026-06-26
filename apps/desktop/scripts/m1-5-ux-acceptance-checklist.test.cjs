@@ -151,6 +151,8 @@ const expectedPrinciples = [
 
 const allowedEvidenceStatuses = new Set([
   "candidate_evidence_available",
+  "runtime_bridge_evidence_available",
+  "partial_runtime_bridge_evidence",
   "partial_evidence",
   "partial_scaffold",
   "backend_evidence_only",
@@ -175,8 +177,8 @@ test("M1.5 UX acceptance checklist preserves source authority and conservative s
   assert.equal(fs.existsSync(uiuxBaselinePath), true);
   assert.equal(checklist.schema_version, "0.1.0");
   assert.equal(checklist.milestone, "M1.5");
-  assert.equal(checklist.slice, "W1.5.172");
-  assert.equal(checklist.checklist_status, "extracted_not_accepted");
+  assert.equal(checklist.slice, "W1.5.186");
+  assert.equal(checklist.checklist_status, "evidence_refreshed_not_accepted");
   assert.equal(checklist.exit_criterion, "EXIT-P1-1");
   assert.equal(checklist.exit_p1_1_status, "not_ready");
   assert.deepEqual(checklist.source_extraction, {
@@ -269,6 +271,22 @@ test("M1.5 UX acceptance checklist summary matches item statuses", () => {
     ),
   );
   assert.equal(
+    summary.runtime_bridge_evidence_available_items,
+    countItems(
+      items,
+      (item) =>
+        item.current_evidence_status === "runtime_bridge_evidence_available",
+    ),
+  );
+  assert.equal(
+    summary.partial_runtime_bridge_evidence_items,
+    countItems(
+      items,
+      (item) =>
+        item.current_evidence_status === "partial_runtime_bridge_evidence",
+    ),
+  );
+  assert.equal(
     summary.partial_or_scaffold_items,
     countItems(
       items,
@@ -331,6 +349,6 @@ test("M1.5 UX acceptance checklist does not overclaim dependency-gated or scaffo
   assert.match(checklist.guardrails.join(" "), /does not claim A4 acceptance/u);
   assert.deepEqual(
     checklist.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.173", "W1.5.174"],
+    ["W1.5.187", "W1.5.188"],
   );
 });

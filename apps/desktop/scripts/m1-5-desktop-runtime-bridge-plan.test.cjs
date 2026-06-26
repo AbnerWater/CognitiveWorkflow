@@ -43,6 +43,13 @@ const expectedBridgeItemIds = [
   "BRIDGE-FR-014-SKILL-MANAGEMENT",
   "BRIDGE-FR-018-SEMI-AUTO-HITL",
 ];
+const expectedCurrentReadinessByFrId = new Map([
+  ["FR-007", "runtime_bridge_needs_a4_review"],
+  ["FR-011", "partial_runtime_bridge_requires_followup"],
+  ["FR-012", "runtime_bridge_needs_a4_review"],
+  ["FR-014", "partial_runtime_bridge_requires_followup"],
+  ["FR-018", "partial_runtime_bridge_requires_followup"],
+]);
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, { encoding: "utf8" }));
@@ -75,6 +82,7 @@ test("M1.5 desktop runtime bridge plan runner returns a sanitized conservative s
   assert.equal(summary.implementedItemCount, 0);
   assert.equal(summary.pendingImplementationItemCount, 5);
   assert.equal(summary.contractAnchorCount > 0, true);
+  assert.equal(summary.supersededBy, "W1.5.186");
   assert.deepEqual(summary.nextRecommendedSlices, [
     "W1.5.179",
     "W1.5.180",
@@ -95,6 +103,8 @@ test("M1.5 desktop runtime bridge plan is scoped to the W1.5.174 bridge track", 
   assert.equal(plan.slice, "W1.5.178");
   assert.equal(plan.plan_status, "desktop_runtime_bridge_plan_not_implemented");
   assert.equal(plan.exit_p1_1_status, "not_ready");
+  assert.equal(plan.superseded_by?.slice, "W1.5.186");
+  assert.match(plan.superseded_by?.reason ?? "", /no longer mirrors/u);
   assert.equal(plan.repair_track.source_track_id, bridgeTrack?.id);
   assert.equal(plan.repair_track.track_kind, bridgeTrack?.track_kind);
   assert.equal(plan.repair_track.source_track_status, bridgeTrack?.status);
@@ -110,7 +120,7 @@ test("M1.5 desktop runtime bridge plan is scoped to the W1.5.174 bridge track", 
   );
 });
 
-test("M1.5 desktop runtime bridge items mirror evidence map and checklist gaps", () => {
+test("M1.5 desktop runtime bridge items preserve historical source snapshots", () => {
   const plan = readJson(planPath);
   const evidenceMap = readJson(evidenceMapPath);
   const checklist = readJson(checklistPath);
@@ -133,33 +143,21 @@ test("M1.5 desktop runtime bridge items mirror evidence map and checklist gaps",
     assert.ok(checklistItem);
     assert.equal(
       evidenceItem.acceptance_readiness,
-      "backend_only_requires_desktop_flow",
-    );
-    assert.equal(
-      bridgeItem.source_checklist_status,
-      checklistItem.current_evidence_status,
+      expectedCurrentReadinessByFrId.get(bridgeItem.fr_id),
     );
     assert.equal(
       bridgeItem.source_acceptance_readiness,
-      evidenceItem.acceptance_readiness,
+      "backend_only_requires_desktop_flow",
     );
-    assert.deepEqual(bridgeItem.source_evidence_refs, [
+    assert.match(bridgeItem.source_checklist_status, /.+/u);
+    assert.equal(
+      bridgeItem.source_evidence_refs[0],
       `docs/04_runbook/m1.5-fr-evidence-map.json#${bridgeItem.fr_id}`,
-      ...evidenceItem.evidence_refs,
-    ]);
-    assert.deepEqual(
-      bridgeItem.source_verification_commands,
-      evidenceItem.verification_commands,
     );
-    assert.deepEqual(
-      bridgeItem.source_checklist_remaining_gap,
-      checklistItem.remaining_gap,
-    );
-    assert.deepEqual(
-      bridgeItem.missing_before_implementation,
-      evidenceItem.missing_evidence,
-    );
-    assert.equal(bridgeItem.source_next_action, evidenceItem.next_action);
+    assert.equal(Array.isArray(bridgeItem.source_verification_commands), true);
+    assert.equal(bridgeItem.source_checklist_remaining_gap.length > 0, true);
+    assert.equal(bridgeItem.missing_before_implementation.length > 0, true);
+    assert.match(bridgeItem.source_next_action, /.+/u);
     assert.equal(bridgeItem.planning_status, "planned_not_implemented");
     assert.notEqual(checklistItem.current_evidence_status, "accepted");
   }
@@ -225,27 +223,25 @@ test("M1.5 desktop runtime bridge plan summary does not claim acceptance or impl
   );
 });
 
-test("M1.5 desktop runtime bridge plan rejects source evidence drift", () => {
+test("M1.5 desktop runtime bridge plan preserves superseded source evidence drift", () => {
   const mutatedPlanPath = writeMutatedPlan((plan) => {
     plan.desktop_runtime_bridge_items[0].missing_before_implementation[0] =
       "Desktop execution mode control is implemented.";
   });
 
-  assert.throws(
-    () => validateDesktopRuntimeBridgePlan({ planPath: mutatedPlanPath }),
-    /BRIDGE-FR-007-EXECUTION-MODE-CONTROL source missing implementation evidence/u,
+  assert.doesNotThrow(() =>
+    validateDesktopRuntimeBridgePlan({ planPath: mutatedPlanPath }),
   );
 });
 
-test("M1.5 desktop runtime bridge plan rejects checklist remaining-gap drift", () => {
+test("M1.5 desktop runtime bridge plan preserves superseded checklist gap drift", () => {
   const mutatedPlanPath = writeMutatedPlan((plan) => {
     plan.desktop_runtime_bridge_items[2].source_checklist_remaining_gap[0] =
       "Desktop project-creation Git audit evidence is complete.";
   });
 
-  assert.throws(
-    () => validateDesktopRuntimeBridgePlan({ planPath: mutatedPlanPath }),
-    /BRIDGE-FR-012-GIT-INITIALIZATION source checklist remaining gap/u,
+  assert.doesNotThrow(() =>
+    validateDesktopRuntimeBridgePlan({ planPath: mutatedPlanPath }),
   );
 });
 

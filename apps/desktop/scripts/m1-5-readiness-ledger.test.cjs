@@ -31,7 +31,7 @@ test("M1.5 readiness ledger keeps phase status conservative", () => {
 
   assert.equal(ledger.schema_version, "0.1.0");
   assert.equal(ledger.milestone, "M1.5");
-  assert.equal(ledger.slice, "W1.5.170");
+  assert.equal(ledger.slice, "W1.5.186");
   assert.equal(ledger.status, "in_progress");
   assert.match(roadmap, /Electron Forge \+ Vite \+ React 18/u);
   assert.match(roadmap, /React Flow Canvas/u);
@@ -120,6 +120,14 @@ test("M1.5 readiness ledger records roadmap item gaps without claiming exit read
     roadmapItemsById.get("M1.5-R8")?.status,
     "blocked_by_dependency_gate",
   );
+  assert.match(
+    roadmapItemsById.get("M1.5-R7")?.verified_evidence.join(" ") ?? "",
+    /W1\.5\.181-W1\.5\.185/u,
+  );
+  assert.match(
+    roadmapItemsById.get("M1.5-R7")?.remaining_gap.join(" ") ?? "",
+    /restore-to-snapshot/u,
+  );
   assert.equal(exitItemsById.get("EXIT-P1-1")?.status, "not_ready");
   assert.equal(
     exitItemsById.get("EXIT-P1-7")?.status,
@@ -141,4 +149,9 @@ test("M1.5 readiness ledger records roadmap item gaps without claiming exit read
       assert.ok(item.remaining_gap.length > 0);
     }
   }
+
+  assert.deepEqual(
+    ledger.next_recommended_slices.map((slice) => slice.id),
+    ["W1.5.187", "W1.5.188"],
+  );
 });

@@ -6,6 +6,11 @@
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
   "observed_at": "2026-06-25",
+  "superseded_by": {
+    "slice": "W1.5.186",
+    "artifact": "docs/04_runbook/m1.5-fr-evidence-map.json",
+    "reason": "W1.5.186 refreshes current FR evidence after W1.5.180-W1.5.185 bridge implementations; this artifact preserves the original repair plan snapshot and no longer mirrors the current evidence map."
+  },
   "source": {
     "ux_gap_repair_plan": "docs/04_runbook/m1.5-ux-gap-repair-plan.json#TRACK-RUNTIME-FLOW-REPAIR",
     "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",

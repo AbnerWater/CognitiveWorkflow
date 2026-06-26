@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.170",
+  "slice": "W1.5.186",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -150,11 +150,13 @@
       "status": "partial",
       "verified_evidence": [
         "W1.5.89-W1.5.93 shell chrome, Task Drawer collapse, Chat Box collapse, File Tree scaffold, and Version Snapshot scaffold",
-        "W1.5.105-W1.5.107 local read-only selection details"
+        "W1.5.105-W1.5.107 local read-only selection details",
+        "W1.5.181-W1.5.185 add desktop bridge evidence for project creation/Git, references, skills, HITL decisions, and create-only workflow snapshots"
       ],
       "remaining_gap": [
-        "Task mutation commands are not implemented",
-        "File operations and persisted version snapshot actions are not implemented"
+        "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
+        "Task mutation commands and artifact open/download behavior are not complete",
+        "Version Snapshot restore-to-snapshot and continue execution remain unimplemented"
       ]
     },
     {
@@ -172,7 +174,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 still require a formal UX acceptance checklist and several surfaces remain scaffold-only or dependency-gated."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.186 evidence map, but accepted_items remain 0 and several surfaces still need A4, runtime-flow, dependency-gated, or end-to-end evidence."
     },
     {
       "id": "EXIT-P1-2",
@@ -232,14 +234,14 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.171",
-      "title": "Desktop dependency gate proposal for React Flow, Forge, Tailwind, and updater",
-      "reason": "M1.5 roadmap items R1, R4, R8 and EXIT-P1-7/P1-12 cannot be completed under the current approved minimal dependency group."
+      "id": "W1.5.187",
+      "title": "Desktop bridge A4 evidence manifest refresh",
+      "reason": "Turn W1.5.180-W1.5.185 bridge evidence into reviewer-facing A4 candidate bundles without claiming acceptance."
     },
     {
-      "id": "W1.5.172",
-      "title": "FR-001 through FR-020 UX acceptance checklist extraction",
-      "reason": "EXIT-P1-1 needs a concrete A4 checklist before M1.5 can claim phase-exit readiness."
+      "id": "W1.5.188",
+      "title": "Remaining runtime-flow implementation plan refresh",
+      "reason": "Re-plan FR-008, FR-015, FR-017, and partial bridge gaps after the W1.5.186 evidence refresh."
     }
   ]
 }

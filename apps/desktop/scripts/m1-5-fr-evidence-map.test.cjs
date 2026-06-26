@@ -26,6 +26,8 @@ const dependencyGatePath = path.join(
 
 const expectedReadinessValues = new Set([
   "candidate_evidence_needs_a4_review",
+  "runtime_bridge_needs_a4_review",
+  "partial_runtime_bridge_requires_followup",
   "partial_requires_ui_evidence",
   "partial_requires_runtime_flow",
   "backend_only_requires_desktop_flow",
@@ -33,7 +35,7 @@ const expectedReadinessValues = new Set([
   "missing_implementation",
 ]);
 
-const expectedNextSlices = ["W1.5.174", "W1.5.175"];
+const expectedNextSlices = ["W1.5.187", "W1.5.188"];
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, { encoding: "utf8" }));
@@ -54,8 +56,8 @@ test("M1.5 FR evidence map preserves conservative source authority", () => {
 
   assert.equal(evidenceMap.schema_version, "0.1.0");
   assert.equal(evidenceMap.milestone, "M1.5");
-  assert.equal(evidenceMap.slice, "W1.5.173");
-  assert.equal(evidenceMap.map_status, "evidence_mapped_not_accepted");
+  assert.equal(evidenceMap.slice, "W1.5.186");
+  assert.equal(evidenceMap.map_status, "evidence_refreshed_not_accepted");
   assert.equal(evidenceMap.exit_criterion, "EXIT-P1-1");
   assert.equal(evidenceMap.exit_p1_1_status, "not_ready");
   assert.equal(checklist.exit_p1_1_status, "not_ready");
@@ -123,6 +125,20 @@ test("M1.5 FR evidence map summary counts are derived from item statuses", () =>
     ),
   );
   assert.equal(
+    sourceSummary.runtime_bridge_evidence_available_items,
+    countItems(
+      items,
+      (item) => item.checklist_status === "runtime_bridge_evidence_available",
+    ),
+  );
+  assert.equal(
+    sourceSummary.partial_runtime_bridge_evidence_items,
+    countItems(
+      items,
+      (item) => item.checklist_status === "partial_runtime_bridge_evidence",
+    ),
+  );
+  assert.equal(
     sourceSummary.partial_or_scaffold_items,
     countItems(
       items,
@@ -157,6 +173,22 @@ test("M1.5 FR evidence map summary counts are derived from item statuses", () =>
       items,
       (item) =>
         item.acceptance_readiness === "candidate_evidence_needs_a4_review",
+    ),
+  );
+  assert.equal(
+    readinessSummary.runtime_bridge_needs_a4_review_items,
+    countItems(
+      items,
+      (item) => item.acceptance_readiness === "runtime_bridge_needs_a4_review",
+    ),
+  );
+  assert.equal(
+    readinessSummary.partial_runtime_bridge_requires_followup_items,
+    countItems(
+      items,
+      (item) =>
+        item.acceptance_readiness ===
+        "partial_runtime_bridge_requires_followup",
     ),
   );
   assert.equal(
@@ -198,7 +230,7 @@ test("M1.5 FR evidence map summary counts are derived from item statuses", () =>
   assert.equal(readinessSummary.accepted_items, 0);
 });
 
-test("M1.5 FR evidence map keeps candidate, blocked, and missing tracks explicit", () => {
+test("M1.5 FR evidence map keeps candidate, bridge, and blocked tracks explicit", () => {
   const evidenceMap = readJson(evidenceMapPath);
   const itemsById = mapById(evidenceMap.fr_evidence_items);
 
@@ -219,11 +251,32 @@ test("M1.5 FR evidence map keeps candidate, blocked, and missing tracks explicit
     assert.deepEqual(item.verification_commands, []);
   }
 
+  for (const id of ["FR-007", "FR-012", "FR-013"]) {
+    const item = itemsById.get(id);
+    assert.equal(item?.acceptance_readiness, "runtime_bridge_needs_a4_review");
+    assert.equal(item.verification_commands.length > 0, true);
+    assert.match(item.missing_evidence.join(" "), /A4/u);
+  }
+
+  for (const id of ["FR-011", "FR-014", "FR-015", "FR-018"]) {
+    const item = itemsById.get(id);
+    assert.equal(
+      item?.acceptance_readiness,
+      "partial_runtime_bridge_requires_followup",
+    );
+    assert.equal(item.verification_commands.length > 0, true);
+    assert.match(
+      item.missing_evidence.join(" "),
+      /A4|not implemented|incomplete/u,
+    );
+  }
+
   assert.equal(
-    itemsById.get("FR-013")?.acceptance_readiness,
-    "missing_implementation",
+    evidenceMap.fr_evidence_items.some(
+      (item) => item.acceptance_readiness === "missing_implementation",
+    ),
+    false,
   );
-  assert.deepEqual(itemsById.get("FR-013")?.verification_commands, []);
 });
 
 test("M1.5 FR evidence map recommends follow-up slices without marking EXIT-P1-1 ready", () => {

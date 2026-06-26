@@ -69,6 +69,50 @@ function assertCondition(condition, message) {
   }
 }
 
+function isSupersededByW15186EvidenceRefresh(plan) {
+  return (
+    plan.superseded_by?.slice === "W1.5.186" &&
+    plan.superseded_by?.artifact === "docs/04_runbook/m1.5-fr-evidence-map.json"
+  );
+}
+
+function assertHistoricalSourceSnapshot(item) {
+  assertCondition(
+    typeof item.source_checklist_status === "string" &&
+      item.source_checklist_status.length > 0,
+    `${item.id} historical source checklist status must be recorded`,
+  );
+  assertCondition(
+    typeof item.source_acceptance_readiness === "string" &&
+      item.source_acceptance_readiness.length > 0,
+    `${item.id} historical source acceptance readiness must be recorded`,
+  );
+  assertCondition(
+    Array.isArray(item.source_evidence_refs) &&
+      item.source_evidence_refs.length > 0,
+    `${item.id} historical source evidence refs must be recorded`,
+  );
+  assertCondition(
+    Array.isArray(item.source_verification_commands),
+    `${item.id} historical source verification commands must be recorded`,
+  );
+  assertCondition(
+    Array.isArray(item.source_checklist_remaining_gap) &&
+      item.source_checklist_remaining_gap.length > 0,
+    `${item.id} historical source checklist remaining gap must be recorded`,
+  );
+  assertCondition(
+    Array.isArray(item.missing_before_implementation) &&
+      item.missing_before_implementation.length > 0,
+    `${item.id} historical missing implementation evidence must be recorded`,
+  );
+  assertCondition(
+    typeof item.source_next_action === "string" &&
+      item.source_next_action.length > 0,
+    `${item.id} historical source next action must be recorded`,
+  );
+}
+
 function repoPath(sourcePath) {
   return path.join(repoRoot, ...sourcePath.split("/"));
 }
@@ -90,6 +134,13 @@ function validateDesktopRuntimeBridgePlan(options = {}) {
   assertEqual(plan.schema_version, "0.1.0", "schema version");
   assertEqual(plan.milestone, "M1.5", "milestone");
   assertEqual(plan.slice, "W1.5.178", "slice id");
+  const isSuperseded = isSupersededByW15186EvidenceRefresh(plan);
+  if (isSuperseded) {
+    assertCondition(
+      plan.superseded_by.reason.includes("no longer mirrors"),
+      "superseded reason must explain current evidence map drift",
+    );
+  }
   assertEqual(
     plan.plan_status,
     "desktop_runtime_bridge_plan_not_implemented",
@@ -205,48 +256,52 @@ function validateDesktopRuntimeBridgePlan(options = {}) {
       `missing checklist item ${bridgeItem.fr_id}`,
     );
     assertEqual(
-      bridgeItem.source_checklist_status,
-      checklistItem.current_evidence_status,
-      `${bridgeItem.id} source checklist status`,
-    );
-    assertEqual(
-      bridgeItem.source_acceptance_readiness,
-      evidenceItem.acceptance_readiness,
-      `${bridgeItem.id} source acceptance readiness`,
-    );
-    assertEqual(
       evidenceItem.checklist_status,
       checklistItem.current_evidence_status,
       `${bridgeItem.id} checklist/evidence status mirror`,
     );
-    assertDeepEqual(
-      bridgeItem.source_evidence_refs,
-      [
-        `docs/04_runbook/m1.5-fr-evidence-map.json#${bridgeItem.fr_id}`,
-        ...evidenceItem.evidence_refs,
-      ],
-      `${bridgeItem.id} source evidence refs`,
-    );
-    assertDeepEqual(
-      bridgeItem.source_verification_commands,
-      evidenceItem.verification_commands,
-      `${bridgeItem.id} source verification commands`,
-    );
-    assertDeepEqual(
-      bridgeItem.source_checklist_remaining_gap,
-      checklistItem.remaining_gap,
-      `${bridgeItem.id} source checklist remaining gap`,
-    );
-    assertDeepEqual(
-      bridgeItem.missing_before_implementation,
-      evidenceItem.missing_evidence,
-      `${bridgeItem.id} source missing implementation evidence`,
-    );
-    assertEqual(
-      bridgeItem.source_next_action,
-      evidenceItem.next_action,
-      `${bridgeItem.id} source next action`,
-    );
+    if (isSuperseded) {
+      assertHistoricalSourceSnapshot(bridgeItem);
+    } else {
+      assertEqual(
+        bridgeItem.source_checklist_status,
+        checklistItem.current_evidence_status,
+        `${bridgeItem.id} source checklist status`,
+      );
+      assertEqual(
+        bridgeItem.source_acceptance_readiness,
+        evidenceItem.acceptance_readiness,
+        `${bridgeItem.id} source acceptance readiness`,
+      );
+      assertDeepEqual(
+        bridgeItem.source_evidence_refs,
+        [
+          `docs/04_runbook/m1.5-fr-evidence-map.json#${bridgeItem.fr_id}`,
+          ...evidenceItem.evidence_refs,
+        ],
+        `${bridgeItem.id} source evidence refs`,
+      );
+      assertDeepEqual(
+        bridgeItem.source_verification_commands,
+        evidenceItem.verification_commands,
+        `${bridgeItem.id} source verification commands`,
+      );
+      assertDeepEqual(
+        bridgeItem.source_checklist_remaining_gap,
+        checklistItem.remaining_gap,
+        `${bridgeItem.id} source checklist remaining gap`,
+      );
+      assertDeepEqual(
+        bridgeItem.missing_before_implementation,
+        evidenceItem.missing_evidence,
+        `${bridgeItem.id} source missing implementation evidence`,
+      );
+      assertEqual(
+        bridgeItem.source_next_action,
+        evidenceItem.next_action,
+        `${bridgeItem.id} source next action`,
+      );
+    }
     assertEqual(
       bridgeItem.planning_status,
       "planned_not_implemented",
@@ -400,6 +455,7 @@ function validateDesktopRuntimeBridgePlan(options = {}) {
     implementedItemCount: plan.summary.implemented_items,
     pendingImplementationItemCount: plan.summary.pending_implementation_items,
     contractAnchorCount,
+    supersededBy: plan.superseded_by?.slice ?? null,
     nextRecommendedSlices: plan.next_recommended_slices.map(
       (slice) => slice.id,
     ),

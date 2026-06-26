@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.172",
-  "checklist_status": "extracted_not_accepted",
+  "slice": "W1.5.186",
+  "checklist_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-25",
+  "observed_at": "2026-06-26",
   "authority": {
     "roadmap": "docs/roadmap.md#5.3",
     "review_matrix": "docs/roadmap.md#5.4",
@@ -15,9 +15,9 @@
   "guardrails": [
     "This checklist extracts FR-001 through FR-020 acceptance scope; it does not claim A4 acceptance.",
     "Every FR item remains phase-exit required even when the UIUX source priority is SHOULD.",
-    "Scaffold or backend-only evidence is not enough to mark a FR accepted.",
+    "Scaffold, bridge, or backend-only evidence is not enough to mark a FR accepted.",
     "Dependency-gated items remain blocked until the corresponding W1.5.171 dependency gate receives explicit human approval and implementation evidence.",
-    "No accepted spec, ADR, schema, generated schema, dependency, runtime behavior, IPC, renderer storage, packaging, updater, or baseline docx content is changed by W1.5.172."
+    "W1.5.186 refreshes evidence status from W1.5.180-W1.5.185 only; it changes no accepted spec, ADR, schema, generated schema, dependency, runtime behavior, IPC, renderer storage, packaging, updater, or baseline docx content."
   ],
   "source_extraction": {
     "method": "read-only OOXML extraction from word/document.xml",
@@ -255,14 +255,15 @@
         "Mode changes are persisted or applied to the active Workflow execution policy.",
         "Single-node run-once behavior is reachable for step mode."
       ],
-      "current_evidence_status": "backend_or_schema_evidence_only",
+      "current_evidence_status": "runtime_bridge_evidence_available",
       "current_evidence": [
         "WorkflowGraph schema defines mode values step, semi_auto, and auto.",
-        "HTTP API includes a run-once node endpoint for step-mode semantics."
+        "HTTP API includes a run-once node endpoint for step-mode semantics.",
+        "W1.5.180 added desktop execution mode controls and a step-mode run-once dispatch surface through the Runtime Workbench."
       ],
       "remaining_gap": [
-        "Desktop execution mode control near the run button is not accepted.",
-        "Mode-to-runtime behavior has not been proven through the workbench UI."
+        "Backend run-once execution success has not been proven end-to-end from the desktop workbench.",
+        "A4 UX acceptance evidence for execution mode placement and behavior is not recorded."
       ]
     },
     {
@@ -341,13 +342,14 @@
         "Reference upload/import is available during project initialization.",
         "Created project opens into the desktop workbench with runtime connection metadata."
       ],
-      "current_evidence_status": "backend_evidence_only",
+      "current_evidence_status": "partial_runtime_bridge_evidence",
       "current_evidence": [
-        "Runtime project initialization APIs and harness structures exist from M1.3 work."
+        "Runtime project initialization APIs and harness structures exist from M1.3 work.",
+        "W1.5.181 added desktop project creation dispatch with task-background local UI state and strict runtime request validation."
       ],
       "remaining_gap": [
-        "Desktop new-project UX is not implemented.",
-        "Reference upload during initialization is not implemented."
+        "Reference upload during project initialization remains outside the project creation bridge and needs a combined user-path proof.",
+        "A4 UX acceptance evidence for the full new-project path is not recorded."
       ]
     },
     {
@@ -362,13 +364,14 @@
         "The user cannot bypass Git initialization in the workbench flow.",
         "Initial commit/tag behavior matches runtime_harness.md."
       ],
-      "current_evidence_status": "backend_evidence_only",
+      "current_evidence_status": "runtime_bridge_evidence_available",
       "current_evidence": [
-        "runtime_harness.md and M1.3 project initialization work define Git initialization behavior."
+        "runtime_harness.md and M1.3 project initialization work define Git initialization behavior.",
+        "W1.5.181 requires desktop project creation success to include git_initialized=true and a non-empty first_commit_sha."
       ],
       "remaining_gap": [
-        "Desktop project-creation path and A8 git-history audit evidence are not recorded.",
-        "Automatic commit/tag behavior remains a Phase 1 exit audit item."
+        "A8 git-history audit evidence for automatic commit/tag behavior is not recorded.",
+        "A4 UX acceptance evidence for the mandatory Git path is not recorded."
       ]
     },
     {
@@ -383,11 +386,14 @@
         "References can be enabled and disabled without deleting source files.",
         "Reference content and metadata can be viewed from the workbench."
       ],
-      "current_evidence_status": "not_started",
-      "current_evidence": [],
+      "current_evidence_status": "runtime_bridge_evidence_available",
+      "current_evidence": [
+        "W1.5.182 added runtime-backed reference import, list, enable, disable, and view surfaces with safe desktop projection.",
+        "Runtime reference manifest updates are guarded by the project Git lock boundary."
+      ],
       "remaining_gap": [
-        "Desktop reference import, enable, disable, and view actions are not implemented.",
-        "Runtime-backed reference manifest UX is not accepted."
+        "A4 UX acceptance evidence for reference import, enable, disable, and view user paths is not recorded.",
+        "Delete semantics remain intentionally out of scope until accepted spec material defines them."
       ]
     },
     {
@@ -402,13 +408,14 @@
         "Skills can be enabled or disabled per project.",
         "Skill configuration is viewable without exposing secrets."
       ],
-      "current_evidence_status": "backend_evidence_only",
+      "current_evidence_status": "partial_runtime_bridge_evidence",
       "current_evidence": [
-        "M1.4 project config and skills API work exposes runtime-side Skill information."
+        "M1.4 project config and skills API work exposes runtime-side Skill information.",
+        "W1.5.183 added safe desktop Skill list, enable, disable, and version surfaces without returning persisted params."
       ],
       "remaining_gap": [
-        "Desktop Skill management UI is not implemented.",
-        "Secret-safe configuration display remains unaccepted."
+        "Skill registry candidate discovery and MCP configuration UI remain incomplete.",
+        "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
       ]
     },
     {
@@ -423,14 +430,15 @@
         "Automatic snapshots are created at required workflow boundaries.",
         "Restore and continue execution actions work against project state."
       ],
-      "current_evidence_status": "partial_scaffold",
+      "current_evidence_status": "partial_runtime_bridge_evidence",
       "current_evidence": [
         "W1.5.93 introduced the Version Snapshot scaffold.",
-        "W1.5.106 added local Version Snapshot selection details."
+        "W1.5.106 added local Version Snapshot selection details.",
+        "W1.5.185 added explicit create-only workflow snapshot dispatch for POST /workflows/{workflow_id}/snapshot."
       ],
       "remaining_gap": [
-        "Automatic snapshot creation, restore, and continue execution are not implemented.",
-        "Git-backed snapshot semantics remain unaccepted."
+        "Automatic snapshot creation, restore-to-snapshot, and continue execution are not implemented.",
+        "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
       ]
     },
     {
@@ -488,13 +496,14 @@
         "Human confirmation UI clearly shows the pending decision and safe actions.",
         "Resume path is recorded and reflected in runtime state."
       ],
-      "current_evidence_status": "backend_evidence_only",
+      "current_evidence_status": "partial_runtime_bridge_evidence",
       "current_evidence": [
-        "M1.3 and M1.4 HITL/resumption and approval bridge work exists on the runtime side."
+        "M1.3 and M1.4 HITL/resumption and approval bridge work exists on the runtime side.",
+        "W1.5.184 added a desktop human decision submit surface for semi-auto HITL decisions."
       ],
       "remaining_gap": [
-        "Desktop semi-auto mode UI and confirmation flow are not accepted.",
-        "End-to-end pause/resume UX evidence is missing."
+        "Pending-decision discovery, full pause/resume user path, and high-risk-node review UX are not complete.",
+        "A4 UX acceptance evidence for semi-auto HITL remains unrecorded."
       ]
     },
     {
@@ -546,23 +555,25 @@
     "source_should_items": 2,
     "accepted_items": 0,
     "candidate_evidence_available_items": 3,
-    "partial_or_scaffold_items": 9,
-    "backend_or_schema_only_items": 5,
+    "runtime_bridge_evidence_available_items": 3,
+    "partial_runtime_bridge_evidence_items": 4,
+    "partial_or_scaffold_items": 8,
+    "backend_or_schema_only_items": 0,
     "blocked_by_dependency_gate_items": 2,
-    "not_started_items": 1,
+    "not_started_items": 0,
     "next_required_review": "A4 ux-acceptance-reviewer",
     "phase_exit_claim": "EXIT-P1-1 remains not_ready until all 20 FR items have A4 acceptance evidence."
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.173",
-      "title": "FR-001 through FR-020 checklist evidence mapper",
-      "reason": "Map each FR acceptance check to concrete test, visual smoke, or missing implementation evidence before A4 review."
+      "id": "W1.5.187",
+      "title": "Desktop bridge A4 evidence manifest refresh",
+      "reason": "Turn W1.5.180-W1.5.185 bridge evidence into reviewer-facing A4 candidate bundles without claiming acceptance."
     },
     {
-      "id": "W1.5.174",
-      "title": "Desktop UX acceptance gaps repair plan",
-      "reason": "Group missing FR evidence into dependency-gated, runtime-backed, and local UI repair tracks."
+      "id": "W1.5.188",
+      "title": "Remaining runtime-flow implementation plan refresh",
+      "reason": "Re-plan FR-008, FR-015, FR-017, and partial bridge gaps after the W1.5.186 evidence refresh."
     }
   ]
 }
