@@ -1,0 +1,258 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.189",
+  "capture_status": "a4_capture_executed_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-26",
+  "source": {
+    "a4_evidence_manifest": "docs/04_runbook/m1.5-a4-evidence-manifest.json",
+    "visual_smoke_matrix_artifact": "docs/04_runbook/m1.5-a4-capture-matrix.json",
+    "visual_smoke_matrix_runner": "apps/desktop/scripts/runtime-workbench-visual-smoke-matrix.cjs",
+    "visual_smoke_single_runner": "apps/desktop/scripts/runtime-workbench-visual-smoke.cjs",
+    "react_shell_tests": "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx",
+    "runtime_project_endpoint_tests": "apps/runtime/tests/test_m1_3_2_project_endpoints.py",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "This artifact records reviewer-facing A4 capture execution only; it does not claim A4 acceptance.",
+    "Every captured review item remains pending_a4_review until an A4 reviewer records end-to-end UX acceptance evidence.",
+    "W1.5.189 executes W1.5.187 pending stream and bridge capture inputs without changing accepted FR status.",
+    "No production runtime, renderer behavior, dependency, spec, ADR, generated schema, packaging, updater, or baseline docx change is included in W1.5.189.",
+    "Capture artifacts must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, secure paths, cache paths, or output directory values.",
+    "The committed matrix artifact is a sanitized manifest only; screenshots and per-case raw output files stay outside Git."
+  ],
+  "runner_contract": {
+    "runner_script": "apps/desktop/scripts/m1-5-a4-capture-execution.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-a4-capture-execution.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-a4-capture-execution.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "visual_smoke_matrix_command": "pnpm --filter @cw/desktop run visual-smoke:matrix",
+    "runtime_project_endpoint_test": "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
+    "runner_output_contract": {
+      "status": "a4_capture_executed_not_accepted",
+      "review_item_count": 6,
+      "stream_capture_item_count": 3,
+      "bridge_capture_item_count": 3,
+      "matrix_case_count": 8,
+      "accepted_item_count": 0,
+      "pending_a4_review_item_count": 6,
+      "sanitized_summary_only": true
+    }
+  },
+  "visual_smoke_matrix_capture": {
+    "execution_status": "executed_passed",
+    "command": "pnpm --filter @cw/desktop run visual-smoke:matrix",
+    "target": {
+      "origin": "http://127.0.0.1:5174",
+      "pathname": "/visual-smoke.html"
+    },
+    "matrix_manifest_artifact": "docs/04_runbook/m1.5-a4-capture-matrix.json",
+    "output_evidence": {
+      "manifest_file_name": "matrix.json",
+      "case_count": 8
+    },
+    "required_case_names": [
+      "known-desktop",
+      "known-mobile",
+      "unknown-desktop",
+      "unknown-mobile",
+      "unknown-mobile-scroll-900",
+      "unknown-mobile-scroll-1440"
+    ],
+    "optional_context_case_names": [
+      "chat-enabled-desktop",
+      "chat-enabled-mobile"
+    ],
+    "observed_case_names": [
+      "known-desktop",
+      "known-mobile",
+      "chat-enabled-desktop",
+      "chat-enabled-mobile",
+      "unknown-desktop",
+      "unknown-mobile",
+      "unknown-mobile-scroll-900",
+      "unknown-mobile-scroll-1440"
+    ],
+    "failure_count": 0,
+    "raw_output_dir_recorded": false,
+    "query_hash_recorded": false
+  },
+  "bridge_command_evidence": [
+    {
+      "id": "BRIDGE-COMMAND-FR-007",
+      "fr_id": "FR-007",
+      "execution_status": "executed_passed",
+      "command": "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js",
+      "evidence_scope": "execution mode control placement, run-once dispatch surface, and preload contract coverage",
+      "accepted": false
+    },
+    {
+      "id": "BRIDGE-COMMAND-FR-012",
+      "fr_id": "FR-012",
+      "execution_status": "executed_passed",
+      "command": "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
+      "evidence_scope": "runtime project creation endpoint and mandatory Git initialization evidence",
+      "accepted": false
+    },
+    {
+      "id": "BRIDGE-COMMAND-FR-013",
+      "fr_id": "FR-013",
+      "execution_status": "executed_passed",
+      "command": "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
+      "evidence_scope": "runtime reference import, list, enable, disable, and view endpoint evidence",
+      "accepted": false
+    }
+  ],
+  "review_item_captures": [
+    {
+      "id": "CAPTURE-A4-FR-009-STREAM-COLLAPSED",
+      "review_item_id": "A4-FR-009-STREAM-COLLAPSED",
+      "fr_id": "FR-009",
+      "review_group": "candidate_stream_evidence",
+      "capture_status": "captured_not_accepted",
+      "source_review_status": "pending_a4_review",
+      "observed_matrix_cases": ["known-desktop", "known-mobile"],
+      "observed_evidence_fields": [
+        "streamCollapsedMetrics.streamPanelExpanded=false",
+        "streamCollapsedMetrics.streamPanelToggleExpanded=false",
+        "streamCollapsedMetrics.streamPanelControls=0",
+        "streamCollapsedMetrics.streamPanelBodies=0",
+        "streamCollapsedMetrics.streamPanelCollapsedVisible=1",
+        "streamCollapsedMetrics.streamPanelCollapsedUnread=1",
+        "streamExpandedMetrics.streamPanelExpanded=true"
+      ],
+      "missing_before_acceptance": [
+        "A4 reviewer has not recorded first-viewport collapsed stream acceptance.",
+        "Phase-level UX recording is still missing."
+      ]
+    },
+    {
+      "id": "CAPTURE-A4-FR-010-STREAM-EXPANDED",
+      "review_item_id": "A4-FR-010-STREAM-EXPANDED",
+      "fr_id": "FR-010",
+      "review_group": "candidate_stream_evidence",
+      "capture_status": "captured_not_accepted",
+      "source_review_status": "pending_a4_review",
+      "observed_matrix_cases": ["known-desktop", "known-mobile"],
+      "observed_evidence_fields": [
+        "streamEventExpandedMetrics.streamEventDetailKnownType=true",
+        "streamEventCollapsedMetrics.streamEventDetailPanels=0",
+        "streamControlsExpandedMetrics.streamControlsBodies=1",
+        "streamGroupExpandedMetrics.streamEventGroupBodies=1",
+        "streamSelectionExpandedMetrics.streamSelectionDetails=1",
+        "streamSelectionMetadataExpandedMetrics.streamSelectionMetadataDetails=1"
+      ],
+      "missing_before_acceptance": [
+        "A4 reviewer has not accepted the full expanded event taxonomy as an end-user path.",
+        "Real workflow stream demo evidence is still missing."
+      ]
+    },
+    {
+      "id": "CAPTURE-A4-FR-016-EVENT-CLASSIFICATION",
+      "review_item_id": "A4-FR-016-EVENT-CLASSIFICATION",
+      "fr_id": "FR-016",
+      "review_group": "candidate_stream_evidence",
+      "capture_status": "captured_not_accepted",
+      "source_review_status": "pending_a4_review",
+      "observed_matrix_cases": [
+        "known-desktop",
+        "known-mobile",
+        "unknown-desktop",
+        "unknown-mobile",
+        "unknown-mobile-scroll-900",
+        "unknown-mobile-scroll-1440"
+      ],
+      "observed_evidence_fields": [
+        "known cases: streamEventExpandedMetrics.streamEventDetailKnownType=true",
+        "known cases: streamSelectionMetadataExpandedMetrics.streamSelectionMetadataKnownType=true",
+        "unknown cases: streamEventExpandedMetrics.streamEventDetailKnownType=false",
+        "unknown cases: streamSelectionMetadataExpandedMetrics.streamSelectionMetadataKnownType=false",
+        "unknown cases: fallback label remains visible without raw payload exposure"
+      ],
+      "missing_before_acceptance": [
+        "A4 reviewer has not accepted final user-facing labels for every event class.",
+        "Phase-level demo stream evidence is still missing."
+      ]
+    },
+    {
+      "id": "CAPTURE-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "review_item_id": "A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "fr_id": "FR-007",
+      "review_group": "runtime_bridge_evidence",
+      "capture_status": "captured_not_accepted",
+      "source_review_status": "pending_a4_review",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-007",
+      "observed_matrix_cases": [],
+      "observed_a4_evidence_inputs": [
+        "Execution mode controls for step, semi_auto, and auto are visible near run actions.",
+        "Step mode dispatch records method, path, run id, node id, status, status code, and blocked reason only.",
+        "Semi-auto and auto modes remain fail-closed for run-once when the accepted backend contract does not support them.",
+        "A4 capture must show no raw response body, prompt, model output, or arbitrary payload values."
+      ],
+      "missing_before_acceptance": [
+        "Backend run-once execution success has not been proven end-to-end from the desktop workbench.",
+        "A4 UX acceptance evidence for execution mode placement and behavior is not recorded."
+      ]
+    },
+    {
+      "id": "CAPTURE-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "review_item_id": "A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "fr_id": "FR-012",
+      "review_group": "runtime_bridge_evidence",
+      "capture_status": "captured_not_accepted",
+      "source_review_status": "pending_a4_review",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-012",
+      "observed_matrix_cases": [],
+      "observed_a4_evidence_inputs": [
+        "Project creation success is blocked unless git_initialized is true and first_commit_sha is non-empty.",
+        "Reviewer evidence includes the desktop create-project path and runtime project endpoint coverage.",
+        "A8 git-history audit remains required before FR-012 acceptance.",
+        "A4 capture must not expose secure paths, cache paths, raw uploaded content, or credentials."
+      ],
+      "missing_before_acceptance": [
+        "A8 git-history audit evidence for automatic commit/tag behavior is not recorded.",
+        "A4 UX acceptance evidence for the mandatory Git path is not recorded."
+      ]
+    },
+    {
+      "id": "CAPTURE-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "review_item_id": "A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "fr_id": "FR-013",
+      "review_group": "runtime_bridge_evidence",
+      "capture_status": "captured_not_accepted",
+      "source_review_status": "pending_a4_review",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-013",
+      "observed_matrix_cases": [],
+      "observed_a4_evidence_inputs": [
+        "Reference import/list/enable/disable/view controls are available from the desktop workbench.",
+        "Reference state changes are backed by runtime reference endpoints and manifest safety checks.",
+        "Delete semantics remain out of A4 scope until accepted spec material defines them.",
+        "A4 capture must not retain raw file content, secure paths, cache paths, or uploaded-file bytes."
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for reference import, enable, disable, and view user paths is not recorded.",
+        "Delete semantics remain intentionally out of scope until accepted spec material defines them."
+      ]
+    }
+  ],
+  "summary": {
+    "review_item_count": 6,
+    "stream_capture_items": 3,
+    "bridge_capture_items": 3,
+    "matrix_case_count": 8,
+    "required_matrix_case_count": 6,
+    "accepted_items": 0,
+    "pending_a4_review_items": 6,
+    "exit_p1_1_status": "not_ready",
+    "next_required_review": "A4 ux-acceptance-reviewer"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.190",
+      "title": "Chat and artifact runtime-flow implementation",
+      "reason": "Implement FR-008 and FR-017 before promoting remaining runtime-flow evidence toward A4 review."
+    }
+  ]
+}

@@ -1,0 +1,553 @@
+{
+  "targetLocation": {
+    "origin": "http://127.0.0.1:5174",
+    "pathname": "/visual-smoke.html"
+  },
+  "outputEvidence": {
+    "manifestFileName": "matrix.json",
+    "caseCount": 8
+  },
+  "cases": [
+    {
+      "name": "known-desktop",
+      "mode": "known",
+      "chatBoxMode": "disabled",
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "stdoutLength": 2,
+        "stderrLength": 0
+      },
+      "targetLocation": {
+        "origin": "http://127.0.0.1:5174",
+        "pathname": "/visual-smoke.html",
+        "streamEventMode": "known",
+        "chatBoxMode": "disabled"
+      },
+      "requestedViewport": {
+        "width": 1280,
+        "height": 720,
+        "scrollY": 0
+      },
+      "captureSize": {
+        "width": 1280,
+        "height": 720
+      },
+      "observedViewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "observedScroll": {
+        "x": 0,
+        "y": 0,
+        "maxY": 3107
+      },
+      "horizontalOverflow": 0,
+      "messageCount": 0,
+      "outputEvidence": {
+        "outputFileName": "known-desktop.png",
+        "jsonFileName": "known-desktop.png.json"
+      },
+      "chatLocalEvidence": null,
+      "chatLocalHistoryLayoutEvidence": null,
+      "chatLocalSubmitTriggerEvidence": null,
+      "chatIntentSwitchFocusEvidence": null,
+      "chatLocalHistoryClearFocusEvidence": null,
+      "chatFocusEvidence": null,
+      "failures": []
+    },
+    {
+      "name": "known-mobile",
+      "mode": "known",
+      "chatBoxMode": "disabled",
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "stdoutLength": 2,
+        "stderrLength": 0
+      },
+      "targetLocation": {
+        "origin": "http://127.0.0.1:5174",
+        "pathname": "/visual-smoke.html",
+        "streamEventMode": "known",
+        "chatBoxMode": "disabled"
+      },
+      "requestedViewport": {
+        "width": 390,
+        "height": 844,
+        "scrollY": 0
+      },
+      "captureSize": {
+        "width": 390,
+        "height": 844
+      },
+      "observedViewport": {
+        "width": 390,
+        "height": 844
+      },
+      "observedScroll": {
+        "x": 0,
+        "y": 0,
+        "maxY": 8926
+      },
+      "horizontalOverflow": 0,
+      "messageCount": 0,
+      "outputEvidence": {
+        "outputFileName": "known-mobile.png",
+        "jsonFileName": "known-mobile.png.json"
+      },
+      "chatLocalEvidence": null,
+      "chatLocalHistoryLayoutEvidence": null,
+      "chatLocalSubmitTriggerEvidence": null,
+      "chatIntentSwitchFocusEvidence": null,
+      "chatLocalHistoryClearFocusEvidence": null,
+      "chatFocusEvidence": null,
+      "failures": []
+    },
+    {
+      "name": "chat-enabled-desktop",
+      "mode": "known",
+      "chatBoxMode": "enabled",
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "stdoutLength": 2,
+        "stderrLength": 0
+      },
+      "targetLocation": {
+        "origin": "http://127.0.0.1:5174",
+        "pathname": "/visual-smoke.html",
+        "streamEventMode": "known",
+        "chatBoxMode": "enabled"
+      },
+      "requestedViewport": {
+        "width": 1280,
+        "height": 720,
+        "scrollY": 0
+      },
+      "captureSize": {
+        "width": 1280,
+        "height": 720
+      },
+      "observedViewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "observedScroll": {
+        "x": 0,
+        "y": 0,
+        "maxY": 3195
+      },
+      "horizontalOverflow": 0,
+      "messageCount": 0,
+      "outputEvidence": {
+        "outputFileName": "chat-enabled-desktop.png",
+        "jsonFileName": "chat-enabled-desktop.png.json"
+      },
+      "chatLocalEvidence": {
+        "firstSubmission": {
+          "present": true,
+          "sequence": "1",
+          "count": "1",
+          "status": "queued_local",
+          "intent": "repair",
+          "target": "repair",
+          "action": "repair_review",
+          "characters": "22",
+          "words": "4",
+          "clearButtonCount": 1,
+          "clearCount": "1",
+          "historyItems": 1,
+          "historyItemIds": ["1"],
+          "historyStatuses": ["queued_local"]
+        },
+        "cappedHistory": {
+          "present": true,
+          "sequence": "4",
+          "count": "3",
+          "status": "queued_local",
+          "intent": "repair",
+          "target": "repair",
+          "action": "repair_review",
+          "characters": "24",
+          "words": "3",
+          "clearButtonCount": 1,
+          "clearCount": "3",
+          "historyItems": 3,
+          "historyItemIds": ["4", "3", "2"],
+          "historyStatuses": ["queued_local", "queued_local", "queued_local"]
+        },
+        "clearedHistory": {
+          "present": false,
+          "clearButtonCount": 0,
+          "historyItems": 0,
+          "draftIntent": "repair",
+          "draftSendReason": "empty_draft",
+          "draftPreviewState": "empty"
+        },
+        "resendAfterClear": {
+          "present": true,
+          "sequence": "5",
+          "count": "1",
+          "status": "queued_local",
+          "intent": "repair",
+          "target": "repair",
+          "action": "repair_review",
+          "characters": "20",
+          "words": "3",
+          "clearButtonCount": 1,
+          "clearCount": "1",
+          "historyItems": 1,
+          "historyItemIds": ["5"],
+          "historyStatuses": ["queued_local"]
+        }
+      },
+      "chatLocalHistoryLayoutEvidence": null,
+      "chatLocalSubmitTriggerEvidence": {
+        "trigger": "keyboard",
+        "modifier": "ctrl",
+        "keyboardDefaultPrevented": true,
+        "draftInputFocusedAfterSubmit": true
+      },
+      "chatIntentSwitchFocusEvidence": {
+        "activeIntentAfterSwitch": "repair",
+        "detailsIntentAfterSwitch": "repair",
+        "draftInputFocusedAfterSwitch": true
+      },
+      "chatLocalHistoryClearFocusEvidence": {
+        "draftInputFocusedAfterClear": true
+      },
+      "chatFocusEvidence": {
+        "expandedAfterToggle": "true",
+        "draftInputCount": 1,
+        "draftInputFocusedAfterExpand": true
+      },
+      "failures": []
+    },
+    {
+      "name": "chat-enabled-mobile",
+      "mode": "known",
+      "chatBoxMode": "enabled",
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "stdoutLength": 2,
+        "stderrLength": 0
+      },
+      "targetLocation": {
+        "origin": "http://127.0.0.1:5174",
+        "pathname": "/visual-smoke.html",
+        "streamEventMode": "known",
+        "chatBoxMode": "enabled"
+      },
+      "requestedViewport": {
+        "width": 390,
+        "height": 844,
+        "scrollY": 0
+      },
+      "captureSize": {
+        "width": 390,
+        "height": 844
+      },
+      "observedViewport": {
+        "width": 390,
+        "height": 844
+      },
+      "observedScroll": {
+        "x": 0,
+        "y": 0,
+        "maxY": 9077
+      },
+      "horizontalOverflow": 0,
+      "messageCount": 0,
+      "outputEvidence": {
+        "outputFileName": "chat-enabled-mobile.png",
+        "jsonFileName": "chat-enabled-mobile.png.json"
+      },
+      "chatLocalEvidence": {
+        "firstSubmission": {
+          "present": true,
+          "sequence": "1",
+          "count": "1",
+          "status": "queued_local",
+          "intent": "repair",
+          "target": "repair",
+          "action": "repair_review",
+          "characters": "22",
+          "words": "4",
+          "clearButtonCount": 1,
+          "clearCount": "1",
+          "historyItems": 1,
+          "historyItemIds": ["1"],
+          "historyStatuses": ["queued_local"]
+        },
+        "cappedHistory": {
+          "present": true,
+          "sequence": "4",
+          "count": "3",
+          "status": "queued_local",
+          "intent": "repair",
+          "target": "repair",
+          "action": "repair_review",
+          "characters": "24",
+          "words": "3",
+          "clearButtonCount": 1,
+          "clearCount": "3",
+          "historyItems": 3,
+          "historyItemIds": ["4", "3", "2"],
+          "historyStatuses": ["queued_local", "queued_local", "queued_local"]
+        },
+        "clearedHistory": {
+          "present": false,
+          "clearButtonCount": 0,
+          "historyItems": 0,
+          "draftIntent": "repair",
+          "draftSendReason": "empty_draft",
+          "draftPreviewState": "empty"
+        },
+        "resendAfterClear": {
+          "present": true,
+          "sequence": "5",
+          "count": "1",
+          "status": "queued_local",
+          "intent": "repair",
+          "target": "repair",
+          "action": "repair_review",
+          "characters": "20",
+          "words": "3",
+          "clearButtonCount": 1,
+          "clearCount": "1",
+          "historyItems": 1,
+          "historyItemIds": ["5"],
+          "historyStatuses": ["queued_local"]
+        }
+      },
+      "chatLocalHistoryLayoutEvidence": {
+        "columnCount": 2,
+        "clientWidth": 294,
+        "scrollWidth": 294
+      },
+      "chatLocalSubmitTriggerEvidence": {
+        "trigger": "keyboard",
+        "modifier": "ctrl",
+        "keyboardDefaultPrevented": true,
+        "draftInputFocusedAfterSubmit": true
+      },
+      "chatIntentSwitchFocusEvidence": {
+        "activeIntentAfterSwitch": "repair",
+        "detailsIntentAfterSwitch": "repair",
+        "draftInputFocusedAfterSwitch": true
+      },
+      "chatLocalHistoryClearFocusEvidence": {
+        "draftInputFocusedAfterClear": true
+      },
+      "chatFocusEvidence": {
+        "expandedAfterToggle": "true",
+        "draftInputCount": 1,
+        "draftInputFocusedAfterExpand": true
+      },
+      "failures": []
+    },
+    {
+      "name": "unknown-desktop",
+      "mode": "unknown",
+      "chatBoxMode": "disabled",
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "stdoutLength": 2,
+        "stderrLength": 0
+      },
+      "targetLocation": {
+        "origin": "http://127.0.0.1:5174",
+        "pathname": "/visual-smoke.html",
+        "streamEventMode": "unknown",
+        "chatBoxMode": "disabled"
+      },
+      "requestedViewport": {
+        "width": 1280,
+        "height": 720,
+        "scrollY": 0
+      },
+      "captureSize": {
+        "width": 1280,
+        "height": 720
+      },
+      "observedViewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "observedScroll": {
+        "x": 0,
+        "y": 0,
+        "maxY": 3107
+      },
+      "horizontalOverflow": 0,
+      "messageCount": 0,
+      "outputEvidence": {
+        "outputFileName": "unknown-desktop.png",
+        "jsonFileName": "unknown-desktop.png.json"
+      },
+      "chatLocalEvidence": null,
+      "chatLocalHistoryLayoutEvidence": null,
+      "chatLocalSubmitTriggerEvidence": null,
+      "chatIntentSwitchFocusEvidence": null,
+      "chatLocalHistoryClearFocusEvidence": null,
+      "chatFocusEvidence": null,
+      "failures": []
+    },
+    {
+      "name": "unknown-mobile",
+      "mode": "unknown",
+      "chatBoxMode": "disabled",
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "stdoutLength": 2,
+        "stderrLength": 0
+      },
+      "targetLocation": {
+        "origin": "http://127.0.0.1:5174",
+        "pathname": "/visual-smoke.html",
+        "streamEventMode": "unknown",
+        "chatBoxMode": "disabled"
+      },
+      "requestedViewport": {
+        "width": 390,
+        "height": 844,
+        "scrollY": 0
+      },
+      "captureSize": {
+        "width": 390,
+        "height": 844
+      },
+      "observedViewport": {
+        "width": 390,
+        "height": 844
+      },
+      "observedScroll": {
+        "x": 0,
+        "y": 0,
+        "maxY": 8926
+      },
+      "horizontalOverflow": 0,
+      "messageCount": 0,
+      "outputEvidence": {
+        "outputFileName": "unknown-mobile.png",
+        "jsonFileName": "unknown-mobile.png.json"
+      },
+      "chatLocalEvidence": null,
+      "chatLocalHistoryLayoutEvidence": null,
+      "chatLocalSubmitTriggerEvidence": null,
+      "chatIntentSwitchFocusEvidence": null,
+      "chatLocalHistoryClearFocusEvidence": null,
+      "chatFocusEvidence": null,
+      "failures": []
+    },
+    {
+      "name": "unknown-mobile-scroll-900",
+      "mode": "unknown",
+      "chatBoxMode": "disabled",
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "stdoutLength": 2,
+        "stderrLength": 0
+      },
+      "targetLocation": {
+        "origin": "http://127.0.0.1:5174",
+        "pathname": "/visual-smoke.html",
+        "streamEventMode": "unknown",
+        "chatBoxMode": "disabled"
+      },
+      "requestedViewport": {
+        "width": 390,
+        "height": 844,
+        "scrollY": 900
+      },
+      "captureSize": {
+        "width": 390,
+        "height": 844
+      },
+      "observedViewport": {
+        "width": 390,
+        "height": 844
+      },
+      "observedScroll": {
+        "x": 0,
+        "y": 900,
+        "maxY": 8926
+      },
+      "horizontalOverflow": 0,
+      "messageCount": 0,
+      "outputEvidence": {
+        "outputFileName": "unknown-mobile-scroll-900.png",
+        "jsonFileName": "unknown-mobile-scroll-900.png.json"
+      },
+      "chatLocalEvidence": null,
+      "chatLocalHistoryLayoutEvidence": null,
+      "chatLocalSubmitTriggerEvidence": null,
+      "chatIntentSwitchFocusEvidence": null,
+      "chatLocalHistoryClearFocusEvidence": null,
+      "chatFocusEvidence": null,
+      "failures": []
+    },
+    {
+      "name": "unknown-mobile-scroll-1440",
+      "mode": "unknown",
+      "chatBoxMode": "disabled",
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "errorCode": null,
+        "stdoutLength": 2,
+        "stderrLength": 0
+      },
+      "targetLocation": {
+        "origin": "http://127.0.0.1:5174",
+        "pathname": "/visual-smoke.html",
+        "streamEventMode": "unknown",
+        "chatBoxMode": "disabled"
+      },
+      "requestedViewport": {
+        "width": 390,
+        "height": 844,
+        "scrollY": 1440
+      },
+      "captureSize": {
+        "width": 390,
+        "height": 844
+      },
+      "observedViewport": {
+        "width": 390,
+        "height": 844
+      },
+      "observedScroll": {
+        "x": 0,
+        "y": 1440,
+        "maxY": 8926
+      },
+      "horizontalOverflow": 0,
+      "messageCount": 0,
+      "outputEvidence": {
+        "outputFileName": "unknown-mobile-scroll-1440.png",
+        "jsonFileName": "unknown-mobile-scroll-1440.png.json"
+      },
+      "chatLocalEvidence": null,
+      "chatLocalHistoryLayoutEvidence": null,
+      "chatLocalSubmitTriggerEvidence": null,
+      "chatIntentSwitchFocusEvidence": null,
+      "chatLocalHistoryClearFocusEvidence": null,
+      "chatFocusEvidence": null,
+      "failures": []
+    }
+  ],
+  "failures": []
+}
