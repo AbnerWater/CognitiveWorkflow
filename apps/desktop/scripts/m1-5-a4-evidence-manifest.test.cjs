@@ -34,6 +34,9 @@ const matrixRunnerPath = path.join(
 const desktopPackagePath = path.join(packageRoot, "package.json");
 
 const expectedCandidateFrIds = ["FR-009", "FR-010", "FR-016"];
+const expectedBridgeFrIds = ["FR-007", "FR-012", "FR-013"];
+const expectedPartialBridgeFrIds = ["FR-011", "FR-014", "FR-015", "FR-018"];
+const expectedReviewFrIds = [...expectedCandidateFrIds, ...expectedBridgeFrIds];
 const expectedRequiredMatrixCases = [
   "known-desktop",
   "known-mobile",
@@ -54,21 +57,27 @@ function sorted(values) {
 test("M1.5 A4 evidence manifest runner returns a sanitized conservative summary", () => {
   const summary = validateA4EvidenceManifest();
 
-  assert.equal(summary.status, "a4_evidence_inputs_prepared_not_accepted");
+  assert.equal(summary.status, "a4_evidence_inputs_refreshed_not_accepted");
   assert.equal(summary.exitP1_1Status, "not_ready");
-  assert.equal(summary.reviewItemCount, 3);
-  assert.deepEqual(sorted(summary.frIds), expectedCandidateFrIds);
+  assert.equal(summary.reviewItemCount, 6);
+  assert.deepEqual(sorted(summary.frIds), sorted(expectedReviewFrIds));
+  assert.deepEqual(sorted(summary.candidateFrIds), expectedCandidateFrIds);
+  assert.deepEqual(sorted(summary.bridgeFrIds), expectedBridgeFrIds);
+  assert.deepEqual(
+    sorted(summary.excludedPartialRuntimeBridgeFrIds),
+    expectedPartialBridgeFrIds,
+  );
   assert.equal(summary.acceptedItemCount, 0);
   assert.deepEqual(
     sorted(summary.requiredMatrixCases),
     sorted(expectedRequiredMatrixCases),
   );
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.176", "W1.5.177"]);
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.188", "W1.5.189"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });
 
-test("M1.5 A4 evidence manifest is scoped to the W1.5.174 candidate track", () => {
+test("M1.5 A4 evidence manifest keeps stream candidate track and adds bridge candidates", () => {
   const manifest = readJson(manifestPath);
   const repairPlan = readJson(repairPlanPath);
   const candidateTrack = repairPlan.repair_tracks.find(
@@ -76,12 +85,13 @@ test("M1.5 A4 evidence manifest is scoped to the W1.5.174 candidate track", () =
   );
 
   assert.equal(manifest.schema_version, "0.1.0");
-  assert.equal(manifest.slice, "W1.5.175");
+  assert.equal(manifest.slice, "W1.5.187");
   assert.equal(
     manifest.manifest_status,
-    "a4_evidence_inputs_prepared_not_accepted",
+    "a4_evidence_inputs_refreshed_not_accepted",
   );
   assert.equal(manifest.exit_p1_1_status, "not_ready");
+  assert.equal(manifest.refreshed_from?.slice, "W1.5.175");
   assert.equal(manifest.review_track.source_track_id, candidateTrack?.id);
   assert.equal(
     manifest.review_track.candidate_evidence_readiness,
@@ -95,9 +105,21 @@ test("M1.5 A4 evidence manifest is scoped to the W1.5.174 candidate track", () =
     sorted(candidateTrack?.fr_ids ?? []),
     expectedCandidateFrIds,
   );
+  assert.equal(
+    manifest.bridge_review_track.source_acceptance_readiness,
+    "runtime_bridge_needs_a4_review",
+  );
+  assert.deepEqual(
+    sorted(manifest.bridge_review_track.fr_ids),
+    expectedBridgeFrIds,
+  );
+  assert.deepEqual(
+    sorted(manifest.bridge_review_track.excluded_partial_runtime_bridge_fr_ids),
+    expectedPartialBridgeFrIds,
+  );
 });
 
-test("M1.5 A4 evidence manifest review items mirror candidate evidence items", () => {
+test("M1.5 A4 evidence manifest review items mirror candidate and bridge evidence items", () => {
   const manifest = readJson(manifestPath);
   const evidenceMap = readJson(evidenceMapPath);
   const evidenceById = new Map(
@@ -106,32 +128,46 @@ test("M1.5 A4 evidence manifest review items mirror candidate evidence items", (
 
   assert.deepEqual(
     sorted(manifest.review_items.map((item) => item.fr_id)),
-    expectedCandidateFrIds,
+    sorted(expectedReviewFrIds),
   );
 
   for (const reviewItem of manifest.review_items) {
     const evidenceItem = evidenceById.get(reviewItem.fr_id);
     assert.ok(evidenceItem);
     assert.equal(
+      reviewItem.source_acceptance_readiness,
       evidenceItem.acceptance_readiness,
-      "candidate_evidence_needs_a4_review",
     );
     assert.equal(reviewItem.review_status, "pending_a4_review");
-    assert.equal(reviewItem.required_commands.length >= 2, true);
     assert.equal(
       reviewItem.required_commands.includes(
         "pnpm --filter @cw/desktop run test",
       ),
       true,
     );
-    assert.equal(
-      reviewItem.required_commands.includes(
-        "pnpm --filter @cw/desktop run visual-smoke:matrix",
-      ),
-      true,
-    );
-    assert.equal(reviewItem.required_matrix_cases.length > 0, true);
-    assert.equal(reviewItem.required_evidence_fields.length > 0, true);
+    if (reviewItem.review_group === "candidate_stream_evidence") {
+      assert.equal(
+        reviewItem.source_acceptance_readiness,
+        "candidate_evidence_needs_a4_review",
+      );
+      assert.equal(
+        reviewItem.required_commands.includes(
+          "pnpm --filter @cw/desktop run visual-smoke:matrix",
+        ),
+        true,
+      );
+      assert.equal(reviewItem.required_matrix_cases.length > 0, true);
+      assert.equal(reviewItem.required_evidence_fields.length > 0, true);
+    } else {
+      assert.equal(reviewItem.review_group, "runtime_bridge_evidence");
+      assert.equal(
+        reviewItem.source_acceptance_readiness,
+        "runtime_bridge_needs_a4_review",
+      );
+      assert.deepEqual(reviewItem.required_matrix_cases, []);
+      assert.deepEqual(reviewItem.required_evidence_fields, []);
+      assert.equal(reviewItem.required_a4_evidence_inputs.length > 0, true);
+    }
     assert.equal(reviewItem.missing_before_acceptance.length > 0, true);
   }
 });
@@ -152,7 +188,9 @@ test("M1.5 A4 evidence manifest references existing visual smoke matrix cases", 
     assert.match(matrixRunnerText, new RegExp(`name: "${caseName}"`, "u"));
   }
 
-  for (const reviewItem of manifest.review_items) {
+  for (const reviewItem of manifest.review_items.filter(
+    (item) => item.review_group === "candidate_stream_evidence",
+  )) {
     for (const caseName of reviewItem.required_matrix_cases) {
       assert.equal(
         manifest.matrix_case_contract.required_cases_for_a4.includes(caseName),
@@ -172,6 +210,14 @@ test("M1.5 A4 evidence manifest summary does not claim acceptance", () => {
   assert.equal(
     manifest.summary.candidate_fr_items,
     expectedCandidateFrIds.length,
+  );
+  assert.equal(
+    manifest.summary.bridge_a4_candidate_items,
+    expectedBridgeFrIds.length,
+  );
+  assert.equal(
+    manifest.summary.excluded_partial_runtime_bridge_items,
+    expectedPartialBridgeFrIds.length,
   );
   assert.equal(manifest.summary.accepted_items, 0);
   assert.equal(
@@ -208,5 +254,9 @@ test("M1.5 A4 evidence manifest test is wired into desktop package gates", () =>
   assert.equal(
     manifest.runner_contract.runner_output_contract.sanitized_summary_only,
     true,
+  );
+  assert.equal(
+    manifest.runner_contract.runner_output_contract.bridge_review_item_count,
+    expectedBridgeFrIds.length,
   );
 });

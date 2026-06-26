@@ -67,9 +67,10 @@ function validateA4EvidenceManifest(options = {}) {
     options.matrixRunnerPath ?? matrixRunnerPath,
   );
 
+  assertEqual(manifest.slice, "W1.5.187", "slice id");
   assertEqual(
     manifest.manifest_status,
-    "a4_evidence_inputs_prepared_not_accepted",
+    "a4_evidence_inputs_refreshed_not_accepted",
     "manifest status",
   );
   assertEqual(manifest.exit_p1_1_status, "not_ready", "EXIT-P1-1 status");
@@ -99,11 +100,47 @@ function validateA4EvidenceManifest(options = {}) {
     "manifest FR ids must match source repair track",
   );
 
+  const candidateFrIds = evidenceMap.fr_evidence_items
+    .filter(
+      (item) =>
+        item.acceptance_readiness === "candidate_evidence_needs_a4_review",
+    )
+    .map((item) => item.id);
+  const bridgeFrIds = evidenceMap.fr_evidence_items
+    .filter(
+      (item) => item.acceptance_readiness === "runtime_bridge_needs_a4_review",
+    )
+    .map((item) => item.id);
+  const excludedPartialBridgeFrIds = evidenceMap.fr_evidence_items
+    .filter(
+      (item) =>
+        item.acceptance_readiness ===
+        "partial_runtime_bridge_requires_followup",
+    )
+    .map((item) => item.id);
+
+  assertDeepEqual(
+    sorted(manifest.review_track.fr_ids),
+    sorted(candidateFrIds),
+    "candidate A4 FR ids must match evidence map",
+  );
+  assertDeepEqual(
+    sorted(manifest.bridge_review_track.fr_ids),
+    sorted(bridgeFrIds),
+    "bridge A4 FR ids must match evidence map",
+  );
+  assertDeepEqual(
+    sorted(manifest.bridge_review_track.excluded_partial_runtime_bridge_fr_ids),
+    sorted(excludedPartialBridgeFrIds),
+    "excluded partial bridge FR ids must match evidence map",
+  );
+
   const reviewItemFrIds = manifest.review_items.map((item) => item.fr_id);
+  const expectedReviewFrIds = [...candidateFrIds, ...bridgeFrIds];
   assertDeepEqual(
     sorted(reviewItemFrIds),
-    sorted(repairTrack.fr_ids),
-    "review item FR ids must match source repair track",
+    sorted(expectedReviewFrIds),
+    "review item FR ids must match candidate plus bridge evidence map items",
   );
   assertEqual(
     new Set(reviewItemFrIds).size,
@@ -121,9 +158,9 @@ function validateA4EvidenceManifest(options = {}) {
       `missing evidence map item ${reviewItem.fr_id}`,
     );
     assertEqual(
+      reviewItem.source_acceptance_readiness,
       evidenceItem.acceptance_readiness,
-      manifest.review_track.candidate_evidence_readiness,
-      `${reviewItem.fr_id} readiness`,
+      `${reviewItem.fr_id} source readiness`,
     );
     assertEqual(
       reviewItem.review_status,
@@ -136,19 +173,52 @@ function validateA4EvidenceManifest(options = {}) {
       ),
       `${reviewItem.id} must require desktop test`,
     );
+    if (reviewItem.review_group === "candidate_stream_evidence") {
+      assertEqual(
+        reviewItem.source_acceptance_readiness,
+        manifest.review_track.candidate_evidence_readiness,
+        `${reviewItem.id} candidate readiness`,
+      );
+      assertCondition(
+        reviewItem.required_commands.includes(
+          "pnpm --filter @cw/desktop run visual-smoke:matrix",
+        ),
+        `${reviewItem.id} must require visual smoke matrix`,
+      );
+      assertCondition(
+        reviewItem.required_matrix_cases.length > 0,
+        `${reviewItem.id} must list matrix cases`,
+      );
+      assertCondition(
+        reviewItem.required_evidence_fields.length > 0,
+        `${reviewItem.id} must list evidence fields`,
+      );
+    } else if (reviewItem.review_group === "runtime_bridge_evidence") {
+      assertEqual(
+        reviewItem.source_acceptance_readiness,
+        manifest.bridge_review_track.source_acceptance_readiness,
+        `${reviewItem.id} bridge readiness`,
+      );
+      assertDeepEqual(
+        reviewItem.required_matrix_cases,
+        [],
+        `${reviewItem.id} bridge item must not pretend visual-smoke matrix coverage`,
+      );
+      assertDeepEqual(
+        reviewItem.required_evidence_fields,
+        [],
+        `${reviewItem.id} bridge item must not invent visual-smoke fields`,
+      );
+      assertCondition(
+        reviewItem.required_a4_evidence_inputs.length > 0,
+        `${reviewItem.id} must list A4 bridge evidence inputs`,
+      );
+    } else {
+      throw new Error(`${reviewItem.id} has unsupported review group`);
+    }
     assertCondition(
-      reviewItem.required_commands.includes(
-        "pnpm --filter @cw/desktop run visual-smoke:matrix",
-      ),
-      `${reviewItem.id} must require visual smoke matrix`,
-    );
-    assertCondition(
-      reviewItem.required_matrix_cases.length > 0,
-      `${reviewItem.id} must list matrix cases`,
-    );
-    assertCondition(
-      reviewItem.required_evidence_fields.length > 0,
-      `${reviewItem.id} must list evidence fields`,
+      reviewItem.missing_before_acceptance.length > 0,
+      `${reviewItem.id} must list remaining acceptance gaps`,
     );
   }
 
@@ -191,6 +261,21 @@ function validateA4EvidenceManifest(options = {}) {
     "summary pending A4 item count",
   );
   assertEqual(
+    manifest.summary.candidate_fr_items,
+    candidateFrIds.length,
+    "summary candidate item count",
+  );
+  assertEqual(
+    manifest.summary.bridge_a4_candidate_items,
+    bridgeFrIds.length,
+    "summary bridge candidate item count",
+  );
+  assertEqual(
+    manifest.summary.excluded_partial_runtime_bridge_items,
+    excludedPartialBridgeFrIds.length,
+    "summary excluded partial bridge item count",
+  );
+  assertEqual(
     manifest.summary.required_matrix_case_count,
     manifest.matrix_case_contract.required_cases_for_a4.length,
     "summary required matrix case count",
@@ -199,6 +284,11 @@ function validateA4EvidenceManifest(options = {}) {
     manifest.runner_contract.runner_output_contract.review_item_count,
     manifest.review_items.length,
     "runner review item count",
+  );
+  assertEqual(
+    manifest.runner_contract.runner_output_contract.bridge_review_item_count,
+    bridgeFrIds.length,
+    "runner bridge review item count",
   );
   assertEqual(
     manifest.runner_contract.runner_output_contract.accepted_item_count,
@@ -221,6 +311,10 @@ function validateA4EvidenceManifest(options = {}) {
     exitP1_1Status: manifest.exit_p1_1_status,
     reviewItemCount: manifest.review_items.length,
     frIds: reviewItemFrIds,
+    candidateFrIds,
+    bridgeFrIds,
+    excludedPartialRuntimeBridgeFrIds:
+      manifest.bridge_review_track.excluded_partial_runtime_bridge_fr_ids,
     acceptedItemCount: manifest.summary.accepted_items,
     requiredMatrixCases: manifest.matrix_case_contract.required_cases_for_a4,
     nextRecommendedSlices: manifest.next_recommended_slices.map(

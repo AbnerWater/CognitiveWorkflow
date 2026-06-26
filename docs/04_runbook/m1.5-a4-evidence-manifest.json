@@ -1,25 +1,28 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.175",
-  "manifest_status": "a4_evidence_inputs_prepared_not_accepted",
+  "slice": "W1.5.187",
+  "manifest_status": "a4_evidence_inputs_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-25",
+  "observed_at": "2026-06-26",
   "source": {
     "ux_gap_repair_plan": "docs/04_runbook/m1.5-ux-gap-repair-plan.json",
     "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
     "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
     "visual_smoke_matrix_runner": "apps/desktop/scripts/runtime-workbench-visual-smoke-matrix.cjs",
     "visual_smoke_single_runner": "apps/desktop/scripts/runtime-workbench-visual-smoke.cjs",
-    "react_shell_tests": "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+    "react_shell_tests": "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json",
+    "bridge_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json#runtime_bridge_needs_a4_review"
   },
   "guardrails": [
     "This manifest prepares A4 review inputs only; it does not claim A4 acceptance.",
     "Every review item remains pending_a4_review until an A4 reviewer records end-to-end UX acceptance evidence.",
-    "The manifest is limited to TRACK-A4-CANDIDATE-EVIDENCE from W1.5.174.",
-    "No production runtime, renderer behavior, dependency, spec, ADR, generated schema, packaging, updater, or baseline docx change is included in W1.5.175.",
-    "Visual-smoke evidence must remain sanitized and must not include raw prompts, raw model output, query/hash secrets, or output directory values."
+    "W1.5.187 keeps the W1.5.175 stream candidate items and adds only W1.5.186 runtime_bridge_needs_a4_review items.",
+    "Partial runtime bridge evidence remains excluded from A4 candidate review until the missing FR semantics are implemented.",
+    "No production runtime, renderer behavior, dependency, spec, ADR, generated schema, packaging, updater, or baseline docx change is included in W1.5.187.",
+    "Visual-smoke and bridge evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, or output directory values."
   ],
   "review_track": {
     "source_track_id": "TRACK-A4-CANDIDATE-EVIDENCE",
@@ -40,11 +43,12 @@
       "expected_manifest_file": "matrix.json"
     },
     "runner_output_contract": {
-      "status": "a4_evidence_inputs_prepared_not_accepted",
-      "review_item_count": 3,
+      "status": "a4_evidence_inputs_refreshed_not_accepted",
+      "review_item_count": 6,
       "accepted_item_count": 0,
       "required_matrix_case_count": 6,
-      "sanitized_summary_only": true
+      "sanitized_summary_only": true,
+      "bridge_review_item_count": 3
     }
   },
   "matrix_case_contract": {
@@ -88,7 +92,9 @@
       "missing_before_acceptance": [
         "A4 reviewer has not recorded first-viewport collapsed stream acceptance.",
         "Phase-level UX recording is still missing."
-      ]
+      ],
+      "review_group": "candidate_stream_evidence",
+      "source_acceptance_readiness": "candidate_evidence_needs_a4_review"
     },
     {
       "id": "A4-FR-010-STREAM-EXPANDED",
@@ -117,7 +123,9 @@
       "missing_before_acceptance": [
         "A4 reviewer has not accepted the full expanded event taxonomy as an end-user path.",
         "Real workflow stream demo evidence is still missing."
-      ]
+      ],
+      "review_group": "candidate_stream_evidence",
+      "source_acceptance_readiness": "candidate_evidence_needs_a4_review"
     },
     {
       "id": "A4-FR-016-EVENT-CLASSIFICATION",
@@ -152,28 +160,145 @@
       "missing_before_acceptance": [
         "A4 reviewer has not accepted final user-facing labels for every event class.",
         "Phase-level demo stream evidence is still missing."
+      ],
+      "review_group": "candidate_stream_evidence",
+      "source_acceptance_readiness": "candidate_evidence_needs_a4_review"
+    },
+    {
+      "id": "A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "fr_id": "FR-007",
+      "review_group": "runtime_bridge_evidence",
+      "source_acceptance_readiness": "runtime_bridge_needs_a4_review",
+      "review_status": "pending_a4_review",
+      "review_focus": "Execution mode control placement and run-once dispatch behavior",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-007",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-007",
+        "docs/04_runbook/m1.5-progress.md#W1.5.180",
+        "docs/reviews/m1.5.180-execution-mode-desktop-bridge-review.md",
+        "apps/desktop/src/renderer/runtime-workbench-session.ts",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js"
+      ],
+      "required_matrix_cases": [],
+      "required_evidence_fields": [],
+      "required_a4_evidence_inputs": [
+        "Execution mode controls for step, semi_auto, and auto are visible near run actions.",
+        "Step mode dispatch records method, path, run id, node id, status, status code, and blocked reason only.",
+        "Semi-auto and auto modes remain fail-closed for run-once when the accepted backend contract does not support them.",
+        "A4 capture must show no raw response body, prompt, model output, or arbitrary payload values."
+      ],
+      "missing_before_acceptance": [
+        "Backend run-once execution success has not been proven end-to-end from the desktop workbench.",
+        "A4 UX acceptance evidence for execution mode placement and behavior is not recorded."
+      ]
+    },
+    {
+      "id": "A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "fr_id": "FR-012",
+      "review_group": "runtime_bridge_evidence",
+      "source_acceptance_readiness": "runtime_bridge_needs_a4_review",
+      "review_status": "pending_a4_review",
+      "review_focus": "Mandatory Git initialization evidence in desktop project creation",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-012",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-012",
+        "docs/04_runbook/m1.5-progress.md#W1.5.181",
+        "docs/reviews/m1.5.181-project-creation-git-desktop-bridge-review.md",
+        "specs/runtime_harness.md",
+        "docs/roadmap.md#EXIT-P1-10"
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
+      ],
+      "required_matrix_cases": [],
+      "required_evidence_fields": [],
+      "required_a4_evidence_inputs": [
+        "Project creation success is blocked unless git_initialized is true and first_commit_sha is non-empty.",
+        "Reviewer evidence includes the desktop create-project path and runtime project endpoint coverage.",
+        "A8 git-history audit remains required before FR-012 acceptance.",
+        "A4 capture must not expose secure paths, cache paths, raw uploaded content, or credentials."
+      ],
+      "missing_before_acceptance": [
+        "A8 git-history audit evidence for automatic commit/tag behavior is not recorded.",
+        "A4 UX acceptance evidence for the mandatory Git path is not recorded."
+      ]
+    },
+    {
+      "id": "A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "fr_id": "FR-013",
+      "review_group": "runtime_bridge_evidence",
+      "source_acceptance_readiness": "runtime_bridge_needs_a4_review",
+      "review_status": "pending_a4_review",
+      "review_focus": "Reference import, list, enable, disable, and view user paths",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-013",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-013",
+        "docs/04_runbook/m1.5-progress.md#W1.5.182",
+        "docs/reviews/m1.5.182-reference-management-desktop-bridge-review.md",
+        "apps/runtime/tests/test_m1_3_2_project_endpoints.py",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
+      ],
+      "required_matrix_cases": [],
+      "required_evidence_fields": [],
+      "required_a4_evidence_inputs": [
+        "Reference import/list/enable/disable/view controls are available from the desktop workbench.",
+        "Reference state changes are backed by runtime reference endpoints and manifest safety checks.",
+        "Delete semantics remain out of A4 scope until accepted spec material defines them.",
+        "A4 capture must not retain raw file content, secure paths, cache paths, or uploaded-file bytes."
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for reference import, enable, disable, and view user paths is not recorded.",
+        "Delete semantics remain intentionally out of scope until accepted spec material defines them."
       ]
     }
   ],
   "summary": {
-    "review_item_count": 3,
+    "review_item_count": 6,
     "candidate_fr_items": 3,
+    "bridge_a4_candidate_items": 3,
     "accepted_items": 0,
-    "pending_a4_review_items": 3,
+    "pending_a4_review_items": 6,
     "required_matrix_case_count": 6,
+    "excluded_partial_runtime_bridge_items": 4,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.176",
-      "title": "Local UI evidence repair bundle",
-      "reason": "Prepare shell, Dock, File Tree, node selection, Task Drawer, and shortcut evidence inside the approved dependency boundary."
+      "id": "W1.5.188",
+      "title": "Remaining runtime-flow implementation plan refresh",
+      "reason": "Re-plan FR-008, FR-015, FR-017, and partial bridge gaps after the W1.5.186 evidence refresh."
     },
     {
-      "id": "W1.5.177",
-      "title": "Runtime-backed desktop flow repair planning",
-      "reason": "Plan Chat Box routing, snapshot restore, artifact actions, and project/runtime bridge work before implementation."
+      "id": "W1.5.189",
+      "title": "Desktop bridge A4 capture execution",
+      "reason": "Run reviewer-facing captures for W1.5.187 pending A4 bridge and stream review inputs without changing acceptance status prematurely."
     }
-  ]
+  ],
+  "refreshed_from": {
+    "slice": "W1.5.175",
+    "artifact": "docs/04_runbook/m1.5-a4-evidence-manifest.json",
+    "reason": "W1.5.187 refreshes A4 review inputs after W1.5.186 reconciled W1.5.180-W1.5.185 bridge evidence."
+  },
+  "bridge_review_track": {
+    "source_acceptance_readiness": "runtime_bridge_needs_a4_review",
+    "fr_ids": ["FR-007", "FR-012", "FR-013"],
+    "source_map": "docs/04_runbook/m1.5-fr-evidence-map.json#acceptance_readiness=runtime_bridge_needs_a4_review",
+    "excluded_partial_runtime_bridge_fr_ids": [
+      "FR-011",
+      "FR-014",
+      "FR-015",
+      "FR-018"
+    ],
+    "excluded_reason": "These FRs still have partial runtime bridge evidence and require follow-up implementation before A4 candidate review."
+  }
 }
