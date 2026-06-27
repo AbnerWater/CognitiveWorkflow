@@ -293,6 +293,8 @@ function createDefaultRuntimeWorkbenchVersionSnapshot(): RuntimeWorkbenchShellSn
     statusCode: null,
     blockedReason: null,
     canCreateSnapshot: false,
+    canRefreshTimeline: false,
+    timelineItems: Object.freeze([]),
   });
 }
 
@@ -4074,6 +4076,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "set_skill_enabled",
     "submit_human_decision",
     "create_workflow_snapshot",
+    "refresh_workflow_history",
     "dispatch_lifecycle_panel",
     "dispatch_runtime_stream",
   ]);
@@ -4093,6 +4096,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "set_skill_enabled",
     "submit_human_decision",
     "create_workflow_snapshot",
+    "refresh_workflow_history",
   ]);
   assert.equal(Object.isFrozen(initialSnapshot), true);
   assert.equal(Object.isFrozen(initialSnapshot.availableCommandIds), true);

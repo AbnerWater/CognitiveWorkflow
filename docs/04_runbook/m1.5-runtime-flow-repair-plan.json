@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.202",
-  "plan_status": "remaining_runtime_flow_implementation_plan_refreshed_after_skill_configuration_followup",
+  "slice": "W1.5.204",
+  "plan_status": "remaining_runtime_flow_implementation_plan_refreshed_after_workflow_history_timeline_followup",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-27",
+  "observed_at": "2026-06-28",
   "refreshed_from": {
     "slice": "W1.5.188",
     "artifact": "docs/04_runbook/m1.5-runtime-flow-repair-plan.json"
@@ -24,18 +24,18 @@
     "agent_adapter_protocol": "specs/protocols/agent_adapter.md"
   },
   "guardrails": [
-    "This artifact refreshes the remaining implementation plan after W1.5.202 Skill candidate discovery plus secret-safe MCP configuration evidence.",
+    "This artifact refreshes the remaining implementation plan after W1.5.204 workflow_history endpoint plus metadata-only Desktop timeline evidence.",
     "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
-    "W1.5.202 mirrors the current evidence map buckets after FR-014 moved to runtime_bridge_needs_a4_review.",
+    "W1.5.204 mirrors the current evidence map buckets after FR-015 gained workflow_history timeline evidence but remains partial_runtime_bridge_requires_followup.",
     "FR-007, FR-008, FR-011, FR-012, FR-013, FR-014, and FR-017 remain outside this implementation plan because they are pending A4 review inputs.",
-    "W1.5.202 does not modify accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx content.",
-    "Runtime-flow and bridge follow-up evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, persisted params, raw MCP command_or_url or secret_ref values, secure paths, cache paths, or output directory values.",
+    "W1.5.204 does not modify accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx content.",
+    "Runtime-flow and bridge follow-up evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, response bodies, artifact bodies, raw workflow change summaries, secure paths, cache paths, or output directory values.",
     "secure/** and cache/** remain untracked and must not be added to Git."
   ],
   "repair_track": {
     "source_track_id": "TRACK-REMAINING-RUNTIME-FLOW-IMPLEMENTATION",
     "track_kind": "remaining_runtime_flow_and_partial_bridge_followup",
-    "source_track_status": "refreshed_after_skill_configuration_followup",
+    "source_track_status": "refreshed_after_workflow_history_timeline_followup",
     "priority": 3,
     "source_acceptance_readiness": [
       "partial_requires_runtime_flow",
@@ -64,14 +64,14 @@
       "FR-017"
     ],
     "blocked_by_dependency_gates": [],
-    "objective": "Re-plan only the remaining runtime-backed desktop behavior needed before FR-015 and FR-018 can move to A4 acceptance review; FR-014 is now packaged as runtime bridge evidence for A4 review.",
+    "objective": "Re-plan only the remaining runtime-backed desktop behavior needed before FR-015 and FR-018 can move to A4 acceptance review; FR-015 now has workflow_history timeline evidence but still lacks snapshot ledger restore/continue semantics.",
     "entry_criteria": [
-      "Use W1.5.202 FR evidence map as the current source of truth for remaining implementation gaps.",
+      "Use W1.5.204 FR evidence map as the current source of truth for remaining implementation gaps.",
       "Keep A4-ready bridge items out of this implementation plan.",
       "Preserve metadata-only evidence boundaries for snapshot and HITL paths."
     ],
     "planned_repair_steps": [
-      "Surface runtime automatic and explicit snapshots in the Desktop Version Snapshot timeline for FR-015.",
+      "Define or accept a snapshot ledger projection before surfacing snapshots/snapshots.jsonl automatic and explicit snapshot entries in Desktop.",
       "Define or accept restore-to-snapshot semantics before implementing Git-backed restore and continue execution for FR-015.",
       "Add pending-decision discovery plus pause/resume UX evidence for semi-auto HITL in FR-018."
     ],
@@ -80,13 +80,14 @@
       "uv run pytest apps/runtime/tests -q",
       "Targeted visual smoke or reviewer capture only after implementation evidence exists"
     ],
-    "next_slice": "W1.5.203",
+    "next_slice": "W1.5.205",
     "implementation_notes": [
       "FR-008 is no longer a remaining implementation item after W1.5.195-W1.5.196; it stays unaccepted and moves to A4 pending review inputs.",
       "FR-011 is no longer a remaining implementation item after W1.5.201 combined project creation plus initial reference import evidence; it stays unaccepted and moves to A4 pending review inputs.",
       "FR-017 is no longer a remaining implementation item after W1.5.199 selected-node Task Drawer artifact detail and node-bound action dispatch evidence; it stays unaccepted and moves to A4 pending review inputs.",
       "FR-014 is no longer a remaining implementation item after W1.5.202 Skill candidate discovery plus secret-safe MCP configuration evidence; it stays unaccepted and moves to A4 pending review inputs.",
-      "All remaining items still require follow-up implementation or A4 evidence before any FR acceptance claim."
+      "All remaining items still require follow-up implementation or A4 evidence before any FR acceptance claim.",
+      "FR-015 has workflow_history timeline evidence after W1.5.204, but remains partial because snapshots/snapshots.jsonl ledger projection, restore-to-snapshot, continue execution, and A4 acceptance are still missing."
     ]
   },
   "runtime_flow_items": [
@@ -108,26 +109,33 @@
         "apps/runtime/tests/test_m1_3_4_run_endpoints.py",
         "apps/runtime/tests/test_m1_3_7_persistence_observability.py",
         "apps/desktop/src/renderer/runtime-workbench-session.ts",
-        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx",
+        "docs/04_runbook/m1.5-progress.md#W1.5.204",
+        "docs/reviews/m1.5.204-workflow-history-timeline-review.md",
+        "apps/runtime/src/cw_runtime/harness/project.py",
+        "apps/desktop/src/renderer/runtime-workbench-interaction.ts",
+        "apps/desktop/src/renderer/runtime-workbench-shell-presenter.ts",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
       ],
       "source_verification_commands": [
-        "uv run pytest apps/runtime/tests/test_m1_3_4_run_endpoints.py apps/runtime/tests/test_m1_3_7_persistence_observability.py -q",
+        "uv run pytest apps/runtime/tests/test_m1_3_4_run_endpoints.py -q",
+        "node --test --test-name-pattern \"workflow snapshot|workflow history timeline|renders workflow history timeline\" apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js",
         "pnpm --filter @cw/desktop run test"
       ],
       "source_checklist_remaining_gap": [
-        "Desktop timeline does not yet surface runtime snapshots/snapshots.jsonl as live project state.",
+        "Desktop workflow_history timeline is visible, but automatic and explicit snapshot ledger entries from snapshots/snapshots.jsonl are not yet surfaced as live project state.",
         "Restore-to-snapshot and continue execution remain unimplemented because no accepted restore contract exists.",
         "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
       ],
       "missing_before_implementation": [
-        "Desktop timeline does not yet surface runtime snapshots/snapshots.jsonl as live project state.",
+        "Desktop workflow_history timeline is visible, but automatic and explicit snapshot ledger entries from snapshots/snapshots.jsonl are not yet surfaced as live project state.",
         "Restore-to-snapshot and continue execution remain unimplemented because no accepted restore contract exists.",
         "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
       ],
-      "source_next_action": "Define or accept a restore-to-snapshot contract before implementing restore, then add Desktop timeline and continue evidence before FR-015 acceptance.",
+      "source_next_action": "Define an accepted snapshot ledger projection or restore-to-snapshot contract before implementing restore, then add restore and continue evidence before FR-015 acceptance.",
       "planning_status": "planned_not_implemented",
       "planned_repair_steps": [
-        "Surface runtime automatic and explicit snapshots in the Desktop Version Snapshot timeline.",
+        "Define or accept a snapshot ledger projection before surfacing snapshots/snapshots.jsonl entries in Desktop.",
         "Define or accept restore-to-snapshot semantics before implementing Git-backed restore.",
         "Add restore and continue evidence only after runtime state and Git semantics are proven together."
       ],
@@ -136,6 +144,11 @@
           "source": "specs/api/http_sse.md",
           "pattern": "POST   /{workflow_id}/snapshot                    → 显式 git snapshot",
           "reason": "Defines the explicit runtime snapshot endpoint for desktop actions."
+        },
+        {
+          "source": "specs/api/http_sse.md",
+          "pattern": "GET    /{workflow_id}/history                     → workflow_history.json",
+          "reason": "Defines the accepted workflow history endpoint used by the Desktop timeline refresh."
         },
         {
           "source": "specs/runtime_harness.md",
@@ -227,7 +240,7 @@
       "order": 1,
       "item_id": "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
       "fr_id": "FR-015",
-      "reason": "Restore and continue semantics should follow the existing explicit snapshot dispatch bridge."
+      "reason": "Snapshot ledger projection, restore, and continue semantics should follow the accepted snapshot and workflow_history read bridges."
     },
     {
       "order": 2,
@@ -242,7 +255,7 @@
     "standard_desktop_test": "pnpm --filter @cw/desktop run test",
     "runtime_focused_test": "uv run pytest apps/runtime/tests -q",
     "runner_output_contract": {
-      "status": "remaining_runtime_flow_implementation_plan_refreshed_after_skill_configuration_followup",
+      "status": "remaining_runtime_flow_implementation_plan_refreshed_after_workflow_history_timeline_followup",
       "repair_item_count": 2,
       "accepted_item_count": 0,
       "implemented_item_count": 0,
@@ -265,9 +278,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.203",
-      "title": "Desktop FR-015 snapshot restore continue follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
+      "id": "W1.5.205",
+      "title": "Desktop FR-015 snapshot ledger restore follow-up",
+      "reason": "Continue FR-015 after W1.5.204 workflow history timeline evidence: surface snapshot ledger state only after an accepted projection, then define restore/continue semantics before implementation."
     }
   ]
 }

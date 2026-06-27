@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.202",
+  "slice": "W1.5.204",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -135,7 +135,7 @@
       "remaining_gap": [
         "A4 UX acceptance evidence for runtime-backed Chat instruction routing is not recorded",
         "Project-backed command history and persistence remain outside this evidence refresh",
-        "W1.5.202 A4 decision handoff is refreshed, but reviewer acceptance is not recorded."
+        "W1.5.200-W1.5.204 evidence refreshes do not record A4 reviewer acceptance."
       ]
     },
     {
@@ -160,14 +160,15 @@
         "W1.5.200-W1.5.202 prepare and refresh the A4 runtime-flow decision handoff without accepting FR items",
         "W1.5.201 adds combined project creation plus initial reference import runtime bridge evidence without accepting FR items",
         "W1.5.202 adds runtime-backed Skill candidate discovery and secret-safe MCP configuration metadata evidence without accepting FR items",
-        "W1.5.203 registers the accepted explicit workflow snapshot endpoint and records metadata-only snapshot ledger evidence without accepting FR-015"
+        "W1.5.203 registers the accepted explicit workflow snapshot endpoint and records metadata-only snapshot ledger evidence without accepting FR-015",
+        "W1.5.204 adds the accepted workflow_history endpoint plus Desktop metadata-only Version Snapshot timeline refresh evidence without accepting FR-015"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
         "Selected-node Task Drawer artifact detail display still requires A4 UX acceptance review",
         "Skill configuration display still requires A4 UX acceptance review",
         "Task mutation commands remain incomplete",
-        "Version Snapshot Desktop timeline still needs runtime snapshot ledger evidence, and restore-to-snapshot plus continue execution remain unimplemented",
+        "Version Snapshot workflow_history timeline is visible, but snapshots/snapshots.jsonl ledger projection, restore-to-snapshot, and continue execution remain unimplemented",
         "A4 reviewer decision is not recorded for the Task Drawer artifact bridge.",
         "Combined project creation plus initial reference import still requires A4 UX acceptance review."
       ]
@@ -187,7 +188,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 have a refreshed W1.5.202 evidence map and A4 decision handoff, but accepted_items remain 0 and several surfaces still need A4, dependency-gated, or end-to-end evidence."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.204 evidence map, but accepted_items remain 0 and several surfaces still need A4, dependency-gated, or end-to-end evidence."
     },
     {
       "id": "EXIT-P1-2",
@@ -247,9 +248,9 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.203",
-      "title": "Desktop FR-015 snapshot restore continue follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
+      "id": "W1.5.205",
+      "title": "Desktop FR-015 snapshot ledger restore follow-up",
+      "reason": "Continue FR-015 after W1.5.204 workflow history timeline evidence: surface snapshot ledger state only after an accepted projection, then define restore/continue semantics before implementation."
     }
   ]
 }

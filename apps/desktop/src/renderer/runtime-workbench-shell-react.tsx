@@ -656,6 +656,9 @@ export function RuntimeWorkbenchShellReactView(
   const versionSnapshotReady =
     snapshot.versionSnapshot.canCreateSnapshot &&
     versionSnapshotWorkflowId !== null;
+  const versionSnapshotTimelineReady =
+    snapshot.versionSnapshot.canRefreshTimeline &&
+    versionSnapshotWorkflowId !== null;
   const handleActionError = useCallback(
     (error: unknown): void => {
       try {
@@ -1224,6 +1227,22 @@ export function RuntimeWorkbenchShellReactView(
     versionSnapshotReady,
     versionSnapshotWorkflowId,
   ]);
+  const handleRefreshWorkflowHistoryClick = useCallback((): void => {
+    if (!versionSnapshotTimelineReady || versionSnapshotWorkflowId === null) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "refresh_workflow_history",
+        workflowId: versionSnapshotWorkflowId,
+      })
+      .catch(handleActionError);
+  }, [
+    handleActionError,
+    props.session,
+    versionSnapshotTimelineReady,
+    versionSnapshotWorkflowId,
+  ]);
   const handleStreamDisplayLevelClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>): void => {
       const displayLevel = event.currentTarget.dataset.streamDisplayLevel;
@@ -1576,8 +1595,10 @@ export function RuntimeWorkbenchShellReactView(
           >
             <RuntimeWorkbenchShellVersionSnapshotControls
               onCreateSnapshotClick={handleCreateWorkflowSnapshotClick}
+              onRefreshTimelineClick={handleRefreshWorkflowHistoryClick}
               onTextInputChange={handleVersionSnapshotTextInputChange}
               ready={versionSnapshotReady}
+              refreshReady={versionSnapshotTimelineReady}
               state={versionSnapshotForm}
               versionSnapshot={snapshot.versionSnapshot}
             />
@@ -2684,8 +2705,10 @@ function RuntimeWorkbenchShellVersionSnapshotControls(props: {
   readonly versionSnapshot: RuntimeWorkbenchShellSnapshot["versionSnapshot"];
   readonly state: RuntimeWorkbenchShellReactVersionSnapshotFormState;
   readonly ready: boolean;
+  readonly refreshReady: boolean;
   readonly onTextInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
   readonly onCreateSnapshotClick: () => void;
+  readonly onRefreshTimelineClick: () => void;
 }): ReactElement {
   return (
     <section
@@ -2716,6 +2739,18 @@ function RuntimeWorkbenchShellVersionSnapshotControls(props: {
           type="button"
         >
           Create snapshot
+        </button>
+        <button
+          className="cw-workbench__version-snapshot-refresh"
+          data-version-snapshot-refresh="true"
+          data-version-snapshot-refresh-enabled={
+            props.refreshReady ? "true" : "false"
+          }
+          disabled={!props.refreshReady}
+          onClick={props.onRefreshTimelineClick}
+          type="button"
+        >
+          Refresh timeline
         </button>
       </div>
       <dl className="cw-workbench__version-snapshot-action-status">

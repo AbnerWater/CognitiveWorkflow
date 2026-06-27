@@ -1345,6 +1345,24 @@ class ProjectToolLockSnapshot(BaseModel):
     mcps: list[ProjectMCPLockEntry] = Field(default_factory=list)
 
 
+class WorkflowHistoryEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_id: str
+    version: str
+    instantiated_at: str
+    git_commit_sha: str
+    git_tag: str | None = None
+    derived_from_draft_id: str | None = None
+    change_summary: str | None = None
+
+
+class WorkflowHistoryDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entries: list[WorkflowHistoryEntry] = Field(default_factory=list)
+
+
 class RuntimeLock:
     def __init__(self, lock_path: Path, *, timeout_seconds: float = 60.0) -> None:
         self._lock_path = lock_path
@@ -1429,6 +1447,21 @@ def read_project(project_root: Path) -> ProjectDocument:
     resolved_root = project_root.resolve()
     project_json = _read_json(resolved_root / AGENT_WORKFLOW_DIR / "project.json")
     return ProjectDocument.model_validate({**project_json, "host_path": _to_posix(resolved_root)})
+
+
+def read_workflow_history(project_root: Path, workflow_id: str) -> WorkflowHistoryDocument:
+    resolved_root = project_root.resolve()
+    payload = _read_json(resolved_root / AGENT_WORKFLOW_DIR / "workflow_history.json")
+    try:
+        history = WorkflowHistoryDocument.model_validate(payload)
+    except ValidationError as exc:
+        raise HarnessError(
+            "RH_RUN_DIR_CORRUPTED",
+            "workflow_history.json is invalid.",
+            status_code=500,
+            details={"manifest_name": "workflow_history.json"},
+        ) from exc
+    return WorkflowHistoryDocument(entries=[entry for entry in history.entries if entry.workflow_id == workflow_id])
 
 
 def read_project_references(project_root: Path) -> ProjectReferenceManifest:

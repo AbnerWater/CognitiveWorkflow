@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.202",
+  "slice": "W1.5.204",
   "checklist_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-27",
+  "observed_at": "2026-06-28",
   "authority": {
     "roadmap": "docs/roadmap.md#5.3",
     "review_matrix": "docs/roadmap.md#5.4",
@@ -13,10 +13,10 @@
     "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
   },
   "guardrails": [
-    "This checklist refreshes FR-014 after Skill candidate discovery plus secret-safe MCP configuration evidence; it does not claim A4 acceptance.",
+    "This checklist refreshes FR-015 after accepted workflow_history endpoint and metadata-only Desktop timeline evidence; it does not claim A4 acceptance.",
     "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
-    "W1.5.202 changes no accepted spec, ADR, schema, generated schema, dependency, IPC, renderer storage, packaging, updater, or baseline docx content.",
-    "Skill and MCP configuration evidence must remain sanitized: no persisted params, raw command_or_url values, raw secret_ref values, credentials, secure paths, cache paths, or response bodies."
+    "W1.5.204 changes no accepted spec, ADR, schema, generated schema, dependency, IPC, renderer storage, packaging, updater, or baseline docx content.",
+    "Version Snapshot evidence must remain metadata-only: no raw prompt, raw model output, uploaded-file bytes, response body, artifact body, raw destination path, secure path, cache path, or output directory values."
   ],
   "source_extraction": {
     "method": "read-only OOXML extraction from word/document.xml",
@@ -437,10 +437,11 @@
         "W1.5.106 added local Version Snapshot selection details.",
         "W1.5.185 added explicit create-only workflow snapshot dispatch for POST /workflows/{workflow_id}/snapshot.",
         "W1.3.7 records runtime git snapshots for run.started, attempt.completed, and terminal run events.",
-        "W1.5.203 registers the accepted runtime POST /workflows/{workflow_id}/snapshot endpoint and records explicit workflow snapshots in snapshots/snapshots.jsonl."
+        "W1.5.203 registers the accepted runtime POST /workflows/{workflow_id}/snapshot endpoint and records explicit workflow snapshots in snapshots/snapshots.jsonl.",
+        "W1.5.204 registers the accepted runtime GET /workflows/{workflow_id}/history endpoint and lets Desktop refresh a metadata-only Version Snapshot timeline from workflow_history.json."
       ],
       "remaining_gap": [
-        "Desktop timeline does not yet surface runtime snapshots/snapshots.jsonl as live project state.",
+        "Desktop workflow_history timeline is visible, but automatic and explicit snapshot ledger entries from snapshots/snapshots.jsonl are not yet surfaced as live project state.",
         "Restore-to-snapshot and continue execution remain unimplemented because no accepted restore contract exists.",
         "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
       ]
@@ -571,9 +572,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.203",
-      "title": "Desktop FR-015 snapshot restore continue follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
+      "id": "W1.5.205",
+      "title": "Desktop FR-015 snapshot ledger restore follow-up",
+      "reason": "Continue FR-015 after W1.5.204 workflow history timeline evidence: surface snapshot ledger state only after an accepted projection, then define restore/continue semantics before implementation."
     }
   ]
 }

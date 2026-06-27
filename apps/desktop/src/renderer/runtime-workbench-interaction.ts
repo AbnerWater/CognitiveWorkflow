@@ -36,6 +36,7 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "set_skill_enabled",
   "submit_human_decision",
   "create_workflow_snapshot",
+  "refresh_workflow_history",
   "dispatch_lifecycle_panel",
   "dispatch_runtime_stream",
 ] as const;
@@ -171,6 +172,10 @@ export type RuntimeWorkbenchInteractionCommand =
       readonly type: "create_workflow_snapshot";
       readonly workflowId: string;
       readonly idempotencyKey?: string;
+    }
+  | {
+      readonly type: "refresh_workflow_history";
+      readonly workflowId: string;
     }
   | {
       readonly type: "dispatch_lifecycle_panel";
@@ -520,6 +525,11 @@ export function createRuntimeWorkbenchInteraction(
             : {}),
         });
         return completeAction();
+      case "refresh_workflow_history":
+        await options.workbench.refreshWorkflowHistory({
+          workflowId: safeCommand.workflowId,
+        });
+        return completeAction();
       case "dispatch_lifecycle_panel": {
         await options.workbench.dispatchLifecyclePanelCommand(
           safeCommand.command,
@@ -633,6 +643,9 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
     }
     if (workbench.versionSnapshot.canCreateSnapshot) {
       enabledCommandIds.push("create_workflow_snapshot");
+    }
+    if (workbench.versionSnapshot.canRefreshTimeline) {
+      enabledCommandIds.push("refresh_workflow_history");
     }
     if (workbench.lifecyclePanel.activeSession !== null) {
       enabledCommandIds.push(
@@ -863,6 +876,11 @@ function requireRuntimeWorkbenchInteractionCommand(
           command.idempotencyKey !== undefined &&
           typeof command.idempotencyKey !== "string")
       ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "refresh_workflow_history":
+      if (typeof command.workflowId !== "string") {
         throw new Error("Invalid runtime workbench interaction command");
       }
       return command;

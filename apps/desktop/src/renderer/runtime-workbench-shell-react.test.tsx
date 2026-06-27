@@ -4635,6 +4635,97 @@ test("renderer runtime workbench React shell selects version snapshot locally", 
   }
 });
 
+test("renderer runtime workbench React shell renders workflow history timeline", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactSnapshot({
+      versionSnapshot: {
+        status: "succeeded",
+        method: "GET",
+        path: "/workflows/workflow_history/history",
+        workflowId: "workflow_history",
+        statusCode: 200,
+        timelineItems: Object.freeze([
+          Object.freeze({
+            id: "workflow_history_0",
+            label: "Workflow 0.1.0",
+            value: "0123456789ab",
+            statusLabel: "2026-06-25T07:00:00.000Z",
+            active: false,
+            tone: "neutral",
+          }),
+          Object.freeze({
+            id: "workflow_history_1",
+            label: "Workflow 0.1.1",
+            value: "abcdef123456",
+            statusLabel: "2026-06-25T07:30:00.000Z",
+            active: true,
+            tone: "accent",
+          }),
+        ]),
+      },
+    });
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Version Snapshot Runtime Workbench"
+        />,
+      );
+    });
+
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container),
+      /2 runtime history entries/u,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshot",
+        "workflow_history_0",
+      ).getAttribute("data-version-snapshot-active"),
+      null,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotSelected",
+        "true",
+      ).getAttribute("data-version-snapshot"),
+      "workflow_history_1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "workflow_history_1",
+      ).getAttribute("data-version-snapshot-details-status"),
+      "2026-06-25T07:30:00.000Z",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "versionSnapshotDetails",
+        "workflow_history_1",
+      ).getAttribute("data-version-snapshot-details-value"),
+      "abcdef123456",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell selects focused canvas node locally", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   const session = createRuntimeWorkbenchShellReactSession({
@@ -6668,6 +6759,24 @@ test("renderer runtime workbench React shell dispatches workflow snapshot comman
       workflowId: "workflow_snapshot",
     });
 
+    const refreshButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "versionSnapshotRefresh",
+      "true",
+    );
+    assert.equal(
+      refreshButton.getAttribute("data-version-snapshot-refresh-enabled"),
+      "true",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(refreshButton);
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "refresh_workflow_history",
+      workflowId: "workflow_snapshot",
+    });
+
     await act(async () => {
       root.unmount();
     });
@@ -6906,9 +7015,93 @@ test("renderer runtime workbench session creates workflow snapshots through runt
     statusCode: 201,
     blockedReason: null,
     canCreateSnapshot: true,
+    canRefreshTimeline: true,
+    timelineItems: [],
   });
   assert.equal(
     JSON.stringify(snapshot.versionSnapshot).includes("raw_runtime_detail"),
+    false,
+  );
+});
+
+test("renderer runtime workbench session refreshes workflow history timeline", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
+    body: Object.freeze({
+      entries: Object.freeze([
+        Object.freeze({
+          workflow_id: "workflow_history",
+          version: "0.1.0",
+          instantiated_at: "2026-06-25T07:00:00.000Z",
+          git_commit_sha: "0123456789abcdef",
+          git_tag: null,
+          derived_from_draft_id: null,
+          change_summary: "raw_runtime_detail must not be retained",
+        }),
+        Object.freeze({
+          workflow_id: "workflow_history",
+          version: "0.1.1",
+          instantiated_at: "2026-06-25T07:30:00.000Z",
+          git_commit_sha: "abcdef1234567890",
+          git_tag: "workflow-history-v0.1.1",
+          derived_from_draft_id: "draft_history",
+          change_summary: "raw_runtime_detail must not be retained",
+        }),
+      ]),
+    }),
+    ok: true,
+    status: 200,
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const snapshot = await session.refreshWorkflowHistory({
+    workflowId: " workflow_history ",
+  });
+
+  const call = requireRuntimeWorkbenchRunOnceRuntimeCall(calls);
+  assert.equal(call.path, "/workflows/workflow_history/history");
+  assert.deepEqual(call.init, {
+    method: "GET",
+  });
+  assert.deepEqual(snapshot.versionSnapshot, {
+    status: "succeeded",
+    method: "GET",
+    path: "/workflows/workflow_history/history",
+    workflowId: "workflow_history",
+    snapshotId: null,
+    commitSha: null,
+    createdAt: null,
+    statusCode: 200,
+    blockedReason: null,
+    canCreateSnapshot: true,
+    canRefreshTimeline: true,
+    timelineItems: [
+      {
+        id: "workflow_history_0",
+        label: "Workflow 0.1.0",
+        value: "0123456789ab",
+        statusLabel: "2026-06-25T07:00:00.000Z",
+        active: false,
+        tone: "neutral",
+      },
+      {
+        id: "workflow_history_1",
+        label: "Workflow 0.1.1",
+        value: "abcdef123456",
+        statusLabel: "2026-06-25T07:30:00.000Z",
+        active: true,
+        tone: "accent",
+      },
+    ],
+  });
+  assert.equal(
+    JSON.stringify(snapshot.versionSnapshot).includes("raw_runtime_detail"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(snapshot.versionSnapshot).includes("change_summary"),
     false,
   );
 });
@@ -6939,6 +7132,8 @@ test("renderer runtime workbench session blocks workflow snapshots without valid
     statusCode: null,
     blockedReason: "invalid_input",
     canCreateSnapshot: true,
+    canRefreshTimeline: true,
+    timelineItems: [],
   });
 
   const unavailableSession = createRuntimeWorkbenchRunOnceSession({
@@ -6962,6 +7157,8 @@ test("renderer runtime workbench session blocks workflow snapshots without valid
     statusCode: null,
     blockedReason: "runtime_unavailable",
     canCreateSnapshot: false,
+    canRefreshTimeline: false,
+    timelineItems: [],
   });
 });
 
@@ -6993,6 +7190,8 @@ test("renderer runtime workbench session fails workflow snapshots without retain
     statusCode: 409,
     blockedReason: "request_failed",
     canCreateSnapshot: true,
+    canRefreshTimeline: true,
+    timelineItems: [],
   });
   assert.equal(
     JSON.stringify(snapshot.versionSnapshot).includes("raw_runtime_detail"),
@@ -7034,6 +7233,8 @@ test("renderer runtime workbench session rejects invalid workflow snapshot respo
     statusCode: 200,
     blockedReason: "response_invalid",
     canCreateSnapshot: true,
+    canRefreshTimeline: true,
+    timelineItems: [],
   });
   assert.equal(
     JSON.stringify(session.snapshot().versionSnapshot).includes(
@@ -9080,7 +9281,7 @@ function createRuntimeWorkbenchShellReactChatInstructionSnapshot(
 ): RuntimeWorkbenchShellSnapshot["chatInstruction"] {
   return Object.freeze({
     status: input.status ?? "idle",
-    method: "POST",
+    method: input.method ?? "POST",
     path: input.path ?? null,
     runId: input.runId ?? null,
     nodeId: input.nodeId ?? null,
@@ -9207,6 +9408,10 @@ function createRuntimeWorkbenchShellReactVersionSnapshotSnapshot(
     statusCode: input.statusCode ?? null,
     blockedReason: input.blockedReason ?? null,
     canCreateSnapshot: input.canCreateSnapshot ?? true,
+    canRefreshTimeline: input.canRefreshTimeline ?? true,
+    timelineItems: Object.freeze(
+      (input.timelineItems ?? []).map((item) => Object.freeze({ ...item })),
+    ),
   });
 }
 

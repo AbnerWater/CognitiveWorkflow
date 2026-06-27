@@ -159,6 +159,83 @@ def test_workflow_snapshot_endpoint_rejects_unregistered_workflow(tmp_path: Path
     assert "detail" not in body
 
 
+def test_workflow_history_endpoint_returns_registered_workflow_history(tmp_path: Path) -> None:
+    client = _test_client()
+    project_root, workflow_id = _create_project_and_workflow(client, tmp_path)
+
+    response = client.get(
+        f"/cw/v1/workflows/{workflow_id}/history",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+
+    assert response.status_code == 200
+    body = cast(dict[str, object], response.json())
+    entries = cast(list[dict[str, object]], body["entries"])
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["workflow_id"] == workflow_id
+    assert entry["version"] == "0.1.0"
+    assert isinstance(entry["instantiated_at"], str)
+    assert entry["git_commit_sha"] == ""
+    assert entry["git_tag"] is None
+    assert entry["derived_from_draft_id"] is None
+    assert entry["change_summary"] == "Initial empty workflow created with project skeleton."
+    assert str(project_root) not in json.dumps(body)
+
+
+def test_workflow_history_endpoint_accepts_omitted_optional_fields(tmp_path: Path) -> None:
+    client = _test_client()
+    project_root, workflow_id = _create_project_and_workflow(client, tmp_path)
+    history_path = project_root / ".agent-workflow" / "workflow_history.json"
+    history_path.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "workflow_id": workflow_id,
+                        "version": "0.1.1",
+                        "instantiated_at": "2026-06-28T00:00:00Z",
+                        "git_commit_sha": "abcdef1234567890",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    response = client.get(
+        f"/cw/v1/workflows/{workflow_id}/history",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+
+    assert response.status_code == 200
+    body = cast(dict[str, object], response.json())
+    entries = cast(list[dict[str, object]], body["entries"])
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["workflow_id"] == workflow_id
+    assert entry["version"] == "0.1.1"
+    assert entry["git_tag"] is None
+    assert entry["derived_from_draft_id"] is None
+    assert entry["change_summary"] is None
+
+
+def test_workflow_history_endpoint_rejects_unregistered_workflow(tmp_path: Path) -> None:
+    client = _test_client()
+    _project_root, _workflow_id = _create_project_and_workflow(client, tmp_path)
+
+    response = client.get(
+        "/cw/v1/workflows/missing_workflow/history",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+
+    assert response.status_code == 404
+    body = cast(dict[str, object], response.json())
+    assert body["error_code"] == "RES_NOT_FOUND"
+    assert body["details"] == {"workflow_id": "missing_workflow"}
+    assert "detail" not in body
+
+
 def test_run_creation_idempotency_replays_before_concurrent_run_check(tmp_path: Path) -> None:
     client = _test_client()
     _project_root, workflow_id = _create_project_and_workflow(client, tmp_path)

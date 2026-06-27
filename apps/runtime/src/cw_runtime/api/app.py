@@ -41,6 +41,7 @@ from cw_runtime.harness import (
     read_project,
     read_project_references,
     read_project_skills,
+    read_workflow_history,
     update_project_reference_enabled,
     update_project_skill,
     windows_cng_decrypt_aes_gcm,
@@ -582,6 +583,25 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
         content = {**_dump_model(snapshot), "created_at": created_at}
         remember_idempotency_response(request, body, status_code=201, content=content)
         return secure_json_response(status_code=201, content=content)
+
+    def get_workflow_history(workflow_id: str) -> Any:
+        project_root = _project_root_for_workflow(project_locations.values(), workflow_id)
+        if project_root is None:
+            return secure_json_response(
+                status_code=404,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.RES_NOT_FOUND,
+                        message="Workflow is not registered in this runtime process.",
+                        details={"workflow_id": workflow_id},
+                    )
+                ),
+            )
+        try:
+            history = read_workflow_history(project_root, workflow_id)
+        except HarnessError as exc:
+            return _harness_error_response(exc)
+        return _dump_model(history)
 
     async def post_workflow_pause(workflow_id: str, request: Any) -> Any:
         return await _workflow_action(workflow_id, request, pause_active_workflow_run)
@@ -1192,6 +1212,7 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     app.get(f"{settings.api_prefix}/projects/{{project_id}}/adapters")(get_project_adapters)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/run")(post_workflow_run)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/snapshot", status_code=201)(post_workflow_snapshot)
+    app.get(f"{settings.api_prefix}/workflows/{{workflow_id}}/history")(get_workflow_history)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/pause")(post_workflow_pause)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/resume")(post_workflow_resume)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/cancel")(post_workflow_cancel)

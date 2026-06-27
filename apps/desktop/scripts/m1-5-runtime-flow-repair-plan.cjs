@@ -133,10 +133,10 @@ function validateRuntimeFlowRepairPlan(options = {}) {
 
   assertEqual(plan.schema_version, "0.1.0", "schema version");
   assertEqual(plan.milestone, "M1.5", "milestone");
-  assertEqual(plan.slice, "W1.5.202", "slice id");
+  assertEqual(plan.slice, "W1.5.204", "slice id");
   assertEqual(
     plan.plan_status,
-    "remaining_runtime_flow_implementation_plan_refreshed_after_skill_configuration_followup",
+    "remaining_runtime_flow_implementation_plan_refreshed_after_workflow_history_timeline_followup",
     "plan status",
   );
   assertEqual(plan.exit_p1_1_status, "not_ready", "EXIT-P1-1 status");
@@ -153,7 +153,7 @@ function validateRuntimeFlowRepairPlan(options = {}) {
   );
   assertEqual(
     plan.repair_track.source_track_status,
-    "refreshed_after_skill_configuration_followup",
+    "refreshed_after_workflow_history_timeline_followup",
     "track status",
   );
   assertDeepEqual(
@@ -448,7 +448,7 @@ function validateRuntimeFlowRepairPlan(options = {}) {
   );
   assertDeepEqual(
     plan.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.203"],
+    ["W1.5.205"],
     "next recommended slices",
   );
 

@@ -592,7 +592,12 @@ function cloneRuntimeWorkbenchHostHumanDecision(
 function cloneRuntimeWorkbenchHostVersionSnapshot(
   versionSnapshot: RuntimeWorkbenchVersionSnapshotSnapshot,
 ): RuntimeWorkbenchVersionSnapshotSnapshot {
-  return Object.freeze({ ...versionSnapshot });
+  return Object.freeze({
+    ...versionSnapshot,
+    timelineItems: Object.freeze(
+      versionSnapshot.timelineItems.map((item) => Object.freeze({ ...item })),
+    ),
+  });
 }
 
 function buildRuntimeWorkbenchHostRuntimeStreamPanelSnapshot(

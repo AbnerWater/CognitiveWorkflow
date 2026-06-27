@@ -143,11 +143,7 @@ export interface RuntimeWorkbenchShellFileTreeSnapshot {
   readonly nodes: readonly RuntimeWorkbenchShellFileTreeNode[];
 }
 
-export type RuntimeWorkbenchShellVersionSnapshotId =
-  | "draft"
-  | "validation"
-  | "runtime"
-  | "git_snapshot";
+export type RuntimeWorkbenchShellVersionSnapshotId = string;
 
 export interface RuntimeWorkbenchShellVersionSnapshotItem {
   readonly id: RuntimeWorkbenchShellVersionSnapshotId;
@@ -789,48 +785,16 @@ function buildShellChrome(
         }),
       ],
     },
-    versionSnapshots: {
-      title: "Version Snapshots",
-      summary: `${activePanelLabel} scaffold history`,
-      items: [
-        versionSnapshotItem({
-          id: "draft",
-          label: "Draft",
-          value: "v0",
-          statusLabel: "Read-only",
-          active: host.activePanel === "canvas",
-          tone: "neutral",
-        }),
-        versionSnapshotItem({
-          id: "validation",
-          label: "Validation",
-          value: visibleItems === 0 ? "0 visible" : `${visibleItems} visible`,
-          statusLabel: panelStatusLabel(lifecyclePanelStatus),
-          active: host.activePanel === "lifecycle",
-          tone: panelStatusTone(lifecyclePanelStatus),
-        }),
-        versionSnapshotItem({
-          id: "runtime",
-          label: "Runtime",
-          value: runtimeStreamChannelLabel ?? "No active stream",
-          statusLabel: panelStatusLabel(runtimeStreamStatus),
-          active: host.activePanel === "stream",
-          tone: panelStatusTone(runtimeStreamStatus),
-        }),
-        versionSnapshotItem({
-          id: "git_snapshot",
-          label: "Git snapshot",
-          value: gitSnapshotValue,
-          statusLabel: disposed
-            ? "Disposed"
-            : versionSnapshotStatusLabel(host.versionSnapshot),
-          active:
-            host.versionSnapshot.status === "succeeded" ||
-            host.projectCreation.gitInitialized === true,
-          tone: disposed ? "danger" : versionSnapshotTone(host.versionSnapshot),
-        }),
-      ],
-    },
+    versionSnapshots: buildVersionSnapshotsSnapshot({
+      activePanelLabel,
+      disposed,
+      gitSnapshotValue,
+      host,
+      lifecyclePanelStatus,
+      runtimeStreamChannelLabel,
+      runtimeStreamStatus,
+      visibleItems,
+    }),
     workflowCanvas: {
       title: "Workflow Canvas",
       summary: `${activePanelLabel} graph scaffold`,
@@ -1201,6 +1165,85 @@ function versionSnapshotItem(
   item: RuntimeWorkbenchShellVersionSnapshotItem,
 ): RuntimeWorkbenchShellVersionSnapshotItem {
   return Object.freeze({ ...item });
+}
+
+function buildVersionSnapshotsSnapshot(options: {
+  readonly activePanelLabel: string;
+  readonly disposed: boolean;
+  readonly gitSnapshotValue: string;
+  readonly host: RuntimeWorkbenchHostSessionSnapshot;
+  readonly lifecyclePanelStatus: RuntimeWorkbenchShellPanelStatus;
+  readonly runtimeStreamChannelLabel: string | null;
+  readonly runtimeStreamStatus: RuntimeWorkbenchShellPanelStatus;
+  readonly visibleItems: number;
+}): RuntimeWorkbenchShellVersionSnapshotsSnapshot {
+  const timelineItems = options.host.versionSnapshot.timelineItems;
+  if (timelineItems.length > 0) {
+    return Object.freeze({
+      title: "Version Snapshots",
+      summary: `${timelineItems.length} runtime history entries`,
+      items: Object.freeze(
+        timelineItems.map((item) =>
+          versionSnapshotItem({
+            id: item.id,
+            label: item.label,
+            value: item.value,
+            statusLabel: item.statusLabel,
+            active: item.active,
+            tone: options.disposed ? "danger" : item.tone,
+          }),
+        ),
+      ),
+    });
+  }
+
+  return Object.freeze({
+    title: "Version Snapshots",
+    summary: `${options.activePanelLabel} scaffold history`,
+    items: Object.freeze([
+      versionSnapshotItem({
+        id: "draft",
+        label: "Draft",
+        value: "v0",
+        statusLabel: "Read-only",
+        active: options.host.activePanel === "canvas",
+        tone: "neutral",
+      }),
+      versionSnapshotItem({
+        id: "validation",
+        label: "Validation",
+        value:
+          options.visibleItems === 0
+            ? "0 visible"
+            : `${options.visibleItems} visible`,
+        statusLabel: panelStatusLabel(options.lifecyclePanelStatus),
+        active: options.host.activePanel === "lifecycle",
+        tone: panelStatusTone(options.lifecyclePanelStatus),
+      }),
+      versionSnapshotItem({
+        id: "runtime",
+        label: "Runtime",
+        value: options.runtimeStreamChannelLabel ?? "No active stream",
+        statusLabel: panelStatusLabel(options.runtimeStreamStatus),
+        active: options.host.activePanel === "stream",
+        tone: panelStatusTone(options.runtimeStreamStatus),
+      }),
+      versionSnapshotItem({
+        id: "git_snapshot",
+        label: "Git snapshot",
+        value: options.gitSnapshotValue,
+        statusLabel: options.disposed
+          ? "Disposed"
+          : versionSnapshotStatusLabel(options.host.versionSnapshot),
+        active:
+          options.host.versionSnapshot.status === "succeeded" ||
+          options.host.projectCreation.gitInitialized === true,
+        tone: options.disposed
+          ? "danger"
+          : versionSnapshotTone(options.host.versionSnapshot),
+      }),
+    ]),
+  });
 }
 
 function workflowCanvasNode(
@@ -1647,6 +1690,8 @@ function versionSnapshotStatusLabel(
       return "Blocked";
     case "failed":
       return "Failed";
+    case "loading":
+      return "Loading";
     case "creating":
       return "Creating";
     case "succeeded":
@@ -1663,6 +1708,7 @@ function versionSnapshotTone(
     case "blocked":
     case "failed":
       return "danger";
+    case "loading":
     case "creating":
       return "accent";
     case "succeeded":

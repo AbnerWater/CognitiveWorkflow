@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.202",
+  "slice": "W1.5.204",
   "map_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-27",
+  "observed_at": "2026-06-28",
   "source": {
     "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
     "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json",
@@ -14,9 +14,9 @@
     "uiux_baseline_docx": "AI_Agent_Workflow工作台_UIUX详细设计规范与需求规格说明书_v1.1_新增Workflow编排.docx"
   },
   "guardrails": [
-    "This evidence map refreshes FR-014 after Skill candidate discovery plus secret-safe MCP configuration evidence; it does not claim A4 acceptance.",
+    "This evidence map refreshes FR-015 after accepted workflow_history endpoint and metadata-only Desktop timeline evidence; it does not claim A4 acceptance.",
     "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
-    "Runtime bridge evidence stays metadata-only and must not include persisted params, raw command_or_url values, raw secret_ref values, credentials, secure paths, cache paths, response bodies, or output directory values."
+    "Runtime bridge evidence stays metadata-only and must not include raw prompt, raw model output, uploaded-file bytes, response bodies, artifact bodies, raw destination paths, secure paths, cache paths, output directory values, or raw workflow change summaries."
   ],
   "allowed_acceptance_readiness": [
     "candidate_evidence_needs_a4_review",
@@ -325,18 +325,25 @@
         "apps/runtime/tests/test_m1_3_4_run_endpoints.py",
         "apps/runtime/tests/test_m1_3_7_persistence_observability.py",
         "apps/desktop/src/renderer/runtime-workbench-session.ts",
-        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx",
+        "docs/04_runbook/m1.5-progress.md#W1.5.204",
+        "docs/reviews/m1.5.204-workflow-history-timeline-review.md",
+        "apps/runtime/src/cw_runtime/harness/project.py",
+        "apps/desktop/src/renderer/runtime-workbench-interaction.ts",
+        "apps/desktop/src/renderer/runtime-workbench-shell-presenter.ts",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
       ],
       "verification_commands": [
-        "uv run pytest apps/runtime/tests/test_m1_3_4_run_endpoints.py apps/runtime/tests/test_m1_3_7_persistence_observability.py -q",
+        "uv run pytest apps/runtime/tests/test_m1_3_4_run_endpoints.py -q",
+        "node --test --test-name-pattern \"workflow snapshot|workflow history timeline|renders workflow history timeline\" apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js",
         "pnpm --filter @cw/desktop run test"
       ],
       "missing_evidence": [
-        "Desktop timeline does not yet surface runtime snapshots/snapshots.jsonl as live project state.",
+        "Desktop workflow_history timeline is visible, but automatic and explicit snapshot ledger entries from snapshots/snapshots.jsonl are not yet surfaced as live project state.",
         "Restore-to-snapshot and continue execution remain unimplemented because no accepted restore contract exists.",
         "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
       ],
-      "next_action": "Define or accept a restore-to-snapshot contract before implementing restore, then add Desktop timeline and continue evidence before FR-015 acceptance."
+      "next_action": "Define an accepted snapshot ledger projection or restore-to-snapshot contract before implementing restore, then add restore and continue evidence before FR-015 acceptance."
     },
     {
       "id": "FR-016",
@@ -469,9 +476,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.203",
-      "title": "Desktop FR-015 snapshot restore continue follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
+      "id": "W1.5.205",
+      "title": "Desktop FR-015 snapshot ledger restore follow-up",
+      "reason": "Continue FR-015 after W1.5.204 workflow history timeline evidence: surface snapshot ledger state only after an accepted projection, then define restore/continue semantics before implementation."
     }
   ]
 }

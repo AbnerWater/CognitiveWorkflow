@@ -389,6 +389,8 @@ function buildVisualSmokeSnapshot(
       statusCode: null,
       blockedReason: null,
       canCreateSnapshot: !disposed,
+      canRefreshTimeline: !disposed,
+      timelineItems: Object.freeze([]),
     }),
     lifecyclePanelStatus: disposed ? "disposed" : "active",
     lifecyclePanel: disposed

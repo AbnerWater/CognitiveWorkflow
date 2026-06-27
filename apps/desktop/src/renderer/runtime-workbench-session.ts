@@ -292,6 +292,7 @@ export interface RuntimeWorkbenchHumanDecisionSnapshot {
 
 export type RuntimeWorkbenchVersionSnapshotStatus =
   | "idle"
+  | "loading"
   | "creating"
   | "succeeded"
   | "failed"
@@ -303,9 +304,18 @@ export type RuntimeWorkbenchVersionSnapshotBlockedReason =
   | "response_invalid"
   | "runtime_unavailable";
 
+export interface RuntimeWorkbenchVersionSnapshotTimelineItem {
+  readonly id: string;
+  readonly label: string;
+  readonly value: string;
+  readonly statusLabel: string;
+  readonly active: boolean;
+  readonly tone: "neutral" | "accent" | "success" | "warning" | "danger";
+}
+
 export interface RuntimeWorkbenchVersionSnapshotSnapshot {
   readonly status: RuntimeWorkbenchVersionSnapshotStatus;
-  readonly method: "POST";
+  readonly method: "GET" | "POST";
   readonly path: RuntimeRequestPath | null;
   readonly workflowId: string | null;
   readonly snapshotId: string | null;
@@ -314,6 +324,8 @@ export interface RuntimeWorkbenchVersionSnapshotSnapshot {
   readonly statusCode: number | null;
   readonly blockedReason: RuntimeWorkbenchVersionSnapshotBlockedReason | null;
   readonly canCreateSnapshot: boolean;
+  readonly canRefreshTimeline: boolean;
+  readonly timelineItems: readonly RuntimeWorkbenchVersionSnapshotTimelineItem[];
 }
 
 export interface RuntimeWorkbenchExecutionPolicySnapshot {
@@ -416,6 +428,10 @@ export interface RuntimeWorkbenchVersionSnapshotInput {
   readonly idempotencyKey?: string;
 }
 
+export interface RuntimeWorkbenchWorkflowHistoryInput {
+  readonly workflowId: string;
+}
+
 export interface RuntimeWorkbenchSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
@@ -496,6 +512,9 @@ export interface RuntimeWorkbenchSession {
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly createWorkflowSnapshot: (
     input: RuntimeWorkbenchVersionSnapshotInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly refreshWorkflowHistory: (
+    input: RuntimeWorkbenchWorkflowHistoryInput,
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly openLifecyclePanelSession: (
     options?: CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
@@ -2352,6 +2371,128 @@ export function createRuntimeWorkbenchSession(
         throw error;
       }
     },
+    refreshWorkflowHistory: async (input) => {
+      assertActive();
+      const workflowId = normalizeRuntimeWorkbenchReferencePathSegment(
+        input.workflowId,
+      );
+      if (workflowId === null) {
+        versionSnapshotSnapshot = createRuntimeWorkbenchVersionSnapshotSnapshot(
+          {
+            ...versionSnapshotSnapshot,
+            blockedReason: "invalid_input",
+            method: "GET",
+            runtimeAvailable: options.runtime !== undefined,
+            status: "blocked",
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench workflow history input is invalid");
+      }
+      const requestPath = buildRuntimeWorkbenchWorkflowHistoryPath(workflowId);
+      if (options.runtime === undefined) {
+        versionSnapshotSnapshot = createRuntimeWorkbenchVersionSnapshotSnapshot(
+          {
+            ...versionSnapshotSnapshot,
+            blockedReason: "runtime_unavailable",
+            method: "GET",
+            path: requestPath,
+            runtimeAvailable: false,
+            status: "blocked",
+            workflowId,
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+      versionSnapshotSnapshot = createRuntimeWorkbenchVersionSnapshotSnapshot({
+        ...versionSnapshotSnapshot,
+        method: "GET",
+        path: requestPath,
+        runtimeAvailable: true,
+        status: "loading",
+        workflowId,
+        disposed,
+      });
+      publishIfChanged(true);
+      try {
+        const response = await options.runtime.fetch(requestPath, {
+          method: "GET",
+        });
+        if (!response.ok) {
+          versionSnapshotSnapshot =
+            createRuntimeWorkbenchVersionSnapshotSnapshot({
+              ...versionSnapshotSnapshot,
+              blockedReason: "request_failed",
+              method: "GET",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              workflowId,
+              disposed,
+            });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const parsed = parseRuntimeWorkbenchWorkflowHistoryTimeline(
+          response.body,
+          workflowId,
+        );
+        if (parsed === null) {
+          versionSnapshotSnapshot =
+            createRuntimeWorkbenchVersionSnapshotSnapshot({
+              ...versionSnapshotSnapshot,
+              blockedReason: "response_invalid",
+              method: "GET",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              workflowId,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error(
+            "Runtime workbench workflow history response is invalid",
+          );
+        }
+        versionSnapshotSnapshot = createRuntimeWorkbenchVersionSnapshotSnapshot(
+          {
+            ...versionSnapshotSnapshot,
+            blockedReason: null,
+            method: "GET",
+            path: requestPath,
+            runtimeAvailable: true,
+            status: "succeeded",
+            statusCode: response.status,
+            workflowId,
+            timelineItems: parsed,
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (versionSnapshotSnapshot.status !== "failed") {
+          versionSnapshotSnapshot =
+            createRuntimeWorkbenchVersionSnapshotSnapshot({
+              ...versionSnapshotSnapshot,
+              blockedReason: "request_failed",
+              method: "GET",
+              path: requestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              workflowId,
+              disposed,
+            });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
     openLifecyclePanelSession: (sessionOptions) => {
       assertActive();
       const session = runWithSuppressedControllerPublish(() =>
@@ -2692,9 +2833,10 @@ function createRuntimeWorkbenchVersionSnapshotSnapshot(
     readonly disposed: boolean;
   },
 ): RuntimeWorkbenchVersionSnapshotSnapshot {
+  const timelineItems = input.timelineItems ?? [];
   return Object.freeze({
     status: input.status,
-    method: "POST",
+    method: input.method ?? "POST",
     path: input.path ?? null,
     workflowId: input.workflowId ?? null,
     snapshotId: input.snapshotId ?? null,
@@ -2703,7 +2845,27 @@ function createRuntimeWorkbenchVersionSnapshotSnapshot(
     statusCode: input.statusCode ?? null,
     blockedReason: input.blockedReason ?? null,
     canCreateSnapshot:
-      !input.disposed && input.runtimeAvailable && input.status !== "creating",
+      !input.disposed &&
+      input.runtimeAvailable &&
+      input.status !== "creating" &&
+      input.status !== "loading",
+    canRefreshTimeline:
+      !input.disposed &&
+      input.runtimeAvailable &&
+      input.status !== "creating" &&
+      input.status !== "loading",
+    timelineItems: Object.freeze(
+      timelineItems.map((item) =>
+        Object.freeze({
+          id: item.id,
+          label: item.label,
+          value: item.value,
+          statusLabel: item.statusLabel,
+          active: item.active,
+          tone: item.tone,
+        }),
+      ),
+    ),
   });
 }
 
@@ -2846,6 +3008,14 @@ function buildRuntimeWorkbenchWorkflowSnapshotPath(
   workflowId: string,
 ): RuntimeRequestPath {
   const requestPath = `/workflows/${encodeURIComponent(workflowId)}/snapshot`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
+function buildRuntimeWorkbenchWorkflowHistoryPath(
+  workflowId: string,
+): RuntimeRequestPath {
+  const requestPath = `/workflows/${encodeURIComponent(workflowId)}/history`;
   assertRuntimeRequestPath(requestPath);
   return requestPath as RuntimeRequestPath;
 }
@@ -3505,6 +3675,52 @@ function parseRuntimeWorkbenchVersionSnapshotRecord(
   };
 }
 
+function parseRuntimeWorkbenchWorkflowHistoryTimeline(
+  body: unknown,
+  workflowId: string,
+): readonly RuntimeWorkbenchVersionSnapshotTimelineItem[] | null {
+  if (!isRecord(body) || !Array.isArray(body.entries)) {
+    return null;
+  }
+  const entries: RuntimeWorkbenchVersionSnapshotTimelineItem[] = [];
+  for (const [index, entry] of body.entries.entries()) {
+    if (!isRecord(entry)) {
+      return null;
+    }
+    const entryWorkflowId = entry.workflow_id;
+    const version = entry.version;
+    const instantiatedAt = entry.instantiated_at;
+    const gitCommitSha = entry.git_commit_sha;
+    const gitTag = entry.git_tag;
+    if (
+      entryWorkflowId !== workflowId ||
+      typeof version !== "string" ||
+      version.trim().length === 0 ||
+      typeof instantiatedAt !== "string" ||
+      instantiatedAt.trim().length === 0 ||
+      typeof gitCommitSha !== "string" ||
+      (gitTag !== null && typeof gitTag !== "string")
+    ) {
+      return null;
+    }
+    const active = index === body.entries.length - 1;
+    entries.push(
+      Object.freeze({
+        id: `workflow_history_${index}`,
+        label: `Workflow ${version}`,
+        value:
+          gitCommitSha.trim().length === 0
+            ? "No commit"
+            : gitCommitSha.trim().slice(0, 12),
+        statusLabel: instantiatedAt,
+        active,
+        tone: active ? "accent" : "neutral",
+      }),
+    );
+  }
+  return Object.freeze(entries);
+}
+
 function buildRuntimeWorkbenchReferenceMultipartBody(options: {
   readonly kind: RuntimeWorkbenchReferenceKind;
   readonly sensitive: boolean;
@@ -3659,7 +3875,9 @@ function freezeRuntimeWorkbenchSessionSnapshot(
       ...snapshot.versionSnapshot,
       runtimeAvailable:
         snapshot.versionSnapshot.canCreateSnapshot ||
-        snapshot.versionSnapshot.status === "creating",
+        snapshot.versionSnapshot.canRefreshTimeline ||
+        snapshot.versionSnapshot.status === "creating" ||
+        snapshot.versionSnapshot.status === "loading",
       disposed: snapshot.disposed,
     }),
   });
