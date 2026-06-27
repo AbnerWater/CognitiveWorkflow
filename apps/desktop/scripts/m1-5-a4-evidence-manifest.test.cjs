@@ -72,7 +72,7 @@ test("M1.5 A4 evidence manifest runner returns a sanitized conservative summary"
     sorted(summary.requiredMatrixCases),
     sorted(expectedRequiredMatrixCases),
   );
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.200"]);
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.201"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });

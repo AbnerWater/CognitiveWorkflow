@@ -70,7 +70,7 @@ test("M1.5 A4 capture execution runner returns a sanitized conservative summary"
   );
   assert.equal(summary.acceptedItemCount, 0);
   assert.equal(summary.pendingA4ReviewItemCount, 8);
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.200"]);
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.201"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });

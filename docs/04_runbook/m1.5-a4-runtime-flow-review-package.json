@@ -220,9 +220,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.200",
-      "title": "Desktop A4 runtime-flow acceptance review handoff",
-      "reason": "Run or prepare the A4 reviewer decision record without changing accepted_items before approval."
+      "id": "W1.5.201",
+      "title": "Desktop FR-011 project-reference runtime follow-up",
+      "reason": "Continue remaining runtime-flow implementation while the A4 runtime-flow decision handoff remains pending reviewer approval."
     }
   ]
 }

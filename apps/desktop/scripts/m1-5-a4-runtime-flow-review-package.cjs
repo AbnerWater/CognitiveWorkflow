@@ -418,7 +418,7 @@ function validateA4RuntimeFlowReviewPackage(options = {}) {
   );
   assertDeepEqual(
     reviewPackage.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.200"],
+    ["W1.5.201"],
     "next recommended slices",
   );
 

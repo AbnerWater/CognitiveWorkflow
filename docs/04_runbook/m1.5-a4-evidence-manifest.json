@@ -342,9 +342,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.200",
-      "title": "Desktop A4 runtime-flow acceptance review handoff",
-      "reason": "Review pending A4 inputs including FR-008 and FR-017 without claiming FR acceptance in the manifest."
+      "id": "W1.5.201",
+      "title": "Desktop FR-011 project-reference runtime follow-up",
+      "reason": "Continue remaining runtime-flow implementation while the A4 runtime-flow decision handoff remains pending reviewer approval."
     }
   ],
   "refreshed_from": {

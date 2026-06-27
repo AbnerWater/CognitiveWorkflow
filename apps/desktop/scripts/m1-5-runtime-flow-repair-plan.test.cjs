@@ -100,7 +100,7 @@ test("M1.5 runtime flow repair plan runner returns a sanitized W1.5.199 summary"
   assert.equal(summary.pendingImplementationItemCount, 4);
   assert.equal(summary.contractAnchorCount > 0, true);
   assert.equal(summary.refreshedFrom, "W1.5.188");
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.200"]);
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.201"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });
@@ -243,7 +243,7 @@ test("M1.5 runtime flow plan keeps implementation sequence conservative", () => 
   );
   assert.deepEqual(
     plan.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.200"],
+    ["W1.5.201"],
   );
 });
 

@@ -1,0 +1,226 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.200",
+  "handoff_status": "a4_runtime_flow_decision_handoff_prepared_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-27",
+  "source": {
+    "a4_runtime_flow_review_package": "docs/04_runbook/m1.5-a4-runtime-flow-review-package.json",
+    "a4_evidence_manifest": "docs/04_runbook/m1.5-a4-evidence-manifest.json",
+    "a4_capture_execution": "docs/04_runbook/m1.5-a4-capture-execution.json",
+    "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
+    "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "This handoff prepares the A4 reviewer decision record only; it does not record A4 acceptance.",
+    "All decision items remain pending_reviewer_decision until an A4 ux-acceptance-reviewer records a separate decision.",
+    "The source review package accepted_items count must remain zero before reviewer approval.",
+    "EXIT-P1-1 remains not_ready until every FR-001 through FR-020 item has accepted A4 evidence and the other Phase 1 exit gates are satisfied.",
+    "No handoff field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, artifact bodies, secure paths, cache paths, output directory values, or full destination paths."
+  ],
+  "reviewer_contract": {
+    "required_reviewer": "A4 ux-acceptance-reviewer",
+    "source_package_status": "a4_runtime_flow_review_package_prepared_not_accepted",
+    "allowed_decisions": ["accepted", "rejected", "needs_followup"],
+    "decision_record_required": true,
+    "decision_record_status": "not_recorded",
+    "accepted_item_count_must_remain_zero": true,
+    "phase_exit_status_must_remain_not_ready": true,
+    "runner_script": "apps/desktop/scripts/m1-5-a4-runtime-flow-decision-handoff.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-a4-runtime-flow-decision-handoff.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-a4-runtime-flow-decision-handoff.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test"
+  },
+  "decision_items": [
+    {
+      "id": "DECISION-A4-FR-009-STREAM-COLLAPSED",
+      "fr_id": "FR-009",
+      "package_item_id": "PKG-A4-FR-009-STREAM-COLLAPSED",
+      "review_item_id": "A4-FR-009-STREAM-COLLAPSED",
+      "capture_id": "CAPTURE-A4-FR-009-STREAM-COLLAPSED",
+      "review_group": "candidate_stream_evidence",
+      "review_focus": "Stream panel default collapsed layout",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A4 reviewer has not recorded first-viewport collapsed stream acceptance.",
+        "Phase-level UX recording is still missing."
+      ]
+    },
+    {
+      "id": "DECISION-A4-FR-010-STREAM-EXPANDED",
+      "fr_id": "FR-010",
+      "package_item_id": "PKG-A4-FR-010-STREAM-EXPANDED",
+      "review_item_id": "A4-FR-010-STREAM-EXPANDED",
+      "capture_id": "CAPTURE-A4-FR-010-STREAM-EXPANDED",
+      "review_group": "candidate_stream_evidence",
+      "review_focus": "Expanded stream panel content and event detail readability",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A4 reviewer has not accepted the full expanded event taxonomy as an end-user path.",
+        "Real workflow stream demo evidence is still missing."
+      ]
+    },
+    {
+      "id": "DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+      "fr_id": "FR-016",
+      "package_item_id": "PKG-A4-FR-016-EVENT-CLASSIFICATION",
+      "review_item_id": "A4-FR-016-EVENT-CLASSIFICATION",
+      "capture_id": "CAPTURE-A4-FR-016-EVENT-CLASSIFICATION",
+      "review_group": "candidate_stream_evidence",
+      "review_focus": "StreamEvent classification labels and unknown-event fallback",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A4 reviewer has not accepted final user-facing labels for every event class.",
+        "Phase-level demo stream evidence is still missing."
+      ]
+    },
+    {
+      "id": "DECISION-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "fr_id": "FR-007",
+      "package_item_id": "PKG-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "review_item_id": "A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "review_focus": "Execution mode control placement and run-once dispatch behavior",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "Backend run-once execution success has not been proven end-to-end from the desktop workbench.",
+        "A4 UX acceptance evidence for execution mode placement and behavior is not recorded."
+      ]
+    },
+    {
+      "id": "DECISION-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "fr_id": "FR-012",
+      "package_item_id": "PKG-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "review_item_id": "A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "review_focus": "Mandatory Git initialization evidence in desktop project creation",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A8 git-history audit evidence for automatic commit/tag behavior is not recorded.",
+        "A4 UX acceptance evidence for the mandatory Git path is not recorded."
+      ]
+    },
+    {
+      "id": "DECISION-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "fr_id": "FR-013",
+      "package_item_id": "PKG-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "review_item_id": "A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "review_focus": "Reference import, list, enable, disable, and view user paths",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for reference import, enable, disable, and view user paths is not recorded.",
+        "Delete semantics remain intentionally out of scope until accepted spec material defines them."
+      ]
+    },
+    {
+      "id": "DECISION-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "fr_id": "FR-008",
+      "package_item_id": "PKG-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "review_item_id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "review_focus": "Runtime-backed Chat instruction routing for current node and global Workflow scopes",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for the runtime-backed current-node/global Workflow Chat instruction path is not recorded.",
+        "Project-backed command history and persistence remain outside this evidence refresh and must not be inferred from local receipt metadata."
+      ]
+    },
+    {
+      "id": "DECISION-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "fr_id": "FR-017",
+      "package_item_id": "PKG-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "review_item_id": "A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "review_focus": "Selected-node Task Drawer artifact detail display and safe native open/download handoff",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for node artifact detail display and safe open/download behavior is not recorded."
+      ]
+    }
+  ],
+  "summary": {
+    "decision_item_count": 8,
+    "stream_candidate_items": 3,
+    "runtime_bridge_items": 5,
+    "accepted_items": 0,
+    "pending_reviewer_decision_items": 8,
+    "rejected_items": 0,
+    "needs_followup_items": 0,
+    "source_package_pending_a4_review_items": 8,
+    "source_package_accepted_items": 0,
+    "exit_p1_1_status": "not_ready",
+    "next_required_review": "A4 ux-acceptance-reviewer"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.201",
+      "title": "Desktop FR-011 project-reference runtime follow-up",
+      "reason": "Continue remaining runtime-flow implementation while the A4 decision handoff remains pending reviewer approval."
+    }
+  ]
+}

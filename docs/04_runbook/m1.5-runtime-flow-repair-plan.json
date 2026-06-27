@@ -79,7 +79,7 @@
       "uv run pytest apps/runtime/tests -q",
       "Targeted visual smoke or reviewer capture only after implementation evidence exists"
     ],
-    "next_slice": "W1.5.200",
+    "next_slice": "W1.5.201",
     "implementation_notes": [
       "FR-008 is no longer a remaining implementation item after W1.5.195-W1.5.196; it stays unaccepted and moves to A4 pending review inputs.",
       "FR-017 is no longer a remaining implementation item after W1.5.199 selected-node Task Drawer artifact detail and node-bound action dispatch evidence; it stays unaccepted and moves to A4 pending review inputs.",
@@ -388,9 +388,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.200",
-      "title": "Desktop A4 runtime-flow acceptance review handoff",
-      "reason": "Review stream and runtime bridge A4 inputs while keeping accepted_items at 0 until reviewer approval."
+      "id": "W1.5.201",
+      "title": "Desktop FR-011 project-reference runtime follow-up",
+      "reason": "Continue remaining runtime-flow implementation while the A4 runtime-flow decision handoff remains pending reviewer approval."
     }
   ]
 }

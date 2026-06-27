@@ -349,6 +349,6 @@ test("M1.5 UX acceptance checklist does not overclaim dependency-gated or scaffo
   assert.match(checklist.guardrails.join(" "), /does not claim A4 acceptance/u);
   assert.deepEqual(
     checklist.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.200"],
+    ["W1.5.201"],
   );
 });

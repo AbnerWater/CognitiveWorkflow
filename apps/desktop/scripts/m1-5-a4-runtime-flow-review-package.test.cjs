@@ -95,7 +95,7 @@ test("M1.5 A4 runtime-flow review package returns a sanitized conservative summa
   );
   assert.equal(summary.acceptedItemCount, 0);
   assert.equal(summary.pendingA4ReviewItemCount, 8);
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.200"]);
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.201"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });

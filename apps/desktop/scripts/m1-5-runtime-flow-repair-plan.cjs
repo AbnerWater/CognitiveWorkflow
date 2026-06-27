@@ -450,7 +450,7 @@ function validateRuntimeFlowRepairPlan(options = {}) {
   );
   assertDeepEqual(
     plan.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.200"],
+    ["W1.5.201"],
     "next recommended slices",
   );
 
