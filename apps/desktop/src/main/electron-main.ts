@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { startCwDesktopElectronApp } from "./electron-app.js";
 import { buildElectronRuntimeStartupOptions } from "./electron-runtime-startup-options.js";
 
@@ -22,16 +22,19 @@ void startCwDesktopElectronApp({
   platform: process.platform,
   preloadPath,
   ...(rendererDevServerUrl !== undefined ? { rendererDevServerUrl } : {}),
-  startup: buildElectronRuntimeStartupOptions({
-    projectRoot,
-    resourcesPath: process.resourcesPath,
-    workspaceRoot,
-    isPackaged: app.isPackaged,
-    platform: process.platform,
-    ...(process.env["CW_RUNTIME_DEV_COMMAND"] !== undefined
-      ? { runtimeDevCommand: process.env["CW_RUNTIME_DEV_COMMAND"] }
-      : {}),
-  }),
+  startup: {
+    ...buildElectronRuntimeStartupOptions({
+      projectRoot,
+      resourcesPath: process.resourcesPath,
+      workspaceRoot,
+      isPackaged: app.isPackaged,
+      platform: process.platform,
+      ...(process.env["CW_RUNTIME_DEV_COMMAND"] !== undefined
+        ? { runtimeDevCommand: process.env["CW_RUNTIME_DEV_COMMAND"] }
+        : {}),
+    }),
+    artifactOpenPath: (targetPath: string) => shell.openPath(targetPath),
+  },
   onError: reportElectronMainError,
 }).catch((error: unknown) => {
   reportElectronMainError(error);

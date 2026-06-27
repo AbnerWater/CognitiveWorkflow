@@ -1,3 +1,10 @@
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import type { ArtifactActionResult } from "@cw/schemas";
+
 import {
   RUNTIME_API_PREFIX,
   createRuntimeBaseUrl,
@@ -8,6 +15,8 @@ import {
 import {
   buildRuntimeIpcFetchRequest,
   buildRuntimeIpcRequestHeaders,
+  parseRuntimeIpcArtifactActionRequestPayload,
+  type RuntimeIpcArtifactActionRequest,
   type RuntimeIpcFetchRequest,
   type RuntimeIpcMainHandlers,
   type RuntimeIpcResponse,
@@ -22,7 +31,11 @@ export type RuntimeConnectionInfoProvider = () =>
 export interface RuntimeIpcMainHandlerOptions {
   readonly connectionInfo: RuntimeConnectionInfoProvider;
   readonly fetchImpl?: typeof fetch;
+  readonly artifactOpenPath?: RuntimeArtifactOpenPath;
+  readonly artifactTempDir?: string;
 }
+
+export type RuntimeArtifactOpenPath = (targetPath: string) => Promise<string>;
 
 export function createRuntimeIpcMainHandlers(
   options: RuntimeIpcMainHandlerOptions,
@@ -74,6 +87,10 @@ export function createRuntimeIpcMainHandlers(
 
       return readRuntimeIpcResponse<TBody>(response);
     },
+    artifactAction: async (
+      request: RuntimeIpcArtifactActionRequest,
+    ): Promise<ArtifactActionResult> =>
+      runRuntimeArtifactAction(request, options),
   };
 }
 
@@ -85,6 +102,148 @@ export function requestRuntimeShutdown(
       method: "POST",
     }),
   );
+}
+
+async function runRuntimeArtifactAction(
+  rawRequest: RuntimeIpcArtifactActionRequest,
+  options: RuntimeIpcMainHandlerOptions,
+): Promise<ArtifactActionResult> {
+  const request = parseRuntimeIpcArtifactActionRequestPayload(rawRequest);
+  const sensitive = request.artifact_sensitivity === "sensitive";
+  const baseResult = {
+    schema_version: "0.1.0" as const,
+    artifact_id: request.artifact_id,
+    action: request.action,
+    sensitive,
+    ...(request.correlation_id !== undefined
+      ? { correlation_id: request.correlation_id }
+      : {}),
+  };
+
+  if (
+    sensitive &&
+    request.action === "download" &&
+    request.requested_destination_kind === "user_selected" &&
+    request.allow_sensitive_export !== true
+  ) {
+    return {
+      ...baseResult,
+      status: "blocked",
+      destination_kind: "none",
+    };
+  }
+
+  if (request.action === "open" && options.artifactOpenPath === undefined) {
+    return {
+      ...baseResult,
+      status: "blocked",
+      destination_kind: "none",
+    };
+  }
+
+  let response: Response;
+  try {
+    const connectionInfo = normalizeRuntimeConnectionInfo(
+      await options.connectionInfo(),
+    );
+    const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    if (fetchImpl === undefined) {
+      throw new Error("Runtime IPC fetch implementation is unavailable");
+    }
+    response = await fetchImpl(
+      buildRuntimeFetchUrl(
+        connectionInfo,
+        buildRuntimeArtifactContentPath(request.artifact_id),
+      ),
+      {
+        method: "GET",
+        headers: buildRuntimeIpcRequestHeaders({
+          token: connectionInfo.token,
+          ...(sensitive ? { extraHeaders: { "X-Cw-Sensitive": "true" } } : {}),
+        }),
+      },
+    );
+  } catch {
+    return {
+      ...baseResult,
+      status: "failed",
+      destination_kind: "none",
+    };
+  }
+
+  const contentType = response.headers.get("content-type");
+  if (!response.ok) {
+    return {
+      ...baseResult,
+      status: "failed",
+      content_type: contentType,
+      destination_kind: "none",
+    };
+  }
+
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(await response.arrayBuffer());
+  } catch {
+    return {
+      ...baseResult,
+      status: "failed",
+      content_type: contentType,
+      destination_kind: "none",
+    };
+  }
+
+  const contentHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  let destinationPath: string;
+  try {
+    destinationPath = await writeRuntimeArtifactTempFile(
+      bytes,
+      request.artifact_id,
+      contentType,
+      options.artifactTempDir,
+    );
+  } catch {
+    return {
+      ...baseResult,
+      status: "failed",
+      byte_count: bytes.byteLength,
+      content_hash: contentHash,
+      content_type: contentType,
+      destination_kind: "none",
+    };
+  }
+
+  if (request.action === "download") {
+    return {
+      ...baseResult,
+      status: "succeeded",
+      byte_count: bytes.byteLength,
+      content_hash: contentHash,
+      content_type: contentType,
+      destination_kind: "project_temp",
+    };
+  }
+
+  const openResult = await options.artifactOpenPath?.(destinationPath);
+  if (openResult !== undefined && openResult.length > 0) {
+    return {
+      ...baseResult,
+      status: "failed",
+      byte_count: bytes.byteLength,
+      content_hash: contentHash,
+      content_type: contentType,
+      destination_kind: "project_temp",
+    };
+  }
+
+  return {
+    ...baseResult,
+    status: "succeeded",
+    byte_count: bytes.byteLength,
+    content_hash: contentHash,
+    content_type: contentType,
+    destination_kind: "native_shell",
+  };
 }
 
 export function normalizeRuntimeConnectionInfo(
@@ -102,6 +261,54 @@ function buildRuntimeFetchUrl(
   requestPath: string,
 ): string {
   return `${connectionInfo.base_url}${requestPath}`;
+}
+
+function buildRuntimeArtifactContentPath(artifactId: string): string {
+  return `/artifacts/${encodeURIComponent(artifactId)}/content`;
+}
+
+async function writeRuntimeArtifactTempFile(
+  bytes: Buffer,
+  artifactId: string,
+  contentType: string | null,
+  artifactTempDir: string | undefined,
+): Promise<string> {
+  const directory =
+    artifactTempDir ?? path.join(tmpdir(), "cw-runtime-artifacts");
+  await mkdir(directory, { recursive: true });
+  const filename = [
+    "artifact",
+    safeRuntimeArtifactFilenameSegment(artifactId),
+    `${Date.now()}`,
+  ].join("-");
+  const targetPath = path.join(
+    directory,
+    `${filename}${runtimeArtifactExtension(contentType)}`,
+  );
+  await writeFile(targetPath, bytes);
+  return targetPath;
+}
+
+function safeRuntimeArtifactFilenameSegment(artifactId: string): string {
+  const cleaned = artifactId.replace(/[^0-9A-Za-z._-]+/gu, "_");
+  return cleaned.length === 0 ? "artifact" : cleaned.slice(0, 80);
+}
+
+function runtimeArtifactExtension(contentType: string | null): string {
+  const normalized = contentType?.split(";", 1)[0]?.trim().toLowerCase();
+  switch (normalized) {
+    case "application/json":
+      return ".json";
+    case "text/html":
+      return ".html";
+    case "text/markdown":
+    case "text/x-markdown":
+      return ".md";
+    case "text/plain":
+      return ".txt";
+    default:
+      return ".bin";
+  }
 }
 
 function parseRuntimeBaseUrlPort(baseUrl: string): number {

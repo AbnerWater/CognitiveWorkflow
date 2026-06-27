@@ -1,6 +1,8 @@
 import {
   assertRuntimeIpcRequestPath,
   buildRuntimeIpcRequestHeaders,
+  type RuntimeIpcArtifactActionRequest,
+  type RuntimeIpcArtifactActionResult,
   type RuntimeIpcConnectionInfo,
   type RuntimeIpcFetchInit,
   type RuntimeIpcRequestHeadersInput,
@@ -12,6 +14,8 @@ import {
 
 export type RuntimeRequestPath = RuntimeIpcRequestPath;
 export type RuntimeConnectionInfo = RuntimeIpcConnectionInfo;
+export type RuntimeArtifactActionRequest = RuntimeIpcArtifactActionRequest;
+export type RuntimeArtifactActionResult = RuntimeIpcArtifactActionResult;
 
 export interface RuntimeRequestHeadersInput extends RuntimeIpcRequestHeadersInput {}
 
@@ -50,6 +54,9 @@ export interface RuntimeBridge {
     path: RuntimeRequestPath,
     init?: RuntimeRequestInit,
   ) => Promise<RuntimeResponse<TBody>>;
+  readonly artifactAction: (
+    request: RuntimeArtifactActionRequest,
+  ) => Promise<RuntimeArtifactActionResult>;
 }
 
 export interface CwDesktopApi {

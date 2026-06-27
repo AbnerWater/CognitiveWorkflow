@@ -37,5 +37,6 @@ function freezeRuntimeBridge(runtime: RuntimeBridge): RuntimeBridge {
     onShutdownStatus: runtime.onShutdownStatus,
     connectionInfo: runtime.connectionInfo,
     fetch: runtime.fetch,
+    artifactAction: runtime.artifactAction,
   });
 }

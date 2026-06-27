@@ -85,6 +85,8 @@ export interface RuntimeWorkbenchShellStatusItem {
   readonly id:
     | "active_panel"
     | "execution_mode"
+    | "chat_instruction"
+    | "artifact_action"
     | "project_creation"
     | "version_snapshot"
     | "reference_management"
@@ -287,6 +289,12 @@ export type RuntimeWorkbenchShellLifecyclePanelSnapshot =
 export type RuntimeWorkbenchShellExecutionPolicySnapshot =
   RuntimeWorkbenchHostSessionSnapshot["executionPolicy"];
 
+export type RuntimeWorkbenchShellChatInstructionSnapshot =
+  RuntimeWorkbenchHostSessionSnapshot["chatInstruction"];
+
+export type RuntimeWorkbenchShellArtifactActionSnapshot =
+  RuntimeWorkbenchHostSessionSnapshot["artifactAction"];
+
 export type RuntimeWorkbenchShellProjectCreationSnapshot =
   RuntimeWorkbenchHostSessionSnapshot["projectCreation"];
 
@@ -306,6 +314,8 @@ export interface RuntimeWorkbenchShellSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly activePanelLabel: string;
   readonly executionPolicy: RuntimeWorkbenchShellExecutionPolicySnapshot;
+  readonly chatInstruction: RuntimeWorkbenchShellChatInstructionSnapshot;
+  readonly artifactAction: RuntimeWorkbenchShellArtifactActionSnapshot;
   readonly projectCreation: RuntimeWorkbenchShellProjectCreationSnapshot;
   readonly referenceManagement: RuntimeWorkbenchShellReferenceManagementSnapshot;
   readonly skillManagement: RuntimeWorkbenchShellSkillManagementSnapshot;
@@ -566,6 +576,12 @@ export function buildRuntimeWorkbenchShellSnapshot(
     activePanelLabel,
     executionPolicy: cloneRuntimeWorkbenchShellExecutionPolicy(
       host.executionPolicy,
+    ),
+    chatInstruction: cloneRuntimeWorkbenchShellChatInstruction(
+      host.chatInstruction,
+    ),
+    artifactAction: cloneRuntimeWorkbenchShellArtifactAction(
+      host.artifactAction,
     ),
     projectCreation: cloneRuntimeWorkbenchShellProjectCreation(
       host.projectCreation,
@@ -866,9 +882,13 @@ function buildShellChrome(
     chatBox: {
       title: "Chat Box",
       placeholder: "Ask about the active workflow",
-      enabled: false,
-      statusLabel: disposed ? "Disposed" : "Idle",
-      collapsedSummary: `${activePanelLabel} focus, chat ${disposed ? "disposed" : "idle"}`,
+      enabled: !disposed && host.chatInstruction.canSubmitInstruction,
+      statusLabel: disposed
+        ? "Disposed"
+        : chatInstructionStatusLabel(host.chatInstruction),
+      collapsedSummary: `${activePanelLabel} focus, chat ${
+        disposed ? "disposed" : chatInstructionStatusLabel(host.chatInstruction)
+      }`,
       collapsible: true,
       defaultCollapsed: false,
       expandLabel: "Expand chat",
@@ -1028,6 +1048,22 @@ function buildStatusItems(
       label: "Mode",
       value: executionModeLabel(host.executionPolicy.mode),
       tone: host.executionPolicy.mode === "step" ? "accent" : "neutral",
+    }),
+    statusItem({
+      id: "chat_instruction",
+      label: "Chat",
+      value: disposed
+        ? "Disposed"
+        : chatInstructionStatusLabel(host.chatInstruction),
+      tone: disposed ? "danger" : chatInstructionTone(host.chatInstruction),
+    }),
+    statusItem({
+      id: "artifact_action",
+      label: "Artifact",
+      value: disposed
+        ? "Disposed"
+        : artifactActionStatusLabel(host.artifactAction),
+      tone: disposed ? "danger" : artifactActionTone(host.artifactAction),
     }),
     statusItem({
       id: "project_creation",
@@ -1398,6 +1434,77 @@ function projectCreationStatusLabel(
   }
 }
 
+function chatInstructionStatusLabel(
+  chatInstruction: RuntimeWorkbenchShellChatInstructionSnapshot,
+): string {
+  switch (chatInstruction.status) {
+    case "submitting":
+      return "Submitting";
+    case "accepted":
+      return chatInstruction.commandId ?? "Accepted";
+    case "failed":
+      return "Failed";
+    case "blocked":
+      return chatInstruction.blockedReason ?? "Blocked";
+    case "idle":
+      return chatInstruction.canSubmitInstruction ? "Ready" : "Unavailable";
+  }
+}
+
+function chatInstructionTone(
+  chatInstruction: RuntimeWorkbenchShellChatInstructionSnapshot,
+): RuntimeWorkbenchShellTone {
+  switch (chatInstruction.status) {
+    case "accepted":
+      return "success";
+    case "submitting":
+      return "accent";
+    case "failed":
+      return "danger";
+    case "blocked":
+      return "warning";
+    case "idle":
+      return chatInstruction.canSubmitInstruction ? "neutral" : "warning";
+  }
+}
+
+function artifactActionStatusLabel(
+  artifactAction: RuntimeWorkbenchShellArtifactActionSnapshot,
+): string {
+  switch (artifactAction.status) {
+    case "running":
+      return "Running";
+    case "succeeded":
+      return artifactAction.destinationKind ?? "Succeeded";
+    case "failed":
+      return "Failed";
+    case "blocked":
+      return artifactAction.blockedReason ?? "Blocked";
+    case "cancelled":
+      return "Cancelled";
+    case "idle":
+      return artifactAction.canRunArtifactAction ? "Ready" : "Unavailable";
+  }
+}
+
+function artifactActionTone(
+  artifactAction: RuntimeWorkbenchShellArtifactActionSnapshot,
+): RuntimeWorkbenchShellTone {
+  switch (artifactAction.status) {
+    case "succeeded":
+      return "success";
+    case "running":
+      return "accent";
+    case "failed":
+      return "danger";
+    case "blocked":
+    case "cancelled":
+      return "warning";
+    case "idle":
+      return artifactAction.canRunArtifactAction ? "neutral" : "warning";
+  }
+}
+
 function projectCreationTone(
   projectCreation: RuntimeWorkbenchShellProjectCreationSnapshot,
 ): RuntimeWorkbenchShellTone {
@@ -1685,6 +1792,12 @@ function freezeRuntimeWorkbenchShellSnapshot(
     executionPolicy: cloneRuntimeWorkbenchShellExecutionPolicy(
       snapshot.executionPolicy,
     ),
+    chatInstruction: cloneRuntimeWorkbenchShellChatInstruction(
+      snapshot.chatInstruction,
+    ),
+    artifactAction: cloneRuntimeWorkbenchShellArtifactAction(
+      snapshot.artifactAction,
+    ),
     projectCreation: cloneRuntimeWorkbenchShellProjectCreation(
       snapshot.projectCreation,
     ),
@@ -1727,6 +1840,18 @@ function cloneRuntimeWorkbenchShellExecutionPolicy(
     availableModes: Object.freeze([...policy.availableModes]),
     runOnce: Object.freeze({ ...policy.runOnce }),
   });
+}
+
+function cloneRuntimeWorkbenchShellChatInstruction(
+  chatInstruction: RuntimeWorkbenchShellChatInstructionSnapshot,
+): RuntimeWorkbenchShellChatInstructionSnapshot {
+  return Object.freeze({ ...chatInstruction });
+}
+
+function cloneRuntimeWorkbenchShellArtifactAction(
+  artifactAction: RuntimeWorkbenchShellArtifactActionSnapshot,
+): RuntimeWorkbenchShellArtifactActionSnapshot {
+  return Object.freeze({ ...artifactAction });
 }
 
 function cloneRuntimeWorkbenchShellProjectCreation(

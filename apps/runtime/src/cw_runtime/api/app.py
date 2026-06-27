@@ -34,6 +34,7 @@ from cw_runtime.harness import (
     ProjectReferenceImportMetadata,
     ProjectReferencePatchRequest,
     ProjectSkillPatchRequest,
+    acquire_runtime_lock,
     import_project_reference,
     initialize_project,
     read_project,
@@ -67,9 +68,10 @@ from cw_runtime.runs import (
     resume_active_workflow_run,
     stream_sse_events,
 )
+from cw_runtime.runs.lifecycle import append_run_jsonl_locked, new_runtime_id, utc_now_ms
 from cw_runtime.settings import RUNTIME_SCHEMA_VERSION, RuntimeSettings
-from cw_schemas import RepairPatch
-from cw_schemas.types import PatchScope, RepairKind
+from cw_schemas import RepairPatch, RuntimeInstructionAccepted, RuntimeInstructionRequest
+from cw_schemas.types import PatchScope, RepairKind, RuntimeInstructionScope
 from cw_schemas.workflow import EvaluationTaskNode, RepairTaskNode
 
 from .auth import AuthenticationError, validate_bearer_authorization
@@ -573,6 +575,84 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
         remember_idempotency_response(request, body, status_code=200, content=content)
         return secure_json_response(status_code=200, content=content)
 
+    async def post_run_instruction(run_id: str, request: Any) -> Any:
+        return await _post_runtime_instruction(
+            run_id,
+            node_id=None,
+            expected_scope=RuntimeInstructionScope.RUN,
+            request=request,
+        )
+
+    async def post_run_node_instruction(run_id: str, node_id: str, request: Any) -> Any:
+        return await _post_runtime_instruction(
+            run_id,
+            node_id=node_id,
+            expected_scope=RuntimeInstructionScope.NODE,
+            request=request,
+        )
+
+    async def _post_runtime_instruction(
+        run_id: str,
+        *,
+        node_id: str | None,
+        expected_scope: RuntimeInstructionScope,
+        request: Any,
+    ) -> Any:
+        body_or_response = await _body_or_error_response(request)
+        if not isinstance(body_or_response, dict):
+            return body_or_response
+        body = body_or_response
+        replay = idempotency_replay_response(request, body)
+        if replay is not None:
+            return replay
+        project_root = run_locations.get(run_id)
+        if project_root is None:
+            return _resource_not_found("Run is not registered in this runtime process.", {"run_id": run_id})
+        try:
+            instruction_request = RuntimeInstructionRequest.model_validate(body)
+            if instruction_request.scope != expected_scope:
+                raise RunError(
+                    "NL_STATE_FORBIDDEN_TRANSITION",
+                    "Runtime instruction scope must match the endpoint path.",
+                    details={"path_scope": expected_scope.value, "body_scope": instruction_request.scope.value},
+                )
+            command_id = new_runtime_id()
+            accepted_at = utc_now_ms()
+            accepted = RuntimeInstructionAccepted(
+                command_id=command_id,
+                run_id=run_id,
+                node_id=node_id,
+                scope=expected_scope,
+                intent=instruction_request.intent,
+                accepted_at=accepted_at,
+                stream_url=f"{settings.api_prefix}/runs/{run_id}/stream",
+                correlation_id=instruction_request.correlation_id,
+            )
+            with acquire_runtime_lock(project_root):
+                read_workflow_run(project_root, run_id)
+                append_run_jsonl_locked(
+                    project_root,
+                    run_id,
+                    "instruction-commands.jsonl",
+                    {
+                        "command_id": command_id,
+                        "run_id": run_id,
+                        "node_id": node_id,
+                        "scope": expected_scope.value,
+                        "intent": instruction_request.intent.value,
+                        "accepted_at": accepted_at,
+                        "correlation_id": instruction_request.correlation_id,
+                        "instruction_persisted": False,
+                    },
+                )
+        except ValidationError as exc:
+            return secure_json_response(status_code=400, content=_dump_model(_validation_error_envelope(exc)))
+        except RunError as exc:
+            return _run_error_response(exc)
+        content = _dump_model(accepted)
+        remember_idempotency_response(request, body, status_code=202, content=content)
+        return secure_json_response(status_code=202, content=content)
+
     async def post_run_node_run_once(run_id: str, node_id: str, request: Any) -> Any:
         return await _run_node_advance(run_id, node_id, request)
 
@@ -1023,6 +1103,8 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     post_workflow_resume.__annotations__["request"] = requests.Request
     post_workflow_cancel.__annotations__["request"] = requests.Request
     post_run_decision.__annotations__["request"] = requests.Request
+    post_run_instruction.__annotations__["request"] = requests.Request
+    post_run_node_instruction.__annotations__["request"] = requests.Request
     post_run_node_run_once.__annotations__["request"] = requests.Request
     post_run_node_re_evaluate.__annotations__["request"] = requests.Request
     post_run_node_repair.__annotations__["request"] = requests.Request
@@ -1049,6 +1131,10 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/cancel")(post_workflow_cancel)
     app.get(f"{settings.api_prefix}/runs/{{run_id}}")(get_run)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/decisions")(post_run_decision)
+    app.post(f"{settings.api_prefix}/runs/{{run_id}}:submit-instruction", status_code=202)(post_run_instruction)
+    app.post(f"{settings.api_prefix}/runs/{{run_id}}/nodes/{{node_id}}:submit-instruction", status_code=202)(
+        post_run_node_instruction
+    )
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/nodes/{{node_id}}:run-once")(post_run_node_run_once)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/nodes/{{node_id}}:re-evaluate")(post_run_node_re_evaluate)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/nodes/{{node_id}}:repair")(post_run_node_repair)

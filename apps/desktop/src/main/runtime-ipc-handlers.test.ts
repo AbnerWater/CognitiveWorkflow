@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { createRuntimeBaseUrl, type RuntimeConnectionInfo } from "./runtime.js";
@@ -201,6 +205,99 @@ test("requests authenticated runtime shutdown through the shared fetch path", as
       Authorization: "Bearer token_abc123",
       "X-Cw-Client": "electron-renderer",
     },
+  });
+});
+
+test("opens runtime artifact content through native handoff without exposing paths", async () => {
+  const artifactTempDir = await mkdtemp(
+    path.join(os.tmpdir(), "cw-artifact-open-"),
+  );
+  let capturedUrl = "";
+  let capturedInit: RequestInit | undefined;
+  let openedPath = "";
+  try {
+    const body = "artifact bytes";
+    const handlers = createRuntimeIpcMainHandlers({
+      connectionInfo: () => CONNECTION,
+      artifactTempDir,
+      artifactOpenPath: async (targetPath) => {
+        openedPath = targetPath;
+        return "";
+      },
+      fetchImpl: async (input, init) => {
+        capturedUrl = String(input);
+        capturedInit = init;
+        return new Response(body, {
+          status: 200,
+          headers: { "Content-Type": "text/markdown" },
+        });
+      },
+    });
+
+    assert.ok(handlers.artifactAction);
+    const result = await handlers.artifactAction({
+      schema_version: "0.1.0",
+      artifact_id: "artifact_report",
+      action: "open",
+      run_id: "run_artifact",
+      intent: "ask",
+    });
+
+    assert.equal(
+      capturedUrl,
+      "http://127.0.0.1:51234/cw/v1/artifacts/artifact_report/content",
+    );
+    assert.deepEqual(capturedInit?.headers, {
+      Authorization: "Bearer token_abc123",
+      "X-Cw-Client": "electron-renderer",
+    });
+    assert.equal(openedPath.startsWith(artifactTempDir), true);
+    assert.equal(await readFile(openedPath, "utf8"), body);
+    assert.deepEqual(result, {
+      schema_version: "0.1.0",
+      artifact_id: "artifact_report",
+      action: "open",
+      status: "succeeded",
+      destination_kind: "native_shell",
+      content_type: "text/markdown",
+      byte_count: Buffer.byteLength(body),
+      content_hash: `sha256:${createHash("sha256").update(body).digest("hex")}`,
+      sensitive: false,
+    });
+    assert.equal(Object.hasOwn(result, "destination_path"), false);
+    assert.equal(Object.hasOwn(result, "body"), false);
+  } finally {
+    await rm(artifactTempDir, { force: true, recursive: true });
+  }
+});
+
+test("blocks sensitive user-selected artifact export before fetching content", async () => {
+  let fetched = false;
+  const handlers = createRuntimeIpcMainHandlers({
+    connectionInfo: () => CONNECTION,
+    fetchImpl: async () => {
+      fetched = true;
+      return new Response(null, { status: 204 });
+    },
+  });
+
+  assert.ok(handlers.artifactAction);
+  const result = await handlers.artifactAction({
+    schema_version: "0.1.0",
+    artifact_id: "artifact_sensitive",
+    action: "download",
+    artifact_sensitivity: "sensitive",
+    requested_destination_kind: "user_selected",
+  });
+
+  assert.equal(fetched, false);
+  assert.deepEqual(result, {
+    schema_version: "0.1.0",
+    artifact_id: "artifact_sensitive",
+    action: "download",
+    status: "blocked",
+    destination_kind: "none",
+    sensitive: true,
   });
 });
 

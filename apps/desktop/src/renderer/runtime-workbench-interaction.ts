@@ -6,6 +6,7 @@ import type { CreateRuntimeStreamInteractionSessionFactorySessionOptions } from 
 import type {
   RuntimeWorkbenchExecutionMode,
   RuntimeWorkbenchHumanDecisionCustomValue,
+  RuntimeWorkbenchInstructionIntent,
   RuntimeWorkbenchPanelId,
   RuntimeWorkbenchReferenceKind,
   RuntimeWorkbenchSession,
@@ -24,6 +25,8 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "dispose_runtime_stream_session",
   "set_execution_mode",
   "run_node_once",
+  "submit_chat_instruction",
+  "run_artifact_action",
   "create_project",
   "refresh_references",
   "import_reference",
@@ -73,6 +76,35 @@ export type RuntimeWorkbenchInteractionCommand =
       readonly nodeId: string;
       readonly projectId?: string;
       readonly idempotencyKey?: string;
+    }
+  | {
+      readonly type: "submit_chat_instruction";
+      readonly runId: string;
+      readonly nodeId?: string;
+      readonly instruction: string;
+      readonly intent: RuntimeWorkbenchInstructionIntent;
+      readonly projectId?: string;
+      readonly idempotencyKey?: string;
+      readonly correlationId?: string;
+      readonly clientCommandId?: string;
+    }
+  | {
+      readonly type: "run_artifact_action";
+      readonly artifactId: string;
+      readonly action: "open" | "download";
+      readonly runId?: string;
+      readonly nodeId?: string;
+      readonly intent?: RuntimeWorkbenchInstructionIntent;
+      readonly requestedDestinationKind?:
+        | "project_temp"
+        | "project_artifact"
+        | "user_selected"
+        | "native_shell"
+        | "none"
+        | null;
+      readonly artifactSensitivity?: "public" | "project" | "sensitive" | null;
+      readonly allowSensitiveExport?: boolean;
+      readonly correlationId?: string;
     }
   | {
       readonly type: "create_project";
@@ -314,6 +346,55 @@ export function createRuntimeWorkbenchInteraction(
             : {}),
         });
         return completeAction();
+      case "submit_chat_instruction":
+        await options.workbench.submitChatInstruction({
+          runId: safeCommand.runId,
+          ...(safeCommand.nodeId !== undefined
+            ? { nodeId: safeCommand.nodeId }
+            : {}),
+          instruction: safeCommand.instruction,
+          intent: safeCommand.intent,
+          ...(safeCommand.projectId !== undefined
+            ? { projectId: safeCommand.projectId }
+            : {}),
+          ...(safeCommand.idempotencyKey !== undefined
+            ? { idempotencyKey: safeCommand.idempotencyKey }
+            : {}),
+          ...(safeCommand.correlationId !== undefined
+            ? { correlationId: safeCommand.correlationId }
+            : {}),
+          ...(safeCommand.clientCommandId !== undefined
+            ? { clientCommandId: safeCommand.clientCommandId }
+            : {}),
+        });
+        return completeAction();
+      case "run_artifact_action":
+        await options.workbench.runArtifactAction({
+          artifactId: safeCommand.artifactId,
+          action: safeCommand.action,
+          ...(safeCommand.runId !== undefined
+            ? { runId: safeCommand.runId }
+            : {}),
+          ...(safeCommand.nodeId !== undefined
+            ? { nodeId: safeCommand.nodeId }
+            : {}),
+          ...(safeCommand.intent !== undefined
+            ? { intent: safeCommand.intent }
+            : {}),
+          ...(safeCommand.requestedDestinationKind !== undefined
+            ? { requestedDestinationKind: safeCommand.requestedDestinationKind }
+            : {}),
+          ...(safeCommand.artifactSensitivity !== undefined
+            ? { artifactSensitivity: safeCommand.artifactSensitivity }
+            : {}),
+          ...(safeCommand.allowSensitiveExport !== undefined
+            ? { allowSensitiveExport: safeCommand.allowSensitiveExport }
+            : {}),
+          ...(safeCommand.correlationId !== undefined
+            ? { correlationId: safeCommand.correlationId }
+            : {}),
+        });
+        return completeAction();
       case "create_project":
         await options.workbench.createProject({
           displayName: safeCommand.displayName,
@@ -470,6 +551,12 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
     if (workbench.executionPolicy.canRunOnce) {
       enabledCommandIds.push("run_node_once");
     }
+    if (workbench.chatInstruction.canSubmitInstruction) {
+      enabledCommandIds.push("submit_chat_instruction");
+    }
+    if (workbench.artifactAction.canRunArtifactAction) {
+      enabledCommandIds.push("run_artifact_action");
+    }
     if (workbench.projectCreation.canCreateProject) {
       enabledCommandIds.push("create_project");
     }
@@ -549,6 +636,53 @@ function requireRuntimeWorkbenchInteractionCommand(
         ("idempotencyKey" in command &&
           command.idempotencyKey !== undefined &&
           typeof command.idempotencyKey !== "string")
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "submit_chat_instruction":
+      if (
+        typeof command.runId !== "string" ||
+        ("nodeId" in command &&
+          command.nodeId !== undefined &&
+          typeof command.nodeId !== "string") ||
+        typeof command.instruction !== "string" ||
+        !isRuntimeWorkbenchInstructionIntent(command.intent) ||
+        ("projectId" in command &&
+          command.projectId !== undefined &&
+          typeof command.projectId !== "string") ||
+        ("idempotencyKey" in command &&
+          command.idempotencyKey !== undefined &&
+          typeof command.idempotencyKey !== "string") ||
+        ("correlationId" in command &&
+          command.correlationId !== undefined &&
+          typeof command.correlationId !== "string") ||
+        ("clientCommandId" in command &&
+          command.clientCommandId !== undefined &&
+          typeof command.clientCommandId !== "string")
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "run_artifact_action":
+      if (
+        typeof command.artifactId !== "string" ||
+        !isRuntimeWorkbenchArtifactAction(command.action) ||
+        ("runId" in command &&
+          command.runId !== undefined &&
+          typeof command.runId !== "string") ||
+        ("nodeId" in command &&
+          command.nodeId !== undefined &&
+          typeof command.nodeId !== "string") ||
+        ("intent" in command &&
+          command.intent !== undefined &&
+          !isRuntimeWorkbenchInstructionIntent(command.intent)) ||
+        ("allowSensitiveExport" in command &&
+          command.allowSensitiveExport !== undefined &&
+          typeof command.allowSensitiveExport !== "boolean") ||
+        ("correlationId" in command &&
+          command.correlationId !== undefined &&
+          typeof command.correlationId !== "string")
       ) {
         throw new Error("Invalid runtime workbench interaction command");
       }
@@ -732,6 +866,18 @@ function isRuntimeWorkbenchHumanDecisionCustomValue(
       return false;
   }
   return false;
+}
+
+function isRuntimeWorkbenchInstructionIntent(
+  value: unknown,
+): value is RuntimeWorkbenchInstructionIntent {
+  return value === "ask" || value === "revise" || value === "repair";
+}
+
+function isRuntimeWorkbenchArtifactAction(
+  value: unknown,
+): value is "open" | "download" {
+  return value === "open" || value === "download";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

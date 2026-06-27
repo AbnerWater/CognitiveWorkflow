@@ -172,6 +172,9 @@ function createBridgeFromStartupHandlers(
         path: requestPath,
         ...(init !== undefined ? { init } : {}),
       }),
+    artifactAction: async () => {
+      throw new Error("artifactAction should not be called by stream smoke");
+    },
   };
 }
 

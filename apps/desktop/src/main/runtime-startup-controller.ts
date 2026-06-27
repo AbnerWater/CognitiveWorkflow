@@ -44,6 +44,8 @@ export interface StartRuntimeWithLifecycleOptions {
   readonly spawn?: RuntimeSidecarSpawn;
   readonly tokenFactory?: () => string;
   readonly fetchImpl?: RuntimeIpcMainHandlerOptions["fetchImpl"];
+  readonly artifactOpenPath?: RuntimeIpcMainHandlerOptions["artifactOpenPath"];
+  readonly artifactTempDir?: RuntimeIpcMainHandlerOptions["artifactTempDir"];
   readonly connectionRegistry?: RuntimeConnectionRegistry;
   readonly lock?: RuntimeOrchestrationLockOptions;
   readonly shutdown?: RuntimeOrchestrationShutdownOptions;
@@ -152,6 +154,12 @@ async function startOwnedRuntime(
     ...(options.fetchImpl !== undefined
       ? { fetchImpl: options.fetchImpl }
       : {}),
+    ...(options.artifactOpenPath !== undefined
+      ? { artifactOpenPath: options.artifactOpenPath }
+      : {}),
+    ...(options.artifactTempDir !== undefined
+      ? { artifactTempDir: options.artifactTempDir }
+      : {}),
     connectionRegistry,
     ...(options.lock !== undefined ? { lock: options.lock } : {}),
     ...(options.shutdown !== undefined ? { shutdown: options.shutdown } : {}),
@@ -176,6 +184,12 @@ function reuseExistingRuntime(
     connectionInfo: () => connection,
     ...(options.fetchImpl !== undefined
       ? { fetchImpl: options.fetchImpl }
+      : {}),
+    ...(options.artifactOpenPath !== undefined
+      ? { artifactOpenPath: options.artifactOpenPath }
+      : {}),
+    ...(options.artifactTempDir !== undefined
+      ? { artifactTempDir: options.artifactTempDir }
       : {}),
   });
 

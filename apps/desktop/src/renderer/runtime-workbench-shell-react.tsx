@@ -468,6 +468,11 @@ export function RuntimeWorkbenchShellReactView(
       normalizeRuntimeWorkbenchShellReactPathSegment(streamOptionsForm.runId),
     [streamOptionsForm.runId],
   );
+  const activeRuntimeStreamRunId = useMemo(
+    () => selectRuntimeWorkbenchShellReactActiveRunId(snapshot),
+    [snapshot],
+  );
+  const runtimeActionRunId = executionRunId ?? activeRuntimeStreamRunId;
   const executionProjectId = useMemo(
     () =>
       normalizeRuntimeWorkbenchShellReactProjectId(streamOptionsForm.projectId),
@@ -1212,6 +1217,47 @@ export function RuntimeWorkbenchShellReactView(
     },
     [dispatchStreamPanelCommand],
   );
+  const handleStreamArtifactActionClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const artifactId = event.currentTarget.dataset.streamArtifactId;
+      const action = event.currentTarget.dataset.streamArtifactAction;
+      if (
+        artifactId === undefined ||
+        artifactId.length === 0 ||
+        (action !== "open" && action !== "download")
+      ) {
+        return;
+      }
+      void props.session
+        .dispatch({
+          type: "run_artifact_action",
+          artifactId,
+          action,
+          ...(runtimeActionRunId !== null ? { runId: runtimeActionRunId } : {}),
+        })
+        .catch(handleActionError);
+    },
+    [handleActionError, props.session, runtimeActionRunId],
+  );
+  const handleChatSubmit = useCallback(
+    (input: RuntimeWorkbenchShellChatSubmitInput): void => {
+      if (runtimeActionRunId === null) {
+        return;
+      }
+      void props.session
+        .dispatch({
+          type: "submit_chat_instruction",
+          runId: runtimeActionRunId,
+          instruction: input.instruction,
+          intent: input.intent,
+          ...(executionProjectId !== null && executionProjectId.length > 0
+            ? { projectId: executionProjectId }
+            : {}),
+        })
+        .catch(handleActionError);
+    },
+    [executionProjectId, handleActionError, props.session, runtimeActionRunId],
+  );
   const dispatchLifecyclePanelCommand = useCallback(
     (command: RuntimeLifecyclePanelInteractionCommand): void => {
       void props.session
@@ -1344,6 +1390,7 @@ export function RuntimeWorkbenchShellReactView(
                   onAcknowledgeFullReloadClick={
                     handleStreamPanelAcknowledgeFullReloadClick
                   }
+                  onArtifactActionClick={handleStreamArtifactActionClick}
                   onClearSearchClick={handleStreamPanelClearSearchClick}
                   onClearSelectionClick={handleStreamPanelClearSelectionClick}
                   onMarkReadClick={handleStreamPanelMarkReadClick}
@@ -1481,7 +1528,11 @@ export function RuntimeWorkbenchShellReactView(
         </div>
 
         <RuntimeWorkbenchShellTaskDrawer drawer={snapshot.chrome.taskDrawer} />
-        <RuntimeWorkbenchShellChatBox chatBox={snapshot.chrome.chatBox} />
+        <RuntimeWorkbenchShellChatBox
+          chatBox={snapshot.chrome.chatBox}
+          onSubmit={handleChatSubmit}
+          runId={runtimeActionRunId}
+        />
       </div>
     </main>
   );
@@ -3689,6 +3740,11 @@ function RuntimeWorkbenchShellTaskDrawerDetails(props: {
 
 type RuntimeWorkbenchShellChatDraftIntent = "ask" | "revise" | "repair";
 
+interface RuntimeWorkbenchShellChatSubmitInput {
+  readonly instruction: string;
+  readonly intent: RuntimeWorkbenchShellChatDraftIntent;
+}
+
 type RuntimeWorkbenchShellChatDraftPreviewState = "empty" | "blocked" | "ready";
 
 type RuntimeWorkbenchShellChatDraftReadinessReason =
@@ -3865,6 +3921,8 @@ function runtimeWorkbenchShellChatDraftSendGuard(
 
 function RuntimeWorkbenchShellChatBox(props: {
   readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
+  readonly onSubmit: (input: RuntimeWorkbenchShellChatSubmitInput) => void;
+  readonly runId: string | null;
 }): ReactElement {
   const [expanded, setExpanded] = useState(
     () => !props.chatBox.defaultCollapsed,
@@ -3885,7 +3943,7 @@ function RuntimeWorkbenchShellChatBox(props: {
   const draftIntentContext =
     runtimeWorkbenchShellChatDraftIntentContext(draftIntent);
   const draftPreview = runtimeWorkbenchShellChatDraftPreview(
-    props.chatBox.enabled,
+    props.chatBox.enabled && props.runId !== null,
     draftWords,
   );
   const sendGuard = runtimeWorkbenchShellChatDraftSendGuard(draftPreview);
@@ -3937,6 +3995,7 @@ function RuntimeWorkbenchShellChatBox(props: {
     if (!sendGuard.enabled) {
       return;
     }
+    props.onSubmit({ instruction: draft, intent: draftIntent });
     const sequence = localSubmissionSequenceRef.current + 1;
     localSubmissionSequenceRef.current = sequence;
     const localSubmission = runtimeWorkbenchShellCreateChatLocalSubmission(
@@ -3956,12 +4015,14 @@ function RuntimeWorkbenchShellChatBox(props: {
     setDraft("");
     focusDraftInput();
   }, [
+    draft,
     draftIntent,
     draftIntentContext,
     draftIntentLabel,
     draftLength,
     draftWords,
     focusDraftInput,
+    props.onSubmit,
     sendGuard.enabled,
   ]);
   const handleDraftKeyDown = useCallback(
@@ -4656,6 +4717,9 @@ function RuntimeWorkbenchShellStreamPanel(props: {
   readonly onMarkReadClick: () => void;
   readonly onAcknowledgeFullReloadClick: () => void;
   readonly onSelectEventClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onArtifactActionClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
   readonly onClearSelectionClick: () => void;
   readonly onToggleExpandedClick: (
     event: MouseEvent<HTMLButtonElement>,
@@ -4737,6 +4801,7 @@ function RuntimeWorkbenchShellStreamPanel(props: {
               <RuntimeWorkbenchShellStreamEventGroup
                 events={panel.summaryItems}
                 groupId="summary"
+                onArtifactActionClick={props.onArtifactActionClick}
                 onSelectEventClick={props.onSelectEventClick}
                 onToggleExpandedClick={props.onToggleExpandedClick}
                 title="Summary"
@@ -4744,12 +4809,14 @@ function RuntimeWorkbenchShellStreamPanel(props: {
               <RuntimeWorkbenchShellStreamEventGroup
                 events={panel.timelineItems}
                 groupId="timeline"
+                onArtifactActionClick={props.onArtifactActionClick}
                 onSelectEventClick={props.onSelectEventClick}
                 onToggleExpandedClick={props.onToggleExpandedClick}
                 title="Timeline"
               />
             </div>
             <RuntimeWorkbenchShellStreamSelection
+              onArtifactActionClick={props.onArtifactActionClick}
               onClearSelectionClick={props.onClearSelectionClick}
               panel={panel}
             />
@@ -5002,6 +5069,9 @@ function RuntimeWorkbenchShellStreamEventGroup(props: {
   readonly title: string;
   readonly events: readonly RuntimeWorkbenchShellRuntimeStreamEventSnapshot[];
   readonly onSelectEventClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onArtifactActionClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
   readonly onToggleExpandedClick: (
     event: MouseEvent<HTMLButtonElement>,
   ) => void;
@@ -5052,6 +5122,7 @@ function RuntimeWorkbenchShellStreamEventGroup(props: {
             <RuntimeWorkbenchShellStreamEventItem
               event={event}
               key={event.id ?? `${event.type}:${index}`}
+              onArtifactActionClick={props.onArtifactActionClick}
               onSelectEventClick={props.onSelectEventClick}
               onToggleExpandedClick={props.onToggleExpandedClick}
             />
@@ -5065,6 +5136,9 @@ function RuntimeWorkbenchShellStreamEventGroup(props: {
 function RuntimeWorkbenchShellStreamEventItem(props: {
   readonly event: RuntimeWorkbenchShellRuntimeStreamEventSnapshot;
   readonly onSelectEventClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  readonly onArtifactActionClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
   readonly onToggleExpandedClick: (
     event: MouseEvent<HTMLButtonElement>,
   ) => void;
@@ -5148,6 +5222,7 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
             <RuntimeWorkbenchShellStreamEventItem
               event={child}
               key={child.id ?? `${child.type}:${index}`}
+              onArtifactActionClick={props.onArtifactActionClick}
               onSelectEventClick={props.onSelectEventClick}
               onToggleExpandedClick={props.onToggleExpandedClick}
             />
@@ -5214,6 +5289,7 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
           />
           <RuntimeWorkbenchShellStreamArtifactRefs
             artifactRefs={props.event.artifactRefs}
+            onArtifactActionClick={props.onArtifactActionClick}
             source="event-detail"
           />
           <dl>
@@ -5316,6 +5392,9 @@ function RuntimeWorkbenchShellStreamEventItem(props: {
 
 function RuntimeWorkbenchShellStreamArtifactRefs(props: {
   readonly artifactRefs: readonly RuntimeWorkbenchShellRuntimeStreamEventSnapshot["artifactRefs"][number][];
+  readonly onArtifactActionClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
   readonly source: "event-detail" | "selection";
 }): ReactElement | null {
   if (props.artifactRefs.length === 0) {
@@ -5354,6 +5433,24 @@ function RuntimeWorkbenchShellStreamArtifactRefs(props: {
             {artifactRef.previewText === null ? null : (
               <p>{artifactRef.previewText}</p>
             )}
+            <div className="cw-workbench__stream-artifact-actions">
+              <button
+                data-stream-artifact-action="open"
+                data-stream-artifact-id={artifactRef.artifactId}
+                onClick={props.onArtifactActionClick}
+                type="button"
+              >
+                Open
+              </button>
+              <button
+                data-stream-artifact-action="download"
+                data-stream-artifact-id={artifactRef.artifactId}
+                onClick={props.onArtifactActionClick}
+                type="button"
+              >
+                Download
+              </button>
+            </div>
           </li>
         ))}
       </ul>
@@ -5363,6 +5460,9 @@ function RuntimeWorkbenchShellStreamArtifactRefs(props: {
 
 function RuntimeWorkbenchShellStreamSelection(props: {
   readonly panel: RuntimeWorkbenchShellRuntimeStreamPanelSnapshot;
+  readonly onArtifactActionClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
   readonly onClearSelectionClick: () => void;
 }): ReactElement {
   const selected = props.panel.selectedEvent;
@@ -5529,6 +5629,7 @@ function RuntimeWorkbenchShellStreamSelection(props: {
           />
           <RuntimeWorkbenchShellStreamArtifactRefs
             artifactRefs={selected.artifactRefs}
+            onArtifactActionClick={props.onArtifactActionClick}
             source="selection"
           />
           <dl>
@@ -5875,6 +5976,29 @@ function normalizeRuntimeWorkbenchShellReactPathSegment(
     return null;
   }
   return trimmed;
+}
+
+function selectRuntimeWorkbenchShellReactActiveRunId(
+  snapshot: RuntimeWorkbenchShellSnapshot,
+): string | null {
+  const panel = snapshot.runtimeStreamPanel;
+  if (panel === null) {
+    return null;
+  }
+  const candidates = [
+    panel.selectedEvent?.runId ?? null,
+    ...panel.timelineItems.map((item) => item.runId),
+  ];
+  for (const candidate of candidates) {
+    if (candidate === null) {
+      continue;
+    }
+    const runId = normalizeRuntimeWorkbenchShellReactPathSegment(candidate);
+    if (runId !== null) {
+      return runId;
+    }
+  }
+  return null;
 }
 
 function isRuntimeWorkbenchShellReactReferenceKind(

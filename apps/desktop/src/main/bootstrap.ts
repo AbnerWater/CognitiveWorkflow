@@ -1,4 +1,5 @@
 import {
+  RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
   RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
@@ -983,6 +984,8 @@ function createRuntimeIpcMainInvokeHandler(
     case RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL:
       return async () => registration.handle();
     case RUNTIME_IPC_FETCH_CHANNEL:
+      return async (_event, payload) => registration.handle(payload);
+    case RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL:
       return async (_event, payload) => registration.handle(payload);
   }
 }

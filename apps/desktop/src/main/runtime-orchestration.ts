@@ -54,6 +54,8 @@ export interface StartRuntimeOrchestrationOptions {
   readonly spawn?: RuntimeSidecarSpawn;
   readonly tokenFactory?: () => string;
   readonly fetchImpl?: RuntimeIpcMainHandlerOptions["fetchImpl"];
+  readonly artifactOpenPath?: RuntimeIpcMainHandlerOptions["artifactOpenPath"];
+  readonly artifactTempDir?: RuntimeIpcMainHandlerOptions["artifactTempDir"];
   readonly connectionRegistry?: RuntimeConnectionRegistry;
   readonly lock?: RuntimeOrchestrationLockOptions;
   readonly shutdown?: RuntimeOrchestrationShutdownOptions;
@@ -109,6 +111,12 @@ export async function startRuntimeOrchestration(
     connectionInfo: () => sidecar.connection,
     ...(options.fetchImpl !== undefined
       ? { fetchImpl: options.fetchImpl }
+      : {}),
+    ...(options.artifactOpenPath !== undefined
+      ? { artifactOpenPath: options.artifactOpenPath }
+      : {}),
+    ...(options.artifactTempDir !== undefined
+      ? { artifactTempDir: options.artifactTempDir }
       : {}),
   });
 

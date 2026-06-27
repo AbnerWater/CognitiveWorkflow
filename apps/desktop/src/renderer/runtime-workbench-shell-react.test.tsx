@@ -2279,7 +2279,7 @@ test("renderer runtime workbench React shell toggles chat box collapse", async (
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(dom.container),
-      /Stream focus, chat idle/u,
+      /Stream focus, chat Unavailable/u,
     );
 
     const expandChatButton = requireFakeRuntimeWorkbenchButtonByText(
@@ -2707,7 +2707,7 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
         "chatDraftDetails",
         "true",
       ).getAttribute("data-chat-draft-status"),
-      "Idle",
+      "Unavailable",
     );
     assert.match(
       fakeRuntimeWorkbenchNodeTextContent(
@@ -2717,7 +2717,7 @@ test("renderer runtime workbench React shell drafts chat box text locally", asyn
           "true",
         ),
       ),
-      /Draft[\s\S]*Characters[\s\S]*22[\s\S]*Words[\s\S]*4[\s\S]*Status[\s\S]*Idle[\s\S]*Intent[\s\S]*Repair/u,
+      /Draft[\s\S]*Characters[\s\S]*22[\s\S]*Words[\s\S]*4[\s\S]*Status[\s\S]*Unavailable[\s\S]*Intent[\s\S]*Repair/u,
     );
     assert.equal(
       requireFakeRuntimeWorkbenchElementByData(
@@ -3140,7 +3140,14 @@ test("renderer runtime workbench React shell records local chat send receipt", a
       "chatLocalSubmit",
       "true",
     );
-    assert.equal(session.dispatchedCommands().length, 0);
+    assert.deepEqual(session.dispatchedCommands(), [
+      {
+        type: "submit_chat_instruction",
+        runId: "run_react_stream",
+        instruction: "Ask the workflow status",
+        intent: "ask",
+      },
+    ]);
     assert.equal(draftInput.value, "");
     assert.equal(dom.container.ownerDocument?.activeElement, draftInput);
     assert.equal(
@@ -3306,7 +3313,14 @@ test("renderer runtime workbench React shell submits chat draft with keyboard sh
       "chatLocalSubmit",
       "true",
     );
-    assert.equal(session.dispatchedCommands().length, 0);
+    assert.deepEqual(session.dispatchedCommands(), [
+      {
+        type: "submit_chat_instruction",
+        runId: "run_react_stream",
+        instruction: "Send with keyboard now",
+        intent: "ask",
+      },
+    ]);
     assert.equal(draftInput.value, "");
     assert.equal(dom.container.ownerDocument?.activeElement, draftInput);
     assert.equal(
@@ -3376,6 +3390,20 @@ test("renderer runtime workbench React shell submits chat draft with keyboard sh
       fakeRuntimeWorkbenchElementAttributeValues(localSubmission).join(" "),
       /Meta send request/u,
     );
+    assert.deepEqual(session.dispatchedCommands(), [
+      {
+        type: "submit_chat_instruction",
+        runId: "run_react_stream",
+        instruction: "Send with keyboard now",
+        intent: "ask",
+      },
+      {
+        type: "submit_chat_instruction",
+        runId: "run_react_stream",
+        instruction: "Meta send request",
+        intent: "ask",
+      },
+    ]);
 
     await act(async () => {
       root.unmount();
@@ -3503,7 +3531,15 @@ test("renderer runtime workbench React shell tracks local chat send history", as
       "chatLocalSubmitHistoryItem",
       "3",
     );
-    assert.equal(session.dispatchedCommands().length, 0);
+    assert.deepEqual(
+      session.dispatchedCommands().map((command) => command.type),
+      [
+        "submit_chat_instruction",
+        "submit_chat_instruction",
+        "submit_chat_instruction",
+        "submit_chat_instruction",
+      ],
+    );
     assert.equal(draftInput.value, "");
     assert.equal(
       localSubmission.getAttribute("data-chat-local-submit-count"),
@@ -3665,7 +3701,7 @@ test("renderer runtime workbench React shell clears local chat send history", as
       clickFakeRuntimeWorkbenchElement(clearLocalSubmissionsButton);
     });
 
-    assert.equal(session.dispatchedCommands().length, 0);
+    assert.equal(session.dispatchedCommands().length, 1);
     assert.equal(draftInput.value, "Revise after clear");
     assert.equal(dom.container.ownerDocument?.activeElement, draftInput);
     assert.equal(
@@ -3707,7 +3743,20 @@ test("renderer runtime workbench React shell clears local chat send history", as
       "chatLocalSubmit",
       "true",
     );
-    assert.equal(session.dispatchedCommands().length, 0);
+    assert.deepEqual(session.dispatchedCommands(), [
+      {
+        type: "submit_chat_instruction",
+        runId: "run_react_stream",
+        instruction: "Ask the workflow status",
+        intent: "ask",
+      },
+      {
+        type: "submit_chat_instruction",
+        runId: "run_react_stream",
+        instruction: "Revise after clear",
+        intent: "revise",
+      },
+    ]);
     assert.equal(draftInput.value, "");
     assert.equal(
       nextLocalSubmission.getAttribute("data-chat-local-submit-sequence"),
@@ -5903,6 +5952,146 @@ test("renderer runtime workbench session dispatches run-once through runtime fet
   );
 });
 
+test("renderer runtime workbench session submits chat instructions without retaining raw text", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
+    body: Object.freeze({
+      schema_version: "0.1.0",
+      command_id: "cmd_runtime_chat",
+      status: "accepted",
+      run_id: "run_chat",
+      node_id: null,
+      scope: "run",
+      intent: "revise",
+      accepted_at: "2026-06-27T12:00:00.000Z",
+      stream_url: "/cw/v1/runs/run_chat/stream",
+      correlation_id: "trace_chat",
+      raw_instruction_echo: "must not be retained",
+    }),
+    ok: true,
+    status: 202,
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const snapshot = await session.submitChatInstruction({
+    runId: " run_chat ",
+    instruction: "Please revise the workflow with a safer gate",
+    intent: "revise",
+    projectId: "project_chat",
+    idempotencyKey: "idem_chat",
+    correlationId: "trace_chat",
+    clientCommandId: "client_chat",
+  });
+
+  const call = requireRuntimeWorkbenchRunOnceRuntimeCall(calls);
+  assert.equal(call.path, "/runs/run_chat:submit-instruction");
+  assert.equal(call.init?.method, "POST");
+  assert.equal(call.init?.projectId, "project_chat");
+  assert.equal(call.init?.idempotencyKey, "idem_chat");
+  assert.deepEqual(JSON.parse(String(call.init?.body)), {
+    schema_version: "0.1.0",
+    scope: "run",
+    instruction: "Please revise the workflow with a safer gate",
+    intent: "revise",
+    correlation_id: "trace_chat",
+    client_command_id: "client_chat",
+    metadata: { cw: { source: "desktop_chat_box" } },
+  });
+  assert.deepEqual(snapshot.chatInstruction, {
+    status: "accepted",
+    method: "POST",
+    path: "/runs/run_chat:submit-instruction",
+    runId: "run_chat",
+    nodeId: null,
+    scope: "run",
+    intent: "revise",
+    commandId: "cmd_runtime_chat",
+    statusCode: 202,
+    blockedReason: null,
+    characterCount: 44,
+    wordCount: 8,
+    canSubmitInstruction: true,
+  });
+  assert.equal(
+    JSON.stringify(snapshot.chatInstruction).includes("safer gate"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(snapshot.chatInstruction).includes("must not be retained"),
+    false,
+  );
+});
+
+test("renderer runtime workbench session runs artifact actions through preload bridge", async () => {
+  const { runtime, calls } = createFakeRuntimeWorkbenchArtifactActionRuntime({
+    schema_version: "0.1.0",
+    artifact_id: "artifact_report",
+    action: "download",
+    status: "succeeded",
+    destination_kind: "project_temp",
+    content_type: "text/markdown",
+    byte_count: 128,
+    content_hash:
+      "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    sensitive: false,
+    correlation_id: "trace_artifact",
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const snapshot = await session.runArtifactAction({
+    artifactId: " artifact_report ",
+    action: "download",
+    runId: "run_artifact",
+    nodeId: "node_artifact",
+    intent: "ask",
+    requestedDestinationKind: "project_temp",
+    artifactSensitivity: "project",
+    correlationId: "trace_artifact",
+  });
+
+  assert.deepEqual(calls, [
+    {
+      request: {
+        schema_version: "0.1.0",
+        artifact_id: "artifact_report",
+        action: "download",
+        run_id: "run_artifact",
+        node_id: "node_artifact",
+        intent: "ask",
+        requested_destination_kind: "project_temp",
+        artifact_sensitivity: "project",
+        correlation_id: "trace_artifact",
+      },
+    },
+  ]);
+  assert.deepEqual(snapshot.artifactAction, {
+    status: "succeeded",
+    artifactId: "artifact_report",
+    action: "download",
+    runId: "run_artifact",
+    nodeId: "node_artifact",
+    destinationKind: "project_temp",
+    contentType: "text/markdown",
+    byteCount: 128,
+    contentHash:
+      "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    sensitive: false,
+    errorCode: null,
+    correlationId: "trace_artifact",
+    blockedReason: null,
+    canRunArtifactAction: true,
+  });
+  assert.equal(
+    Object.hasOwn(snapshot.artifactAction, "destinationPath"),
+    false,
+  );
+});
+
 test("renderer runtime workbench session creates workflow snapshots through runtime fetch", async () => {
   const { runtime, calls } = createFakeRuntimeWorkbenchRunOnceRuntime({
     body: Object.freeze({
@@ -7597,6 +7786,11 @@ function createLoopbackRuntimeBridge(
     fetch: async () => {
       throw new Error("Loopback stream smoke does not use runtime.fetch");
     },
+    artifactAction: async () => {
+      throw new Error(
+        "Loopback stream smoke does not use runtime.artifactAction",
+      );
+    },
   };
 }
 
@@ -7605,9 +7799,14 @@ interface RuntimeWorkbenchRunOnceRuntimeCall {
   readonly init?: RuntimeRequestInit;
 }
 
+interface RuntimeWorkbenchArtifactActionRuntimeCall {
+  readonly request: Parameters<RuntimeBridge["artifactAction"]>[0];
+}
+
 function createRuntimeWorkbenchRunOnceSession(options: {
   readonly executionMode: RuntimeWorkbenchExecutionMode;
-  readonly runtime?: Pick<RuntimeBridge, "fetch">;
+  readonly runtime?: Pick<RuntimeBridge, "fetch"> &
+    Partial<Pick<RuntimeBridge, "artifactAction">>;
 }) {
   return createRuntimeWorkbenchSession({
     lifecyclePanelController:
@@ -7647,6 +7846,26 @@ function createFakeRuntimeWorkbenchRunOnceRuntime(
       });
     },
   });
+  return { runtime, calls };
+}
+
+function createFakeRuntimeWorkbenchArtifactActionRuntime(
+  result: Awaited<ReturnType<RuntimeBridge["artifactAction"]>>,
+): {
+  readonly runtime: Pick<RuntimeBridge, "fetch" | "artifactAction">;
+  readonly calls: readonly RuntimeWorkbenchArtifactActionRuntimeCall[];
+} {
+  const calls: RuntimeWorkbenchArtifactActionRuntimeCall[] = [];
+  const runtime: Pick<RuntimeBridge, "fetch" | "artifactAction"> =
+    Object.freeze({
+      fetch: async () => {
+        throw new Error("artifact action test does not use runtime.fetch");
+      },
+      artifactAction: async (request) => {
+        calls.push({ request: Object.freeze({ ...request }) });
+        return result;
+      },
+    });
   return { runtime, calls };
 }
 
@@ -7793,6 +8012,47 @@ function createRuntimeWorkbenchShellReactExecutionPolicy(
   });
 }
 
+function createRuntimeWorkbenchShellReactChatInstructionSnapshot(
+  input: Partial<RuntimeWorkbenchShellSnapshot["chatInstruction"]> = {},
+): RuntimeWorkbenchShellSnapshot["chatInstruction"] {
+  return Object.freeze({
+    status: input.status ?? "idle",
+    method: "POST",
+    path: input.path ?? null,
+    runId: input.runId ?? null,
+    nodeId: input.nodeId ?? null,
+    scope: input.scope ?? null,
+    intent: input.intent ?? null,
+    commandId: input.commandId ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    characterCount: input.characterCount ?? null,
+    wordCount: input.wordCount ?? null,
+    canSubmitInstruction: input.canSubmitInstruction ?? false,
+  });
+}
+
+function createRuntimeWorkbenchShellReactArtifactActionSnapshot(
+  input: Partial<RuntimeWorkbenchShellSnapshot["artifactAction"]> = {},
+): RuntimeWorkbenchShellSnapshot["artifactAction"] {
+  return Object.freeze({
+    status: input.status ?? "idle",
+    artifactId: input.artifactId ?? null,
+    action: input.action ?? null,
+    runId: input.runId ?? null,
+    nodeId: input.nodeId ?? null,
+    destinationKind: input.destinationKind ?? null,
+    contentType: input.contentType ?? null,
+    byteCount: input.byteCount ?? null,
+    contentHash: input.contentHash ?? null,
+    sensitive: input.sensitive ?? false,
+    errorCode: input.errorCode ?? null,
+    correlationId: input.correlationId ?? null,
+    blockedReason: input.blockedReason ?? null,
+    canRunArtifactAction: input.canRunArtifactAction ?? false,
+  });
+}
+
 function createRuntimeWorkbenchShellReactProjectCreationSnapshot(
   input: Partial<RuntimeWorkbenchShellSnapshot["projectCreation"]> = {},
 ): RuntimeWorkbenchShellSnapshot["projectCreation"] {
@@ -7907,6 +8167,8 @@ function createRuntimeWorkbenchShellReactSnapshot(
     executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(
       options.executionMode,
     ),
+    chatInstruction: createRuntimeWorkbenchShellReactChatInstructionSnapshot(),
+    artifactAction: createRuntimeWorkbenchShellReactArtifactActionSnapshot(),
     projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
     referenceManagement:
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(
@@ -7970,6 +8232,8 @@ function createRuntimeWorkbenchShellReactStreamSnapshot(): RuntimeWorkbenchShell
   return buildRuntimeWorkbenchShellSnapshot({
     activePanel: "stream",
     executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(),
+    chatInstruction: createRuntimeWorkbenchShellReactChatInstructionSnapshot(),
+    artifactAction: createRuntimeWorkbenchShellReactArtifactActionSnapshot(),
     projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
     referenceManagement:
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(),
@@ -8257,6 +8521,8 @@ function createRuntimeWorkbenchShellReactLifecycleSnapshot(): RuntimeWorkbenchSh
   return buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
     executionPolicy: createRuntimeWorkbenchShellReactExecutionPolicy(),
+    chatInstruction: createRuntimeWorkbenchShellReactChatInstructionSnapshot(),
+    artifactAction: createRuntimeWorkbenchShellReactArtifactActionSnapshot(),
     projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
     referenceManagement:
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(),

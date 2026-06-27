@@ -1,9 +1,12 @@
 import {
+  RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
   RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
+  parseRuntimeIpcArtifactActionRequestPayload,
   parseRuntimeIpcFetchRequestPayload,
+  type RuntimeIpcArtifactActionResult,
   type RuntimeIpcConnectionInfo,
   type RuntimeIpcFetchRequest,
   type RuntimeIpcMainHandlers,
@@ -30,6 +33,12 @@ export type RuntimeIpcMainChannelRegistration =
   | {
       readonly channel: typeof RUNTIME_IPC_FETCH_CHANNEL;
       readonly handle: (payload: unknown) => Promise<RuntimeIpcResponse>;
+    }
+  | {
+      readonly channel: typeof RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL;
+      readonly handle: (
+        payload: unknown,
+      ) => Promise<RuntimeIpcArtifactActionResult>;
     }
   | {
       readonly channel: typeof RUNTIME_IPC_STARTUP_STATUS_CHANNEL;
@@ -134,6 +143,23 @@ export function createRuntimeIpcMainChannelRegistrations(
     },
   ];
 
+  if (handlers.artifactAction !== undefined) {
+    registrations.push({
+      channel: RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
+      handle: async (payload: unknown) =>
+        handlers.artifactAction?.(
+          parseRuntimeIpcArtifactActionRequestPayload(payload),
+        ) ?? {
+          schema_version: "0.1.0",
+          artifact_id: "unavailable",
+          action: "open",
+          status: "blocked",
+          destination_kind: "none",
+          error_code: "ARTIFACT_ACTION_UNAVAILABLE",
+        },
+    });
+  }
+
   if (options?.startupStatus !== undefined) {
     registrations.push({
       channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
@@ -210,6 +236,23 @@ export function createRuntimeIpcStartupHandlers(
     ): Promise<RuntimeIpcResponse<TBody>> => {
       const result = await requireReadyResult();
       return result.handlers.fetch<TBody>(request);
+    },
+    artifactAction: async (request) => {
+      const result = await requireReadyResult();
+      if (result.handlers.artifactAction === undefined) {
+        return {
+          schema_version: "0.1.0",
+          artifact_id: request.artifact_id,
+          action: request.action,
+          status: "blocked",
+          destination_kind: "none",
+          error_code: "ARTIFACT_ACTION_UNAVAILABLE",
+          ...(request.correlation_id !== undefined
+            ? { correlation_id: request.correlation_id }
+            : {}),
+        };
+      }
+      return result.handlers.artifactAction(request);
     },
   };
 

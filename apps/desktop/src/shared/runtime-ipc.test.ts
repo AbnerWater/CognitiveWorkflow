@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
   RUNTIME_IPC_CHANNELS,
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
@@ -12,6 +13,7 @@ import {
   buildRuntimeIpcFetchRequest,
   buildRuntimeIpcRequestHeaders,
   isRuntimeIpcChannel,
+  parseRuntimeIpcArtifactActionRequestPayload,
   parseRuntimeIpcFetchRequestPayload,
   type RuntimeIpcMethod,
 } from "./runtime-ipc.js";
@@ -20,9 +22,11 @@ test("defines stable runtime IPC channels", () => {
   assert.deepEqual(RUNTIME_IPC_CHANNELS, [
     "cw:runtime:connection-info",
     "cw:runtime:fetch",
+    "cw:runtime:artifact-action",
     "cw:runtime:startup-status",
     "cw:runtime:shutdown-status",
   ]);
+  assert.equal(isRuntimeIpcChannel(RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL), true);
   assert.equal(isRuntimeIpcChannel(RUNTIME_IPC_CONNECTION_INFO_CHANNEL), true);
   assert.equal(isRuntimeIpcChannel(RUNTIME_IPC_FETCH_CHANNEL), true);
   assert.equal(isRuntimeIpcChannel(RUNTIME_IPC_STARTUP_STATUS_CHANNEL), true);
@@ -31,6 +35,51 @@ test("defines stable runtime IPC channels", () => {
   assert.throws(
     () => assertRuntimeIpcChannel("cw:runtime:spawn"),
     /Unsupported runtime IPC channel/u,
+  );
+});
+
+test("parses runtime IPC artifact action payloads without mutating input", () => {
+  const payload = {
+    schema_version: "0.1.0",
+    artifact_id: "artifact_report",
+    action: "open",
+    run_id: "run_123",
+    node_id: "node_456",
+    intent: "ask",
+    requested_destination_kind: "native_shell",
+    artifact_sensitivity: "project",
+    allow_sensitive_export: false,
+    correlation_id: "trace_789",
+  };
+
+  const parsed = parseRuntimeIpcArtifactActionRequestPayload(payload);
+
+  assert.deepEqual(parsed, payload);
+  assert.notEqual(parsed, payload);
+  assert.throws(
+    () =>
+      parseRuntimeIpcArtifactActionRequestPayload({
+        artifact_id: "artifact\rreport",
+        action: "open",
+      }),
+    /artifact_id/u,
+  );
+  assert.throws(
+    () =>
+      parseRuntimeIpcArtifactActionRequestPayload({
+        artifact_id: "artifact_report",
+        action: "delete",
+      }),
+    /artifact action/u,
+  );
+  assert.throws(
+    () =>
+      parseRuntimeIpcArtifactActionRequestPayload({
+        artifact_id: "artifact_report",
+        action: "open",
+        artifact_sensitivity: "secret",
+      }),
+    /sensitivity/u,
   );
 });
 

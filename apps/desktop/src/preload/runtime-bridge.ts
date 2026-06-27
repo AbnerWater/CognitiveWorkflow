@@ -1,15 +1,19 @@
 import {
+  RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
   RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   parseRuntimeIpcFetchRequestPayload,
+  parseRuntimeIpcArtifactActionRequestPayload,
   type RuntimeIpcChannel,
   type RuntimeIpcShutdownStatusResponse,
   type RuntimeIpcStartupStatusResponse,
 } from "../shared/runtime-ipc.js";
 import type {
   RuntimeBridge,
+  RuntimeArtifactActionRequest,
+  RuntimeArtifactActionResult,
   RuntimeConnectionInfo,
   RuntimeRequestInit,
   RuntimeRequestPath,
@@ -88,6 +92,13 @@ export function createRuntimePreloadBridge(
         parseRuntimeIpcFetchRequestPayload(
           init === undefined ? { path } : { path, init },
         ),
+      ),
+    artifactAction: async (
+      request: RuntimeArtifactActionRequest,
+    ): Promise<RuntimeArtifactActionResult> =>
+      options.invoke<RuntimeArtifactActionResult>(
+        RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
+        parseRuntimeIpcArtifactActionRequestPayload(request),
       ),
   };
 }

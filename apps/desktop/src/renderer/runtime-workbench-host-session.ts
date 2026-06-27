@@ -35,6 +35,8 @@ import {
 } from "./runtime-workbench-shortcuts.js";
 import {
   createRuntimeWorkbenchSession,
+  type RuntimeWorkbenchArtifactActionSnapshot,
+  type RuntimeWorkbenchChatInstructionSnapshot,
   type RuntimeWorkbenchExecutionPolicySnapshot,
   type RuntimeWorkbenchPanelId,
   type RuntimeWorkbenchProjectCreationSnapshot,
@@ -143,6 +145,8 @@ export interface RuntimeWorkbenchHostRuntimeStreamPanelSnapshot {
 export interface RuntimeWorkbenchHostSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
+  readonly chatInstruction: RuntimeWorkbenchChatInstructionSnapshot;
+  readonly artifactAction: RuntimeWorkbenchArtifactActionSnapshot;
   readonly projectCreation: RuntimeWorkbenchProjectCreationSnapshot;
   readonly referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot;
   readonly skillManagement: RuntimeWorkbenchSkillManagementSnapshot;
@@ -435,6 +439,12 @@ export function buildRuntimeWorkbenchHostSessionSnapshot(
     executionPolicy: cloneRuntimeWorkbenchHostExecutionPolicy(
       workbench.executionPolicy,
     ),
+    chatInstruction: cloneRuntimeWorkbenchHostChatInstruction(
+      workbench.chatInstruction,
+    ),
+    artifactAction: cloneRuntimeWorkbenchHostArtifactAction(
+      workbench.artifactAction,
+    ),
     projectCreation: cloneRuntimeWorkbenchHostProjectCreation(
       workbench.projectCreation,
     ),
@@ -488,6 +498,12 @@ function freezeRuntimeWorkbenchHostSessionSnapshot(
     executionPolicy: cloneRuntimeWorkbenchHostExecutionPolicy(
       snapshot.executionPolicy,
     ),
+    chatInstruction: cloneRuntimeWorkbenchHostChatInstruction(
+      snapshot.chatInstruction,
+    ),
+    artifactAction: cloneRuntimeWorkbenchHostArtifactAction(
+      snapshot.artifactAction,
+    ),
     projectCreation: cloneRuntimeWorkbenchHostProjectCreation(
       snapshot.projectCreation,
     ),
@@ -528,6 +544,18 @@ function cloneRuntimeWorkbenchHostExecutionPolicy(
     availableModes: Object.freeze([...policy.availableModes]),
     runOnce: Object.freeze({ ...policy.runOnce }),
   });
+}
+
+function cloneRuntimeWorkbenchHostChatInstruction(
+  chatInstruction: RuntimeWorkbenchChatInstructionSnapshot,
+): RuntimeWorkbenchChatInstructionSnapshot {
+  return Object.freeze({ ...chatInstruction });
+}
+
+function cloneRuntimeWorkbenchHostArtifactAction(
+  artifactAction: RuntimeWorkbenchArtifactActionSnapshot,
+): RuntimeWorkbenchArtifactActionSnapshot {
+  return Object.freeze({ ...artifactAction });
 }
 
 function cloneRuntimeWorkbenchHostProjectCreation(

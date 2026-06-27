@@ -480,6 +480,8 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
     case "open_runtime_stream_session":
     case "set_execution_mode":
     case "run_node_once":
+    case "submit_chat_instruction":
+    case "run_artifact_action":
     case "create_project":
     case "refresh_references":
     case "import_reference":
@@ -656,6 +658,47 @@ function cloneRuntimeWorkbenchInteractionCommand(
           : {}),
         ...(command.idempotencyKey !== undefined
           ? { idempotencyKey: command.idempotencyKey }
+          : {}),
+      });
+    case "submit_chat_instruction":
+      return Object.freeze({
+        type: command.type,
+        runId: command.runId,
+        instruction: command.instruction,
+        intent: command.intent,
+        ...(command.nodeId !== undefined ? { nodeId: command.nodeId } : {}),
+        ...(command.projectId !== undefined
+          ? { projectId: command.projectId }
+          : {}),
+        ...(command.idempotencyKey !== undefined
+          ? { idempotencyKey: command.idempotencyKey }
+          : {}),
+        ...(command.correlationId !== undefined
+          ? { correlationId: command.correlationId }
+          : {}),
+        ...(command.clientCommandId !== undefined
+          ? { clientCommandId: command.clientCommandId }
+          : {}),
+      });
+    case "run_artifact_action":
+      return Object.freeze({
+        type: command.type,
+        artifactId: command.artifactId,
+        action: command.action,
+        ...(command.runId !== undefined ? { runId: command.runId } : {}),
+        ...(command.nodeId !== undefined ? { nodeId: command.nodeId } : {}),
+        ...(command.intent !== undefined ? { intent: command.intent } : {}),
+        ...(command.requestedDestinationKind !== undefined
+          ? { requestedDestinationKind: command.requestedDestinationKind }
+          : {}),
+        ...(command.artifactSensitivity !== undefined
+          ? { artifactSensitivity: command.artifactSensitivity }
+          : {}),
+        ...(command.allowSensitiveExport !== undefined
+          ? { allowSensitiveExport: command.allowSensitiveExport }
+          : {}),
+        ...(command.correlationId !== undefined
+          ? { correlationId: command.correlationId }
           : {}),
       });
     case "create_project":

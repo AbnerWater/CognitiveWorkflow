@@ -60,12 +60,7 @@ test("exposes stable channel registrations without importing Electron", async ()
 
   assert.deepEqual(
     handlers.registrations.map((registration) => registration.channel),
-    [
-      "cw:runtime:connection-info",
-      "cw:runtime:fetch",
-      "cw:runtime:startup-status",
-      "cw:runtime:shutdown-status",
-    ],
+    RUNTIME_IPC_CHANNELS,
   );
   assert.equal(handlers.snapshot().state, "idle");
   const startupStatusRegistration = handlers.registrations.find(
@@ -631,6 +626,7 @@ test("shutdown unregisters handlers and stops a started runtime once", async () 
   assert.deepEqual(shutdownEvents, [
     "remove:cw:runtime:connection-info",
     "remove:cw:runtime:fetch",
+    "remove:cw:runtime:artifact-action",
     "remove:cw:runtime:startup-status",
     "stop:SIGINT",
     "remove:cw:runtime:shutdown-status",
@@ -687,6 +683,7 @@ test("shutdown after manual unregister does not remove IPC handlers twice", asyn
   assert.deepEqual(shutdownEvents, [
     "remove:cw:runtime:connection-info",
     "remove:cw:runtime:fetch",
+    "remove:cw:runtime:artifact-action",
     "remove:cw:runtime:startup-status",
     "remove:cw:runtime:shutdown-status",
   ]);
@@ -697,6 +694,7 @@ test("shutdown after manual unregister does not remove IPC handlers twice", asyn
   assert.deepEqual(shutdownEvents, [
     "remove:cw:runtime:connection-info",
     "remove:cw:runtime:fetch",
+    "remove:cw:runtime:artifact-action",
     "remove:cw:runtime:startup-status",
     "remove:cw:runtime:shutdown-status",
     "stop:SIGTERM",
@@ -1305,6 +1303,7 @@ test("composes main lifecycle shutdown history into IPC shutdown status", async 
   assert.deepEqual(shutdownEvents, [
     "remove:cw:runtime:connection-info",
     "remove:cw:runtime:fetch",
+    "remove:cw:runtime:artifact-action",
     "remove:cw:runtime:startup-status",
     "stop:SIGTERM",
   ]);
@@ -1338,6 +1337,7 @@ test("composes main lifecycle shutdown history into IPC shutdown status", async 
   assert.deepEqual(shutdownEvents, [
     "remove:cw:runtime:connection-info",
     "remove:cw:runtime:fetch",
+    "remove:cw:runtime:artifact-action",
     "remove:cw:runtime:startup-status",
     "stop:SIGTERM",
     "remove:cw:runtime:shutdown-status",

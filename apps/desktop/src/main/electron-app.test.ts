@@ -3,6 +3,7 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import {
+  RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
   RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
@@ -148,6 +149,7 @@ test("creates BrowserWindow with strict preload security and renderer wiring", a
   assert.deepEqual(ipcMain.registeredChannels(), [
     RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
     RUNTIME_IPC_FETCH_CHANNEL,
+    RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
     RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
     RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
   ]);
@@ -191,6 +193,7 @@ test("creates BrowserWindow with strict preload security and renderer wiring", a
   assert.deepEqual(disposed.ipcChannels, [
     RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
     RUNTIME_IPC_FETCH_CHANNEL,
+    RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
     RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
     RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
   ]);
@@ -294,7 +297,7 @@ test("starts Electron app, recreates windows on activate, and quits non-darwin",
 
   assert.notEqual(session.getWindowSession(), null);
   assert.equal(FakeBrowserWindow.getAllWindows().length, 1);
-  assert.equal(ipcMain.registeredChannels().length, 4);
+  assert.equal(ipcMain.registeredChannels().length, 5);
   assert.equal(starter.callCount(), 1);
   FakeBrowserWindow.requireLast().destroy();
   assert.equal(session.getWindowSession(), null);
@@ -304,7 +307,7 @@ test("starts Electron app, recreates windows on activate, and quits non-darwin",
 
   assert.equal(FakeBrowserWindow.getAllWindows().length, 1);
   assert.equal(FakeBrowserWindow.createdCount(), 2);
-  assert.equal(ipcMain.registeredChannels().length, 4);
+  assert.equal(ipcMain.registeredChannels().length, 5);
   assert.equal(starter.callCount(), 2);
   app.emit("window-all-closed");
   assert.equal(app.quitCount(), 1);

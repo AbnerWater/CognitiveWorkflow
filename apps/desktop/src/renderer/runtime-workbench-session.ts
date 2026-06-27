@@ -1,9 +1,15 @@
 import {
   assertRuntimeRequestPath,
+  type RuntimeArtifactActionRequest,
+  type RuntimeArtifactActionResult,
   type RuntimeBridge,
   type RuntimeRequestPath,
   type RuntimeStatusUnsubscribe,
 } from "../preload/contract.js";
+import type {
+  RuntimeInstructionAccepted,
+  RuntimeInstructionRequest,
+} from "@cw/schemas";
 import type {
   CreateRuntimeLifecyclePanelSessionFactorySessionOptions,
   RuntimeLifecyclePanelSession,
@@ -32,6 +38,9 @@ export const RUNTIME_WORKBENCH_EXECUTION_MODES = [
 export type RuntimeWorkbenchExecutionMode =
   (typeof RUNTIME_WORKBENCH_EXECUTION_MODES)[number];
 
+export type RuntimeWorkbenchInstructionIntent =
+  RuntimeInstructionRequest["intent"];
+
 export type RuntimeWorkbenchRunOnceStatus =
   | "idle"
   | "running"
@@ -53,6 +62,72 @@ export interface RuntimeWorkbenchRunOnceSnapshot {
   readonly nodeId: string | null;
   readonly statusCode: number | null;
   readonly blockedReason: RuntimeWorkbenchRunOnceBlockedReason | null;
+}
+
+export type RuntimeWorkbenchChatInstructionStatus =
+  | "idle"
+  | "submitting"
+  | "accepted"
+  | "failed"
+  | "blocked";
+
+export type RuntimeWorkbenchChatInstructionBlockedReason =
+  | "invalid_input"
+  | "request_failed"
+  | "response_invalid"
+  | "runtime_unavailable";
+
+export interface RuntimeWorkbenchChatInstructionSnapshot {
+  readonly status: RuntimeWorkbenchChatInstructionStatus;
+  readonly method: "POST";
+  readonly path: RuntimeRequestPath | null;
+  readonly runId: string | null;
+  readonly nodeId: string | null;
+  readonly scope: "run" | "node" | null;
+  readonly intent: RuntimeWorkbenchInstructionIntent | null;
+  readonly commandId: string | null;
+  readonly statusCode: number | null;
+  readonly blockedReason: RuntimeWorkbenchChatInstructionBlockedReason | null;
+  readonly characterCount: number | null;
+  readonly wordCount: number | null;
+  readonly canSubmitInstruction: boolean;
+}
+
+export type RuntimeWorkbenchArtifactActionStatus =
+  | "idle"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "blocked"
+  | "cancelled";
+
+export type RuntimeWorkbenchArtifactActionBlockedReason =
+  | "invalid_input"
+  | "request_failed"
+  | "response_invalid"
+  | "runtime_unavailable";
+
+export interface RuntimeWorkbenchArtifactActionSnapshot {
+  readonly status: RuntimeWorkbenchArtifactActionStatus;
+  readonly artifactId: string | null;
+  readonly action: "open" | "download" | null;
+  readonly runId: string | null;
+  readonly nodeId: string | null;
+  readonly destinationKind:
+    | "project_temp"
+    | "project_artifact"
+    | "user_selected"
+    | "native_shell"
+    | "none"
+    | null;
+  readonly contentType: string | null;
+  readonly byteCount: number | null;
+  readonly contentHash: string | null;
+  readonly sensitive: boolean;
+  readonly errorCode: string | null;
+  readonly correlationId: string | null;
+  readonly blockedReason: RuntimeWorkbenchArtifactActionBlockedReason | null;
+  readonly canRunArtifactAction: boolean;
 }
 
 export type RuntimeWorkbenchProjectCreationStatus =
@@ -245,6 +320,29 @@ export interface RuntimeWorkbenchRunOnceInput {
   readonly idempotencyKey?: string;
 }
 
+export interface RuntimeWorkbenchChatInstructionInput {
+  readonly runId: string;
+  readonly nodeId?: string;
+  readonly instruction: string;
+  readonly intent: RuntimeWorkbenchInstructionIntent;
+  readonly projectId?: string;
+  readonly idempotencyKey?: string;
+  readonly correlationId?: string;
+  readonly clientCommandId?: string;
+}
+
+export interface RuntimeWorkbenchArtifactActionInput {
+  readonly artifactId: string;
+  readonly action: "open" | "download";
+  readonly runId?: string;
+  readonly nodeId?: string;
+  readonly intent?: RuntimeWorkbenchInstructionIntent;
+  readonly requestedDestinationKind?: RuntimeArtifactActionRequest["requested_destination_kind"];
+  readonly artifactSensitivity?: RuntimeArtifactActionRequest["artifact_sensitivity"];
+  readonly allowSensitiveExport?: boolean;
+  readonly correlationId?: string;
+}
+
 export interface RuntimeWorkbenchProjectCreationInput {
   readonly displayName: string;
   readonly hostPath: string;
@@ -310,6 +408,8 @@ export interface RuntimeWorkbenchVersionSnapshotInput {
 export interface RuntimeWorkbenchSessionSnapshot {
   readonly activePanel: RuntimeWorkbenchPanelId;
   readonly executionPolicy: RuntimeWorkbenchExecutionPolicySnapshot;
+  readonly chatInstruction: RuntimeWorkbenchChatInstructionSnapshot;
+  readonly artifactAction: RuntimeWorkbenchArtifactActionSnapshot;
   readonly projectCreation: RuntimeWorkbenchProjectCreationSnapshot;
   readonly referenceManagement: RuntimeWorkbenchReferenceManagementSnapshot;
   readonly skillManagement: RuntimeWorkbenchSkillManagementSnapshot;
@@ -355,6 +455,12 @@ export interface RuntimeWorkbenchSession {
   ) => RuntimeWorkbenchSessionSnapshot;
   readonly runNodeOnce: (
     input: RuntimeWorkbenchRunOnceInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly submitChatInstruction: (
+    input: RuntimeWorkbenchChatInstructionInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly runArtifactAction: (
+    input: RuntimeWorkbenchArtifactActionInput,
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly createProject: (
     input: RuntimeWorkbenchProjectCreationInput,
@@ -402,7 +508,8 @@ export interface RuntimeWorkbenchSession {
 export interface CreateRuntimeWorkbenchSessionOptions {
   readonly lifecyclePanelController: RuntimeLifecyclePanelSessionController;
   readonly runtimeStreamController: RuntimeStreamInteractionSessionController;
-  readonly runtime?: Pick<RuntimeBridge, "fetch">;
+  readonly runtime?: Pick<RuntimeBridge, "fetch"> &
+    Partial<Pick<RuntimeBridge, "artifactAction">>;
   readonly activePanel?: RuntimeWorkbenchPanelId;
   readonly executionMode?: RuntimeWorkbenchExecutionMode;
   readonly onError?: RuntimeWorkbenchSessionErrorHandler;
@@ -421,6 +528,16 @@ export function createRuntimeWorkbenchSession(
     status: "idle",
   });
   let disposed = false;
+  let chatInstructionSnapshot = createRuntimeWorkbenchChatInstructionSnapshot({
+    status: "idle",
+    runtimeAvailable: options.runtime !== undefined,
+    disposed,
+  });
+  let artifactActionSnapshot = createRuntimeWorkbenchArtifactActionSnapshot({
+    status: "idle",
+    runtimeAvailable: options.runtime?.artifactAction !== undefined,
+    disposed,
+  });
   let projectCreationSnapshot = createRuntimeWorkbenchProjectCreationSnapshot({
     status: "idle",
     runtimeAvailable: options.runtime !== undefined,
@@ -457,6 +574,16 @@ export function createRuntimeWorkbenchSession(
       mode: executionMode,
       runOnce: runOnceSnapshot,
       runtimeAvailable: options.runtime !== undefined,
+      disposed,
+    }),
+    chatInstruction: createRuntimeWorkbenchChatInstructionSnapshot({
+      ...chatInstructionSnapshot,
+      runtimeAvailable: options.runtime !== undefined,
+      disposed,
+    }),
+    artifactAction: createRuntimeWorkbenchArtifactActionSnapshot({
+      ...artifactActionSnapshot,
+      runtimeAvailable: options.runtime?.artifactAction !== undefined,
       disposed,
     }),
     projectCreation: createRuntimeWorkbenchProjectCreationSnapshot({
@@ -515,6 +642,16 @@ export function createRuntimeWorkbenchSession(
         mode: executionMode,
         runOnce: runOnceSnapshot,
         runtimeAvailable: options.runtime !== undefined,
+        disposed,
+      }),
+      chatInstruction: createRuntimeWorkbenchChatInstructionSnapshot({
+        ...chatInstructionSnapshot,
+        runtimeAvailable: options.runtime !== undefined,
+        disposed,
+      }),
+      artifactAction: createRuntimeWorkbenchArtifactActionSnapshot({
+        ...artifactActionSnapshot,
+        runtimeAvailable: options.runtime?.artifactAction !== undefined,
         disposed,
       }),
       projectCreation: createRuntimeWorkbenchProjectCreationSnapshot({
@@ -731,6 +868,332 @@ export function createRuntimeWorkbenchSession(
           status: "failed",
         });
         publishIfChanged(true);
+        throw error;
+      }
+    },
+    submitChatInstruction: async (input) => {
+      assertActive();
+      const runId = normalizeRuntimeWorkbenchRunOncePathSegment(input.runId);
+      const nodeId =
+        input.nodeId === undefined
+          ? null
+          : normalizeRuntimeWorkbenchRunOncePathSegment(input.nodeId);
+      const scope = input.nodeId === undefined ? "run" : "node";
+      const intent = normalizeRuntimeWorkbenchInstructionIntent(input.intent);
+      const instruction = normalizeRuntimeWorkbenchInstruction(
+        input.instruction,
+      );
+      const characterCount =
+        instruction === null ? null : input.instruction.length;
+      const wordCount =
+        instruction === null
+          ? null
+          : runtimeWorkbenchInstructionWordCount(input.instruction);
+      if (
+        runId === null ||
+        (input.nodeId !== undefined && nodeId === null) ||
+        intent === null ||
+        instruction === null
+      ) {
+        chatInstructionSnapshot = createRuntimeWorkbenchChatInstructionSnapshot(
+          {
+            blockedReason: "invalid_input",
+            characterCount,
+            intent,
+            nodeId,
+            runId,
+            scope,
+            runtimeAvailable: options.runtime !== undefined,
+            status: "blocked",
+            wordCount,
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench chat instruction input is invalid");
+      }
+      const requestPath =
+        scope === "node" && nodeId !== null
+          ? buildRuntimeWorkbenchNodeInstructionPath(runId, nodeId)
+          : buildRuntimeWorkbenchRunInstructionPath(runId);
+      if (options.runtime === undefined) {
+        chatInstructionSnapshot = createRuntimeWorkbenchChatInstructionSnapshot(
+          {
+            blockedReason: "runtime_unavailable",
+            characterCount,
+            intent,
+            nodeId,
+            path: requestPath,
+            runId,
+            runtimeAvailable: false,
+            scope,
+            status: "blocked",
+            wordCount,
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+
+      chatInstructionSnapshot = createRuntimeWorkbenchChatInstructionSnapshot({
+        characterCount,
+        intent,
+        nodeId,
+        path: requestPath,
+        runId,
+        runtimeAvailable: true,
+        scope,
+        status: "submitting",
+        wordCount,
+        disposed,
+      });
+      publishIfChanged(true);
+      try {
+        const requestBody: RuntimeInstructionRequest = {
+          schema_version: "0.1.0",
+          scope,
+          instruction: input.instruction,
+          intent,
+          ...(input.correlationId !== undefined
+            ? { correlation_id: input.correlationId }
+            : {}),
+          ...(input.clientCommandId !== undefined
+            ? { client_command_id: input.clientCommandId }
+            : {}),
+          metadata: { cw: { source: "desktop_chat_box" } },
+        };
+        const response =
+          await options.runtime.fetch<RuntimeInstructionAccepted>(requestPath, {
+            method: "POST",
+            body: JSON.stringify(requestBody),
+            ...(input.projectId !== undefined
+              ? { projectId: input.projectId }
+              : {}),
+            ...(input.idempotencyKey !== undefined
+              ? { idempotencyKey: input.idempotencyKey }
+              : {}),
+          });
+        if (!response.ok) {
+          chatInstructionSnapshot =
+            createRuntimeWorkbenchChatInstructionSnapshot({
+              blockedReason: "request_failed",
+              characterCount,
+              intent,
+              nodeId,
+              path: requestPath,
+              runId,
+              runtimeAvailable: true,
+              scope,
+              status: "failed",
+              statusCode: response.status,
+              wordCount,
+              disposed,
+            });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const accepted = parseRuntimeWorkbenchInstructionAccepted(
+          response.body,
+        );
+        if (accepted === null) {
+          chatInstructionSnapshot =
+            createRuntimeWorkbenchChatInstructionSnapshot({
+              blockedReason: "response_invalid",
+              characterCount,
+              intent,
+              nodeId,
+              path: requestPath,
+              runId,
+              runtimeAvailable: true,
+              scope,
+              status: "failed",
+              statusCode: response.status,
+              wordCount,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error(
+            "Runtime workbench chat instruction response is invalid",
+          );
+        }
+        chatInstructionSnapshot = createRuntimeWorkbenchChatInstructionSnapshot(
+          {
+            characterCount,
+            commandId: accepted.command_id,
+            intent: accepted.intent,
+            nodeId: accepted.node_id ?? null,
+            path: requestPath,
+            runId: accepted.run_id,
+            runtimeAvailable: true,
+            scope: accepted.scope,
+            status: "accepted",
+            statusCode: response.status,
+            wordCount,
+            disposed,
+          },
+        );
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (chatInstructionSnapshot.status !== "failed") {
+          chatInstructionSnapshot =
+            createRuntimeWorkbenchChatInstructionSnapshot({
+              blockedReason: "request_failed",
+              characterCount,
+              intent,
+              nodeId,
+              path: requestPath,
+              runId,
+              runtimeAvailable: true,
+              scope,
+              status: "failed",
+              wordCount,
+              disposed,
+            });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
+    runArtifactAction: async (input) => {
+      assertActive();
+      const artifactId = normalizeRuntimeWorkbenchRunOncePathSegment(
+        input.artifactId,
+      );
+      const runId =
+        input.runId === undefined
+          ? null
+          : normalizeRuntimeWorkbenchRunOncePathSegment(input.runId);
+      const nodeId =
+        input.nodeId === undefined
+          ? null
+          : normalizeRuntimeWorkbenchRunOncePathSegment(input.nodeId);
+      const intent =
+        input.intent === undefined
+          ? undefined
+          : normalizeRuntimeWorkbenchInstructionIntent(input.intent);
+      if (
+        artifactId === null ||
+        !isRuntimeWorkbenchArtifactAction(input.action) ||
+        (input.runId !== undefined && runId === null) ||
+        (input.nodeId !== undefined && nodeId === null) ||
+        intent === null
+      ) {
+        artifactActionSnapshot = createRuntimeWorkbenchArtifactActionSnapshot({
+          action: input.action,
+          artifactId,
+          blockedReason: "invalid_input",
+          nodeId,
+          runId,
+          runtimeAvailable: options.runtime?.artifactAction !== undefined,
+          status: "blocked",
+          disposed,
+        });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench artifact action input is invalid");
+      }
+      if (options.runtime?.artifactAction === undefined) {
+        artifactActionSnapshot = createRuntimeWorkbenchArtifactActionSnapshot({
+          action: input.action,
+          artifactId,
+          blockedReason: "runtime_unavailable",
+          nodeId,
+          runId,
+          runtimeAvailable: false,
+          status: "blocked",
+          disposed,
+        });
+        publishIfChanged(true);
+        throw new Error(
+          "Runtime workbench artifact action bridge is unavailable",
+        );
+      }
+
+      artifactActionSnapshot = createRuntimeWorkbenchArtifactActionSnapshot({
+        action: input.action,
+        artifactId,
+        nodeId,
+        runId,
+        runtimeAvailable: true,
+        status: "running",
+        disposed,
+      });
+      publishIfChanged(true);
+      try {
+        const response = await options.runtime.artifactAction({
+          schema_version: "0.1.0",
+          artifact_id: artifactId,
+          action: input.action,
+          ...(runId !== null ? { run_id: runId } : {}),
+          ...(nodeId !== null ? { node_id: nodeId } : {}),
+          ...(intent !== undefined ? { intent } : {}),
+          ...(input.requestedDestinationKind !== undefined
+            ? { requested_destination_kind: input.requestedDestinationKind }
+            : {}),
+          ...(input.artifactSensitivity !== undefined
+            ? { artifact_sensitivity: input.artifactSensitivity }
+            : {}),
+          ...(input.allowSensitiveExport !== undefined
+            ? { allow_sensitive_export: input.allowSensitiveExport }
+            : {}),
+          ...(input.correlationId !== undefined
+            ? { correlation_id: input.correlationId }
+            : {}),
+        });
+        const result = parseRuntimeWorkbenchArtifactActionResult(response);
+        if (result === null) {
+          artifactActionSnapshot = createRuntimeWorkbenchArtifactActionSnapshot(
+            {
+              action: input.action,
+              artifactId,
+              blockedReason: "response_invalid",
+              nodeId,
+              runId,
+              runtimeAvailable: true,
+              status: "failed",
+              disposed,
+            },
+          );
+          publishIfChanged(true);
+          throw new Error(
+            "Runtime workbench artifact action response is invalid",
+          );
+        }
+        artifactActionSnapshot = createRuntimeWorkbenchArtifactActionSnapshot({
+          action: result.action,
+          artifactId: result.artifact_id,
+          byteCount: result.byte_count ?? null,
+          contentHash: result.content_hash ?? null,
+          contentType: result.content_type ?? null,
+          correlationId: result.correlation_id ?? null,
+          destinationKind: result.destination_kind,
+          errorCode: result.error_code ?? null,
+          nodeId,
+          runId,
+          runtimeAvailable: true,
+          sensitive: result.sensitive ?? false,
+          status: result.status,
+          disposed,
+        });
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (artifactActionSnapshot.status !== "failed") {
+          artifactActionSnapshot = createRuntimeWorkbenchArtifactActionSnapshot(
+            {
+              action: input.action,
+              artifactId,
+              blockedReason: "request_failed",
+              nodeId,
+              runId,
+              runtimeAvailable: true,
+              status: "failed",
+              disposed,
+            },
+          );
+          publishIfChanged(true);
+        }
         throw error;
       }
     },
@@ -1969,6 +2432,59 @@ function createRuntimeWorkbenchRunOnceSnapshot(
   });
 }
 
+function createRuntimeWorkbenchChatInstructionSnapshot(
+  input: Partial<RuntimeWorkbenchChatInstructionSnapshot> & {
+    readonly status: RuntimeWorkbenchChatInstructionStatus;
+    readonly runtimeAvailable: boolean;
+    readonly disposed: boolean;
+  },
+): RuntimeWorkbenchChatInstructionSnapshot {
+  return Object.freeze({
+    status: input.status,
+    method: "POST",
+    path: input.path ?? null,
+    runId: input.runId ?? null,
+    nodeId: input.nodeId ?? null,
+    scope: input.scope ?? null,
+    intent: input.intent ?? null,
+    commandId: input.commandId ?? null,
+    statusCode: input.statusCode ?? null,
+    blockedReason: input.blockedReason ?? null,
+    characterCount: input.characterCount ?? null,
+    wordCount: input.wordCount ?? null,
+    canSubmitInstruction:
+      !input.disposed &&
+      input.runtimeAvailable &&
+      input.status !== "submitting",
+  });
+}
+
+function createRuntimeWorkbenchArtifactActionSnapshot(
+  input: Partial<RuntimeWorkbenchArtifactActionSnapshot> & {
+    readonly status: RuntimeWorkbenchArtifactActionStatus;
+    readonly runtimeAvailable: boolean;
+    readonly disposed: boolean;
+  },
+): RuntimeWorkbenchArtifactActionSnapshot {
+  return Object.freeze({
+    status: input.status,
+    artifactId: input.artifactId ?? null,
+    action: input.action ?? null,
+    runId: input.runId ?? null,
+    nodeId: input.nodeId ?? null,
+    destinationKind: input.destinationKind ?? null,
+    contentType: input.contentType ?? null,
+    byteCount: input.byteCount ?? null,
+    contentHash: input.contentHash ?? null,
+    sensitive: input.sensitive ?? false,
+    errorCode: input.errorCode ?? null,
+    correlationId: input.correlationId ?? null,
+    blockedReason: input.blockedReason ?? null,
+    canRunArtifactAction:
+      !input.disposed && input.runtimeAvailable && input.status !== "running",
+  });
+}
+
 function createRuntimeWorkbenchProjectCreationSnapshot(
   input: Partial<RuntimeWorkbenchProjectCreationSnapshot> & {
     readonly status: RuntimeWorkbenchProjectCreationStatus;
@@ -2107,6 +2623,25 @@ function buildRuntimeWorkbenchRunOncePath(
   return requestPath as RuntimeRequestPath;
 }
 
+function buildRuntimeWorkbenchRunInstructionPath(
+  runId: string,
+): RuntimeRequestPath {
+  const requestPath = `/runs/${encodeURIComponent(runId)}:submit-instruction`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
+function buildRuntimeWorkbenchNodeInstructionPath(
+  runId: string,
+  nodeId: string,
+): RuntimeRequestPath {
+  const requestPath = `/runs/${encodeURIComponent(
+    runId,
+  )}/nodes/${encodeURIComponent(nodeId)}:submit-instruction`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
 function normalizeRuntimeWorkbenchRunOncePathSegment(
   value: string,
 ): string | null {
@@ -2123,6 +2658,44 @@ function normalizeRuntimeWorkbenchRunOncePathSegment(
     return null;
   }
   return trimmed;
+}
+
+function normalizeRuntimeWorkbenchInstructionIntent(
+  value: string,
+): RuntimeWorkbenchInstructionIntent | null {
+  switch (value) {
+    case "ask":
+    case "revise":
+    case "repair":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeRuntimeWorkbenchInstruction(value: string): string | null {
+  if (
+    value.trim().length === 0 ||
+    value.length > 20_000 ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)
+  ) {
+    return null;
+  }
+  return value;
+}
+
+function runtimeWorkbenchInstructionWordCount(value: string): number {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return 0;
+  }
+  return trimmed.split(/\s+/u).length;
+}
+
+function isRuntimeWorkbenchArtifactAction(
+  action: string,
+): action is "open" | "download" {
+  return action === "open" || action === "download";
 }
 
 function buildRuntimeWorkbenchProjectCreationPath(): RuntimeRequestPath {
@@ -2384,6 +2957,107 @@ interface ParsedRuntimeWorkbenchProjectCreationResponse {
   readonly hostPath: string;
   readonly gitInitialized: boolean;
   readonly firstCommitSha: string | null;
+}
+
+function parseRuntimeWorkbenchInstructionAccepted(
+  body: unknown,
+): RuntimeInstructionAccepted | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  if (
+    !(body.schema_version === undefined || body.schema_version === "0.1.0") ||
+    typeof body.command_id !== "string" ||
+    body.command_id.trim().length === 0 ||
+    body.status !== "accepted" ||
+    typeof body.run_id !== "string" ||
+    body.run_id.trim().length === 0 ||
+    typeof body.scope !== "string" ||
+    typeof body.intent !== "string" ||
+    normalizeRuntimeWorkbenchInstructionIntent(body.intent) === null ||
+    !(body.scope === "run" || body.scope === "node") ||
+    typeof body.accepted_at !== "string" ||
+    body.accepted_at.trim().length === 0 ||
+    !(
+      body.node_id === undefined ||
+      body.node_id === null ||
+      typeof body.node_id === "string"
+    ) ||
+    !(
+      body.stream_url === undefined ||
+      body.stream_url === null ||
+      typeof body.stream_url === "string"
+    ) ||
+    !(
+      body.correlation_id === undefined ||
+      body.correlation_id === null ||
+      typeof body.correlation_id === "string"
+    )
+  ) {
+    return null;
+  }
+  return body as unknown as RuntimeInstructionAccepted;
+}
+
+function parseRuntimeWorkbenchArtifactActionResult(
+  body: unknown,
+): RuntimeArtifactActionResult | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  if (
+    !(body.schema_version === undefined || body.schema_version === "0.1.0") ||
+    typeof body.artifact_id !== "string" ||
+    body.artifact_id.trim().length === 0 ||
+    typeof body.action !== "string" ||
+    !isRuntimeWorkbenchArtifactAction(body.action) ||
+    typeof body.status !== "string" ||
+    !(
+      body.status === "succeeded" ||
+      body.status === "failed" ||
+      body.status === "blocked" ||
+      body.status === "cancelled"
+    ) ||
+    typeof body.destination_kind !== "string" ||
+    !(
+      body.destination_kind === "project_temp" ||
+      body.destination_kind === "project_artifact" ||
+      body.destination_kind === "user_selected" ||
+      body.destination_kind === "native_shell" ||
+      body.destination_kind === "none"
+    ) ||
+    !(
+      body.content_type === undefined ||
+      body.content_type === null ||
+      typeof body.content_type === "string"
+    ) ||
+    !(
+      body.byte_count === undefined ||
+      body.byte_count === null ||
+      (typeof body.byte_count === "number" &&
+        Number.isInteger(body.byte_count) &&
+        body.byte_count >= 0)
+    ) ||
+    !(
+      body.content_hash === undefined ||
+      body.content_hash === null ||
+      typeof body.content_hash === "string"
+    ) ||
+    !(body.sensitive === undefined || typeof body.sensitive === "boolean") ||
+    !(
+      body.error_code === undefined ||
+      body.error_code === null ||
+      typeof body.error_code === "string"
+    ) ||
+    !(
+      body.correlation_id === undefined ||
+      body.correlation_id === null ||
+      typeof body.correlation_id === "string"
+    )
+  ) {
+    return null;
+  }
+  return body as unknown as RuntimeArtifactActionResult;
 }
 
 function parseRuntimeWorkbenchProjectCreationResponse(
@@ -2779,6 +3453,20 @@ function freezeRuntimeWorkbenchSessionSnapshot(
     executionPolicy: cloneRuntimeWorkbenchExecutionPolicySnapshot(
       snapshot.executionPolicy,
     ),
+    chatInstruction: createRuntimeWorkbenchChatInstructionSnapshot({
+      ...snapshot.chatInstruction,
+      runtimeAvailable:
+        snapshot.chatInstruction.canSubmitInstruction ||
+        snapshot.chatInstruction.status === "submitting",
+      disposed: snapshot.disposed,
+    }),
+    artifactAction: createRuntimeWorkbenchArtifactActionSnapshot({
+      ...snapshot.artifactAction,
+      runtimeAvailable:
+        snapshot.artifactAction.canRunArtifactAction ||
+        snapshot.artifactAction.status === "running",
+      disposed: snapshot.disposed,
+    }),
     projectCreation: createRuntimeWorkbenchProjectCreationSnapshot({
       ...snapshot.projectCreation,
       runtimeAvailable:

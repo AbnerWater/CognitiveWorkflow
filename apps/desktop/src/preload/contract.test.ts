@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
   RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
@@ -171,6 +172,43 @@ function createDefaultRuntimeWorkbenchShellExecutionPolicy(): RuntimeWorkbenchSh
       statusCode: null,
       blockedReason: null,
     }),
+  });
+}
+
+function createDefaultRuntimeWorkbenchChatInstruction(): RuntimeWorkbenchShellSnapshot["chatInstruction"] {
+  return Object.freeze({
+    status: "idle",
+    method: "POST",
+    path: null,
+    runId: null,
+    nodeId: null,
+    scope: null,
+    intent: null,
+    commandId: null,
+    statusCode: null,
+    blockedReason: null,
+    characterCount: null,
+    wordCount: null,
+    canSubmitInstruction: false,
+  });
+}
+
+function createDefaultRuntimeWorkbenchArtifactAction(): RuntimeWorkbenchShellSnapshot["artifactAction"] {
+  return Object.freeze({
+    status: "idle",
+    artifactId: null,
+    action: null,
+    runId: null,
+    nodeId: null,
+    destinationKind: null,
+    contentType: null,
+    byteCount: null,
+    contentHash: null,
+    sensitive: false,
+    errorCode: null,
+    correlationId: null,
+    blockedReason: null,
+    canRunArtifactAction: false,
   });
 }
 
@@ -377,6 +415,19 @@ test("builds a preload runtime bridge over injected IPC invoke", async () => {
             headers: { "content-type": "application/json" },
             body: { ok: true },
           } as TResult;
+        case RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL:
+          return {
+            schema_version: "0.1.0",
+            artifact_id: "artifact_report",
+            action: "open",
+            status: "succeeded",
+            destination_kind: "native_shell",
+            content_type: "text/markdown",
+            byte_count: 42,
+            content_hash:
+              "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            sensitive: false,
+          } as TResult;
       }
     },
     subscribe: createNoopSubscribe(),
@@ -417,6 +468,25 @@ test("builds a preload runtime bridge over injected IPC invoke", async () => {
       body: { ok: true },
     },
   );
+  assert.deepEqual(
+    await bridge.artifactAction({
+      schema_version: "0.1.0",
+      artifact_id: "artifact_report",
+      action: "open",
+    }),
+    {
+      schema_version: "0.1.0",
+      artifact_id: "artifact_report",
+      action: "open",
+      status: "succeeded",
+      destination_kind: "native_shell",
+      content_type: "text/markdown",
+      byte_count: 42,
+      content_hash:
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      sensitive: false,
+    },
+  );
 
   assert.deepEqual(calls, [
     { channel: RUNTIME_IPC_STARTUP_STATUS_CHANNEL },
@@ -435,6 +505,14 @@ test("builds a preload runtime bridge over injected IPC invoke", async () => {
           projectId: "prj_123",
           headers: { Accept: "application/json" },
         },
+      },
+    },
+    {
+      channel: RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
+      payload: {
+        schema_version: "0.1.0",
+        artifact_id: "artifact_report",
+        action: "open",
       },
     },
   ]);
@@ -644,6 +722,15 @@ test("builds a frozen cw desktop API over injected IPC invoke", async () => {
             headers: { "content-type": "application/json" },
             body: { ok: true },
           } as TResult;
+        case RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL:
+          return {
+            schema_version: "0.1.0",
+            artifact_id: "artifact_report",
+            action: "download",
+            status: "succeeded",
+            destination_kind: "project_temp",
+            sensitive: false,
+          } as TResult;
       }
     },
     subscribe: createNoopSubscribe(),
@@ -673,6 +760,21 @@ test("builds a frozen cw desktop API over injected IPC invoke", async () => {
       body: { ok: true },
     },
   );
+  assert.deepEqual(
+    await api.runtime.artifactAction({
+      schema_version: "0.1.0",
+      artifact_id: "artifact_report",
+      action: "download",
+    }),
+    {
+      schema_version: "0.1.0",
+      artifact_id: "artifact_report",
+      action: "download",
+      status: "succeeded",
+      destination_kind: "project_temp",
+      sensitive: false,
+    },
+  );
   await assert.rejects(
     api.runtime.fetch("/system/info", "bad-init" as RuntimeRequestInit),
     /init must be an object/u,
@@ -691,6 +793,14 @@ test("builds a frozen cw desktop API over injected IPC invoke", async () => {
           projectId: "prj_123",
           headers: { Accept: "application/json" },
         },
+      },
+    },
+    {
+      channel: RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
+      payload: {
+        schema_version: "0.1.0",
+        artifact_id: "artifact_report",
+        action: "download",
       },
     },
   ]);
@@ -3576,6 +3686,8 @@ test("renderer runtime workbench session composes lifecycle and stream stores", 
   assert.deepEqual(initialSnapshot, {
     activePanel: "lifecycle",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
+    chatInstruction: createDefaultRuntimeWorkbenchChatInstruction(),
+    artifactAction: createDefaultRuntimeWorkbenchArtifactAction(),
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
@@ -3948,6 +4060,8 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "dispose_runtime_stream_session",
     "set_execution_mode",
     "run_node_once",
+    "submit_chat_instruction",
+    "run_artifact_action",
     "create_project",
     "refresh_references",
     "import_reference",
@@ -3965,6 +4079,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "open_lifecycle_panel_session",
     "open_runtime_stream_session",
     "set_execution_mode",
+    "submit_chat_instruction",
     "create_project",
     "refresh_references",
     "import_reference",
@@ -5242,6 +5357,8 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   const snapshot = buildRuntimeWorkbenchShellSnapshot({
     activePanel: "stream",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
+    chatInstruction: createDefaultRuntimeWorkbenchChatInstruction(),
+    artifactAction: createDefaultRuntimeWorkbenchArtifactAction(),
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
@@ -5692,7 +5809,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   assert.equal(snapshot.chrome.chatBox.enabled, false);
   assert.equal(
     snapshot.chrome.chatBox.collapsedSummary,
-    "Stream focus, chat idle",
+    "Stream focus, chat Unavailable",
   );
   assert.equal(snapshot.chrome.chatBox.collapsible, true);
   assert.equal(snapshot.chrome.chatBox.defaultCollapsed, false);
@@ -5765,6 +5882,8 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     [
       ["active_panel", "Stream", "neutral"],
       ["execution_mode", "Semi-auto", "neutral"],
+      ["chat_instruction", "Unavailable", "warning"],
+      ["artifact_action", "Unavailable", "warning"],
       ["project_creation", "Not created", "neutral"],
       ["version_snapshot", "Unavailable", "warning"],
       ["reference_management", "Ready", "neutral"],
@@ -5829,6 +5948,8 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   const emptySnapshot = buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
+    chatInstruction: createDefaultRuntimeWorkbenchChatInstruction(),
+    artifactAction: createDefaultRuntimeWorkbenchArtifactAction(),
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
@@ -5850,6 +5971,8 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
   const activeLifecycleSnapshot = buildRuntimeWorkbenchShellSnapshot({
     activePanel: "lifecycle",
     executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
+    chatInstruction: createDefaultRuntimeWorkbenchChatInstruction(),
+    artifactAction: createDefaultRuntimeWorkbenchArtifactAction(),
     projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
     referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
     skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
@@ -5961,6 +6084,8 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     {
       activePanel: "lifecycle",
       executionPolicy: createDefaultRuntimeWorkbenchShellExecutionPolicy(),
+      chatInstruction: createDefaultRuntimeWorkbenchChatInstruction(),
+      artifactAction: createDefaultRuntimeWorkbenchArtifactAction(),
       projectCreation: createDefaultRuntimeWorkbenchProjectCreation(),
       referenceManagement: createDefaultRuntimeWorkbenchReferenceManagement(),
       skillManagement: createDefaultRuntimeWorkbenchSkillManagement(),
@@ -6002,6 +6127,8 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
     [
       ["active_panel", "Lifecycle", "danger"],
       ["execution_mode", "Semi-auto", "neutral"],
+      ["chat_instruction", "Disposed", "danger"],
+      ["artifact_action", "Disposed", "danger"],
       ["project_creation", "Disposed", "danger"],
       ["version_snapshot", "Disposed", "danger"],
       ["reference_management", "Disposed", "danger"],

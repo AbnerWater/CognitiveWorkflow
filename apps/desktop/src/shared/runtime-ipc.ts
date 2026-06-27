@@ -1,6 +1,10 @@
+import type { ArtifactActionRequest, ArtifactActionResult } from "@cw/schemas";
+
 export const RUNTIME_IPC_CONNECTION_INFO_CHANNEL =
   "cw:runtime:connection-info" as const;
 export const RUNTIME_IPC_FETCH_CHANNEL = "cw:runtime:fetch" as const;
+export const RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL =
+  "cw:runtime:artifact-action" as const;
 export const RUNTIME_IPC_STARTUP_STATUS_CHANNEL =
   "cw:runtime:startup-status" as const;
 export const RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL =
@@ -8,6 +12,7 @@ export const RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL =
 export const RUNTIME_IPC_CHANNELS = [
   RUNTIME_IPC_CONNECTION_INFO_CHANNEL,
   RUNTIME_IPC_FETCH_CHANNEL,
+  RUNTIME_IPC_ARTIFACT_ACTION_CHANNEL,
   RUNTIME_IPC_STARTUP_STATUS_CHANNEL,
   RUNTIME_IPC_SHUTDOWN_STATUS_CHANNEL,
 ] as const;
@@ -49,6 +54,9 @@ export interface RuntimeIpcResponse<TBody = unknown> {
   readonly headers: Readonly<Record<string, string>>;
   readonly body: TBody | null;
 }
+
+export type RuntimeIpcArtifactActionRequest = ArtifactActionRequest;
+export type RuntimeIpcArtifactActionResult = ArtifactActionResult;
 
 export type RuntimeIpcStartupStatusKind =
   | "starting_sidecar"
@@ -127,6 +135,9 @@ export interface RuntimeIpcMainHandlers {
   readonly fetch: <TBody = unknown>(
     request: RuntimeIpcFetchRequest,
   ) => Promise<RuntimeIpcResponse<TBody>>;
+  readonly artifactAction?: (
+    request: RuntimeIpcArtifactActionRequest,
+  ) => Promise<RuntimeIpcArtifactActionResult>;
 }
 
 const RESERVED_RUNTIME_IPC_HEADERS = new Set([
@@ -207,6 +218,72 @@ export function parseRuntimeIpcFetchRequestPayload(
   }
 
   return buildRuntimeIpcFetchRequest(path, parseRuntimeIpcFetchInit(init));
+}
+
+export function parseRuntimeIpcArtifactActionRequestPayload(
+  payload: unknown,
+): RuntimeIpcArtifactActionRequest {
+  if (!isRecord(payload)) {
+    throw new Error("Runtime IPC artifact action payload must be an object");
+  }
+
+  const artifactId = requireSafeRuntimeActionString(
+    payload.artifact_id,
+    "artifact_id",
+  );
+  const action = requireRuntimeArtifactAction(payload.action);
+  const parsed: RuntimeIpcArtifactActionRequest = {
+    artifact_id: artifactId,
+    action,
+  };
+
+  if (payload.schema_version !== undefined) {
+    if (payload.schema_version !== "0.1.0") {
+      throw new Error("Runtime IPC artifact action schema_version is invalid");
+    }
+    parsed.schema_version = "0.1.0";
+  }
+  if (payload.run_id !== undefined) {
+    parsed.run_id = requireNullableSafeRuntimeActionString(
+      payload.run_id,
+      "run_id",
+    );
+  }
+  if (payload.node_id !== undefined) {
+    parsed.node_id = requireNullableSafeRuntimeActionString(
+      payload.node_id,
+      "node_id",
+    );
+  }
+  if (payload.intent !== undefined) {
+    parsed.intent = requireNullableRuntimeInstructionIntent(payload.intent);
+  }
+  if (payload.requested_destination_kind !== undefined) {
+    parsed.requested_destination_kind = requireNullableArtifactDestinationKind(
+      payload.requested_destination_kind,
+    );
+  }
+  if (payload.artifact_sensitivity !== undefined) {
+    parsed.artifact_sensitivity = requireNullableSensitivity(
+      payload.artifact_sensitivity,
+    );
+  }
+  if (payload.allow_sensitive_export !== undefined) {
+    if (typeof payload.allow_sensitive_export !== "boolean") {
+      throw new Error(
+        "Runtime IPC artifact action allow_sensitive_export must be a boolean",
+      );
+    }
+    parsed.allow_sensitive_export = payload.allow_sensitive_export;
+  }
+  if (payload.correlation_id !== undefined) {
+    parsed.correlation_id = requireNullableSafeRuntimeActionString(
+      payload.correlation_id,
+      "correlation_id",
+    );
+  }
+
+  return parsed;
 }
 
 export function buildRuntimeIpcRequestHeaders(
@@ -437,6 +514,82 @@ function isRuntimeIpcBase64Body(value: string): boolean {
   return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(
     value,
   );
+}
+
+function requireRuntimeArtifactAction(value: unknown): "open" | "download" {
+  if (value === "open" || value === "download") {
+    return value;
+  }
+  throw new Error("Runtime IPC artifact action must be open or download");
+}
+
+function requireNullableRuntimeInstructionIntent(
+  value: unknown,
+): "ask" | "revise" | "repair" | null {
+  if (value === null) {
+    return null;
+  }
+  if (value === "ask" || value === "revise" || value === "repair") {
+    return value;
+  }
+  throw new Error("Runtime IPC artifact action intent is invalid");
+}
+
+function requireNullableArtifactDestinationKind(
+  value: unknown,
+):
+  | "project_temp"
+  | "project_artifact"
+  | "user_selected"
+  | "native_shell"
+  | "none"
+  | null {
+  if (value === null) {
+    return null;
+  }
+  if (
+    value === "project_temp" ||
+    value === "project_artifact" ||
+    value === "user_selected" ||
+    value === "native_shell" ||
+    value === "none"
+  ) {
+    return value;
+  }
+  throw new Error(
+    "Runtime IPC artifact action requested_destination_kind is invalid",
+  );
+}
+
+function requireNullableSensitivity(
+  value: unknown,
+): "public" | "project" | "sensitive" | null {
+  if (value === null) {
+    return null;
+  }
+  if (value === "public" || value === "project" || value === "sensitive") {
+    return value;
+  }
+  throw new Error(
+    "Runtime IPC artifact action artifact_sensitivity is invalid",
+  );
+}
+
+function requireNullableSafeRuntimeActionString(
+  value: unknown,
+  label: string,
+): string | null {
+  if (value === null) {
+    return null;
+  }
+  return requireSafeRuntimeActionString(value, label);
+}
+
+function requireSafeRuntimeActionString(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`Runtime IPC artifact action ${label} must be a string`);
+  }
+  return requireSafeHeaderValue(label, value);
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
