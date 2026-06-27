@@ -3238,6 +3238,205 @@ test("renderer runtime workbench React shell records local chat send receipt", a
   }
 });
 
+test("renderer runtime workbench React shell submits chat draft to current node scope", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot = createRuntimeWorkbenchShellReactChatEnabledSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Chat Current Node Runtime Workbench"
+        />,
+      );
+    });
+
+    const currentNodeScopeButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftTargetScope",
+      "current_node",
+    );
+    assert.equal(currentNodeScopeButton.getAttribute("disabled"), null);
+    assert.equal(
+      currentNodeScopeButton.getAttribute(
+        "data-chat-draft-target-scope-active",
+      ),
+      "false",
+    );
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(currentNodeScopeButton);
+    });
+
+    const draftDetails = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftDetails",
+      "true",
+    );
+    assert.equal(
+      draftDetails.getAttribute("data-chat-draft-target-scope"),
+      "current_node",
+    );
+    assert.equal(
+      draftDetails.getAttribute("data-chat-draft-target-node-id"),
+      "context_task",
+    );
+
+    const draftInput = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftInput",
+      "true",
+    );
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Repair current node");
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatSend",
+          "true",
+        ),
+      );
+    });
+
+    assert.deepEqual(session.dispatchedCommands(), [
+      {
+        type: "submit_chat_instruction",
+        runId: "run_react_stream",
+        nodeId: "context_task",
+        instruction: "Repair current node",
+        intent: "ask",
+      },
+    ]);
+    const localSubmission = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatLocalSubmit",
+      "true",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-target-scope"),
+      "current_node",
+    );
+    assert.equal(
+      localSubmission.getAttribute("data-chat-local-submit-target-node-id"),
+      "context_task",
+    );
+    assert.doesNotMatch(
+      fakeRuntimeWorkbenchNodeTextContent(localSubmission),
+      /Repair current node/u,
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(localSubmission),
+      /Recent requests[\s\S]*#1[\s\S]*Queued locally[\s\S]*Ask[\s\S]*Current node context_task[\s\S]*Current workflow[\s\S]*Question/u,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench React shell does not infer current node from canvas fallback", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot =
+      createRuntimeWorkbenchShellReactChatEnabledSnapshotWithoutCurrentNode();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Chat No Current Node Runtime Workbench"
+        />,
+      );
+    });
+
+    const currentNodeScopeButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftTargetScope",
+      "current_node",
+    );
+    assert.equal(currentNodeScopeButton.disabled, true);
+    assert.equal(
+      currentNodeScopeButton.getAttribute(
+        "data-chat-draft-target-scope-active",
+      ),
+      "false",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElement(
+        dom.container,
+        (element) =>
+          element.dataset.chatDraftTargetSelectedNodeId !== undefined,
+        "chat draft target selected node id",
+      ).getAttribute("data-chat-draft-target-selected-node-id"),
+      "",
+    );
+
+    const draftDetails = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftDetails",
+      "true",
+    );
+    assert.equal(
+      draftDetails.getAttribute("data-chat-draft-target-scope"),
+      "workflow",
+    );
+    assert.equal(
+      draftDetails.getAttribute("data-chat-draft-target-node-id"),
+      "",
+    );
+
+    const draftInput = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "chatDraftInput",
+      "true",
+    );
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(draftInput, "Ask workflow only");
+    });
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "chatSend",
+          "true",
+        ),
+      );
+    });
+
+    assert.deepEqual(session.dispatchedCommands(), [
+      {
+        type: "submit_chat_instruction",
+        runId: "run_react_stream",
+        instruction: "Ask workflow only",
+        intent: "ask",
+      },
+    ]);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell submits chat draft with keyboard shortcut", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {
@@ -8512,6 +8711,27 @@ function createRuntimeWorkbenchShellReactChatEnabledSnapshot(): RuntimeWorkbench
         enabled: true,
         statusLabel: "Ready",
         collapsedSummary: "Stream focus, chat ready",
+      }),
+    }),
+  });
+}
+
+function createRuntimeWorkbenchShellReactChatEnabledSnapshotWithoutCurrentNode(): RuntimeWorkbenchShellSnapshot {
+  const snapshot = createRuntimeWorkbenchShellReactChatEnabledSnapshot();
+  return Object.freeze({
+    ...snapshot,
+    chrome: Object.freeze({
+      ...snapshot.chrome,
+      workflowCanvas: Object.freeze({
+        ...snapshot.chrome.workflowCanvas,
+        nodes: Object.freeze(
+          snapshot.chrome.workflowCanvas.nodes.map((node) =>
+            Object.freeze({
+              ...node,
+              active: false,
+            }),
+          ),
+        ),
       }),
     }),
   });

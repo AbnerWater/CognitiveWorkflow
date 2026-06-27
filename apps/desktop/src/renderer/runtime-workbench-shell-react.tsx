@@ -463,6 +463,14 @@ export function RuntimeWorkbenchShellReactView(
       ),
     [snapshot.chrome.workflowCanvas, workflowCanvasSelectedNodeId],
   );
+  const currentWorkflowCanvasNode = useMemo(
+    () =>
+      selectRuntimeWorkbenchShellCurrentWorkflowCanvasNode(
+        snapshot.chrome.workflowCanvas,
+        workflowCanvasSelectedNodeId,
+      ),
+    [snapshot.chrome.workflowCanvas, workflowCanvasSelectedNodeId],
+  );
   const executionRunId = useMemo(
     () =>
       normalizeRuntimeWorkbenchShellReactPathSegment(streamOptionsForm.runId),
@@ -1248,6 +1256,7 @@ export function RuntimeWorkbenchShellReactView(
         .dispatch({
           type: "submit_chat_instruction",
           runId: runtimeActionRunId,
+          ...(input.nodeId !== undefined ? { nodeId: input.nodeId } : {}),
           instruction: input.instruction,
           intent: input.intent,
           ...(executionProjectId !== null && executionProjectId.length > 0
@@ -1532,6 +1541,7 @@ export function RuntimeWorkbenchShellReactView(
           chatBox={snapshot.chrome.chatBox}
           onSubmit={handleChatSubmit}
           runId={runtimeActionRunId}
+          selectedNodeId={currentWorkflowCanvasNode?.nodeId ?? null}
         />
       </div>
     </main>
@@ -3432,6 +3442,19 @@ function selectRuntimeWorkbenchShellWorkflowCanvasNode(
   );
 }
 
+function selectRuntimeWorkbenchShellCurrentWorkflowCanvasNode(
+  canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot,
+  selectedNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null,
+): RuntimeWorkbenchShellWorkflowCanvasNode | null {
+  return (
+    (selectedNodeId === null
+      ? undefined
+      : canvas.nodes.find((node) => node.nodeId === selectedNodeId)) ??
+    canvas.nodes.find((node) => node.active) ??
+    null
+  );
+}
+
 function isRuntimeWorkbenchShellFileTreeNodeId(
   fileTree: RuntimeWorkbenchShellFileTreeSnapshot,
   value: string | undefined,
@@ -3743,6 +3766,7 @@ type RuntimeWorkbenchShellChatDraftIntent = "ask" | "revise" | "repair";
 interface RuntimeWorkbenchShellChatSubmitInput {
   readonly instruction: string;
   readonly intent: RuntimeWorkbenchShellChatDraftIntent;
+  readonly nodeId?: RuntimeWorkbenchShellWorkflowCanvasNodeId;
 }
 
 type RuntimeWorkbenchShellChatDraftPreviewState = "empty" | "blocked" | "ready";
@@ -3750,6 +3774,7 @@ type RuntimeWorkbenchShellChatDraftPreviewState = "empty" | "blocked" | "ready";
 type RuntimeWorkbenchShellChatDraftReadinessReason =
   | "empty_draft"
   | "chat_disabled"
+  | "current_node_unavailable"
   | "ready";
 
 interface RuntimeWorkbenchShellChatDraftPreview {
@@ -3772,6 +3797,15 @@ interface RuntimeWorkbenchShellChatDraftIntentContext {
   readonly actionLabel: string;
 }
 
+type RuntimeWorkbenchShellChatDraftTargetScope = "workflow" | "current_node";
+
+interface RuntimeWorkbenchShellChatDraftTargetContext {
+  readonly scope: RuntimeWorkbenchShellChatDraftTargetScope;
+  readonly target: "workflow" | "current_node";
+  readonly targetLabel: string;
+  readonly nodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null;
+}
+
 interface RuntimeWorkbenchShellChatLocalSubmission {
   readonly sequence: number;
   readonly status: "queued_local";
@@ -3780,6 +3814,9 @@ interface RuntimeWorkbenchShellChatLocalSubmission {
   readonly intentLabel: string;
   readonly target: RuntimeWorkbenchShellChatDraftIntentContext["target"];
   readonly targetLabel: string;
+  readonly targetScope: RuntimeWorkbenchShellChatDraftTargetScope;
+  readonly targetScopeLabel: string;
+  readonly targetNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null;
   readonly action: RuntimeWorkbenchShellChatDraftIntentContext["action"];
   readonly actionLabel: string;
   readonly characterCount: number;
@@ -3793,6 +3830,11 @@ const RUNTIME_WORKBENCH_CHAT_DRAFT_INTENTS = Object.freeze([
   "revise",
   "repair",
 ] satisfies RuntimeWorkbenchShellChatDraftIntent[]);
+
+const RUNTIME_WORKBENCH_CHAT_DRAFT_TARGET_SCOPES = Object.freeze([
+  "workflow",
+  "current_node",
+] satisfies RuntimeWorkbenchShellChatDraftTargetScope[]);
 
 function isRuntimeWorkbenchShellChatDraftIntent(
   value: string | undefined,
@@ -3843,6 +3885,48 @@ function runtimeWorkbenchShellChatDraftIntentContext(
   }
 }
 
+function isRuntimeWorkbenchShellChatDraftTargetScope(
+  value: string | undefined,
+): value is RuntimeWorkbenchShellChatDraftTargetScope {
+  return RUNTIME_WORKBENCH_CHAT_DRAFT_TARGET_SCOPES.some(
+    (scope) => scope === value,
+  );
+}
+
+function runtimeWorkbenchShellChatDraftTargetScopeLabel(
+  targetScope: RuntimeWorkbenchShellChatDraftTargetScope,
+): string {
+  switch (targetScope) {
+    case "workflow":
+      return "Workflow";
+    case "current_node":
+      return "Current node";
+  }
+}
+
+function runtimeWorkbenchShellChatDraftTargetContext(
+  targetScope: RuntimeWorkbenchShellChatDraftTargetScope,
+  selectedNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null,
+): RuntimeWorkbenchShellChatDraftTargetContext {
+  if (targetScope === "current_node") {
+    return {
+      scope: targetScope,
+      target: "current_node",
+      targetLabel:
+        selectedNodeId === null
+          ? "Current node"
+          : `Current node ${selectedNodeId}`,
+      nodeId: selectedNodeId,
+    };
+  }
+  return {
+    scope: targetScope,
+    target: "workflow",
+    targetLabel: "Current workflow",
+    nodeId: null,
+  };
+}
+
 function runtimeWorkbenchShellChatDraftWordCount(draft: string): number {
   const trimmedDraft = draft.trim();
   if (trimmedDraft.length === 0) {
@@ -3856,6 +3940,7 @@ function runtimeWorkbenchShellCreateChatLocalSubmission(
   intent: RuntimeWorkbenchShellChatDraftIntent,
   intentLabel: string,
   intentContext: RuntimeWorkbenchShellChatDraftIntentContext,
+  targetContext: RuntimeWorkbenchShellChatDraftTargetContext,
   draftLength: number,
   draftWords: number,
 ): RuntimeWorkbenchShellChatLocalSubmission {
@@ -3867,6 +3952,9 @@ function runtimeWorkbenchShellCreateChatLocalSubmission(
     intentLabel,
     target: intentContext.target,
     targetLabel: intentContext.targetLabel,
+    targetScope: targetContext.scope,
+    targetScopeLabel: targetContext.targetLabel,
+    targetNodeId: targetContext.nodeId,
     action: intentContext.action,
     actionLabel: intentContext.actionLabel,
     characterCount: draftLength,
@@ -3876,6 +3964,7 @@ function runtimeWorkbenchShellCreateChatLocalSubmission(
 
 function runtimeWorkbenchShellChatDraftPreview(
   chatBoxEnabled: boolean,
+  targetContext: RuntimeWorkbenchShellChatDraftTargetContext,
   draftWords: number,
 ): RuntimeWorkbenchShellChatDraftPreview {
   if (draftWords === 0) {
@@ -3892,6 +3981,14 @@ function runtimeWorkbenchShellChatDraftPreview(
       reason: "chat_disabled",
       label: "Blocked",
       reasonLabel: "Chat disabled",
+    };
+  }
+  if (targetContext.scope === "current_node" && targetContext.nodeId === null) {
+    return {
+      state: "blocked",
+      reason: "current_node_unavailable",
+      label: "Blocked",
+      reasonLabel: "No current node selected",
     };
   }
   return {
@@ -3923,6 +4020,7 @@ function RuntimeWorkbenchShellChatBox(props: {
   readonly chatBox: RuntimeWorkbenchShellChatBoxSnapshot;
   readonly onSubmit: (input: RuntimeWorkbenchShellChatSubmitInput) => void;
   readonly runId: string | null;
+  readonly selectedNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null;
 }): ReactElement {
   const [expanded, setExpanded] = useState(
     () => !props.chatBox.defaultCollapsed,
@@ -3930,6 +4028,8 @@ function RuntimeWorkbenchShellChatBox(props: {
   const [draft, setDraft] = useState("");
   const [draftIntent, setDraftIntent] =
     useState<RuntimeWorkbenchShellChatDraftIntent>("ask");
+  const [draftTargetScope, setDraftTargetScope] =
+    useState<RuntimeWorkbenchShellChatDraftTargetScope>("workflow");
   const [localSubmissions, setLocalSubmissions] = useState<
     readonly RuntimeWorkbenchShellChatLocalSubmission[]
   >([]);
@@ -3942,8 +4042,13 @@ function RuntimeWorkbenchShellChatBox(props: {
     runtimeWorkbenchShellChatDraftIntentLabel(draftIntent);
   const draftIntentContext =
     runtimeWorkbenchShellChatDraftIntentContext(draftIntent);
+  const draftTargetContext = runtimeWorkbenchShellChatDraftTargetContext(
+    draftTargetScope,
+    props.selectedNodeId,
+  );
   const draftPreview = runtimeWorkbenchShellChatDraftPreview(
     props.chatBox.enabled && props.runId !== null,
+    draftTargetContext,
     draftWords,
   );
   const sendGuard = runtimeWorkbenchShellChatDraftSendGuard(draftPreview);
@@ -3991,11 +4096,28 @@ function RuntimeWorkbenchShellChatBox(props: {
     },
     [focusDraftInput],
   );
+  const handleDraftTargetScopeClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const targetScope = event.currentTarget.dataset.chatDraftTargetScope;
+      if (!isRuntimeWorkbenchShellChatDraftTargetScope(targetScope)) {
+        return;
+      }
+      setDraftTargetScope(targetScope);
+      focusDraftInput();
+    },
+    [focusDraftInput],
+  );
   const submitChatDraft = useCallback((): void => {
     if (!sendGuard.enabled) {
       return;
     }
-    props.onSubmit({ instruction: draft, intent: draftIntent });
+    props.onSubmit({
+      instruction: draft,
+      intent: draftIntent,
+      ...(draftTargetContext.nodeId !== null
+        ? { nodeId: draftTargetContext.nodeId }
+        : {}),
+    });
     const sequence = localSubmissionSequenceRef.current + 1;
     localSubmissionSequenceRef.current = sequence;
     const localSubmission = runtimeWorkbenchShellCreateChatLocalSubmission(
@@ -4003,6 +4125,7 @@ function RuntimeWorkbenchShellChatBox(props: {
       draftIntent,
       draftIntentLabel,
       draftIntentContext,
+      draftTargetContext,
       draftLength,
       draftWords,
     );
@@ -4020,6 +4143,7 @@ function RuntimeWorkbenchShellChatBox(props: {
     draftIntentContext,
     draftIntentLabel,
     draftLength,
+    draftTargetContext,
     draftWords,
     focusDraftInput,
     props.onSubmit,
@@ -4095,6 +4219,42 @@ function RuntimeWorkbenchShellChatBox(props: {
               );
             })}
           </div>
+          <div
+            aria-label="Chat draft target"
+            className="cw-workbench__chat-targets"
+            data-chat-draft-target-selected-node-id={props.selectedNodeId ?? ""}
+            role="group"
+          >
+            {RUNTIME_WORKBENCH_CHAT_DRAFT_TARGET_SCOPES.map((targetScope) => {
+              const active = targetScope === draftTargetScope;
+              const targetLabel =
+                runtimeWorkbenchShellChatDraftTargetScopeLabel(targetScope);
+              return (
+                <button
+                  aria-pressed={active}
+                  className={[
+                    "cw-workbench__chat-target",
+                    active ? "cw-workbench__chat-target--active" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  data-chat-draft-target-scope={targetScope}
+                  data-chat-draft-target-scope-active={
+                    active ? "true" : "false"
+                  }
+                  disabled={
+                    targetScope === "current_node" &&
+                    props.selectedNodeId === null
+                  }
+                  key={targetScope}
+                  onClick={handleDraftTargetScopeClick}
+                  type="button"
+                >
+                  {targetLabel}
+                </button>
+              );
+            })}
+          </div>
           <div className="cw-workbench__chat-compose">
             <textarea
               aria-label="Chat draft"
@@ -4144,6 +4304,7 @@ function RuntimeWorkbenchShellChatBox(props: {
             intent={draftIntent}
             intentLabel={draftIntentLabel}
             preview={draftPreview}
+            targetContext={draftTargetContext}
           />
           <RuntimeWorkbenchShellChatLocalSubmissionHistory
             onClear={handleLocalSubmissionClearClick}
@@ -4159,6 +4320,8 @@ function RuntimeWorkbenchShellChatBox(props: {
             data-chat-draft-send-enabled={sendGuard.enabled ? "true" : "false"}
             data-chat-draft-send-reason={sendGuard.reason}
             data-chat-draft-status={props.chatBox.statusLabel}
+            data-chat-draft-target-node-id={draftTargetContext.nodeId ?? ""}
+            data-chat-draft-target-scope={draftTargetContext.scope}
             data-chat-draft-words={String(draftWords)}
           >
             <h3>Draft</h3>
@@ -4178,6 +4341,10 @@ function RuntimeWorkbenchShellChatBox(props: {
               <div>
                 <dt>Intent</dt>
                 <dd>{draftIntentLabel}</dd>
+              </div>
+              <div>
+                <dt>Scope</dt>
+                <dd>{draftTargetContext.targetLabel}</dd>
               </div>
             </dl>
           </section>
@@ -4214,6 +4381,10 @@ function RuntimeWorkbenchShellChatLocalSubmissionHistory(props: {
       data-chat-local-submit-sequence={String(latestSubmission.sequence)}
       data-chat-local-submit-status={latestSubmission.status}
       data-chat-local-submit-target={latestSubmission.target}
+      data-chat-local-submit-target-node-id={
+        latestSubmission.targetNodeId ?? ""
+      }
+      data-chat-local-submit-target-scope={latestSubmission.targetScope}
       data-chat-local-submit-words={String(latestSubmission.wordCount)}
     >
       <div className="cw-workbench__chat-local-submission-header">
@@ -4240,6 +4411,7 @@ function RuntimeWorkbenchShellChatLocalSubmissionHistory(props: {
             <span>#{submission.sequence}</span>
             <span>{submission.statusLabel}</span>
             <span>{submission.intentLabel}</span>
+            <span>{submission.targetScopeLabel}</span>
             <span>{submission.targetLabel}</span>
             <span>{submission.actionLabel}</span>
             <span>{submission.characterCount} chars</span>
@@ -4257,6 +4429,7 @@ function RuntimeWorkbenchShellChatDraftPreview(props: {
   readonly intent: RuntimeWorkbenchShellChatDraftIntent;
   readonly intentLabel: string;
   readonly preview: RuntimeWorkbenchShellChatDraftPreview;
+  readonly targetContext: RuntimeWorkbenchShellChatDraftTargetContext;
 }): ReactElement {
   const hasDraft = props.draft.trim().length > 0;
   return (
@@ -4276,6 +4449,8 @@ function RuntimeWorkbenchShellChatDraftPreview(props: {
       data-chat-draft-preview-reason={props.preview.reason}
       data-chat-draft-preview-state={props.preview.state}
       data-chat-draft-preview-target={props.intentContext.target}
+      data-chat-draft-preview-target-node-id={props.targetContext.nodeId ?? ""}
+      data-chat-draft-preview-target-scope={props.targetContext.scope}
     >
       <div className="cw-workbench__chat-preview-header">
         <h3>Preview</h3>
@@ -4295,6 +4470,10 @@ function RuntimeWorkbenchShellChatDraftPreview(props: {
         <div>
           <dt>Target</dt>
           <dd>{props.intentContext.targetLabel}</dd>
+        </div>
+        <div>
+          <dt>Scope</dt>
+          <dd>{props.targetContext.targetLabel}</dd>
         </div>
         <div>
           <dt>Action</dt>
