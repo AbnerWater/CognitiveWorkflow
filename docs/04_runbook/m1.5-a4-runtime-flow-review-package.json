@@ -1,0 +1,207 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.198",
+  "package_status": "a4_runtime_flow_review_package_prepared_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-27",
+  "source": {
+    "a4_evidence_manifest": "docs/04_runbook/m1.5-a4-evidence-manifest.json",
+    "a4_capture_execution": "docs/04_runbook/m1.5-a4-capture-execution.json",
+    "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
+    "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json",
+    "roadmap": "docs/roadmap.md#5.3",
+    "a4_review_matrix": "docs/roadmap.md#5.4"
+  },
+  "guardrails": [
+    "This package prepares A4 reviewer inputs only; it does not record A4 acceptance.",
+    "Every packaged item remains pending_a4_review until an A4 ux-acceptance-reviewer records a separate decision.",
+    "W1.5.198 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content.",
+    "FR-017 remains excluded because selected-node Task Drawer artifact detail evidence is still missing.",
+    "No package field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, secure paths, cache paths, output directory values, or full destination paths."
+  ],
+  "package_scope": {
+    "source_review_status": "pending_a4_review",
+    "included_review_groups": [
+      "candidate_stream_evidence",
+      "runtime_bridge_evidence"
+    ],
+    "included_fr_ids": [
+      "FR-007",
+      "FR-008",
+      "FR-009",
+      "FR-010",
+      "FR-012",
+      "FR-013",
+      "FR-016"
+    ],
+    "included_runtime_bridge_fr_ids": ["FR-007", "FR-008", "FR-012", "FR-013"],
+    "included_stream_candidate_fr_ids": ["FR-009", "FR-010", "FR-016"],
+    "excluded_partial_runtime_bridge_fr_ids": [
+      "FR-011",
+      "FR-014",
+      "FR-015",
+      "FR-017",
+      "FR-018"
+    ],
+    "excluded_reason": "Partial runtime bridge items require follow-up implementation or stronger end-to-end proof before A4 review packaging."
+  },
+  "reviewer_contract": {
+    "required_reviewer": "A4 ux-acceptance-reviewer",
+    "runner_script": "apps/desktop/scripts/m1-5-a4-runtime-flow-review-package.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-a4-runtime-flow-review-package.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-a4-runtime-flow-review-package.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "required_review_inputs": [
+      "docs/04_runbook/m1.5-a4-evidence-manifest.json",
+      "docs/04_runbook/m1.5-a4-capture-execution.json",
+      "docs/04_runbook/m1.5-fr-evidence-map.json",
+      "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+      "docs/04_runbook/m1.5-readiness-ledger.json"
+    ],
+    "decision_contract": {
+      "allowed_decisions": ["accepted", "rejected", "needs_followup"],
+      "requires_separate_a4_review_record": true,
+      "package_accepted_item_count_must_remain_zero": true,
+      "phase_exit_status_must_remain_not_ready": true
+    },
+    "runner_output_contract": {
+      "status": "a4_runtime_flow_review_package_prepared_not_accepted",
+      "review_item_count": 7,
+      "stream_candidate_item_count": 3,
+      "runtime_bridge_item_count": 4,
+      "excluded_partial_runtime_bridge_item_count": 5,
+      "accepted_item_count": 0,
+      "pending_a4_review_item_count": 7,
+      "exit_p1_1_status": "not_ready",
+      "sanitized_summary_only": true
+    }
+  },
+  "review_package_items": [
+    {
+      "id": "PKG-A4-FR-009-STREAM-COLLAPSED",
+      "fr_id": "FR-009",
+      "review_item_id": "A4-FR-009-STREAM-COLLAPSED",
+      "capture_id": "CAPTURE-A4-FR-009-STREAM-COLLAPSED",
+      "review_group": "candidate_stream_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "Stream panel default collapsed layout",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Visual-smoke matrix known desktop/mobile cases",
+        "Collapsed stream metrics remain visible without body panels",
+        "Expanded stream metrics prove disclosure behavior"
+      ]
+    },
+    {
+      "id": "PKG-A4-FR-010-STREAM-EXPANDED",
+      "fr_id": "FR-010",
+      "review_item_id": "A4-FR-010-STREAM-EXPANDED",
+      "capture_id": "CAPTURE-A4-FR-010-STREAM-EXPANDED",
+      "review_group": "candidate_stream_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "Expanded stream panel content and event detail readability",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Visual-smoke matrix known desktop/mobile cases",
+        "Expanded event detail metrics",
+        "Stream controls, group, selection, and metadata disclosure evidence"
+      ]
+    },
+    {
+      "id": "PKG-A4-FR-016-EVENT-CLASSIFICATION",
+      "fr_id": "FR-016",
+      "review_item_id": "A4-FR-016-EVENT-CLASSIFICATION",
+      "capture_id": "CAPTURE-A4-FR-016-EVENT-CLASSIFICATION",
+      "review_group": "candidate_stream_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "StreamEvent classification labels and unknown-event fallback",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Known and unknown visual-smoke matrix cases",
+        "Known type label metrics",
+        "Unknown fallback label metrics without raw payload exposure"
+      ]
+    },
+    {
+      "id": "PKG-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "fr_id": "FR-007",
+      "review_item_id": "A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "Execution mode control placement and run-once dispatch behavior",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Desktop execution mode placement evidence",
+        "Run-once dispatch metadata-only evidence",
+        "Fail-closed semi-auto and auto behavior where backend contract is unavailable"
+      ]
+    },
+    {
+      "id": "PKG-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "fr_id": "FR-012",
+      "review_item_id": "A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "Mandatory Git initialization evidence in desktop project creation",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Desktop create-project path evidence",
+        "Runtime project endpoint coverage",
+        "Git initialization metadata without raw path or credential leakage"
+      ]
+    },
+    {
+      "id": "PKG-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "fr_id": "FR-013",
+      "review_item_id": "A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "Reference import, list, enable, disable, and view user paths",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Runtime reference endpoint coverage",
+        "Desktop reference management command evidence",
+        "Metadata-only reference state evidence without raw file content"
+      ]
+    },
+    {
+      "id": "PKG-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "fr_id": "FR-008",
+      "review_item_id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "Runtime-backed Chat instruction routing for current node and global Workflow scopes",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Runtime submit-instruction endpoint tests",
+        "Desktop Chat Workflow/current-node scope evidence",
+        "No-current-node fallback prevention",
+        "Metadata-only command projection without raw instruction retention"
+      ]
+    }
+  ],
+  "summary": {
+    "review_item_count": 7,
+    "stream_candidate_items": 3,
+    "runtime_bridge_items": 4,
+    "excluded_partial_runtime_bridge_items": 5,
+    "accepted_items": 0,
+    "pending_a4_review_items": 7,
+    "exit_p1_1_status": "not_ready",
+    "next_required_review": "A4 ux-acceptance-reviewer"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.199",
+      "title": "Desktop artifact Task Drawer detail follow-up",
+      "reason": "FR-017 remains excluded from A4 review until selected-node artifact details are implemented or proven."
+    }
+  ]
+}
