@@ -34,6 +34,7 @@ from cw_runtime.harness import (
     ProjectReferenceImportMetadata,
     ProjectReferencePatchRequest,
     ProjectSkillPatchRequest,
+    acquire_git_lock,
     acquire_runtime_lock,
     import_project_reference,
     initialize_project,
@@ -45,6 +46,7 @@ from cw_runtime.harness import (
     windows_cng_decrypt_aes_gcm,
     windows_credential_manager_master_key_provider,
 )
+from cw_runtime.persistence import PersistenceError, create_workflow_snapshot_locked
 from cw_runtime.runner import (
     HumanDecisionRequest,
     NodeAdvanceRequest,
@@ -111,6 +113,14 @@ class RunNodeRepairRequest(BaseModel):
     based_on_evaluation_id: str = Field(..., min_length=1)
     preferred_strategy: RepairKind = RepairKind.PROMPT_PATCH
     scope: PatchScope = PatchScope.UNTIL_PASS
+
+
+class WorkflowSnapshotRequest(BaseModel):
+    """Request body for POST /cw/v1/workflows/{workflow_id}/snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["0.1.0"]
 
 
 def _load_module(module_name: str) -> Any:
@@ -528,6 +538,48 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
             return _run_error_response(exc)
         content = _dump_model(start_response)
         run_locations[start_response.run_id] = project_root
+        remember_idempotency_response(request, body, status_code=201, content=content)
+        return secure_json_response(status_code=201, content=content)
+
+    async def post_workflow_snapshot(workflow_id: str, request: Any) -> Any:
+        body_or_response = await _body_or_error_response(request)
+        if not isinstance(body_or_response, dict):
+            return body_or_response
+        body = body_or_response
+        replay = idempotency_replay_response(request, body)
+        if replay is not None:
+            return replay
+        project_root = _project_root_for_workflow(project_locations.values(), workflow_id)
+        if project_root is None:
+            return secure_json_response(
+                status_code=404,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.RES_NOT_FOUND,
+                        message="Workflow is not registered in this runtime process.",
+                        details={"workflow_id": workflow_id},
+                    )
+                ),
+            )
+        try:
+            WorkflowSnapshotRequest.model_validate(body)
+            snapshot_id = new_runtime_id()
+            created_at = utc_now_ms()
+            with acquire_git_lock(project_root):
+                with acquire_runtime_lock(project_root):
+                    snapshot = create_workflow_snapshot_locked(
+                        project_root,
+                        workflow_id=workflow_id,
+                        snapshot_id=snapshot_id,
+                        created_at=created_at,
+                    )
+        except ValidationError as exc:
+            return secure_json_response(status_code=400, content=_dump_model(_validation_error_envelope(exc)))
+        except HarnessError as exc:
+            return _harness_error_response(exc)
+        except PersistenceError as exc:
+            return _persistence_error_response(exc)
+        content = {**_dump_model(snapshot), "created_at": created_at}
         remember_idempotency_response(request, body, status_code=201, content=content)
         return secure_json_response(status_code=201, content=content)
 
@@ -1063,6 +1115,18 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
             ),
         )
 
+    def _persistence_error_response(exc: PersistenceError) -> Any:
+        return secure_json_response(
+            status_code=exc.status_code,
+            content=_dump_model(
+                build_error_envelope(
+                    error_code=exc.error_code,
+                    message=str(exc),
+                    details=exc.details,
+                )
+            ),
+        )
+
     def _resource_not_found(message: str, details: dict[str, object]) -> Any:
         return secure_json_response(
             status_code=404,
@@ -1099,6 +1163,7 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     patch_project_reference.__annotations__["request"] = requests.Request
     patch_project_skills.__annotations__["request"] = requests.Request
     post_workflow_run.__annotations__["request"] = requests.Request
+    post_workflow_snapshot.__annotations__["request"] = requests.Request
     post_workflow_pause.__annotations__["request"] = requests.Request
     post_workflow_resume.__annotations__["request"] = requests.Request
     post_workflow_cancel.__annotations__["request"] = requests.Request
@@ -1126,6 +1191,7 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     app.get(f"{settings.api_prefix}/projects/{{project_id}}/mcps")(get_project_mcps)
     app.get(f"{settings.api_prefix}/projects/{{project_id}}/adapters")(get_project_adapters)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/run")(post_workflow_run)
+    app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/snapshot", status_code=201)(post_workflow_snapshot)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/pause")(post_workflow_pause)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/resume")(post_workflow_resume)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/cancel")(post_workflow_cancel)

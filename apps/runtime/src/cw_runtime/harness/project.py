@@ -1715,6 +1715,10 @@ def acquire_runtime_lock(project_root: Path, *, timeout_seconds: float = 60.0) -
     return RuntimeLock(agent_root / "locks" / RUNTIME_LOCK_FILE, timeout_seconds=timeout_seconds)
 
 
+def acquire_git_lock(project_root: Path, *, timeout_seconds: float = 60.0) -> RuntimeLock:
+    return _acquire_git_lock(project_root, timeout_seconds=timeout_seconds)
+
+
 def _acquire_git_lock(project_root: Path, *, timeout_seconds: float = 60.0) -> RuntimeLock:
     agent_root = project_root.resolve() / AGENT_WORKFLOW_DIR
     return RuntimeLock(agent_root / "locks" / GIT_LOCK_FILE, timeout_seconds=timeout_seconds)

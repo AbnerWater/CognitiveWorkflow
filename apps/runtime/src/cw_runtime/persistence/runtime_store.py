@@ -315,6 +315,63 @@ def create_git_snapshot_locked(
     return result
 
 
+def create_workflow_snapshot_locked(
+    project_root: Path,
+    *,
+    workflow_id: str,
+    snapshot_id: str,
+    created_at: str,
+) -> GitSnapshotResult:
+    """Create an explicit workflow git snapshot.
+
+    The caller must already hold ``git.lock`` and ``runtime.lock``. The snapshot
+    record is appended after resolving the target commit, matching the automatic
+    run snapshot ledger behavior.
+    """
+
+    kind = "workflow.snapshot"
+    message = f"snapshot(workflow): create {workflow_id}"
+    paths = _existing_workflow_snapshot_paths(project_root)
+    if paths:
+        _git_add_paths(project_root, paths)
+        commit_result = _run_git(
+            project_root,
+            [*_git_identity_args(project_root), "commit", "--only", "-m", message, "--", *paths],
+            check=False,
+        )
+        if commit_result.returncode != 0:
+            combined = f"{commit_result.stdout}\n{commit_result.stderr}".lower()
+            if "nothing to commit" not in combined and "no changes added" not in combined:
+                raise PersistenceError(
+                    "RH_GIT_AUTOCOMMIT_BLOCKED",
+                    "Runtime workflow snapshot commit failed.",
+                    details={"stderr": commit_result.stderr.strip(), "stdout": commit_result.stdout.strip()},
+                )
+
+    head = _run_git(project_root, ["rev-parse", "HEAD"], error_code="RH_INIT_GIT_FAILED").stdout.strip()
+    result = GitSnapshotResult(snapshot_id=snapshot_id, kind=kind, commit_sha=head)
+    _append_snapshot_record(
+        project_root,
+        {
+            "schema_version": RUNTIME_SCHEMA_VERSION,
+            "snapshot_id": snapshot_id,
+            "kind": kind,
+            "run_id": None,
+            "workflow_id": workflow_id,
+            "workflow_version": None,
+            "event_type": None,
+            "node_id": None,
+            "attempt_id": None,
+            "commit_sha": head,
+            "git_tag": None,
+            "message": message,
+            "refs": {"workflow_id": workflow_id},
+            "created_at": created_at,
+        },
+    )
+    return result
+
+
 def record_initial_git_snapshot(
     project_root: Path, *, project_id: str, commit_sha: str | None, created_at: str
 ) -> None:
@@ -824,6 +881,19 @@ def _git_add_paths(project_root: Path, paths: list[str]) -> None:
 
 def _existing_snapshot_paths(project_root: Path, run_id: str) -> list[str]:
     paths = _snapshot_commit_paths(project_root_run_id=run_id)
+    existing: list[str] = []
+    for relative_path in paths:
+        if (project_root / relative_path).exists():
+            existing.append(relative_path)
+    return existing
+
+
+def _existing_workflow_snapshot_paths(project_root: Path) -> list[str]:
+    paths = [
+        f"{AGENT_WORKFLOW_DIR}/workflow.flow.json",
+        f"{AGENT_WORKFLOW_DIR}/workflow_history.json",
+        SNAPSHOTS_JSONL_RELATIVE_PATH.as_posix(),
+    ]
     existing: list[str] = []
     for relative_path in paths:
         if (project_root / relative_path).exists():

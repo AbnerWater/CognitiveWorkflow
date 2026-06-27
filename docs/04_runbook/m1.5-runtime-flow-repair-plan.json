@@ -71,7 +71,8 @@
       "Preserve metadata-only evidence boundaries for snapshot and HITL paths."
     ],
     "planned_repair_steps": [
-      "Implement automatic snapshot creation, restore-to-snapshot, and continue execution for FR-015.",
+      "Surface runtime automatic and explicit snapshots in the Desktop Version Snapshot timeline for FR-015.",
+      "Define or accept restore-to-snapshot semantics before implementing Git-backed restore and continue execution for FR-015.",
       "Add pending-decision discovery plus pause/resume UX evidence for semi-auto HITL in FR-018."
     ],
     "planned_verification": [
@@ -100,24 +101,34 @@
         "docs/04_runbook/m1.5-fr-evidence-map.json#FR-015",
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-015",
         "docs/04_runbook/m1.5-progress.md#W1.5.185",
+        "docs/04_runbook/m1.5-progress.md#W1.5.203",
         "docs/reviews/m1.5.185-version-snapshot-bridge-review.md",
+        "apps/runtime/src/cw_runtime/api/app.py",
+        "apps/runtime/src/cw_runtime/persistence/runtime_store.py",
+        "apps/runtime/tests/test_m1_3_4_run_endpoints.py",
+        "apps/runtime/tests/test_m1_3_7_persistence_observability.py",
         "apps/desktop/src/renderer/runtime-workbench-session.ts",
         "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
       ],
-      "source_verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "source_verification_commands": [
+        "uv run pytest apps/runtime/tests/test_m1_3_4_run_endpoints.py apps/runtime/tests/test_m1_3_7_persistence_observability.py -q",
+        "pnpm --filter @cw/desktop run test"
+      ],
       "source_checklist_remaining_gap": [
-        "Automatic snapshot creation, restore-to-snapshot, and continue execution are not implemented.",
+        "Desktop timeline does not yet surface runtime snapshots/snapshots.jsonl as live project state.",
+        "Restore-to-snapshot and continue execution remain unimplemented because no accepted restore contract exists.",
         "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
       ],
       "missing_before_implementation": [
-        "Automatic snapshot creation, restore-to-snapshot, and continue execution are not implemented.",
+        "Desktop timeline does not yet surface runtime snapshots/snapshots.jsonl as live project state.",
+        "Restore-to-snapshot and continue execution remain unimplemented because no accepted restore contract exists.",
         "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
       ],
-      "source_next_action": "Implement automatic snapshot, restore, and continue evidence before FR-015 acceptance.",
+      "source_next_action": "Define or accept a restore-to-snapshot contract before implementing restore, then add Desktop timeline and continue evidence before FR-015 acceptance.",
       "planning_status": "planned_not_implemented",
       "planned_repair_steps": [
-        "Extend the explicit Version Snapshot bridge into automatic snapshot creation at accepted run boundaries.",
-        "Plan restore-to-snapshot and continue-execution behavior against Git-backed runtime contracts.",
+        "Surface runtime automatic and explicit snapshots in the Desktop Version Snapshot timeline.",
+        "Define or accept restore-to-snapshot semantics before implementing Git-backed restore.",
         "Add restore and continue evidence only after runtime state and Git semantics are proven together."
       ],
       "required_runtime_contracts": [

@@ -318,16 +318,25 @@
       "evidence_refs": [
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-015",
         "docs/04_runbook/m1.5-progress.md#W1.5.185",
+        "docs/04_runbook/m1.5-progress.md#W1.5.203",
         "docs/reviews/m1.5.185-version-snapshot-bridge-review.md",
+        "apps/runtime/src/cw_runtime/api/app.py",
+        "apps/runtime/src/cw_runtime/persistence/runtime_store.py",
+        "apps/runtime/tests/test_m1_3_4_run_endpoints.py",
+        "apps/runtime/tests/test_m1_3_7_persistence_observability.py",
         "apps/desktop/src/renderer/runtime-workbench-session.ts",
         "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
       ],
-      "verification_commands": ["pnpm --filter @cw/desktop run test"],
+      "verification_commands": [
+        "uv run pytest apps/runtime/tests/test_m1_3_4_run_endpoints.py apps/runtime/tests/test_m1_3_7_persistence_observability.py -q",
+        "pnpm --filter @cw/desktop run test"
+      ],
       "missing_evidence": [
-        "Automatic snapshot creation, restore-to-snapshot, and continue execution are not implemented.",
+        "Desktop timeline does not yet surface runtime snapshots/snapshots.jsonl as live project state.",
+        "Restore-to-snapshot and continue execution remain unimplemented because no accepted restore contract exists.",
         "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
       ],
-      "next_action": "Implement automatic snapshot, restore, and continue evidence before FR-015 acceptance."
+      "next_action": "Define or accept a restore-to-snapshot contract before implementing restore, then add Desktop timeline and continue evidence before FR-015 acceptance."
     },
     {
       "id": "FR-016",

@@ -159,14 +159,15 @@
         "W1.5.199 adds selected-node Task Drawer artifact detail display and node-bound open/download command evidence",
         "W1.5.200-W1.5.202 prepare and refresh the A4 runtime-flow decision handoff without accepting FR items",
         "W1.5.201 adds combined project creation plus initial reference import runtime bridge evidence without accepting FR items",
-        "W1.5.202 adds runtime-backed Skill candidate discovery and secret-safe MCP configuration metadata evidence without accepting FR items"
+        "W1.5.202 adds runtime-backed Skill candidate discovery and secret-safe MCP configuration metadata evidence without accepting FR items",
+        "W1.5.203 registers the accepted explicit workflow snapshot endpoint and records metadata-only snapshot ledger evidence without accepting FR-015"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
         "Selected-node Task Drawer artifact detail display still requires A4 UX acceptance review",
         "Skill configuration display still requires A4 UX acceptance review",
         "Task mutation commands remain incomplete",
-        "Version Snapshot restore-to-snapshot and continue execution remain unimplemented",
+        "Version Snapshot Desktop timeline still needs runtime snapshot ledger evidence, and restore-to-snapshot plus continue execution remain unimplemented",
         "A4 reviewer decision is not recorded for the Task Drawer artifact bridge.",
         "Combined project creation plus initial reference import still requires A4 UX acceptance review."
       ]

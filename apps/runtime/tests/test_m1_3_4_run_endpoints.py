@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic import SecretStr
@@ -34,6 +35,14 @@ def _create_project_and_workflow(client: Any, tmp_path: Path) -> tuple[Path, str
     project_root = Path(response.json()["host_path"])
     workflow_id = load_workflow_graph(project_root).workflow_id
     return project_root, workflow_id
+
+
+def _read_jsonl(path: Path) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line:
+            records.append(cast(dict[str, object], json.loads(line)))
+    return records
 
 
 def test_create_read_and_transition_run_endpoints(tmp_path: Path) -> None:
@@ -93,6 +102,61 @@ def test_create_read_and_transition_run_endpoints(tmp_path: Path) -> None:
         json={"schema_version": "0.1.0", "by": "tester"},
     )
     assert run_pause.status_code == 404
+
+
+def test_workflow_snapshot_endpoint_records_explicit_git_snapshot(tmp_path: Path) -> None:
+    client = _test_client()
+    project_root, workflow_id = _create_project_and_workflow(client, tmp_path)
+    headers = {"Authorization": "Bearer expected-token", "Idempotency-Key": "idem-snapshot-1"}
+    payload = {"schema_version": "0.1.0"}
+
+    first = client.post(f"/cw/v1/workflows/{workflow_id}/snapshot", headers=headers, json=payload)
+    second = client.post(f"/cw/v1/workflows/{workflow_id}/snapshot", headers=headers, json=payload)
+
+    assert first.status_code == 201
+    first_body = cast(dict[str, object], first.json())
+    assert first_body["schema_version"] == "0.1.0"
+    assert first_body["kind"] == "workflow.snapshot"
+    assert isinstance(first_body["snapshot_id"], str)
+    assert isinstance(first_body["commit_sha"], str)
+    assert isinstance(first_body["created_at"], str)
+    assert first_body["git_tag"] is None
+    assert "host_path" not in first_body
+    assert "detail" not in first_body
+
+    assert second.status_code == 201
+    assert second.headers["idempotent-replay"] == "true"
+    assert cast(dict[str, object], second.json()) == first_body
+
+    snapshots = _read_jsonl(project_root / ".agent-workflow" / "snapshots" / "snapshots.jsonl")
+    workflow_snapshots = [snapshot for snapshot in snapshots if snapshot.get("kind") == "workflow.snapshot"]
+    assert len(workflow_snapshots) == 1
+    snapshot_record = workflow_snapshots[0]
+    assert snapshot_record["snapshot_id"] == first_body["snapshot_id"]
+    assert snapshot_record["workflow_id"] == workflow_id
+    assert snapshot_record["commit_sha"] == first_body["commit_sha"]
+    assert snapshot_record["git_tag"] is None
+    assert snapshot_record["message"] == f"snapshot(workflow): create {workflow_id}"
+    assert snapshot_record["refs"] == {"workflow_id": workflow_id}
+    assert (project_root / ".agent-workflow" / "locks" / "git.lock").exists() is False
+    assert (project_root / ".agent-workflow" / "locks" / "runtime.lock").exists() is False
+
+
+def test_workflow_snapshot_endpoint_rejects_unregistered_workflow(tmp_path: Path) -> None:
+    client = _test_client()
+    _project_root, _workflow_id = _create_project_and_workflow(client, tmp_path)
+
+    response = client.post(
+        "/cw/v1/workflows/missing_workflow/snapshot",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0"},
+    )
+
+    assert response.status_code == 404
+    body = cast(dict[str, object], response.json())
+    assert body["error_code"] == "RES_NOT_FOUND"
+    assert body["details"] == {"workflow_id": "missing_workflow"}
+    assert "detail" not in body
 
 
 def test_run_creation_idempotency_replays_before_concurrent_run_check(tmp_path: Path) -> None:

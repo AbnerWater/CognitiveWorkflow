@@ -435,10 +435,13 @@
       "current_evidence": [
         "W1.5.93 introduced the Version Snapshot scaffold.",
         "W1.5.106 added local Version Snapshot selection details.",
-        "W1.5.185 added explicit create-only workflow snapshot dispatch for POST /workflows/{workflow_id}/snapshot."
+        "W1.5.185 added explicit create-only workflow snapshot dispatch for POST /workflows/{workflow_id}/snapshot.",
+        "W1.3.7 records runtime git snapshots for run.started, attempt.completed, and terminal run events.",
+        "W1.5.203 registers the accepted runtime POST /workflows/{workflow_id}/snapshot endpoint and records explicit workflow snapshots in snapshots/snapshots.jsonl."
       ],
       "remaining_gap": [
-        "Automatic snapshot creation, restore-to-snapshot, and continue execution are not implemented.",
+        "Desktop timeline does not yet surface runtime snapshots/snapshots.jsonl as live project state.",
+        "Restore-to-snapshot and continue execution remain unimplemented because no accepted restore contract exists.",
         "Git-backed restore semantics and A4 UX acceptance evidence remain unrecorded."
       ]
     },
