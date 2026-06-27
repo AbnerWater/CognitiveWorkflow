@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.186",
+  "slice": "W1.5.197",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -128,11 +128,13 @@
       "status": "partial",
       "verified_evidence": [
         "W1.5.108-W1.5.112 local draft, intent, preview, and send guard",
-        "W1.5.150-W1.5.169 local metadata-only send/history/focus and visual smoke matrix evidence"
+        "W1.5.150-W1.5.169 local metadata-only send/history/focus and visual smoke matrix evidence",
+        "W1.5.195 runtime submit-instruction endpoint, metadata-only projection, and renderer dispatch evidence",
+        "W1.5.196 Workflow/Current node scope controls and no-current-node fallback regression evidence"
       ],
       "remaining_gap": [
-        "Real chat command routing is not implemented",
-        "Runtime mutation and persistence are intentionally out of the local scaffold boundary"
+        "A4 UX acceptance evidence for runtime-backed Chat instruction routing is not recorded",
+        "Project-backed command history and persistence remain outside this evidence refresh"
       ]
     },
     {
@@ -151,11 +153,13 @@
       "verified_evidence": [
         "W1.5.89-W1.5.93 shell chrome, Task Drawer collapse, Chat Box collapse, File Tree scaffold, and Version Snapshot scaffold",
         "W1.5.105-W1.5.107 local read-only selection details",
-        "W1.5.181-W1.5.185 add desktop bridge evidence for project creation/Git, references, skills, HITL decisions, and create-only workflow snapshots"
+        "W1.5.181-W1.5.185 add desktop bridge evidence for project creation/Git, references, skills, HITL decisions, and create-only workflow snapshots",
+        "W1.5.195 adds Desktop native artifact open/download handoff and metadata-only ArtifactActionResult evidence"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
-        "Task mutation commands and artifact open/download behavior are not complete",
+        "Selected-node Task Drawer artifact detail display is not yet accepted or proven end-to-end",
+        "Task mutation commands remain incomplete",
         "Version Snapshot restore-to-snapshot and continue execution remain unimplemented"
       ]
     },
@@ -174,7 +178,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 have a refreshed W1.5.186 evidence map, but accepted_items remain 0 and several surfaces still need A4, runtime-flow, dependency-gated, or end-to-end evidence."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.197 evidence map, but accepted_items remain 0 and several surfaces still need A4, dependency-gated, or end-to-end evidence."
     },
     {
       "id": "EXIT-P1-2",
@@ -234,14 +238,14 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.187",
-      "title": "Desktop bridge A4 evidence manifest refresh",
-      "reason": "Turn W1.5.180-W1.5.185 bridge evidence into reviewer-facing A4 candidate bundles without claiming acceptance."
+      "id": "W1.5.198",
+      "title": "Desktop A4 runtime-flow evidence review package",
+      "reason": "Review FR-008 and existing A4-ready evidence without changing accepted_items until A4 approval."
     },
     {
-      "id": "W1.5.188",
-      "title": "Remaining runtime-flow implementation plan refresh",
-      "reason": "Re-plan FR-008, FR-015, FR-017, and partial bridge gaps after the W1.5.186 evidence refresh."
+      "id": "W1.5.199",
+      "title": "Desktop artifact Task Drawer detail follow-up",
+      "reason": "Close FR-017 selected-node artifact detail gap before A4 review."
     }
   ]
 }

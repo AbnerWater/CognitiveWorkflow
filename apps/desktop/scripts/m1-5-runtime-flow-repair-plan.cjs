@@ -133,14 +133,14 @@ function validateRuntimeFlowRepairPlan(options = {}) {
 
   assertEqual(plan.schema_version, "0.1.0", "schema version");
   assertEqual(plan.milestone, "M1.5", "milestone");
-  assertEqual(plan.slice, "W1.5.188", "slice id");
+  assertEqual(plan.slice, "W1.5.197", "slice id");
   assertEqual(
     plan.plan_status,
-    "remaining_runtime_flow_implementation_plan_refreshed_not_implemented",
+    "remaining_runtime_flow_implementation_plan_refreshed_after_runtime_actions_not_implemented",
     "plan status",
   );
   assertEqual(plan.exit_p1_1_status, "not_ready", "EXIT-P1-1 status");
-  assertEqual(plan.refreshed_from?.slice, "W1.5.177", "refreshed-from slice");
+  assertEqual(plan.refreshed_from?.slice, "W1.5.188", "refreshed-from slice");
   assertEqual(
     plan.repair_track.source_track_id,
     "TRACK-REMAINING-RUNTIME-FLOW-IMPLEMENTATION",
@@ -153,7 +153,7 @@ function validateRuntimeFlowRepairPlan(options = {}) {
   );
   assertEqual(
     plan.repair_track.source_track_status,
-    "refreshed_not_implemented",
+    "refreshed_after_runtime_actions_not_implemented",
     "track status",
   );
   assertDeepEqual(
@@ -324,11 +324,10 @@ function validateRuntimeFlowRepairPlan(options = {}) {
   }
 
   const expectedSequenceItemIds = [
-    "RUNTIME-FR-008-CHAT-COMMAND-ROUTING",
-    "RUNTIME-FR-017-ARTIFACT-ACTIONS",
     "RUNTIME-FR-011-PROJECT-CREATION-REFERENCE-FOLLOWUP",
     "RUNTIME-FR-014-SKILL-CONFIGURATION-FOLLOWUP",
     "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
+    "RUNTIME-FR-017-ARTIFACT-ACTIONS",
     "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
   ];
   assertDeepEqual(
@@ -452,7 +451,7 @@ function validateRuntimeFlowRepairPlan(options = {}) {
   );
   assertDeepEqual(
     plan.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.189", "W1.5.190"],
+    ["W1.5.198", "W1.5.199"],
     "next recommended slices",
   );
 

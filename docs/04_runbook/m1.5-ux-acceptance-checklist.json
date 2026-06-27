@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.186",
+  "slice": "W1.5.197",
   "checklist_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-26",
+  "observed_at": "2026-06-27",
   "authority": {
     "roadmap": "docs/roadmap.md#5.3",
     "review_matrix": "docs/roadmap.md#5.4",
@@ -17,7 +17,7 @@
     "Every FR item remains phase-exit required even when the UIUX source priority is SHOULD.",
     "Scaffold, bridge, or backend-only evidence is not enough to mark a FR accepted.",
     "Dependency-gated items remain blocked until the corresponding W1.5.171 dependency gate receives explicit human approval and implementation evidence.",
-    "W1.5.186 refreshes evidence status from W1.5.180-W1.5.185 only; it changes no accepted spec, ADR, schema, generated schema, dependency, runtime behavior, IPC, renderer storage, packaging, updater, or baseline docx content."
+    "W1.5.197 refreshes current evidence status after W1.5.195-W1.5.196 runtime-flow implementation; it changes no accepted spec, ADR, schema, generated schema, dependency, runtime behavior, IPC, renderer storage, packaging, updater, or baseline docx content."
   ],
   "source_extraction": {
     "method": "read-only OOXML extraction from word/document.xml",
@@ -278,14 +278,16 @@
         "User can choose current-node versus global Workflow intent.",
         "Submitted instructions route to real runtime command handling without leaking raw prompt text into unsafe evidence."
       ],
-      "current_evidence_status": "partial_scaffold",
+      "current_evidence_status": "runtime_bridge_evidence_available",
       "current_evidence": [
         "W1.5.108-W1.5.112 added local draft, intent, preview, and send guard.",
-        "W1.5.150-W1.5.169 added metadata-only local send/history/focus and visual smoke matrix evidence."
+        "W1.5.150-W1.5.169 added metadata-only local send/history/focus and visual smoke matrix evidence.",
+        "W1.5.195 added runtime submit-instruction handlers, metadata-only command projection, renderer dispatch, and runtime/session tests.",
+        "W1.5.196 added Workflow/Current node scope controls, strict selected-or-active node targeting, and no-current-node fallback regression coverage."
       ],
       "remaining_gap": [
-        "Real chat command routing and runtime mutation are not implemented.",
-        "Persistence and project-backed command history remain out of scope."
+        "A4 UX acceptance evidence for the runtime-backed current-node/global Workflow Chat instruction path is not recorded.",
+        "Project-backed command history and persistence remain outside this evidence refresh and must not be inferred from local receipt metadata."
       ]
     },
     {
@@ -474,14 +476,15 @@
         "Task details show artifact references for the selected node.",
         "Artifact open/download behavior is safe and project-scoped."
       ],
-      "current_evidence_status": "partial_evidence",
+      "current_evidence_status": "partial_runtime_bridge_evidence",
       "current_evidence": [
         "W1.5.120 added Stream panel artifact ref display evidence.",
-        "runtime_harness.md defines artifacts and outputs directories."
+        "runtime_harness.md defines artifacts and outputs directories.",
+        "W1.5.195 added Desktop preload/main native artifact open/download handoff, renderer action wiring, metadata-only ArtifactActionResult snapshots, and sensitive export blocking tests."
       ],
       "remaining_gap": [
-        "Artifact references are not yet accepted in right-side Task details.",
-        "Artifact open/download actions are not implemented."
+        "Artifact references are not yet accepted in right-side Task details for the selected node.",
+        "A4 UX acceptance evidence for node artifact detail display and safe open/download behavior is not recorded."
       ]
     },
     {
@@ -555,9 +558,9 @@
     "source_should_items": 2,
     "accepted_items": 0,
     "candidate_evidence_available_items": 3,
-    "runtime_bridge_evidence_available_items": 3,
-    "partial_runtime_bridge_evidence_items": 4,
-    "partial_or_scaffold_items": 8,
+    "runtime_bridge_evidence_available_items": 4,
+    "partial_runtime_bridge_evidence_items": 5,
+    "partial_or_scaffold_items": 6,
     "backend_or_schema_only_items": 0,
     "blocked_by_dependency_gate_items": 2,
     "not_started_items": 0,
@@ -566,14 +569,14 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.187",
-      "title": "Desktop bridge A4 evidence manifest refresh",
-      "reason": "Turn W1.5.180-W1.5.185 bridge evidence into reviewer-facing A4 candidate bundles without claiming acceptance."
+      "id": "W1.5.198",
+      "title": "Desktop A4 runtime-flow evidence review package",
+      "reason": "Review FR-008 and existing A4-ready evidence without changing accepted_items until A4 approval."
     },
     {
-      "id": "W1.5.188",
-      "title": "Remaining runtime-flow implementation plan refresh",
-      "reason": "Re-plan FR-008, FR-015, FR-017, and partial bridge gaps after the W1.5.186 evidence refresh."
+      "id": "W1.5.199",
+      "title": "Desktop artifact Task Drawer detail follow-up",
+      "reason": "Close FR-017 selected-node artifact detail gap before A4 review."
     }
   ]
 }

@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.189",
+  "slice": "W1.5.197",
   "capture_status": "a4_capture_executed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-26",
+  "observed_at": "2026-06-27",
   "source": {
     "a4_evidence_manifest": "docs/04_runbook/m1.5-a4-evidence-manifest.json",
     "visual_smoke_matrix_artifact": "docs/04_runbook/m1.5-a4-capture-matrix.json",
@@ -32,12 +32,12 @@
     "runtime_project_endpoint_test": "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
     "runner_output_contract": {
       "status": "a4_capture_executed_not_accepted",
-      "review_item_count": 6,
+      "review_item_count": 7,
       "stream_capture_item_count": 3,
-      "bridge_capture_item_count": 3,
+      "bridge_capture_item_count": 4,
       "matrix_case_count": 8,
       "accepted_item_count": 0,
-      "pending_a4_review_item_count": 6,
+      "pending_a4_review_item_count": 7,
       "sanitized_summary_only": true
     }
   },
@@ -102,6 +102,14 @@
       "execution_status": "executed_passed",
       "command": "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
       "evidence_scope": "runtime reference import, list, enable, disable, and view endpoint evidence",
+      "accepted": false
+    },
+    {
+      "id": "BRIDGE-COMMAND-FR-008",
+      "fr_id": "FR-008",
+      "execution_status": "executed_passed",
+      "command": "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js",
+      "evidence_scope": "runtime-backed Chat instruction dispatch, current-node/global scope controls, metadata-only local receipt, and no-current-node fallback prevention",
       "accepted": false
     }
   ],
@@ -235,24 +243,50 @@
         "A4 UX acceptance evidence for reference import, enable, disable, and view user paths is not recorded.",
         "Delete semantics remain intentionally out of scope until accepted spec material defines them."
       ]
+    },
+    {
+      "id": "CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "review_item_id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "fr_id": "FR-008",
+      "review_group": "runtime_bridge_evidence",
+      "capture_status": "captured_not_accepted",
+      "source_review_status": "pending_a4_review",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-008",
+      "observed_matrix_cases": [],
+      "observed_a4_evidence_inputs": [
+        "Bottom Chat Box exposes Workflow and Current node scope controls.",
+        "Workflow-scope submit routes to the accepted runtime submit-instruction endpoint without nodeId.",
+        "Current-node submit routes to the accepted node-scoped submit-instruction endpoint with structured nodeId.",
+        "Runtime command projection and renderer snapshots remain metadata-only and do not retain raw instruction text.",
+        "No selected/active node disables Current node scope rather than falling back to the first canvas node."
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for the runtime-backed current-node/global Workflow Chat instruction path is not recorded.",
+        "Project-backed command history and persistence remain outside this evidence refresh and must not be inferred from local receipt metadata."
+      ]
     }
   ],
   "summary": {
-    "review_item_count": 6,
+    "review_item_count": 7,
     "stream_capture_items": 3,
-    "bridge_capture_items": 3,
+    "bridge_capture_items": 4,
     "matrix_case_count": 8,
     "required_matrix_case_count": 6,
     "accepted_items": 0,
-    "pending_a4_review_items": 6,
+    "pending_a4_review_items": 7,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.190",
-      "title": "Chat and artifact runtime-flow implementation",
-      "reason": "Implement FR-008 and FR-017 before promoting remaining runtime-flow evidence toward A4 review."
+      "id": "W1.5.198",
+      "title": "Desktop A4 runtime-flow evidence review package",
+      "reason": "A human/UX reviewer must still decide A4 acceptance; captured evidence alone keeps all FRs pending."
+    },
+    {
+      "id": "W1.5.199",
+      "title": "Desktop artifact Task Drawer detail follow-up",
+      "reason": "FR-017 remains excluded from A4 capture until selected-node artifact details are implemented or proven."
     }
   ]
 }
