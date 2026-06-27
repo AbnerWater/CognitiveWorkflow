@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.198",
+  "slice": "W1.5.199",
   "package_status": "a4_runtime_flow_review_package_prepared_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -18,8 +18,7 @@
   "guardrails": [
     "This package prepares A4 reviewer inputs only; it does not record A4 acceptance.",
     "Every packaged item remains pending_a4_review until an A4 ux-acceptance-reviewer records a separate decision.",
-    "W1.5.198 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content.",
-    "FR-017 remains excluded because selected-node Task Drawer artifact detail evidence is still missing.",
+    "W1.5.199 refreshes the package with selected-node Task Drawer artifact detail evidence, but does not record A4 acceptance.",
     "No package field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, secure paths, cache paths, output directory values, or full destination paths."
   ],
   "package_scope": {
@@ -35,15 +34,21 @@
       "FR-010",
       "FR-012",
       "FR-013",
+      "FR-017",
       "FR-016"
     ],
-    "included_runtime_bridge_fr_ids": ["FR-007", "FR-008", "FR-012", "FR-013"],
+    "included_runtime_bridge_fr_ids": [
+      "FR-007",
+      "FR-008",
+      "FR-012",
+      "FR-013",
+      "FR-017"
+    ],
     "included_stream_candidate_fr_ids": ["FR-009", "FR-010", "FR-016"],
     "excluded_partial_runtime_bridge_fr_ids": [
       "FR-011",
       "FR-014",
       "FR-015",
-      "FR-017",
       "FR-018"
     ],
     "excluded_reason": "Partial runtime bridge items require follow-up implementation or stronger end-to-end proof before A4 review packaging."
@@ -69,12 +74,12 @@
     },
     "runner_output_contract": {
       "status": "a4_runtime_flow_review_package_prepared_not_accepted",
-      "review_item_count": 7,
+      "review_item_count": 8,
       "stream_candidate_item_count": 3,
-      "runtime_bridge_item_count": 4,
-      "excluded_partial_runtime_bridge_item_count": 5,
+      "runtime_bridge_item_count": 5,
+      "excluded_partial_runtime_bridge_item_count": 4,
       "accepted_item_count": 0,
-      "pending_a4_review_item_count": 7,
+      "pending_a4_review_item_count": 8,
       "exit_p1_1_status": "not_ready",
       "sanitized_summary_only": true
     }
@@ -185,23 +190,39 @@
         "No-current-node fallback prevention",
         "Metadata-only command projection without raw instruction retention"
       ]
+    },
+    {
+      "id": "PKG-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "fr_id": "FR-017",
+      "review_item_id": "A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "Selected-node Task Drawer artifact detail display and safe native open/download handoff",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Task Drawer selected-node artifact metadata display",
+        "Node-bound open/download command dispatch through ArtifactActionRequest",
+        "Metadata-only command evidence without artifact body, raw bytes, full destination path, secure path, cache path, or output directory values",
+        "W1.5.195 preload/main native handoff coverage remains linked"
+      ]
     }
   ],
   "summary": {
-    "review_item_count": 7,
+    "review_item_count": 8,
     "stream_candidate_items": 3,
-    "runtime_bridge_items": 4,
-    "excluded_partial_runtime_bridge_items": 5,
+    "runtime_bridge_items": 5,
+    "excluded_partial_runtime_bridge_items": 4,
     "accepted_items": 0,
-    "pending_a4_review_items": 7,
+    "pending_a4_review_items": 8,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.199",
-      "title": "Desktop artifact Task Drawer detail follow-up",
-      "reason": "FR-017 remains excluded from A4 review until selected-node artifact details are implemented or proven."
+      "id": "W1.5.200",
+      "title": "Desktop A4 runtime-flow acceptance review handoff",
+      "reason": "Run or prepare the A4 reviewer decision record without changing accepted_items before approval."
     }
   ]
 }

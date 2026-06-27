@@ -146,7 +146,7 @@ function validateA4CaptureExecution(options = {}) {
   assertSanitizedJson(capture, "capture execution artifact");
   assertEqual(capture.schema_version, "0.1.0", "schema version");
   assertEqual(capture.milestone, "M1.5", "milestone");
-  assertEqual(capture.slice, "W1.5.197", "slice id");
+  assertEqual(capture.slice, "W1.5.199", "slice id");
   assertEqual(
     capture.capture_status,
     "a4_capture_executed_not_accepted",
@@ -368,7 +368,7 @@ function validateA4CaptureExecution(options = {}) {
   );
   assertDeepEqual(
     capture.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.198", "W1.5.199"],
+    ["W1.5.200"],
     "next recommended slices",
   );
 

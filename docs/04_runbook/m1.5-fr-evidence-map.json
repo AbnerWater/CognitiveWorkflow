@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.197",
+  "slice": "W1.5.199",
   "map_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -19,7 +19,7 @@
     "Runtime bridge evidence means a reviewer has implementation and test artifacts to inspect; it is not phase-exit readiness.",
     "Partial runtime bridge evidence means a bridge exists but one or more FR-required semantics remain missing.",
     "Dependency-gated FR items stay blocked until the corresponding gate is explicitly approved and implemented.",
-    "W1.5.197 refreshes current evidence status after W1.5.195-W1.5.196 runtime-flow implementation; it changes no accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content."
+    "W1.5.199 refreshes current evidence status after selected-node Task Drawer artifact detail implementation; it changes no accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx content."
   ],
   "allowed_acceptance_readiness": [
     "candidate_evidence_needs_a4_review",
@@ -343,12 +343,13 @@
     },
     {
       "id": "FR-017",
-      "checklist_status": "partial_runtime_bridge_evidence",
-      "acceptance_readiness": "partial_runtime_bridge_requires_followup",
+      "checklist_status": "runtime_bridge_evidence_available",
+      "acceptance_readiness": "runtime_bridge_needs_a4_review",
       "evidence_refs": [
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-017",
         "docs/04_runbook/m1.5-progress.md#W1.5.120",
         "docs/04_runbook/m1.5-progress.md#W1.5.195",
+        "docs/04_runbook/m1.5-progress.md#W1.5.199",
         "docs/reviews/m1.5.195-runtime-flow-implementation-review.md",
         "specs/runtime_harness.md",
         "specs/api/http_sse.md#4.3",
@@ -360,10 +361,9 @@
         "pnpm --filter @cw/desktop run test"
       ],
       "missing_evidence": [
-        "Artifact references are not yet accepted in right-side Task details for the selected node.",
         "A4 UX acceptance evidence for node artifact detail display and safe open/download behavior is not recorded."
       ],
-      "next_action": "Bind selected-node Task Drawer artifact detail evidence to the existing native open/download handoff before FR-017 A4 review."
+      "next_action": "Package selected-node Task Drawer artifact detail and native open/download handoff for A4 review."
     },
     {
       "id": "FR-018",
@@ -430,8 +430,8 @@
     "source_should_items": 2,
     "accepted_items": 0,
     "candidate_evidence_available_items": 3,
-    "runtime_bridge_evidence_available_items": 4,
-    "partial_runtime_bridge_evidence_items": 5,
+    "runtime_bridge_evidence_available_items": 5,
+    "partial_runtime_bridge_evidence_items": 4,
     "partial_or_scaffold_items": 6,
     "backend_or_schema_only_items": 0,
     "blocked_by_dependency_gate_items": 2,
@@ -441,8 +441,8 @@
   },
   "acceptance_readiness_summary": {
     "candidate_evidence_needs_a4_review_items": 3,
-    "runtime_bridge_needs_a4_review_items": 4,
-    "partial_runtime_bridge_requires_followup_items": 5,
+    "runtime_bridge_needs_a4_review_items": 5,
+    "partial_runtime_bridge_requires_followup_items": 4,
     "partial_requires_ui_evidence_items": 6,
     "partial_requires_runtime_flow_items": 0,
     "backend_only_requires_desktop_flow_items": 0,
@@ -452,14 +452,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.198",
-      "title": "Desktop A4 runtime-flow evidence review package",
-      "reason": "Package FR-008 with existing stream and bridge A4 inputs for reviewer-facing evidence without claiming acceptance."
-    },
-    {
-      "id": "W1.5.199",
-      "title": "Desktop artifact Task Drawer detail follow-up",
-      "reason": "Close the remaining FR-017 selected-node artifact detail gap before promoting it to A4 review."
+      "id": "W1.5.200",
+      "title": "Desktop A4 runtime-flow acceptance review handoff",
+      "reason": "Run or prepare A4 reviewer decision inputs for stream and runtime-bridge candidates without claiming acceptance in source evidence."
     }
   ]
 }

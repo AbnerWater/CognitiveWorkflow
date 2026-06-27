@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.197",
+  "slice": "W1.5.199",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -154,11 +154,12 @@
         "W1.5.89-W1.5.93 shell chrome, Task Drawer collapse, Chat Box collapse, File Tree scaffold, and Version Snapshot scaffold",
         "W1.5.105-W1.5.107 local read-only selection details",
         "W1.5.181-W1.5.185 add desktop bridge evidence for project creation/Git, references, skills, HITL decisions, and create-only workflow snapshots",
-        "W1.5.195 adds Desktop native artifact open/download handoff and metadata-only ArtifactActionResult evidence"
+        "W1.5.195 adds Desktop native artifact open/download handoff and metadata-only ArtifactActionResult evidence",
+        "W1.5.199 adds selected-node Task Drawer artifact detail display and node-bound open/download command evidence"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
-        "Selected-node Task Drawer artifact detail display is not yet accepted or proven end-to-end",
+        "Selected-node Task Drawer artifact detail display still requires A4 UX acceptance review",
         "Task mutation commands remain incomplete",
         "Version Snapshot restore-to-snapshot and continue execution remain unimplemented"
       ]
@@ -178,7 +179,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 have a refreshed W1.5.197 evidence map, but accepted_items remain 0 and several surfaces still need A4, dependency-gated, or end-to-end evidence."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.199 evidence map, but accepted_items remain 0 and several surfaces still need A4, dependency-gated, or end-to-end evidence."
     },
     {
       "id": "EXIT-P1-2",
@@ -238,14 +239,9 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.198",
-      "title": "Desktop A4 runtime-flow evidence review package",
-      "reason": "Review FR-008 and existing A4-ready evidence without changing accepted_items until A4 approval."
-    },
-    {
-      "id": "W1.5.199",
-      "title": "Desktop artifact Task Drawer detail follow-up",
-      "reason": "Close FR-017 selected-node artifact detail gap before A4 review."
+      "id": "W1.5.200",
+      "title": "Desktop A4 runtime-flow acceptance review handoff",
+      "reason": "Review stream and runtime bridge A4 inputs without changing accepted_items until A4 approval."
     }
   ]
 }

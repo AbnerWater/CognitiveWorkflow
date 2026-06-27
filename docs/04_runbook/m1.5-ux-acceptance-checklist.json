@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.197",
+  "slice": "W1.5.199",
   "checklist_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -17,7 +17,7 @@
     "Every FR item remains phase-exit required even when the UIUX source priority is SHOULD.",
     "Scaffold, bridge, or backend-only evidence is not enough to mark a FR accepted.",
     "Dependency-gated items remain blocked until the corresponding W1.5.171 dependency gate receives explicit human approval and implementation evidence.",
-    "W1.5.197 refreshes current evidence status after W1.5.195-W1.5.196 runtime-flow implementation; it changes no accepted spec, ADR, schema, generated schema, dependency, runtime behavior, IPC, renderer storage, packaging, updater, or baseline docx content."
+    "W1.5.199 refreshes current evidence status after selected-node Task Drawer artifact detail implementation; it changes no accepted spec, ADR, schema, generated schema, dependency, IPC, renderer storage, packaging, updater, or baseline docx content."
   ],
   "source_extraction": {
     "method": "read-only OOXML extraction from word/document.xml",
@@ -476,14 +476,14 @@
         "Task details show artifact references for the selected node.",
         "Artifact open/download behavior is safe and project-scoped."
       ],
-      "current_evidence_status": "partial_runtime_bridge_evidence",
+      "current_evidence_status": "runtime_bridge_evidence_available",
       "current_evidence": [
         "W1.5.120 added Stream panel artifact ref display evidence.",
         "runtime_harness.md defines artifacts and outputs directories.",
-        "W1.5.195 added Desktop preload/main native artifact open/download handoff, renderer action wiring, metadata-only ArtifactActionResult snapshots, and sensitive export blocking tests."
+        "W1.5.195 added Desktop preload/main native artifact open/download handoff, renderer action wiring, metadata-only ArtifactActionResult snapshots, and sensitive export blocking tests.",
+        "W1.5.199 added selected-node Task Drawer artifact detail display, node-bound artifact action dispatch, and metadata-only command tests."
       ],
       "remaining_gap": [
-        "Artifact references are not yet accepted in right-side Task details for the selected node.",
         "A4 UX acceptance evidence for node artifact detail display and safe open/download behavior is not recorded."
       ]
     },
@@ -558,8 +558,8 @@
     "source_should_items": 2,
     "accepted_items": 0,
     "candidate_evidence_available_items": 3,
-    "runtime_bridge_evidence_available_items": 4,
-    "partial_runtime_bridge_evidence_items": 5,
+    "runtime_bridge_evidence_available_items": 5,
+    "partial_runtime_bridge_evidence_items": 4,
     "partial_or_scaffold_items": 6,
     "backend_or_schema_only_items": 0,
     "blocked_by_dependency_gate_items": 2,
@@ -569,14 +569,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.198",
-      "title": "Desktop A4 runtime-flow evidence review package",
-      "reason": "Review FR-008 and existing A4-ready evidence without changing accepted_items until A4 approval."
-    },
-    {
-      "id": "W1.5.199",
-      "title": "Desktop artifact Task Drawer detail follow-up",
-      "reason": "Close FR-017 selected-node artifact detail gap before A4 review."
+      "id": "W1.5.200",
+      "title": "Desktop A4 runtime-flow acceptance review handoff",
+      "reason": "Review stream and runtime bridge candidates without changing accepted_items until A4 approval."
     }
   ]
 }

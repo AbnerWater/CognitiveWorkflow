@@ -154,6 +154,273 @@ test("renderer runtime workbench React shell renders active stream panel events"
   assert.match(markup, /Clear selection/u);
 });
 
+test("renderer runtime workbench React shell binds selected-node artifacts in Task Drawer", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot =
+      createRuntimeWorkbenchShellReactSelectedNodeArtifactSnapshot();
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Task Drawer Artifact Runtime Workbench"
+        />,
+      );
+    });
+
+    const initialNodeArtifactsItem = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "taskDrawerItem",
+      "selected_node_artifacts",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(initialNodeArtifactsItem),
+      /Node artifacts[\s\S]*No node selected/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(initialNodeArtifactsItem);
+    });
+
+    let details = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "taskDrawerDetails",
+      "selected_node_artifacts",
+    );
+    assert.equal(details.getAttribute("data-task-drawer-artifact-count"), "0");
+    assert.equal(details.getAttribute("data-task-drawer-artifact-node-id"), "");
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(details),
+      /No workflow node selected/u,
+    );
+    assert.equal(
+      countFakeRuntimeWorkbenchElements(
+        details,
+        (element) => element.dataset.taskDrawerArtifactRef === "selected-node",
+      ),
+      0,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "workflowCanvasNodeSelect",
+          "context_task",
+        ),
+      );
+    });
+
+    const nodeArtifactsItem = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "taskDrawerItem",
+      "selected_node_artifacts",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(nodeArtifactsItem),
+      /Node artifacts[\s\S]*context_task: 1 artifact/u,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(nodeArtifactsItem);
+    });
+
+    details = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "taskDrawerDetails",
+      "selected_node_artifacts",
+    );
+    assert.equal(details.getAttribute("data-task-drawer-artifact-count"), "1");
+    assert.equal(
+      details.getAttribute("data-task-drawer-artifact-node-id"),
+      "context_task",
+    );
+    assert.equal(
+      details.getAttribute("data-task-drawer-artifact-action-status"),
+      "idle",
+    );
+    const artifact = requireFakeRuntimeWorkbenchElementByData(
+      details,
+      "taskDrawerArtifactRef",
+      "selected-node",
+    );
+    assert.equal(
+      artifact.getAttribute("data-task-drawer-artifact-ref-id"),
+      "artifact_context_report",
+    );
+    assert.equal(
+      artifact.getAttribute("data-task-drawer-artifact-ref-kind"),
+      "file",
+    );
+    assert.equal(
+      artifact.getAttribute("data-task-drawer-artifact-ref-path"),
+      "artifacts/context-report.md",
+    );
+    assert.equal(
+      artifact.getAttribute("data-task-drawer-artifact-ref-run-id"),
+      "run_react_stream",
+    );
+    assert.equal(
+      artifact.getAttribute("data-task-drawer-artifact-ref-node-id"),
+      "context_task",
+    );
+    assert.equal(
+      artifact.getAttribute("data-task-drawer-artifact-ref-sensitivity"),
+      "project",
+    );
+    assert.equal(
+      artifact.getAttribute("data-task-drawer-artifact-ref-source-event-id"),
+      "evt_context_artifact",
+    );
+    assert.match(
+      fakeRuntimeWorkbenchNodeTextContent(details),
+      /Context report[\s\S]*File[\s\S]*artifacts\/context-report\.md[\s\S]*text\/markdown[\s\S]*256 bytes/u,
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(details).includes(
+        "Selected node artifact preview",
+      ),
+      false,
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          details,
+          "taskDrawerArtifactAction",
+          "download",
+        ),
+      );
+    });
+    const command = session.dispatchedCommands().at(-1);
+    assert.deepEqual(command, {
+      type: "run_artifact_action",
+      artifactId: "artifact_context_report",
+      action: "download",
+      runId: "run_react_stream",
+      nodeId: "context_task",
+      requestedDestinationKind: "user_selected",
+      artifactSensitivity: "project",
+    });
+    assert.equal(
+      JSON.stringify(command).includes("artifacts/context-report.md"),
+      false,
+    );
+    assert.equal(
+      JSON.stringify(command).includes("Selected node artifact preview"),
+      false,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench React shell filters unsafe Task Drawer artifact paths", async () => {
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const snapshot =
+      createRuntimeWorkbenchShellReactSelectedNodeArtifactSnapshot({
+        artifactPath: "D:/CW/secure/context-report.md",
+        previewText: "Raw secure preview text",
+      });
+    const session = createFakeRuntimeWorkbenchShellReactSession(snapshot);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          session={session}
+          title="Unsafe Task Drawer Artifact Runtime Workbench"
+        />,
+      );
+    });
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "workflowCanvasNodeSelect",
+          "context_task",
+        ),
+      );
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "taskDrawerItem",
+          "selected_node_artifacts",
+        ),
+      );
+    });
+
+    const details = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "taskDrawerDetails",
+      "selected_node_artifacts",
+    );
+    const artifact = requireFakeRuntimeWorkbenchElementByData(
+      details,
+      "taskDrawerArtifactRef",
+      "selected-node",
+    );
+    assert.equal(
+      artifact.getAttribute("data-task-drawer-artifact-ref-path"),
+      "",
+    );
+    const detailText = fakeRuntimeWorkbenchNodeTextContent(details);
+    assert.equal(detailText.includes("D:/CW/secure/context-report.md"), false);
+    assert.equal(detailText.includes("Raw secure preview text"), false);
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          details,
+          "taskDrawerArtifactAction",
+          "open",
+        ),
+      );
+    });
+    const command = session.dispatchedCommands().at(-1);
+    assert.deepEqual(command, {
+      type: "run_artifact_action",
+      artifactId: "artifact_context_report",
+      action: "open",
+      runId: "run_react_stream",
+      nodeId: "context_task",
+      requestedDestinationKind: "native_shell",
+      artifactSensitivity: "project",
+    });
+    assert.equal(
+      JSON.stringify(command).includes("D:/CW/secure/context-report.md"),
+      false,
+    );
+    assert.equal(
+      JSON.stringify(command).includes("Raw secure preview text"),
+      false,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell folds and labels unknown stream event types", async () => {
   const dom = installFakeRuntimeWorkbenchReactDom();
   try {
@@ -8602,6 +8869,76 @@ function createRuntimeWorkbenchShellReactExpandedStreamEventSnapshot(): RuntimeW
       ...panel,
       timelineItems: Object.freeze([expandedEvent]),
       selectedEvent: expandedEvent,
+    }),
+  });
+}
+
+function createRuntimeWorkbenchShellReactSelectedNodeArtifactSnapshot(
+  options: {
+    readonly artifactPath?: string;
+    readonly previewText?: string;
+  } = {},
+): RuntimeWorkbenchShellSnapshot {
+  const snapshot = createRuntimeWorkbenchShellReactStreamSnapshot();
+  const panel = requireRuntimeStreamPanel(snapshot);
+  const event = panel.timelineItems[0];
+  if (event === undefined) {
+    throw new Error("Expected stream event fixture");
+  }
+  const selectedNodeArtifactEvent = Object.freeze({
+    ...event,
+    id: "evt_context_artifact",
+    seq: 9,
+    parentEventId: null,
+    correlationId: "trace_context_artifact",
+    runId: "run_react_stream",
+    nodeId: "context_task",
+    attemptId: "attempt_context_artifact",
+    type: "artifact.written",
+    category: "artifact",
+    phase: "node.running",
+    title: "Context artifact written",
+    summary: "Context task emitted a report artifact",
+    content: null,
+    payloadSummary: Object.freeze({
+      present: true,
+      kind: "object",
+      keyCount: 3,
+    }),
+    metadataSummary: Object.freeze({
+      present: true,
+      kind: "object",
+      keyCount: 1,
+    }),
+    expanded: false,
+    artifactRefs: Object.freeze([
+      Object.freeze({
+        artifactId: "artifact_context_report",
+        kind: "file",
+        displayName: "Context report",
+        mimeType: "text/markdown",
+        sizeBytes: 256,
+        previewText: options.previewText ?? "Selected node artifact preview",
+        path: options.artifactPath ?? "artifacts/context-report.md",
+      }),
+    ]),
+    createdAt: "2026-06-25T05:00:00.000Z",
+  });
+  return Object.freeze({
+    ...snapshot,
+    activePanel: "canvas",
+    artifactAction: createRuntimeWorkbenchShellReactArtifactActionSnapshot({
+      canRunArtifactAction: true,
+    }),
+    runtimeStreamPanel: Object.freeze({
+      ...panel,
+      totalEvents: 1,
+      bufferedEventCount: 1,
+      matchingEventCount: 1,
+      visibleEventCount: 1,
+      hiddenEventCount: 0,
+      timelineItems: Object.freeze([selectedNodeArtifactEvent]),
+      selectedEvent: selectedNodeArtifactEvent,
     }),
   });
 }

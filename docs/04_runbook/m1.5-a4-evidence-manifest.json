@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.197",
+  "slice": "W1.5.199",
   "manifest_status": "a4_evidence_inputs_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -19,9 +19,9 @@
   "guardrails": [
     "This manifest prepares A4 review inputs only; it does not claim A4 acceptance.",
     "Every review item remains pending_a4_review until an A4 reviewer records end-to-end UX acceptance evidence.",
-    "W1.5.187 keeps the W1.5.175 stream candidate items and adds only W1.5.186 runtime_bridge_needs_a4_review items.",
+    "W1.5.199 keeps prior stream candidate items and adds FR-017 runtime_bridge_needs_a4_review evidence.",
     "Partial runtime bridge evidence remains excluded from A4 candidate review until the missing FR semantics are implemented.",
-    "No production runtime, renderer behavior, dependency, spec, ADR, generated schema, packaging, updater, or baseline docx change is included in W1.5.187.",
+    "No accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx change is included in W1.5.199.",
     "Visual-smoke and bridge evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, or output directory values."
   ],
   "review_track": {
@@ -44,11 +44,11 @@
     },
     "runner_output_contract": {
       "status": "a4_evidence_inputs_refreshed_not_accepted",
-      "review_item_count": 7,
+      "review_item_count": 8,
       "accepted_item_count": 0,
       "required_matrix_case_count": 6,
       "sanitized_summary_only": true,
-      "bridge_review_item_count": 4
+      "bridge_review_item_count": 5
     }
   },
   "matrix_case_contract": {
@@ -294,44 +294,71 @@
         "A4 UX acceptance evidence for the runtime-backed current-node/global Workflow Chat instruction path is not recorded.",
         "Project-backed command history and persistence remain outside this evidence refresh and must not be inferred from local receipt metadata."
       ]
+    },
+    {
+      "id": "A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "fr_id": "FR-017",
+      "review_group": "runtime_bridge_evidence",
+      "source_acceptance_readiness": "runtime_bridge_needs_a4_review",
+      "review_status": "pending_a4_review",
+      "review_focus": "Selected-node Task Drawer artifact detail display and safe native open/download handoff",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-017",
+        "docs/04_runbook/m1.5-progress.md#W1.5.195",
+        "docs/04_runbook/m1.5-progress.md#W1.5.199",
+        "docs/reviews/m1.5.195-runtime-flow-implementation-review.md",
+        "specs/runtime_harness.md",
+        "specs/api/http_sse.md#4.3",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop build",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "required_matrix_cases": [],
+      "required_evidence_fields": [],
+      "required_a4_evidence_inputs": [
+        "Task Drawer exposes selected-node artifact metadata from runtime StreamEvent artifact_refs.",
+        "Task Drawer artifact controls dispatch open/download through the accepted ArtifactActionRequest path with run_id and node_id metadata.",
+        "Renderer command evidence remains metadata-only and does not include artifact body, raw bytes, full destination path, secure path, cache path, or output directory values.",
+        "Desktop native handoff remains covered by W1.5.195 preload/main tests and runtime_actions/http_sse contract anchors."
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for node artifact detail display and safe open/download behavior is not recorded."
+      ]
     }
   ],
   "summary": {
-    "review_item_count": 7,
+    "review_item_count": 8,
     "candidate_fr_items": 3,
-    "bridge_a4_candidate_items": 4,
+    "bridge_a4_candidate_items": 5,
     "accepted_items": 0,
-    "pending_a4_review_items": 7,
+    "pending_a4_review_items": 8,
     "required_matrix_case_count": 6,
-    "excluded_partial_runtime_bridge_items": 5,
+    "excluded_partial_runtime_bridge_items": 4,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.198",
-      "title": "Desktop A4 runtime-flow evidence review package",
-      "reason": "Review pending A4 inputs including FR-008 without claiming FR acceptance in the manifest."
-    },
-    {
-      "id": "W1.5.199",
-      "title": "Desktop artifact Task Drawer detail follow-up",
-      "reason": "Finish FR-017 before adding it to A4 review inputs."
+      "id": "W1.5.200",
+      "title": "Desktop A4 runtime-flow acceptance review handoff",
+      "reason": "Review pending A4 inputs including FR-008 and FR-017 without claiming FR acceptance in the manifest."
     }
   ],
   "refreshed_from": {
-    "slice": "W1.5.187",
+    "slice": "W1.5.197",
     "artifact": "docs/04_runbook/m1.5-a4-evidence-manifest.json"
   },
   "bridge_review_track": {
     "source_acceptance_readiness": "runtime_bridge_needs_a4_review",
-    "fr_ids": ["FR-007", "FR-008", "FR-012", "FR-013"],
+    "fr_ids": ["FR-007", "FR-008", "FR-012", "FR-013", "FR-017"],
     "source_map": "docs/04_runbook/m1.5-fr-evidence-map.json#acceptance_readiness=runtime_bridge_needs_a4_review",
     "excluded_partial_runtime_bridge_fr_ids": [
       "FR-011",
       "FR-014",
       "FR-015",
-      "FR-017",
       "FR-018"
     ],
     "excluded_reason": "These FRs still have partial runtime bridge evidence and require follow-up implementation before A4 candidate review."

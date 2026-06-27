@@ -1,8 +1,8 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.197",
-  "plan_status": "remaining_runtime_flow_implementation_plan_refreshed_after_runtime_actions_not_implemented",
+  "slice": "W1.5.199",
+  "plan_status": "remaining_runtime_flow_implementation_plan_refreshed_after_artifact_task_drawer_detail",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
   "observed_at": "2026-06-27",
@@ -24,24 +24,24 @@
     "agent_adapter_protocol": "specs/protocols/agent_adapter.md"
   },
   "guardrails": [
-    "This artifact refreshes the remaining implementation plan only; it records W1.5.195-W1.5.196 evidence without implementing new FR behavior.",
+    "This artifact refreshes the remaining implementation plan after W1.5.199 selected-node artifact detail implementation.",
     "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
-    "W1.5.197 mirrors the current evidence map buckets after FR-008 moved to runtime_bridge_needs_a4_review and FR-017 moved to partial_runtime_bridge_requires_followup.",
-    "FR-007, FR-012, and FR-013 remain outside this implementation plan because W1.5.187 already moved them to pending A4 review inputs.",
-    "W1.5.197 does not modify accepted spec, ADR, schema, generated schema, dependency, runtime behavior, production renderer behavior, packaging, updater, or baseline docx content.",
+    "W1.5.199 mirrors the current evidence map buckets after FR-008 and FR-017 moved to runtime_bridge_needs_a4_review.",
+    "FR-007, FR-008, FR-012, FR-013, and FR-017 remain outside this implementation plan because they are pending A4 review inputs.",
+    "W1.5.199 does not modify accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx content.",
     "Runtime-flow and bridge follow-up evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, secure paths, cache paths, or output directory values.",
     "secure/** and cache/** remain untracked and must not be added to Git."
   ],
   "repair_track": {
     "source_track_id": "TRACK-REMAINING-RUNTIME-FLOW-IMPLEMENTATION",
     "track_kind": "remaining_runtime_flow_and_partial_bridge_followup",
-    "source_track_status": "refreshed_after_runtime_actions_not_implemented",
+    "source_track_status": "refreshed_after_artifact_task_drawer_detail",
     "priority": 3,
     "source_acceptance_readiness": [
       "partial_requires_runtime_flow",
       "partial_runtime_bridge_requires_followup"
     ],
-    "fr_ids": ["FR-011", "FR-014", "FR-015", "FR-017", "FR-018"],
+    "fr_ids": ["FR-011", "FR-014", "FR-015", "FR-018"],
     "source_buckets": [
       {
         "acceptance_readiness": "partial_requires_runtime_flow",
@@ -50,7 +50,7 @@
       },
       {
         "acceptance_readiness": "partial_runtime_bridge_requires_followup",
-        "fr_ids": ["FR-011", "FR-014", "FR-015", "FR-017", "FR-018"],
+        "fr_ids": ["FR-011", "FR-014", "FR-015", "FR-018"],
         "source_map": "docs/04_runbook/m1.5-fr-evidence-map.json#acceptance_readiness=partial_runtime_bridge_requires_followup"
       }
     ],
@@ -58,21 +58,20 @@
       "FR-007",
       "FR-008",
       "FR-012",
-      "FR-013"
+      "FR-013",
+      "FR-017"
     ],
     "blocked_by_dependency_gates": [],
-    "objective": "Re-plan only the remaining runtime-backed desktop behavior needed before FR-011, FR-014, FR-015, FR-017, and FR-018 can move to A4 acceptance review; FR-008 is now packaged as runtime bridge evidence for A4 review.",
+    "objective": "Re-plan only the remaining runtime-backed desktop behavior needed before FR-011, FR-014, FR-015, and FR-018 can move to A4 acceptance review; FR-008 and FR-017 are now packaged as runtime bridge evidence for A4 review.",
     "entry_criteria": [
-      "Use W1.5.186 FR evidence map as the current source of truth for remaining implementation gaps.",
-      "Keep W1.5.187 A4-ready bridge items out of this implementation plan.",
+      "Use W1.5.199 FR evidence map as the current source of truth for remaining implementation gaps.",
+      "Keep A4-ready bridge items out of this implementation plan.",
       "Preserve metadata-only evidence boundaries for chat, reference upload, Skill configuration, snapshot, artifact, and HITL paths."
     ],
     "planned_repair_steps": [
-      "Implement Chat Box runtime command routing without persisting raw prompt text in evidence.",
       "Complete combined project creation and reference import proof for FR-011.",
       "Complete Skill registry candidate discovery and secret-safe MCP configuration display for FR-014.",
       "Implement automatic snapshot creation, restore-to-snapshot, and continue execution for FR-015.",
-      "Bind runtime artifact references to Task Drawer details and add project-scoped open/download actions for FR-017.",
       "Add pending-decision discovery plus pause/resume UX evidence for semi-auto HITL in FR-018."
     ],
     "planned_verification": [
@@ -80,10 +79,10 @@
       "uv run pytest apps/runtime/tests -q",
       "Targeted visual smoke or reviewer capture only after implementation evidence exists"
     ],
-    "next_slice": "W1.5.188",
+    "next_slice": "W1.5.200",
     "implementation_notes": [
       "FR-008 is no longer a remaining implementation item after W1.5.195-W1.5.196; it stays unaccepted and moves to A4 pending review inputs.",
-      "FR-017 keeps native open/download handoff evidence from W1.5.195, but selected-node Task Drawer artifact detail evidence remains incomplete.",
+      "FR-017 is no longer a remaining implementation item after W1.5.199 selected-node Task Drawer artifact detail and node-bound action dispatch evidence; it stays unaccepted and moves to A4 pending review inputs.",
       "All remaining items still require follow-up implementation or A4 evidence before any FR acceptance claim."
     ]
   },
@@ -272,71 +271,6 @@
       ]
     },
     {
-      "id": "RUNTIME-FR-017-ARTIFACT-ACTIONS",
-      "fr_id": "FR-017",
-      "implementation_gap_group": "partial_bridge_followup",
-      "runtime_boundary_kind": "artifact_open_download",
-      "source_checklist_status": "partial_runtime_bridge_evidence",
-      "source_acceptance_readiness": "partial_runtime_bridge_requires_followup",
-      "source_evidence_refs": [
-        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-017",
-        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-017",
-        "docs/04_runbook/m1.5-progress.md#W1.5.120",
-        "docs/04_runbook/m1.5-progress.md#W1.5.195",
-        "docs/reviews/m1.5.195-runtime-flow-implementation-review.md",
-        "specs/runtime_harness.md",
-        "specs/api/http_sse.md#4.3",
-        "apps/desktop/src/main/runtime-ipc-handlers.test.ts",
-        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
-      ],
-      "source_verification_commands": [
-        "node --test apps/desktop/dist/main/runtime-ipc-handlers.test.js apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/shared/runtime-ipc.test.js apps/desktop/dist/preload/contract.test.js",
-        "pnpm --filter @cw/desktop run test"
-      ],
-      "source_checklist_remaining_gap": [
-        "Artifact references are not yet accepted in right-side Task details for the selected node.",
-        "A4 UX acceptance evidence for node artifact detail display and safe open/download behavior is not recorded."
-      ],
-      "missing_before_implementation": [
-        "Artifact references are not yet accepted in right-side Task details for the selected node.",
-        "A4 UX acceptance evidence for node artifact detail display and safe open/download behavior is not recorded."
-      ],
-      "source_next_action": "Bind selected-node Task Drawer artifact detail evidence to the existing native open/download handoff before FR-017 A4 review.",
-      "planning_status": "planned_not_implemented",
-      "planned_repair_steps": [
-        "Bind runtime artifact references to selected-node Task Drawer details instead of only stream event refs.",
-        "Reuse the W1.5.195 native open/download handoff from Task Drawer artifact controls without exposing raw bytes or destination paths.",
-        "Capture A4 evidence only after selected-node artifact detail display and safe action metadata are visible together."
-      ],
-      "required_runtime_contracts": [
-        {
-          "source": "specs/runtime_harness.md",
-          "pattern": "artifacts/index.jsonl",
-          "reason": "Defines the artifact manifest that Task Drawer details must read from."
-        },
-        {
-          "source": "specs/api/http_sse.md",
-          "pattern": "GET    /{artifact_id}/content                     → 二进制 / 文本（按 mime_type）",
-          "reason": "Defines the artifact content retrieval endpoint for open/download actions."
-        },
-        {
-          "source": "specs/api/http_sse.md",
-          "pattern": "sensitivity=sensitive",
-          "reason": "Defines sensitive artifact access constraints for desktop actions."
-        },
-        {
-          "source": "specs/runtime_harness.md",
-          "pattern": "sensitivity=sensitive",
-          "reason": "Defines sensitive artifact storage constraints that must not be bypassed."
-        },
-        {
-          "source": "specs/failure_taxonomy.md",
-          "pattern": "`RH_*`",
-          "reason": "Keeps artifact runtime errors in the accepted runtime-harness namespace."
-        }
-      ]
-    },
-    {
       "id": "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
       "fr_id": "FR-018",
       "implementation_gap_group": "partial_bridge_followup",
@@ -420,12 +354,6 @@
     },
     {
       "order": 4,
-      "item_id": "RUNTIME-FR-017-ARTIFACT-ACTIONS",
-      "fr_id": "FR-017",
-      "reason": "FR-017 still needs selected-node Task Drawer artifact detail evidence before A4 review; native open/download handoff is already available from W1.5.195."
-    },
-    {
-      "order": 5,
       "item_id": "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
       "fr_id": "FR-018",
       "reason": "Pending-decision discovery and pause/resume evidence should build on the existing submit-decision bridge."
@@ -437,37 +365,32 @@
     "standard_desktop_test": "pnpm --filter @cw/desktop run test",
     "runtime_focused_test": "uv run pytest apps/runtime/tests -q",
     "runner_output_contract": {
-      "status": "remaining_runtime_flow_implementation_plan_refreshed_after_runtime_actions_not_implemented",
-      "repair_item_count": 5,
+      "status": "remaining_runtime_flow_implementation_plan_refreshed_after_artifact_task_drawer_detail",
+      "repair_item_count": 4,
       "accepted_item_count": 0,
       "implemented_item_count": 0,
       "runtime_flow_gap_item_count": 0,
-      "partial_bridge_followup_item_count": 5,
-      "a4_ready_bridge_item_count": 4,
+      "partial_bridge_followup_item_count": 4,
+      "a4_ready_bridge_item_count": 5,
       "sanitized_summary_only": true
     }
   },
   "summary": {
-    "repair_item_count": 5,
+    "repair_item_count": 4,
     "runtime_flow_gap_fr_items": 0,
-    "partial_bridge_followup_fr_items": 5,
-    "a4_ready_bridge_fr_items": 4,
+    "partial_bridge_followup_fr_items": 4,
+    "a4_ready_bridge_fr_items": 5,
     "accepted_items": 0,
     "implemented_items": 0,
-    "pending_implementation_items": 5,
+    "pending_implementation_items": 4,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer after implementation evidence"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.198",
-      "title": "Desktop A4 runtime-flow evidence review package",
-      "reason": "Promote FR-008 into reviewer-facing A4 evidence while keeping accepted_items at 0 until review."
-    },
-    {
-      "id": "W1.5.199",
-      "title": "Desktop artifact Task Drawer detail follow-up",
-      "reason": "Finish FR-017 selected-node artifact detail evidence before A4 review."
+      "id": "W1.5.200",
+      "title": "Desktop A4 runtime-flow acceptance review handoff",
+      "reason": "Review stream and runtime bridge A4 inputs while keeping accepted_items at 0 until reviewer approval."
     }
   ]
 }

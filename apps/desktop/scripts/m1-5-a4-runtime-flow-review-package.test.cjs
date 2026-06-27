@@ -36,12 +36,17 @@ const evidenceMapPath = path.join(
 const desktopPackagePath = path.join(packageRoot, "package.json");
 
 const expectedStreamCandidateFrIds = ["FR-009", "FR-010", "FR-016"];
-const expectedRuntimeBridgeFrIds = ["FR-007", "FR-008", "FR-012", "FR-013"];
+const expectedRuntimeBridgeFrIds = [
+  "FR-007",
+  "FR-008",
+  "FR-012",
+  "FR-013",
+  "FR-017",
+];
 const expectedExcludedPartialBridgeFrIds = [
   "FR-011",
   "FR-014",
   "FR-015",
-  "FR-017",
   "FR-018",
 ];
 const expectedReviewFrIds = [
@@ -74,7 +79,7 @@ test("M1.5 A4 runtime-flow review package returns a sanitized conservative summa
     "a4_runtime_flow_review_package_prepared_not_accepted",
   );
   assert.equal(summary.exitP1_1Status, "not_ready");
-  assert.equal(summary.reviewItemCount, 7);
+  assert.equal(summary.reviewItemCount, 8);
   assert.deepEqual(sorted(summary.frIds), sorted(expectedReviewFrIds));
   assert.deepEqual(
     sorted(summary.streamCandidateFrIds),
@@ -89,8 +94,8 @@ test("M1.5 A4 runtime-flow review package returns a sanitized conservative summa
     expectedExcludedPartialBridgeFrIds,
   );
   assert.equal(summary.acceptedItemCount, 0);
-  assert.equal(summary.pendingA4ReviewItemCount, 7);
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.199"]);
+  assert.equal(summary.pendingA4ReviewItemCount, 8);
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.200"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });
@@ -101,7 +106,7 @@ test("M1.5 A4 runtime-flow review package mirrors manifest and capture ids", () 
   const capture = readJson(capturePath);
 
   assert.equal(reviewPackage.schema_version, "0.1.0");
-  assert.equal(reviewPackage.slice, "W1.5.198");
+  assert.equal(reviewPackage.slice, "W1.5.199");
   assert.equal(reviewPackage.exit_p1_1_status, "not_ready");
   assert.equal(manifest.summary.accepted_items, 0);
   assert.equal(capture.summary.accepted_items, 0);
@@ -121,7 +126,7 @@ test("M1.5 A4 runtime-flow review package mirrors manifest and capture ids", () 
   );
 });
 
-test("M1.5 A4 runtime-flow review package keeps FR-017 and partial bridge items excluded", () => {
+test("M1.5 A4 runtime-flow review package includes FR-017 and excludes remaining partial bridge items", () => {
   const reviewPackage = readJson(reviewPackagePath);
   const evidenceMap = readJson(evidenceMapPath);
   const partialBridgeFrIds = evidenceMap.fr_evidence_items
@@ -137,14 +142,8 @@ test("M1.5 A4 runtime-flow review package keeps FR-017 and partial bridge items 
     sorted(partialBridgeFrIds),
   );
   assert.equal(
-    reviewPackage.package_scope.excluded_partial_runtime_bridge_fr_ids.includes(
-      "FR-017",
-    ),
-    true,
-  );
-  assert.equal(
     reviewPackage.package_scope.included_fr_ids.includes("FR-017"),
-    false,
+    true,
   );
   assert.match(reviewPackage.package_scope.excluded_reason, /follow-up/u);
 });

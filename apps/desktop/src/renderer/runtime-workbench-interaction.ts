@@ -677,6 +677,16 @@ function requireRuntimeWorkbenchInteractionCommand(
         ("intent" in command &&
           command.intent !== undefined &&
           !isRuntimeWorkbenchInstructionIntent(command.intent)) ||
+        ("requestedDestinationKind" in command &&
+          command.requestedDestinationKind !== undefined &&
+          !isRuntimeWorkbenchArtifactDestinationKind(
+            command.requestedDestinationKind,
+          )) ||
+        ("artifactSensitivity" in command &&
+          command.artifactSensitivity !== undefined &&
+          !isRuntimeWorkbenchArtifactSensitivity(
+            command.artifactSensitivity,
+          )) ||
         ("allowSensitiveExport" in command &&
           command.allowSensitiveExport !== undefined &&
           typeof command.allowSensitiveExport !== "boolean") ||
@@ -878,6 +888,36 @@ function isRuntimeWorkbenchArtifactAction(
   value: unknown,
 ): value is "open" | "download" {
   return value === "open" || value === "download";
+}
+
+function isRuntimeWorkbenchArtifactDestinationKind(
+  value: unknown,
+): value is Extract<
+  RuntimeWorkbenchInteractionCommand,
+  { readonly type: "run_artifact_action" }
+>["requestedDestinationKind"] {
+  return (
+    value === null ||
+    value === "project_temp" ||
+    value === "project_artifact" ||
+    value === "user_selected" ||
+    value === "native_shell" ||
+    value === "none"
+  );
+}
+
+function isRuntimeWorkbenchArtifactSensitivity(
+  value: unknown,
+): value is Extract<
+  RuntimeWorkbenchInteractionCommand,
+  { readonly type: "run_artifact_action" }
+>["artifactSensitivity"] {
+  return (
+    value === null ||
+    value === "public" ||
+    value === "project" ||
+    value === "sensitive"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

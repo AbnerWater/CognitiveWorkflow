@@ -5801,6 +5801,7 @@ test("renderer runtime workbench shell presenter projects host snapshots", () =>
       ["active_panel", "Stream", "neutral"],
       ["lifecycle_panel", "Active", "success"],
       ["runtime_stream", "Run run_shell", "success"],
+      ["selected_node_artifacts", "Unavailable", "warning"],
       ["visible_items", "1", "neutral"],
       ["unread_events", "1", "accent"],
     ],

@@ -99,7 +99,7 @@ function validateA4RuntimeFlowReviewPackage(options = {}) {
   assertSanitizedJson(reviewPackage, "A4 runtime-flow review package");
   assertEqual(reviewPackage.schema_version, "0.1.0", "schema version");
   assertEqual(reviewPackage.milestone, "M1.5", "milestone");
-  assertEqual(reviewPackage.slice, "W1.5.198", "slice id");
+  assertEqual(reviewPackage.slice, "W1.5.199", "slice id");
   assertEqual(
     reviewPackage.package_status,
     "a4_runtime_flow_review_package_prepared_not_accepted",
@@ -112,8 +112,8 @@ function validateA4RuntimeFlowReviewPackage(options = {}) {
     "required reviewer",
   );
 
-  assertEqual(manifest.slice, "W1.5.197", "manifest source slice");
-  assertEqual(capture.slice, "W1.5.197", "capture source slice");
+  assertEqual(manifest.slice, "W1.5.199", "manifest source slice");
+  assertEqual(capture.slice, "W1.5.199", "capture source slice");
   assertEqual(
     manifest.summary.accepted_items,
     0,
@@ -189,13 +189,6 @@ function validateA4RuntimeFlowReviewPackage(options = {}) {
     sorted(excludedPartialBridgeFrIds),
     "excluded partial runtime bridge FR ids",
   );
-  assertCondition(
-    reviewPackage.package_scope.excluded_partial_runtime_bridge_fr_ids.includes(
-      "FR-017",
-    ),
-    "FR-017 must remain excluded from A4 review package",
-  );
-
   const packageItems = reviewPackage.review_package_items;
   assertEqual(
     packageItems.length,
@@ -425,7 +418,7 @@ function validateA4RuntimeFlowReviewPackage(options = {}) {
   );
   assertDeepEqual(
     reviewPackage.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.199"],
+    ["W1.5.200"],
     "next recommended slices",
   );
 

@@ -189,6 +189,19 @@ const RUNTIME_WORKBENCH_EXECUTION_MODE_OPTIONS: readonly {
 const RUNTIME_WORKBENCH_REFERENCE_KIND_OPTIONS: readonly RuntimeWorkbenchReferenceKind[] =
   ["pdf", "md", "txt", "csv", "xlsx", "image", "web_url"] as const;
 
+type RuntimeWorkbenchShellTaskDrawerArtifactRef =
+  RuntimeWorkbenchShellRuntimeStreamEventSnapshot["artifactRefs"][number];
+
+interface RuntimeWorkbenchShellTaskDrawerArtifactDetail {
+  readonly artifactRef: RuntimeWorkbenchShellTaskDrawerArtifactRef;
+  readonly projectRelativePath: string | null;
+  readonly sourceEventId: string | null;
+  readonly sourceEventType: string;
+  readonly runId: string | null;
+  readonly nodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId;
+  readonly sensitivity: RuntimeWorkbenchShellRuntimeStreamEventSnapshot["sensitivity"];
+}
+
 export function useRuntimeWorkbenchShellSnapshot(
   session: RuntimeWorkbenchShellDomSession,
 ): RuntimeWorkbenchShellSnapshot {
@@ -463,6 +476,14 @@ export function RuntimeWorkbenchShellReactView(
       ),
     [snapshot.chrome.workflowCanvas, workflowCanvasSelectedNodeId],
   );
+  const explicitlySelectedWorkflowCanvasNode = useMemo(
+    () =>
+      selectRuntimeWorkbenchShellExplicitWorkflowCanvasNode(
+        snapshot.chrome.workflowCanvas,
+        workflowCanvasSelectedNodeId,
+      ),
+    [snapshot.chrome.workflowCanvas, workflowCanvasSelectedNodeId],
+  );
   const currentWorkflowCanvasNode = useMemo(
     () =>
       selectRuntimeWorkbenchShellCurrentWorkflowCanvasNode(
@@ -470,6 +491,14 @@ export function RuntimeWorkbenchShellReactView(
         workflowCanvasSelectedNodeId,
       ),
     [snapshot.chrome.workflowCanvas, workflowCanvasSelectedNodeId],
+  );
+  const selectedNodeArtifactDetails = useMemo(
+    () =>
+      runtimeWorkbenchShellReactSelectedNodeArtifactDetails(
+        snapshot.runtimeStreamPanel,
+        explicitlySelectedWorkflowCanvasNode,
+      ),
+    [snapshot.runtimeStreamPanel, explicitlySelectedWorkflowCanvasNode],
   );
   const executionRunId = useMemo(
     () =>
@@ -1247,6 +1276,43 @@ export function RuntimeWorkbenchShellReactView(
     },
     [handleActionError, props.session, runtimeActionRunId],
   );
+  const handleTaskDrawerArtifactActionClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      const artifactId = event.currentTarget.dataset.taskDrawerArtifactId;
+      const action = event.currentTarget.dataset.taskDrawerArtifactAction;
+      const sourceRunId = normalizeRuntimeWorkbenchShellReactPathSegment(
+        event.currentTarget.dataset.taskDrawerArtifactRunId ?? "",
+      );
+      const nodeId = normalizeRuntimeWorkbenchShellReactPathSegment(
+        event.currentTarget.dataset.taskDrawerArtifactNodeId ?? "",
+      );
+      const sensitivity =
+        event.currentTarget.dataset.taskDrawerArtifactSensitivity;
+      if (
+        artifactId === undefined ||
+        artifactId.length === 0 ||
+        (action !== "open" && action !== "download") ||
+        nodeId === null ||
+        !isRuntimeWorkbenchShellReactArtifactSensitivity(sensitivity)
+      ) {
+        return;
+      }
+      const runId = sourceRunId ?? runtimeActionRunId;
+      void props.session
+        .dispatch({
+          type: "run_artifact_action",
+          artifactId,
+          action,
+          ...(runId !== null ? { runId } : {}),
+          nodeId,
+          requestedDestinationKind:
+            action === "open" ? "native_shell" : "user_selected",
+          artifactSensitivity: sensitivity,
+        })
+        .catch(handleActionError);
+    },
+    [handleActionError, props.session, runtimeActionRunId],
+  );
   const handleChatSubmit = useCallback(
     (input: RuntimeWorkbenchShellChatSubmitInput): void => {
       if (runtimeActionRunId === null) {
@@ -1536,7 +1602,13 @@ export function RuntimeWorkbenchShellReactView(
           </footer>
         </div>
 
-        <RuntimeWorkbenchShellTaskDrawer drawer={snapshot.chrome.taskDrawer} />
+        <RuntimeWorkbenchShellTaskDrawer
+          artifactAction={snapshot.artifactAction}
+          drawer={snapshot.chrome.taskDrawer}
+          onArtifactActionClick={handleTaskDrawerArtifactActionClick}
+          selectedNode={explicitlySelectedWorkflowCanvasNode}
+          selectedNodeArtifactDetails={selectedNodeArtifactDetails}
+        />
         <RuntimeWorkbenchShellChatBox
           chatBox={snapshot.chrome.chatBox}
           onSubmit={handleChatSubmit}
@@ -3442,6 +3514,16 @@ function selectRuntimeWorkbenchShellWorkflowCanvasNode(
   );
 }
 
+function selectRuntimeWorkbenchShellExplicitWorkflowCanvasNode(
+  canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot,
+  selectedNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null,
+): RuntimeWorkbenchShellWorkflowCanvasNode | null {
+  if (selectedNodeId === null) {
+    return null;
+  }
+  return canvas.nodes.find((node) => node.nodeId === selectedNodeId) ?? null;
+}
+
 function selectRuntimeWorkbenchShellCurrentWorkflowCanvasNode(
   canvas: RuntimeWorkbenchShellWorkflowCanvasSnapshot,
   selectedNodeId: RuntimeWorkbenchShellWorkflowCanvasNodeId | null,
@@ -3453,6 +3535,94 @@ function selectRuntimeWorkbenchShellCurrentWorkflowCanvasNode(
     canvas.nodes.find((node) => node.active) ??
     null
   );
+}
+
+function runtimeWorkbenchShellReactSelectedNodeArtifactDetails(
+  panel: RuntimeWorkbenchShellRuntimeStreamPanelSnapshot | null,
+  selectedNode: RuntimeWorkbenchShellWorkflowCanvasNode | null,
+): readonly RuntimeWorkbenchShellTaskDrawerArtifactDetail[] {
+  if (panel === null || selectedNode === null) {
+    return [];
+  }
+  const details: RuntimeWorkbenchShellTaskDrawerArtifactDetail[] = [];
+  const seenArtifactIds = new Set<string>();
+  const collectEvent = (
+    event: RuntimeWorkbenchShellRuntimeStreamEventSnapshot,
+  ): void => {
+    if (event.nodeId === selectedNode.nodeId) {
+      for (const artifactRef of event.artifactRefs) {
+        if (seenArtifactIds.has(artifactRef.artifactId)) {
+          continue;
+        }
+        seenArtifactIds.add(artifactRef.artifactId);
+        details.push({
+          artifactRef,
+          projectRelativePath:
+            runtimeWorkbenchShellReactProjectRelativeArtifactPath(
+              artifactRef.path,
+            ),
+          sourceEventId: event.id,
+          sourceEventType: event.type,
+          runId: event.runId,
+          nodeId: selectedNode.nodeId,
+          sensitivity: event.sensitivity,
+        });
+      }
+    }
+    for (const child of event.children) {
+      collectEvent(child);
+    }
+  };
+  for (const event of panel.summaryItems) {
+    collectEvent(event);
+  }
+  for (const event of panel.timelineItems) {
+    collectEvent(event);
+  }
+  if (panel.selectedEvent !== null) {
+    collectEvent(panel.selectedEvent);
+  }
+  return details;
+}
+
+function runtimeWorkbenchShellReactProjectRelativeArtifactPath(
+  path: string | null,
+): string | null {
+  if (path === null || path.length === 0 || path !== path.trim()) {
+    return null;
+  }
+  if (
+    path.startsWith("/") ||
+    path.startsWith("\\") ||
+    path.includes("\\") ||
+    /^[A-Za-z]:/u.test(path) ||
+    /^[a-z][a-z0-9+.-]*:/iu.test(path)
+  ) {
+    return null;
+  }
+  const segments = path.split("/");
+  if (
+    segments.length === 0 ||
+    segments.some((segment) => {
+      const normalizedSegment = segment.toLowerCase();
+      return (
+        segment.length === 0 ||
+        segment === "." ||
+        segment === ".." ||
+        normalizedSegment === "secure" ||
+        normalizedSegment === "cache"
+      );
+    })
+  ) {
+    return null;
+  }
+  return path;
+}
+
+function isRuntimeWorkbenchShellReactArtifactSensitivity(
+  value: string | undefined,
+): value is RuntimeWorkbenchShellRuntimeStreamEventSnapshot["sensitivity"] {
+  return value === "public" || value === "project" || value === "sensitive";
 }
 
 function isRuntimeWorkbenchShellFileTreeNodeId(
@@ -3474,10 +3644,10 @@ function isRuntimeWorkbenchShellVersionSnapshotId(
 }
 
 function isRuntimeWorkbenchShellTaskDrawerItemId(
-  drawer: RuntimeWorkbenchShellTaskDrawerSnapshot,
+  items: readonly RuntimeWorkbenchShellTaskDrawerItem[],
   value: string | undefined,
 ): value is RuntimeWorkbenchShellTaskDrawerItemId {
-  return value !== undefined && drawer.items.some((item) => item.id === value);
+  return value !== undefined && items.some((item) => item.id === value);
 }
 
 function isRuntimeWorkbenchShellWorkflowCanvasNodeId(
@@ -3606,11 +3776,65 @@ function runtimeWorkbenchShellWorkflowCanvasKeyboardTargetNodeId(
   }
 }
 
+function runtimeWorkbenchShellReactTaskDrawerItems(
+  items: readonly RuntimeWorkbenchShellTaskDrawerItem[],
+  selectedNode: RuntimeWorkbenchShellWorkflowCanvasNode | null,
+  selectedNodeArtifactDetails: readonly RuntimeWorkbenchShellTaskDrawerArtifactDetail[],
+  artifactAction: RuntimeWorkbenchShellSnapshot["artifactAction"],
+): readonly RuntimeWorkbenchShellTaskDrawerItem[] {
+  return items.map((item) => {
+    if (item.id !== "selected_node_artifacts") {
+      return item;
+    }
+    if (selectedNode === null) {
+      return {
+        ...item,
+        value: "No node selected",
+        tone: "neutral",
+      };
+    }
+    const artifactCount = selectedNodeArtifactDetails.length;
+    return {
+      ...item,
+      value: `${selectedNode.nodeId}: ${artifactCount} ${
+        artifactCount === 1 ? "artifact" : "artifacts"
+      }`,
+      tone:
+        artifactCount === 0
+          ? "neutral"
+          : artifactAction.canRunArtifactAction
+            ? "accent"
+            : "warning",
+    };
+  });
+}
+
 function RuntimeWorkbenchShellTaskDrawer(props: {
+  readonly artifactAction: RuntimeWorkbenchShellSnapshot["artifactAction"];
   readonly drawer: RuntimeWorkbenchShellTaskDrawerSnapshot;
+  readonly onArtifactActionClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
+  readonly selectedNode: RuntimeWorkbenchShellWorkflowCanvasNode | null;
+  readonly selectedNodeArtifactDetails: readonly RuntimeWorkbenchShellTaskDrawerArtifactDetail[];
 }): ReactElement {
   const [expanded, setExpanded] = useState(
     () => !props.drawer.defaultCollapsed,
+  );
+  const drawerItems = useMemo(
+    () =>
+      runtimeWorkbenchShellReactTaskDrawerItems(
+        props.drawer.items,
+        props.selectedNode,
+        props.selectedNodeArtifactDetails,
+        props.artifactAction,
+      ),
+    [
+      props.artifactAction,
+      props.drawer.items,
+      props.selectedNode,
+      props.selectedNodeArtifactDetails,
+    ],
   );
   const [selectedItemId, setSelectedItemId] =
     useState<RuntimeWorkbenchShellTaskDrawerItemId | null>(
@@ -3620,10 +3844,10 @@ function RuntimeWorkbenchShellTaskDrawer(props: {
     );
   const selectedItem = useMemo(
     () =>
-      props.drawer.items.find((item) => item.id === selectedItemId) ??
-      props.drawer.items[0] ??
+      drawerItems.find((item) => item.id === selectedItemId) ??
+      drawerItems[0] ??
       null,
-    [props.drawer.items, selectedItemId],
+    [drawerItems, selectedItemId],
   );
   const handleToggleClick = useCallback((): void => {
     setExpanded((current) => !current);
@@ -3637,12 +3861,12 @@ function RuntimeWorkbenchShellTaskDrawer(props: {
   const handleItemClick = useCallback(
     (event: MouseEvent<HTMLDivElement>): void => {
       const itemId = event.currentTarget.dataset.taskDrawerItemSelect;
-      if (!isRuntimeWorkbenchShellTaskDrawerItemId(props.drawer, itemId)) {
+      if (!isRuntimeWorkbenchShellTaskDrawerItemId(drawerItems, itemId)) {
         return;
       }
       handleItemSelect(itemId);
     },
-    [handleItemSelect, props.drawer],
+    [drawerItems, handleItemSelect],
   );
   const handleItemKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -3650,13 +3874,13 @@ function RuntimeWorkbenchShellTaskDrawer(props: {
         return;
       }
       const itemId = event.currentTarget.dataset.taskDrawerItemSelect;
-      if (!isRuntimeWorkbenchShellTaskDrawerItemId(props.drawer, itemId)) {
+      if (!isRuntimeWorkbenchShellTaskDrawerItemId(drawerItems, itemId)) {
         return;
       }
       event.preventDefault();
       handleItemSelect(itemId);
     },
-    [handleItemSelect, props.drawer],
+    [drawerItems, handleItemSelect],
   );
 
   return (
@@ -3693,7 +3917,7 @@ function RuntimeWorkbenchShellTaskDrawer(props: {
             className="cw-workbench__task-drawer-items"
             role="listbox"
           >
-            {props.drawer.items.map((item) => {
+            {drawerItems.map((item) => {
               const selected = selectedItem?.id === item.id;
               return (
                 <div
@@ -3722,7 +3946,13 @@ function RuntimeWorkbenchShellTaskDrawer(props: {
             })}
           </dl>
           {selectedItem === null ? null : (
-            <RuntimeWorkbenchShellTaskDrawerDetails item={selectedItem} />
+            <RuntimeWorkbenchShellTaskDrawerDetails
+              artifactAction={props.artifactAction}
+              item={selectedItem}
+              onArtifactActionClick={props.onArtifactActionClick}
+              selectedNode={props.selectedNode}
+              selectedNodeArtifactDetails={props.selectedNodeArtifactDetails}
+            />
           )}
         </>
       ) : (
@@ -3735,8 +3965,25 @@ function RuntimeWorkbenchShellTaskDrawer(props: {
 }
 
 function RuntimeWorkbenchShellTaskDrawerDetails(props: {
+  readonly artifactAction: RuntimeWorkbenchShellSnapshot["artifactAction"];
   readonly item: RuntimeWorkbenchShellTaskDrawerItem;
+  readonly onArtifactActionClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
+  readonly selectedNode: RuntimeWorkbenchShellWorkflowCanvasNode | null;
+  readonly selectedNodeArtifactDetails: readonly RuntimeWorkbenchShellTaskDrawerArtifactDetail[];
 }): ReactElement {
+  if (props.item.id === "selected_node_artifacts") {
+    return (
+      <RuntimeWorkbenchShellTaskDrawerArtifactDetails
+        artifactAction={props.artifactAction}
+        artifactDetails={props.selectedNodeArtifactDetails}
+        item={props.item}
+        onArtifactActionClick={props.onArtifactActionClick}
+        selectedNode={props.selectedNode}
+      />
+    );
+  }
   return (
     <section
       aria-label="Task drawer selection details"
@@ -3758,6 +4005,135 @@ function RuntimeWorkbenchShellTaskDrawerDetails(props: {
         </div>
       </dl>
     </section>
+  );
+}
+
+function RuntimeWorkbenchShellTaskDrawerArtifactDetails(props: {
+  readonly artifactAction: RuntimeWorkbenchShellSnapshot["artifactAction"];
+  readonly artifactDetails: readonly RuntimeWorkbenchShellTaskDrawerArtifactDetail[];
+  readonly item: RuntimeWorkbenchShellTaskDrawerItem;
+  readonly onArtifactActionClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
+  readonly selectedNode: RuntimeWorkbenchShellWorkflowCanvasNode | null;
+}): ReactElement {
+  return (
+    <section
+      aria-label="Task drawer node artifact details"
+      className="cw-workbench__task-drawer-details cw-workbench__task-drawer-artifacts"
+      data-task-drawer-artifact-action-status={props.artifactAction.status}
+      data-task-drawer-artifact-count={String(props.artifactDetails.length)}
+      data-task-drawer-artifact-node-id={props.selectedNode?.nodeId ?? ""}
+      data-task-drawer-details={props.item.id}
+      data-task-drawer-details-label={props.item.label}
+      data-task-drawer-details-tone={props.item.tone}
+      data-task-drawer-details-value={props.item.value}
+    >
+      <h3>{props.item.label}</h3>
+      <dl>
+        <div>
+          <dt>Node</dt>
+          <dd>{props.selectedNode?.nodeId ?? "-"}</dd>
+        </div>
+        <div>
+          <dt>Title</dt>
+          <dd>{props.selectedNode?.title ?? "-"}</dd>
+        </div>
+        <div>
+          <dt>Artifacts</dt>
+          <dd>{props.artifactDetails.length}</dd>
+        </div>
+        <div>
+          <dt>Action status</dt>
+          <dd>{props.artifactAction.status}</dd>
+        </div>
+      </dl>
+      {props.selectedNode === null ? (
+        <p className="cw-workbench__task-drawer-empty">
+          No workflow node selected
+        </p>
+      ) : props.artifactDetails.length === 0 ? (
+        <p className="cw-workbench__task-drawer-empty">
+          No artifacts recorded for this node
+        </p>
+      ) : (
+        <ul className="cw-workbench__task-drawer-artifact-list">
+          {props.artifactDetails.map((detail) => (
+            <RuntimeWorkbenchShellTaskDrawerArtifactDetailItem
+              detail={detail}
+              key={detail.artifactRef.artifactId}
+              onArtifactActionClick={props.onArtifactActionClick}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function RuntimeWorkbenchShellTaskDrawerArtifactDetailItem(props: {
+  readonly detail: RuntimeWorkbenchShellTaskDrawerArtifactDetail;
+  readonly onArtifactActionClick: (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
+}): ReactElement {
+  const artifactRef = props.detail.artifactRef;
+  const projectRelativePath = props.detail.projectRelativePath;
+  return (
+    <li
+      data-task-drawer-artifact-ref="selected-node"
+      data-task-drawer-artifact-ref-id={artifactRef.artifactId}
+      data-task-drawer-artifact-ref-kind={artifactRef.kind}
+      data-task-drawer-artifact-ref-path={projectRelativePath ?? ""}
+      data-task-drawer-artifact-ref-run-id={props.detail.runId ?? ""}
+      data-task-drawer-artifact-ref-node-id={props.detail.nodeId}
+      data-task-drawer-artifact-ref-sensitivity={props.detail.sensitivity}
+      data-task-drawer-artifact-ref-source-event-id={
+        props.detail.sourceEventId ?? ""
+      }
+      data-task-drawer-artifact-ref-source-event-type={
+        props.detail.sourceEventType
+      }
+      data-task-drawer-artifact-ref-size-bytes={
+        artifactRef.sizeBytes === null ? "" : String(artifactRef.sizeBytes)
+      }
+    >
+      <strong>{artifactRef.displayName}</strong>
+      <span>{runtimeWorkbenchShellReactTitleCase(artifactRef.kind)}</span>
+      {projectRelativePath === null ? null : <code>{projectRelativePath}</code>}
+      {artifactRef.mimeType === null ? null : (
+        <small>{artifactRef.mimeType}</small>
+      )}
+      {artifactRef.sizeBytes === null ? null : (
+        <small>{artifactRef.sizeBytes} bytes</small>
+      )}
+      <div className="cw-workbench__task-drawer-artifact-actions">
+        <button
+          data-task-drawer-artifact-action="open"
+          data-task-drawer-artifact-id={artifactRef.artifactId}
+          data-task-drawer-artifact-node-id={props.detail.nodeId}
+          data-task-drawer-artifact-run-id={props.detail.runId ?? ""}
+          data-task-drawer-artifact-sensitivity={props.detail.sensitivity}
+          data-task-drawer-artifact-source="selected-node"
+          onClick={props.onArtifactActionClick}
+          type="button"
+        >
+          Open
+        </button>
+        <button
+          data-task-drawer-artifact-action="download"
+          data-task-drawer-artifact-id={artifactRef.artifactId}
+          data-task-drawer-artifact-node-id={props.detail.nodeId}
+          data-task-drawer-artifact-run-id={props.detail.runId ?? ""}
+          data-task-drawer-artifact-sensitivity={props.detail.sensitivity}
+          data-task-drawer-artifact-source="selected-node"
+          onClick={props.onArtifactActionClick}
+          type="button"
+        >
+          Download
+        </button>
+      </div>
+    </li>
   );
 }
 

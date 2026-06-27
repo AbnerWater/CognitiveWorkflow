@@ -227,6 +227,7 @@ export type RuntimeWorkbenchShellTaskDrawerItemId =
   | "active_panel"
   | "lifecycle_panel"
   | "runtime_stream"
+  | "selected_node_artifacts"
   | "visible_items"
   | "unread_events";
 
@@ -864,6 +865,14 @@ function buildShellChrome(
           value:
             runtimeStreamChannelLabel ?? panelStatusLabel(runtimeStreamStatus),
           tone: panelStatusTone(runtimeStreamStatus),
+        }),
+        taskDrawerItem({
+          id: "selected_node_artifacts",
+          label: "Node artifacts",
+          value: disposed
+            ? "Disposed"
+            : artifactActionStatusLabel(host.artifactAction),
+          tone: disposed ? "danger" : artifactActionTone(host.artifactAction),
         }),
         taskDrawerItem({
           id: "visible_items",
