@@ -1,0 +1,164 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.205",
+  "gate_status": "pending_human_confirmation",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-28",
+  "source": {
+    "adr": "docs/03_decisions/0012-fr015-snapshot-ledger-restore-contract.md",
+    "adr_index": "docs/03_decisions/README.md",
+    "runtime_flow_plan": "docs/04_runbook/m1.5-runtime-flow-repair-plan.json",
+    "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
+    "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json",
+    "w1_5_203_review": "docs/reviews/m1.5.203-workflow-snapshot-endpoint-review.md",
+    "w1_5_204_review": "docs/reviews/m1.5.204-workflow-history-timeline-review.md",
+    "http_sse_api": "specs/api/http_sse.md",
+    "runtime_harness": "specs/runtime_harness.md",
+    "failure_taxonomy": "specs/failure_taxonomy.md",
+    "workflow_run_state_machine": "specs/state_machines/workflow_run.md"
+  },
+  "guardrails": [
+    "ADR-0012 is Proposed and cannot authorize accepted spec, schema, API, runtime, Desktop, dependency, packaging, or generated-type changes.",
+    "W1.5.205 records the FR-015 snapshot ledger projection and restore/continue contract direction only.",
+    "FR-015 remains partial_runtime_bridge_requires_followup; no FR item is accepted and EXIT-P1-1 remains not_ready.",
+    "Desktop must not read .agent-workflow/snapshots/snapshots.jsonl directly before an accepted runtime projection exists.",
+    "Desktop must not perform Git restore directly; restore semantics must be runtime-owned and lock-aware before implementation.",
+    "Evidence and runner output must remain metadata-only and exclude raw prompts, raw model output, uploaded-file bytes, response bodies, artifact bodies, raw workflow change summaries, raw refs payloads, full paths, secure paths, cache paths, and output directory values.",
+    "Standing dirty CLAUDE.md remains out of slice commits unless explicitly scoped by the user."
+  ],
+  "fr_scope": ["FR-015"],
+  "current_decision_state": {
+    "adr_0012_status": "Proposed",
+    "human_confirmation_required": true,
+    "accepted_spec_changes_allowed": false,
+    "runtime_or_desktop_implementation_allowed": false,
+    "reason": "FR-015 still lacks an accepted snapshot ledger projection and restore/continue contract; W1.5.205 stops at Proposed ADR plus gate."
+  },
+  "required_human_decision": {
+    "decision_id": "HUMAN-ACCEPT-ADR-0012",
+    "prompt": "Accept ADR-0012 as the contract authority for FR-015 snapshot ledger projection, restore-to-snapshot, and continue semantics?",
+    "accepted_response": "ADR-0012 accepted",
+    "accepted_at": null,
+    "consumed_by_slice": null,
+    "on_acceptance_next_steps": [
+      "Update docs/03_decisions/0012-fr015-snapshot-ledger-restore-contract.md Status to Accepted and add Proposed -> Accepted history.",
+      "Update docs/03_decisions/README.md ADR-0012 status to Accepted.",
+      "Update accepted API/spec/schema contract for snapshot ledger projection before Desktop surfaces snapshots/snapshots.jsonl.",
+      "Update accepted restore-to-snapshot and continue semantics before runtime or Desktop implementation.",
+      "Regenerate derived schema types if a schema model changes.",
+      "Only then implement runtime/Desktop behavior and A4 evidence for FR-015."
+    ],
+    "on_rejection_next_steps": [
+      "Keep ADR-0012 Proposed or mark it Superseded by a replacement ADR.",
+      "Do not modify accepted specs or implementation for FR-015 restore/continue using ADR-0012."
+    ]
+  },
+  "proposed_contract_delta": {
+    "snapshot_ledger_projection": {
+      "fr_id": "FR-015",
+      "decision_status": "proposed_not_accepted",
+      "proposed_endpoint": "GET /cw/v1/workflows/{workflow_id}/snapshots",
+      "source_ledger": ".agent-workflow/snapshots/snapshots.jsonl",
+      "minimum_projected_fields": [
+        "schema_version",
+        "snapshot_id",
+        "workflow_id",
+        "run_id",
+        "kind",
+        "created_at",
+        "commit_sha",
+        "git_tag",
+        "refs",
+        "restorable"
+      ],
+      "sanitization_boundary": "Snapshot refs must remain identifier-only metadata and must not carry prompt text, model output, uploaded-file bytes, response bodies, secure paths, cache paths, output directory values, or raw local filesystem paths."
+    },
+    "restore_to_snapshot": {
+      "fr_id": "FR-015",
+      "decision_status": "proposed_not_accepted",
+      "proposed_action": "runtime-owned restore against a ledger snapshot_id",
+      "required_lock_boundary": [
+        "runtime.lock",
+        "workflow_editor.lock",
+        "git.lock"
+      ],
+      "minimum_result_fields": [
+        "status",
+        "snapshot_id",
+        "workflow_id",
+        "run_id",
+        "source_commit_sha",
+        "target_revision",
+        "state_category",
+        "error_code",
+        "correlation_id"
+      ],
+      "continue_semantics": "Restore must not automatically continue execution; continue after restore is an explicit follow-up action after restored state is visible and validated."
+    }
+  },
+  "accepted_contract_anchors": [
+    {
+      "source": "specs/api/http_sse.md",
+      "pattern": "POST   /{workflow_id}/snapshot                    \u2192 \u663e\u5f0f git snapshot",
+      "reason": "Accepted explicit snapshot creation endpoint."
+    },
+    {
+      "source": "specs/api/http_sse.md",
+      "pattern": "GET    /{workflow_id}/history                     \u2192 workflow_history.json",
+      "reason": "Accepted workflow history timeline endpoint."
+    },
+    {
+      "source": "specs/runtime_harness.md",
+      "pattern": "snapshots/snapshots.jsonl",
+      "reason": "Accepted runtime snapshot ledger storage location."
+    },
+    {
+      "source": "specs/runtime_harness.md",
+      "pattern": "locks/git.lock",
+      "reason": "Accepted Git mutation lock boundary."
+    },
+    {
+      "source": "specs/failure_taxonomy.md",
+      "pattern": "`RH_*`",
+      "reason": "Accepted runtime-harness error namespace."
+    }
+  ],
+  "forbidden_premature_changes": [
+    "Do not add GET /cw/v1/workflows/{workflow_id}/snapshots to accepted API spec while ADR-0012 is Proposed.",
+    "Do not add restore or continue snapshot endpoints to accepted API spec while ADR-0012 is Proposed.",
+    "Do not add package schema models or generated schema types for snapshot restore while ADR-0012 is Proposed.",
+    "Do not implement runtime handlers, Desktop commands, preload/main Git actions, or renderer restore UI while ADR-0012 is Proposed.",
+    "Do not mark FR-015 accepted, A4 accepted, or EXIT-P1-1 ready from this gate."
+  ],
+  "summary": {
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "pending_human_decisions": 1,
+    "blocked_fr_items": 1,
+    "exit_p1_1_status": "not_ready"
+  },
+  "runner_contract": {
+    "focused_check": "node apps/desktop/scripts/m1-5-fr015-snapshot-restore-contract-gate.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-fr015-snapshot-restore-contract-gate.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "runner_output_contract": {
+      "status": "pending_human_confirmation",
+      "fr_ids": ["FR-015"],
+      "accepted_item_count": 0,
+      "implemented_item_count": 0,
+      "pending_human_decision_count": 1,
+      "sanitized_summary_only": true
+    }
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.206",
+      "title": "FR-015 snapshot restore accepted contract delta",
+      "precondition": "User explicitly accepts ADR-0012.",
+      "reason": "Only after ADR-0012 acceptance may accepted API/spec/schema changes define snapshot ledger projection and restore/continue semantics."
+    }
+  ]
+}

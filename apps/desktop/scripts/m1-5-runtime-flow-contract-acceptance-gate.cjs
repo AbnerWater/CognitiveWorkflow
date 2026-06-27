@@ -70,6 +70,19 @@ function assertTextIncludes(text, expected, message) {
   assertCondition(text.includes(expected), message);
 }
 
+function assertAdrIndexEntry(text, id, fileName, title, status, date) {
+  const escapedFileName = fileName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const pattern = new RegExp(
+    `\\|\\s*\\[${id}\\]\\(${escapedFileName}\\)\\s*\\|\\s*${escapedTitle}\\s*\\|\\s*${status}\\s*\\|\\s*${date}\\s*\\|`,
+    "u",
+  );
+  assertCondition(
+    pattern.test(text),
+    `ADR index must mark ADR-${id} ${status}`,
+  );
+}
+
 function validateRuntimeFlowContractAcceptanceGate(options = {}) {
   const gate = readJson(options.gatePath ?? gatePath);
   const adrText = readText(options.adrPath ?? adrPath);
@@ -98,10 +111,13 @@ function validateRuntimeFlowContractAcceptanceGate(options = {}) {
     "declared ADR status",
   );
   assertEqual(adrStatus(adrText), "Accepted", "actual ADR status");
-  assertTextIncludes(
+  assertAdrIndexEntry(
     adrIndexText,
-    "| [0011](0011-runtime-flow-desktop-actions-contract.md) | Runtime Flow Desktop Actions Contract                         | Accepted | 2026-06-27 |",
-    "ADR index must mark ADR-0011 Accepted",
+    "0011",
+    "0011-runtime-flow-desktop-actions-contract.md",
+    "Runtime Flow Desktop Actions Contract",
+    "Accepted",
+    "2026-06-27",
   );
   assertEqual(
     gate.current_decision_state.human_confirmation_required,
