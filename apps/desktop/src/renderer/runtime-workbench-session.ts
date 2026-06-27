@@ -237,14 +237,25 @@ export interface RuntimeWorkbenchSkillEntrySnapshot {
   readonly paramKeys: readonly string[];
 }
 
+export interface RuntimeWorkbenchSkillMcpConfigSnapshot {
+  readonly serverId: string;
+  readonly transport: string;
+  readonly enabled: boolean;
+  readonly requiresApproval: boolean;
+  readonly hasSecretRef: boolean;
+}
+
 export interface RuntimeWorkbenchSkillManagementSnapshot {
   readonly status: RuntimeWorkbenchSkillManagementStatus;
   readonly activeProjectId: string | null;
   readonly method: "GET" | "PATCH" | null;
   readonly path: RuntimeRequestPath | null;
+  readonly mcpPath: RuntimeRequestPath | null;
   readonly entries: readonly RuntimeWorkbenchSkillEntrySnapshot[];
+  readonly mcpEntries: readonly RuntimeWorkbenchSkillMcpConfigSnapshot[];
   readonly lastSkillId: string | null;
   readonly statusCode: number | null;
+  readonly mcpStatusCode: number | null;
   readonly blockedReason: RuntimeWorkbenchSkillManagementBlockedReason | null;
   readonly canRefreshSkills: boolean;
   readonly canUpdateSkill: boolean;
@@ -1774,12 +1785,22 @@ export function createRuntimeWorkbenchSession(
         throw new Error("Runtime workbench Skill project id is invalid");
       }
       const requestPath = buildRuntimeWorkbenchSkillsPath(projectId);
+      const mcpRequestPath = buildRuntimeWorkbenchProjectMcpsPath(projectId);
+      const previousEntries: readonly RuntimeWorkbenchSkillEntrySnapshot[] =
+        skillManagementSnapshot.activeProjectId === projectId
+          ? skillManagementSnapshot.entries
+          : [];
+      const previousMcpEntries: readonly RuntimeWorkbenchSkillMcpConfigSnapshot[] =
+        skillManagementSnapshot.activeProjectId === projectId
+          ? skillManagementSnapshot.mcpEntries
+          : [];
       if (options.runtime === undefined) {
         skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot(
           {
             activeProjectId: projectId,
             blockedReason: "runtime_unavailable",
             path: requestPath,
+            mcpPath: mcpRequestPath,
             runtimeAvailable: false,
             status: "blocked",
             disposed,
@@ -1790,9 +1811,11 @@ export function createRuntimeWorkbenchSession(
       }
       skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot({
         activeProjectId: projectId,
-        entries: skillManagementSnapshot.entries,
+        entries: previousEntries,
+        mcpEntries: previousMcpEntries,
         method: "GET",
         path: requestPath,
+        mcpPath: mcpRequestPath,
         runtimeAvailable: true,
         status: "refreshing",
         disposed,
@@ -1805,9 +1828,11 @@ export function createRuntimeWorkbenchSession(
             createRuntimeWorkbenchSkillManagementSnapshot({
               activeProjectId: projectId,
               blockedReason: "request_failed",
-              entries: skillManagementSnapshot.entries,
+              entries: previousEntries,
+              mcpEntries: previousMcpEntries,
               method: "GET",
               path: requestPath,
+              mcpPath: mcpRequestPath,
               runtimeAvailable: true,
               status: "failed",
               statusCode: response.status,
@@ -1824,6 +1849,7 @@ export function createRuntimeWorkbenchSession(
               blockedReason: "response_invalid",
               method: "GET",
               path: requestPath,
+              mcpPath: mcpRequestPath,
               runtimeAvailable: true,
               status: "failed",
               statusCode: response.status,
@@ -1832,15 +1858,59 @@ export function createRuntimeWorkbenchSession(
           publishIfChanged(true);
           throw new Error("Runtime workbench Skill manifest is invalid");
         }
+        const mcpResponse = await options.runtime.fetch(mcpRequestPath);
+        if (!mcpResponse.ok) {
+          skillManagementSnapshot =
+            createRuntimeWorkbenchSkillManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "request_failed",
+              entries,
+              mcpEntries: [],
+              method: "GET",
+              path: requestPath,
+              mcpPath: mcpRequestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              mcpStatusCode: mcpResponse.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const mcpEntries = parseRuntimeWorkbenchSkillMcpEntries(
+          mcpResponse.body,
+        );
+        if (mcpEntries === null) {
+          skillManagementSnapshot =
+            createRuntimeWorkbenchSkillManagementSnapshot({
+              activeProjectId: projectId,
+              blockedReason: "response_invalid",
+              entries,
+              method: "GET",
+              path: requestPath,
+              mcpPath: mcpRequestPath,
+              runtimeAvailable: true,
+              status: "failed",
+              statusCode: response.status,
+              mcpStatusCode: mcpResponse.status,
+              disposed,
+            });
+          publishIfChanged(true);
+          throw new Error("Runtime workbench MCP configuration is invalid");
+        }
         skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot(
           {
             activeProjectId: projectId,
             entries,
+            mcpEntries,
             method: "GET",
             path: requestPath,
+            mcpPath: mcpRequestPath,
             runtimeAvailable: true,
             status: "succeeded",
             statusCode: response.status,
+            mcpStatusCode: mcpResponse.status,
             disposed,
           },
         );
@@ -1853,8 +1923,10 @@ export function createRuntimeWorkbenchSession(
               activeProjectId: projectId,
               blockedReason: "request_failed",
               entries: skillManagementSnapshot.entries,
+              mcpEntries: [],
               method: "GET",
               path: requestPath,
+              mcpPath: mcpRequestPath,
               runtimeAvailable: true,
               status: "failed",
               disposed,
@@ -1900,6 +1972,9 @@ export function createRuntimeWorkbenchSession(
             blockedReason: "runtime_unavailable",
             lastSkillId: skillId,
             path: requestPath,
+            mcpPath: skillManagementSnapshot.mcpPath,
+            mcpEntries: skillManagementSnapshot.mcpEntries,
+            mcpStatusCode: skillManagementSnapshot.mcpStatusCode,
             runtimeAvailable: false,
             status: "blocked",
             disposed,
@@ -1911,6 +1986,9 @@ export function createRuntimeWorkbenchSession(
       skillManagementSnapshot = createRuntimeWorkbenchSkillManagementSnapshot({
         activeProjectId: projectId,
         entries: skillManagementSnapshot.entries,
+        mcpEntries: skillManagementSnapshot.mcpEntries,
+        mcpPath: skillManagementSnapshot.mcpPath,
+        mcpStatusCode: skillManagementSnapshot.mcpStatusCode,
         lastSkillId: skillId,
         method: "PATCH",
         path: requestPath,
@@ -1935,6 +2013,9 @@ export function createRuntimeWorkbenchSession(
               activeProjectId: projectId,
               blockedReason: "request_failed",
               entries: skillManagementSnapshot.entries,
+              mcpEntries: skillManagementSnapshot.mcpEntries,
+              mcpPath: skillManagementSnapshot.mcpPath,
+              mcpStatusCode: skillManagementSnapshot.mcpStatusCode,
               lastSkillId: skillId,
               method: "PATCH",
               path: requestPath,
@@ -1952,6 +2033,10 @@ export function createRuntimeWorkbenchSession(
             createRuntimeWorkbenchSkillManagementSnapshot({
               activeProjectId: projectId,
               blockedReason: "response_invalid",
+              entries: skillManagementSnapshot.entries,
+              mcpEntries: skillManagementSnapshot.mcpEntries,
+              mcpPath: skillManagementSnapshot.mcpPath,
+              mcpStatusCode: skillManagementSnapshot.mcpStatusCode,
               lastSkillId: skillId,
               method: "PATCH",
               path: requestPath,
@@ -1970,6 +2055,9 @@ export function createRuntimeWorkbenchSession(
               skillManagementSnapshot.entries,
               entry,
             ),
+            mcpEntries: skillManagementSnapshot.mcpEntries,
+            mcpPath: skillManagementSnapshot.mcpPath,
+            mcpStatusCode: skillManagementSnapshot.mcpStatusCode,
             lastSkillId: entry.skillId,
             method: "PATCH",
             path: requestPath,
@@ -1988,6 +2076,9 @@ export function createRuntimeWorkbenchSession(
               activeProjectId: projectId,
               blockedReason: "request_failed",
               entries: skillManagementSnapshot.entries,
+              mcpEntries: skillManagementSnapshot.mcpEntries,
+              mcpPath: skillManagementSnapshot.mcpPath,
+              mcpStatusCode: skillManagementSnapshot.mcpStatusCode,
               lastSkillId: skillId,
               method: "PATCH",
               path: requestPath,
@@ -2545,14 +2636,18 @@ function createRuntimeWorkbenchSkillManagementSnapshot(
   },
 ): RuntimeWorkbenchSkillManagementSnapshot {
   const entries = Object.freeze([...(input.entries ?? [])]);
+  const mcpEntries = Object.freeze([...(input.mcpEntries ?? [])]);
   return Object.freeze({
     status: input.status,
     activeProjectId: input.activeProjectId ?? null,
     method: input.method ?? null,
     path: input.path ?? null,
+    mcpPath: input.mcpPath ?? null,
     entries,
+    mcpEntries,
     lastSkillId: input.lastSkillId ?? null,
     statusCode: input.statusCode ?? null,
+    mcpStatusCode: input.mcpStatusCode ?? null,
     blockedReason: input.blockedReason ?? null,
     canRefreshSkills:
       !input.disposed &&
@@ -2727,6 +2822,14 @@ function buildRuntimeWorkbenchSkillsPath(
   projectId: string,
 ): RuntimeRequestPath {
   const requestPath = `/projects/${encodeURIComponent(projectId)}/skills`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
+function buildRuntimeWorkbenchProjectMcpsPath(
+  projectId: string,
+): RuntimeRequestPath {
+  const requestPath = `/projects/${encodeURIComponent(projectId)}/mcps`;
   assertRuntimeRequestPath(requestPath);
   return requestPath as RuntimeRequestPath;
 }
@@ -3247,6 +3350,57 @@ function parseRuntimeWorkbenchSkillEntry(
     version,
     enabled,
     paramKeys: Object.freeze([]),
+  });
+}
+
+function parseRuntimeWorkbenchSkillMcpEntries(
+  body: unknown,
+): readonly RuntimeWorkbenchSkillMcpConfigSnapshot[] | null {
+  if (!Array.isArray(body)) {
+    return null;
+  }
+  const entries: RuntimeWorkbenchSkillMcpConfigSnapshot[] = [];
+  for (const item of body) {
+    const parsed = parseRuntimeWorkbenchSkillMcpEntry(item);
+    if (parsed === null) {
+      return null;
+    }
+    entries.push(parsed);
+  }
+  return Object.freeze(entries);
+}
+
+function parseRuntimeWorkbenchSkillMcpEntry(
+  body: unknown,
+): RuntimeWorkbenchSkillMcpConfigSnapshot | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  const serverId = body.server_id;
+  const transport = body.transport;
+  const commandOrUrl = body.command_or_url;
+  const enabled = body.enabled;
+  const requiresApproval = body.requires_approval ?? false;
+  const secretRef = body.secret_ref ?? null;
+  if (
+    typeof serverId !== "string" ||
+    serverId.trim().length === 0 ||
+    typeof transport !== "string" ||
+    transport.trim().length === 0 ||
+    typeof commandOrUrl !== "string" ||
+    commandOrUrl.trim().length === 0 ||
+    typeof enabled !== "boolean" ||
+    typeof requiresApproval !== "boolean" ||
+    (secretRef !== null && typeof secretRef !== "string")
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    serverId,
+    transport,
+    enabled,
+    requiresApproval,
+    hasSecretRef: typeof secretRef === "string" && secretRef.trim().length > 0,
   });
 }
 

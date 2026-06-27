@@ -1,8 +1,8 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.201",
-  "plan_status": "remaining_runtime_flow_implementation_plan_refreshed_after_project_reference_followup",
+  "slice": "W1.5.202",
+  "plan_status": "remaining_runtime_flow_implementation_plan_refreshed_after_skill_configuration_followup",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
   "observed_at": "2026-06-27",
@@ -24,24 +24,24 @@
     "agent_adapter_protocol": "specs/protocols/agent_adapter.md"
   },
   "guardrails": [
-    "This artifact refreshes the remaining implementation plan after W1.5.201 combined project creation plus initial reference import evidence.",
+    "This artifact refreshes the remaining implementation plan after W1.5.202 Skill candidate discovery plus secret-safe MCP configuration evidence.",
     "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
-    "W1.5.201 mirrors the current evidence map buckets after FR-011 moved to runtime_bridge_needs_a4_review.",
-    "FR-007, FR-008, FR-011, FR-012, FR-013, and FR-017 remain outside this implementation plan because they are pending A4 review inputs.",
-    "W1.5.201 does not modify accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx content.",
-    "Runtime-flow and bridge follow-up evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, secure paths, cache paths, or output directory values.",
+    "W1.5.202 mirrors the current evidence map buckets after FR-014 moved to runtime_bridge_needs_a4_review.",
+    "FR-007, FR-008, FR-011, FR-012, FR-013, FR-014, and FR-017 remain outside this implementation plan because they are pending A4 review inputs.",
+    "W1.5.202 does not modify accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx content.",
+    "Runtime-flow and bridge follow-up evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, persisted params, raw MCP command_or_url or secret_ref values, secure paths, cache paths, or output directory values.",
     "secure/** and cache/** remain untracked and must not be added to Git."
   ],
   "repair_track": {
     "source_track_id": "TRACK-REMAINING-RUNTIME-FLOW-IMPLEMENTATION",
     "track_kind": "remaining_runtime_flow_and_partial_bridge_followup",
-    "source_track_status": "refreshed_after_project_reference_followup",
+    "source_track_status": "refreshed_after_skill_configuration_followup",
     "priority": 3,
     "source_acceptance_readiness": [
       "partial_requires_runtime_flow",
       "partial_runtime_bridge_requires_followup"
     ],
-    "fr_ids": ["FR-014", "FR-015", "FR-018"],
+    "fr_ids": ["FR-015", "FR-018"],
     "source_buckets": [
       {
         "acceptance_readiness": "partial_requires_runtime_flow",
@@ -50,7 +50,7 @@
       },
       {
         "acceptance_readiness": "partial_runtime_bridge_requires_followup",
-        "fr_ids": ["FR-014", "FR-015", "FR-018"],
+        "fr_ids": ["FR-015", "FR-018"],
         "source_map": "docs/04_runbook/m1.5-fr-evidence-map.json#acceptance_readiness=partial_runtime_bridge_requires_followup"
       }
     ],
@@ -60,17 +60,17 @@
       "FR-011",
       "FR-012",
       "FR-013",
+      "FR-014",
       "FR-017"
     ],
     "blocked_by_dependency_gates": [],
-    "objective": "Re-plan only the remaining runtime-backed desktop behavior needed before FR-014, FR-015, and FR-018 can move to A4 acceptance review; FR-011, FR-008, and FR-017 are now packaged as runtime bridge evidence for A4 review.",
+    "objective": "Re-plan only the remaining runtime-backed desktop behavior needed before FR-015 and FR-018 can move to A4 acceptance review; FR-014 is now packaged as runtime bridge evidence for A4 review.",
     "entry_criteria": [
-      "Use W1.5.201 FR evidence map as the current source of truth for remaining implementation gaps.",
+      "Use W1.5.202 FR evidence map as the current source of truth for remaining implementation gaps.",
       "Keep A4-ready bridge items out of this implementation plan.",
-      "Preserve metadata-only evidence boundaries for chat, reference upload, Skill configuration, snapshot, artifact, and HITL paths."
+      "Preserve metadata-only evidence boundaries for snapshot and HITL paths."
     ],
     "planned_repair_steps": [
-      "Complete Skill registry candidate discovery and secret-safe MCP configuration display for FR-014.",
       "Implement automatic snapshot creation, restore-to-snapshot, and continue execution for FR-015.",
       "Add pending-decision discovery plus pause/resume UX evidence for semi-auto HITL in FR-018."
     ],
@@ -79,77 +79,16 @@
       "uv run pytest apps/runtime/tests -q",
       "Targeted visual smoke or reviewer capture only after implementation evidence exists"
     ],
-    "next_slice": "W1.5.202",
+    "next_slice": "W1.5.203",
     "implementation_notes": [
       "FR-008 is no longer a remaining implementation item after W1.5.195-W1.5.196; it stays unaccepted and moves to A4 pending review inputs.",
       "FR-011 is no longer a remaining implementation item after W1.5.201 combined project creation plus initial reference import evidence; it stays unaccepted and moves to A4 pending review inputs.",
       "FR-017 is no longer a remaining implementation item after W1.5.199 selected-node Task Drawer artifact detail and node-bound action dispatch evidence; it stays unaccepted and moves to A4 pending review inputs.",
+      "FR-014 is no longer a remaining implementation item after W1.5.202 Skill candidate discovery plus secret-safe MCP configuration evidence; it stays unaccepted and moves to A4 pending review inputs.",
       "All remaining items still require follow-up implementation or A4 evidence before any FR acceptance claim."
     ]
   },
   "runtime_flow_items": [
-    {
-      "id": "RUNTIME-FR-014-SKILL-CONFIGURATION-FOLLOWUP",
-      "fr_id": "FR-014",
-      "implementation_gap_group": "partial_bridge_followup",
-      "runtime_boundary_kind": "skill_management_configuration_followup",
-      "source_checklist_status": "partial_runtime_bridge_evidence",
-      "source_acceptance_readiness": "partial_runtime_bridge_requires_followup",
-      "source_evidence_refs": [
-        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-014",
-        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-014",
-        "docs/04_runbook/m1.5-progress.md#W1.5.183",
-        "docs/reviews/m1.5.183-skill-management-desktop-bridge-review.md",
-        "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx",
-        "apps/runtime/tests/test_m1_3_2_project_endpoints.py"
-      ],
-      "source_verification_commands": [
-        "pnpm --filter @cw/desktop run test",
-        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
-      ],
-      "source_checklist_remaining_gap": [
-        "Skill registry candidate discovery and MCP configuration UI remain incomplete.",
-        "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
-      ],
-      "missing_before_implementation": [
-        "Skill registry candidate discovery and MCP configuration UI remain incomplete.",
-        "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
-      ],
-      "source_next_action": "Complete candidate/configuration evidence before FR-014 acceptance.",
-      "planning_status": "planned_not_implemented",
-      "planned_repair_steps": [
-        "Expose Skill registry candidates from runtime project configuration rather than static renderer state.",
-        "Add secret-safe MCP configuration metadata display without showing secret values or raw credentials.",
-        "Capture A4 evidence only after candidate discovery and configuration display are proven through the workbench."
-      ],
-      "required_runtime_contracts": [
-        {
-          "source": "specs/api/http_sse.md",
-          "pattern": "GET    /{project_id}/skills                       → skills.config.json",
-          "reason": "Defines the runtime endpoint for reading project Skill configuration."
-        },
-        {
-          "source": "specs/api/http_sse.md",
-          "pattern": "PATCH  /{project_id}/skills                       → enable / disable / version",
-          "reason": "Defines the runtime endpoint for enabling, disabling, or changing Skill versions."
-        },
-        {
-          "source": "specs/runtime_harness.md",
-          "pattern": "skills.config.json",
-          "reason": "Defines the project-local Skill configuration file."
-        },
-        {
-          "source": "specs/runtime_harness.md",
-          "pattern": "secret_ref",
-          "reason": "Keeps secret-bearing MCP configuration out of desktop display text."
-        },
-        {
-          "source": "specs/schemas/node_contract.md",
-          "pattern": "| `skills` | `SkillRef[]`",
-          "reason": "Defines node-level Skill references that the desktop UI must present safely."
-        }
-      ]
-    },
     {
       "id": "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
       "fr_id": "FR-015",
@@ -275,18 +214,12 @@
   "implementation_sequence": [
     {
       "order": 1,
-      "item_id": "RUNTIME-FR-014-SKILL-CONFIGURATION-FOLLOWUP",
-      "fr_id": "FR-014",
-      "reason": "Skill candidate discovery and safe configuration display depend on a project-backed configuration surface."
-    },
-    {
-      "order": 2,
       "item_id": "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
       "fr_id": "FR-015",
       "reason": "Restore and continue semantics should follow the existing explicit snapshot dispatch bridge."
     },
     {
-      "order": 3,
+      "order": 2,
       "item_id": "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
       "fr_id": "FR-018",
       "reason": "Pending-decision discovery and pause/resume evidence should build on the existing submit-decision bridge."
@@ -298,32 +231,32 @@
     "standard_desktop_test": "pnpm --filter @cw/desktop run test",
     "runtime_focused_test": "uv run pytest apps/runtime/tests -q",
     "runner_output_contract": {
-      "status": "remaining_runtime_flow_implementation_plan_refreshed_after_project_reference_followup",
-      "repair_item_count": 3,
+      "status": "remaining_runtime_flow_implementation_plan_refreshed_after_skill_configuration_followup",
+      "repair_item_count": 2,
       "accepted_item_count": 0,
       "implemented_item_count": 0,
       "runtime_flow_gap_item_count": 0,
-      "partial_bridge_followup_item_count": 3,
-      "a4_ready_bridge_item_count": 6,
+      "partial_bridge_followup_item_count": 2,
+      "a4_ready_bridge_item_count": 7,
       "sanitized_summary_only": true
     }
   },
   "summary": {
-    "repair_item_count": 3,
+    "repair_item_count": 2,
     "runtime_flow_gap_fr_items": 0,
-    "partial_bridge_followup_fr_items": 3,
-    "a4_ready_bridge_fr_items": 6,
+    "partial_bridge_followup_fr_items": 2,
+    "a4_ready_bridge_fr_items": 7,
     "accepted_items": 0,
     "implemented_items": 0,
-    "pending_implementation_items": 3,
+    "pending_implementation_items": 2,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer after implementation evidence"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.202",
-      "title": "Desktop FR-014 skill configuration runtime follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-011 moved to A4 runtime-bridge review input."
+      "id": "W1.5.203",
+      "title": "Desktop FR-015 snapshot restore continue follow-up",
+      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
     }
   ]
 }

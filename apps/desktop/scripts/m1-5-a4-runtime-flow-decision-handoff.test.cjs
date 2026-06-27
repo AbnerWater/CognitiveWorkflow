@@ -30,6 +30,7 @@ const expectedRuntimeBridgeFrIds = [
   "FR-011",
   "FR-012",
   "FR-013",
+  "FR-014",
   "FR-017",
 ];
 const expectedReviewFrIds = [
@@ -62,7 +63,7 @@ test("M1.5 A4 runtime-flow decision handoff returns a sanitized conservative sum
     "a4_runtime_flow_decision_handoff_prepared_not_accepted",
   );
   assert.equal(summary.exitP1_1Status, "not_ready");
-  assert.equal(summary.decisionItemCount, 9);
+  assert.equal(summary.decisionItemCount, 10);
   assert.deepEqual(sorted(summary.frIds), sorted(expectedReviewFrIds));
   assert.equal(
     summary.streamCandidateItemCount,
@@ -73,8 +74,8 @@ test("M1.5 A4 runtime-flow decision handoff returns a sanitized conservative sum
     expectedRuntimeBridgeFrIds.length,
   );
   assert.equal(summary.acceptedItemCount, 0);
-  assert.equal(summary.pendingReviewerDecisionItemCount, 9);
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.202"]);
+  assert.equal(summary.pendingReviewerDecisionItemCount, 10);
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.203"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });
@@ -84,7 +85,7 @@ test("M1.5 A4 runtime-flow decision handoff mirrors package review items", () =>
   const reviewPackage = readJson(reviewPackagePath);
 
   assert.equal(handoff.schema_version, "0.1.0");
-  assert.equal(handoff.slice, "W1.5.201");
+  assert.equal(handoff.slice, "W1.5.202");
   assert.equal(handoff.exit_p1_1_status, "not_ready");
   assert.equal(reviewPackage.summary.accepted_items, 0);
   assert.deepEqual(

@@ -6329,6 +6329,15 @@ test("renderer runtime workbench React shell dispatches skill management command
           paramKeys: Object.freeze(["mode", "secret"]),
         }),
       ]),
+      mcpEntries: Object.freeze([
+        Object.freeze({
+          serverId: "mcp_docs",
+          transport: "stdio",
+          enabled: true,
+          requiresApproval: true,
+          hasSecretRef: true,
+        }),
+      ]),
       lastSkillId: "citation_checker",
     },
   });
@@ -6366,6 +6375,22 @@ test("renderer runtime workbench React shell dispatches skill management command
     assert.equal(
       skillControl.getAttribute("data-skill-management-entry-count"),
       "1",
+    );
+    assert.equal(
+      skillControl.getAttribute("data-skill-management-candidate-count"),
+      "1",
+    );
+    assert.equal(
+      skillControl.getAttribute("data-skill-management-mcp-count"),
+      "1",
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "skillMcpEntryId",
+        "mcp_docs",
+      ).getAttribute("data-skill-mcp-entry-secret"),
+      "true",
     );
     assert.equal(
       fakeRuntimeWorkbenchNodeTextContent(dom.container).includes(
@@ -7416,6 +7441,14 @@ test("renderer runtime workbench session manages skills through runtime fetch wi
       secret: "raw_skill_param_value",
     }),
   });
+  const existingMcpEntry = Object.freeze({
+    server_id: "mcp_docs",
+    transport: "stdio",
+    command_or_url: "docs-mcp --token raw_mcp_command_secret",
+    enabled: true,
+    requires_approval: true,
+    secret_ref: "secure://mcp/raw_secret_ref",
+  });
   const runtime: Pick<RuntimeBridge, "fetch"> = Object.freeze({
     fetch: async <TBody,>(
       path: RuntimeRequestPath,
@@ -7432,6 +7465,14 @@ test("renderer runtime workbench session manages skills through runtime fetch wi
           status: 200,
           headers: {},
           body: Object.freeze([existingEntry]) as TBody,
+        };
+      }
+      if (path === "/projects/project_skills/mcps" && init === undefined) {
+        return {
+          ok: true,
+          status: 200,
+          headers: {},
+          body: Object.freeze([existingMcpEntry]) as TBody,
         };
       }
       if (
@@ -7466,12 +7507,23 @@ test("renderer runtime workbench session manages skills through runtime fetch wi
   });
   assert.equal(calls[0]?.path, "/projects/project_skills/skills");
   assert.equal(calls[0]?.init, undefined);
+  assert.equal(calls[1]?.path, "/projects/project_skills/mcps");
+  assert.equal(calls[1]?.init, undefined);
   assert.deepEqual(refreshed.skillManagement.entries, [
     {
       skillId: "citation_checker",
       version: "1.0.0",
       enabled: true,
       paramKeys: [],
+    },
+  ]);
+  assert.deepEqual(refreshed.skillManagement.mcpEntries, [
+    {
+      serverId: "mcp_docs",
+      transport: "stdio",
+      enabled: true,
+      requiresApproval: true,
+      hasSecretRef: true,
     },
   ]);
   assert.equal(
@@ -7482,6 +7534,16 @@ test("renderer runtime workbench session manages skills through runtime fetch wi
     JSON.stringify(refreshed.skillManagement).includes("raw_skill_param_value"),
     false,
   );
+  assert.equal(
+    JSON.stringify(refreshed.skillManagement).includes(
+      "raw_mcp_command_secret",
+    ),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(refreshed.skillManagement).includes("raw_secret_ref"),
+    false,
+  );
 
   const toggled = await session.setSkillEnabled({
     projectId: "project_skills",
@@ -7489,7 +7551,7 @@ test("renderer runtime workbench session manages skills through runtime fetch wi
     enabled: false,
     version: "1.0.0",
   });
-  const toggleCall = calls[1];
+  const toggleCall = calls[2];
   assert.equal(toggleCall?.path, "/projects/project_skills/skills");
   assert.deepEqual(
     JSON.parse(toggleCall?.init?.body ?? "{}") as Record<string, unknown>,
@@ -7508,6 +7570,133 @@ test("renderer runtime workbench session manages skills through runtime fetch wi
   );
   assert.equal(
     JSON.stringify(toggled.skillManagement).includes("raw_skill_param_value"),
+    false,
+  );
+  assert.equal(toggled.skillManagement.mcpEntries[0]?.hasSecretRef, true);
+});
+
+test("renderer runtime workbench session clears stale MCP metadata after project refresh failure", async () => {
+  const calls: RuntimeWorkbenchRunOnceRuntimeCall[] = [];
+  const runtime: Pick<RuntimeBridge, "fetch"> = Object.freeze({
+    fetch: async <TBody,>(
+      path: RuntimeRequestPath,
+      init?: RuntimeRequestInit,
+    ): Promise<RuntimeResponse<TBody>> => {
+      calls.push(
+        init === undefined
+          ? { path }
+          : { path, init: Object.freeze({ ...init }) },
+      );
+      if (path === "/projects/old_project/skills" && init === undefined) {
+        return {
+          ok: true,
+          status: 200,
+          headers: {},
+          body: Object.freeze([
+            Object.freeze({
+              skill_id: "old_skill",
+              version: "1.0.0",
+              enabled: true,
+              params: Object.freeze({}),
+            }),
+          ]) as TBody,
+        };
+      }
+      if (path === "/projects/old_project/mcps" && init === undefined) {
+        return {
+          ok: true,
+          status: 200,
+          headers: {},
+          body: Object.freeze([
+            Object.freeze({
+              server_id: "old_mcp",
+              transport: "stdio",
+              command_or_url: "old-mcp --token raw_old_mcp_secret",
+              enabled: true,
+              requires_approval: false,
+              secret_ref: "secure://old/raw_secret_ref",
+            }),
+          ]) as TBody,
+        };
+      }
+      if (path === "/projects/new_project/skills" && init === undefined) {
+        return {
+          ok: true,
+          status: 200,
+          headers: {},
+          body: Object.freeze([
+            Object.freeze({
+              skill_id: "new_skill",
+              version: "2.0.0",
+              enabled: true,
+              params: Object.freeze({}),
+            }),
+          ]) as TBody,
+        };
+      }
+      if (path === "/projects/new_project/mcps" && init === undefined) {
+        return {
+          ok: false,
+          status: 503,
+          headers: {},
+          body: Object.freeze({ detail: "raw_mcp_failure_body" }) as TBody,
+        };
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: {},
+        body: null,
+      };
+    },
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const oldSnapshot = await session.refreshSkills({ projectId: "old_project" });
+  assert.equal(oldSnapshot.skillManagement.mcpEntries[0]?.serverId, "old_mcp");
+
+  const newSnapshot = await session.refreshSkills({ projectId: "new_project" });
+
+  assert.deepEqual(
+    calls.map((call) => call.path),
+    [
+      "/projects/old_project/skills",
+      "/projects/old_project/mcps",
+      "/projects/new_project/skills",
+      "/projects/new_project/mcps",
+    ],
+  );
+  assert.equal(newSnapshot.skillManagement.activeProjectId, "new_project");
+  assert.equal(newSnapshot.skillManagement.status, "failed");
+  assert.equal(newSnapshot.skillManagement.mcpStatusCode, 503);
+  assert.deepEqual(newSnapshot.skillManagement.entries, [
+    {
+      skillId: "new_skill",
+      version: "2.0.0",
+      enabled: true,
+      paramKeys: [],
+    },
+  ]);
+  assert.deepEqual(newSnapshot.skillManagement.mcpEntries, []);
+  assert.equal(
+    JSON.stringify(newSnapshot.skillManagement).includes("old_mcp"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(newSnapshot.skillManagement).includes("raw_old_mcp_secret"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(newSnapshot.skillManagement).includes("raw_secret_ref"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(newSnapshot.skillManagement).includes(
+      "raw_mcp_failure_body",
+    ),
     false,
   );
 });
@@ -8972,9 +9161,12 @@ function createRuntimeWorkbenchShellReactSkillManagementSnapshot(
     activeProjectId: input.activeProjectId ?? null,
     method: input.method ?? null,
     path: input.path ?? null,
+    mcpPath: input.mcpPath ?? null,
     entries: input.entries ?? Object.freeze([]),
+    mcpEntries: input.mcpEntries ?? Object.freeze([]),
     lastSkillId: input.lastSkillId ?? null,
     statusCode: input.statusCode ?? null,
+    mcpStatusCode: input.mcpStatusCode ?? null,
     blockedReason: input.blockedReason ?? null,
     canRefreshSkills: input.canRefreshSkills ?? true,
     canUpdateSkill: input.canUpdateSkill ?? true,

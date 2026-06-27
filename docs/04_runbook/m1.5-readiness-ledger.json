@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.201",
+  "slice": "W1.5.202",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -135,7 +135,7 @@
       "remaining_gap": [
         "A4 UX acceptance evidence for runtime-backed Chat instruction routing is not recorded",
         "Project-backed command history and persistence remain outside this evidence refresh",
-        "W1.5.201 A4 decision handoff is refreshed, but reviewer acceptance is not recorded."
+        "W1.5.202 A4 decision handoff is refreshed, but reviewer acceptance is not recorded."
       ]
     },
     {
@@ -157,12 +157,14 @@
         "W1.5.181-W1.5.185 add desktop bridge evidence for project creation/Git, references, skills, HITL decisions, and create-only workflow snapshots",
         "W1.5.195 adds Desktop native artifact open/download handoff and metadata-only ArtifactActionResult evidence",
         "W1.5.199 adds selected-node Task Drawer artifact detail display and node-bound open/download command evidence",
-        "W1.5.200-W1.5.201 prepare and refresh the A4 runtime-flow decision handoff without accepting FR items",
-        "W1.5.201 adds combined project creation plus initial reference import runtime bridge evidence without accepting FR items"
+        "W1.5.200-W1.5.202 prepare and refresh the A4 runtime-flow decision handoff without accepting FR items",
+        "W1.5.201 adds combined project creation plus initial reference import runtime bridge evidence without accepting FR items",
+        "W1.5.202 adds runtime-backed Skill candidate discovery and secret-safe MCP configuration metadata evidence without accepting FR items"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
         "Selected-node Task Drawer artifact detail display still requires A4 UX acceptance review",
+        "Skill configuration display still requires A4 UX acceptance review",
         "Task mutation commands remain incomplete",
         "Version Snapshot restore-to-snapshot and continue execution remain unimplemented",
         "A4 reviewer decision is not recorded for the Task Drawer artifact bridge.",
@@ -184,7 +186,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 have a refreshed W1.5.201 evidence map and A4 decision handoff, but accepted_items remain 0 and several surfaces still need A4, dependency-gated, or end-to-end evidence."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.202 evidence map and A4 decision handoff, but accepted_items remain 0 and several surfaces still need A4, dependency-gated, or end-to-end evidence."
     },
     {
       "id": "EXIT-P1-2",
@@ -244,9 +246,9 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.202",
-      "title": "Desktop FR-014 skill configuration runtime follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-011 moved to A4 runtime-bridge review input."
+      "id": "W1.5.203",
+      "title": "Desktop FR-015 snapshot restore continue follow-up",
+      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
     }
   ]
 }

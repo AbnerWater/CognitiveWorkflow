@@ -338,6 +338,7 @@ function buildVisualSmokeSnapshot(
       activeProjectId: "visual-project",
       method: "GET",
       path: "/projects/visual-project/skills",
+      mcpPath: "/projects/visual-project/mcps",
       entries: Object.freeze([
         Object.freeze({
           skillId: "citation_checker",
@@ -346,8 +347,18 @@ function buildVisualSmokeSnapshot(
           paramKeys: Object.freeze(["mode"]),
         }),
       ]),
+      mcpEntries: Object.freeze([
+        Object.freeze({
+          serverId: "mcp_docs",
+          transport: "stdio",
+          enabled: true,
+          requiresApproval: true,
+          hasSecretRef: true,
+        }),
+      ]),
       lastSkillId: "citation_checker",
       statusCode: 200,
+      mcpStatusCode: 200,
       blockedReason: null,
       canRefreshSkills: !disposed,
       canUpdateSkill: !disposed,

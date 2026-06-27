@@ -40,6 +40,7 @@ import {
   type RuntimeWorkbenchReferenceEntrySnapshot,
   type RuntimeWorkbenchReferenceKind,
   type RuntimeWorkbenchSkillEntrySnapshot,
+  type RuntimeWorkbenchSkillMcpConfigSnapshot,
 } from "./runtime-workbench-session.js";
 import type { RuntimeWorkbenchShellKeyboardDomEventTarget } from "./runtime-workbench-shell-keyboard-dom-adapter.js";
 import type {
@@ -2020,9 +2021,15 @@ function RuntimeWorkbenchShellSkillManagementControls(props: {
       data-skill-management-active-project-id={
         props.skillManagement.activeProjectId ?? undefined
       }
+      data-skill-management-candidate-count={String(
+        props.skillManagement.entries.length,
+      )}
       data-skill-management-control="true"
       data-skill-management-entry-count={String(
         props.skillManagement.entries.length,
+      )}
+      data-skill-management-mcp-count={String(
+        props.skillManagement.mcpEntries.length,
       )}
       data-skill-management-status={props.skillManagement.status}
     >
@@ -2088,11 +2095,22 @@ function RuntimeWorkbenchShellSkillManagementControls(props: {
           <dt>Project</dt>
           <dd>{props.skillManagement.activeProjectId ?? "none"}</dd>
         </div>
+        <div>
+          <dt>Candidates</dt>
+          <dd>{props.skillManagement.entries.length}</dd>
+        </div>
+        <div>
+          <dt>MCP configs</dt>
+          <dd>{props.skillManagement.mcpEntries.length}</dd>
+        </div>
       </dl>
       <RuntimeWorkbenchShellSkillEntryList
         entries={props.skillManagement.entries}
         onToggleClick={props.onToggleClick}
         updateEnabled={props.updateReady}
+      />
+      <RuntimeWorkbenchShellSkillMcpConfigList
+        entries={props.skillManagement.mcpEntries}
       />
     </section>
   );
@@ -2147,6 +2165,50 @@ function RuntimeWorkbenchShellSkillEntryList(props: {
           >
             {entry.enabled ? "Disable" : "Enable"}
           </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RuntimeWorkbenchShellSkillMcpConfigList(props: {
+  readonly entries: readonly RuntimeWorkbenchSkillMcpConfigSnapshot[];
+}): ReactElement {
+  if (props.entries.length === 0) {
+    return (
+      <p className="cw-workbench__skill-mcp-empty" data-skill-mcp-empty="true">
+        No MCP configs
+      </p>
+    );
+  }
+  return (
+    <ul className="cw-workbench__skill-mcp-list">
+      {props.entries.map((entry) => (
+        <li
+          className="cw-workbench__skill-mcp-entry"
+          data-skill-mcp-entry-enabled={entry.enabled ? "true" : "false"}
+          data-skill-mcp-entry-id={entry.serverId}
+          data-skill-mcp-entry-secret={entry.hasSecretRef ? "true" : "false"}
+          key={entry.serverId}
+        >
+          <div className="cw-workbench__skill-mcp-entry-main">
+            <strong>{entry.serverId}</strong>
+            <span>{entry.transport}</span>
+          </div>
+          <dl className="cw-workbench__skill-mcp-entry-meta">
+            <div>
+              <dt>Enabled</dt>
+              <dd>{entry.enabled ? "yes" : "no"}</dd>
+            </div>
+            <div>
+              <dt>Approval</dt>
+              <dd>{entry.requiresApproval ? "required" : "not required"}</dd>
+            </div>
+            <div>
+              <dt>Secret ref</dt>
+              <dd>{entry.hasSecretRef ? "present" : "none"}</dd>
+            </div>
+          </dl>
         </li>
       ))}
     </ul>

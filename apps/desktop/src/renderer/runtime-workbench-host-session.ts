@@ -579,6 +579,7 @@ function cloneRuntimeWorkbenchHostSkillManagement(
   return Object.freeze({
     ...skillManagement,
     entries: Object.freeze([...skillManagement.entries]),
+    mcpEntries: Object.freeze([...skillManagement.mcpEntries]),
   });
 }
 

@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.201",
+  "slice": "W1.5.202",
   "checklist_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -13,11 +13,10 @@
     "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
   },
   "guardrails": [
-    "This checklist extracts FR-001 through FR-020 acceptance scope; it does not claim A4 acceptance.",
-    "Every FR item remains phase-exit required even when the UIUX source priority is SHOULD.",
-    "Scaffold, bridge, or backend-only evidence is not enough to mark a FR accepted.",
-    "Dependency-gated items remain blocked until the corresponding W1.5.171 dependency gate receives explicit human approval and implementation evidence.",
-    "W1.5.201 refreshes FR-011 after combined project creation plus initial reference import runtime bridge evidence; it changes no accepted spec, ADR, schema, generated schema, dependency, IPC, renderer storage, packaging, updater, or baseline docx content."
+    "This checklist refreshes FR-014 after Skill candidate discovery plus secret-safe MCP configuration evidence; it does not claim A4 acceptance.",
+    "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
+    "W1.5.202 changes no accepted spec, ADR, schema, generated schema, dependency, IPC, renderer storage, packaging, updater, or baseline docx content.",
+    "Skill and MCP configuration evidence must remain sanitized: no persisted params, raw command_or_url values, raw secret_ref values, credentials, secure paths, cache paths, or response bodies."
   ],
   "source_extraction": {
     "method": "read-only OOXML extraction from word/document.xml",
@@ -410,13 +409,13 @@
         "Skills can be enabled or disabled per project.",
         "Skill configuration is viewable without exposing secrets."
       ],
-      "current_evidence_status": "partial_runtime_bridge_evidence",
+      "current_evidence_status": "runtime_bridge_evidence_available",
       "current_evidence": [
         "M1.4 project config and skills API work exposes runtime-side Skill information.",
-        "W1.5.183 added safe desktop Skill list, enable, disable, and version surfaces without returning persisted params."
+        "W1.5.183 added safe desktop Skill list, enable, disable, and version surfaces without returning persisted params.",
+        "W1.5.202 adds runtime-backed Skill candidate discovery plus secret-safe MCP configuration metadata display without retaining params, command_or_url, or secret_ref values."
       ],
       "remaining_gap": [
-        "Skill registry candidate discovery and MCP configuration UI remain incomplete.",
         "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
       ]
     },
@@ -558,8 +557,8 @@
     "source_should_items": 2,
     "accepted_items": 0,
     "candidate_evidence_available_items": 3,
-    "runtime_bridge_evidence_available_items": 6,
-    "partial_runtime_bridge_evidence_items": 3,
+    "runtime_bridge_evidence_available_items": 7,
+    "partial_runtime_bridge_evidence_items": 2,
     "partial_or_scaffold_items": 6,
     "backend_or_schema_only_items": 0,
     "blocked_by_dependency_gate_items": 2,
@@ -569,9 +568,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.202",
-      "title": "Desktop FR-014 skill configuration runtime follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-011 moved to A4 runtime-bridge review input."
+      "id": "W1.5.203",
+      "title": "Desktop FR-015 snapshot restore continue follow-up",
+      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
     }
   ]
 }

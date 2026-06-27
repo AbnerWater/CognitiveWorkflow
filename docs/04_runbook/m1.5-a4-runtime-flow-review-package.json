@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.201",
+  "slice": "W1.5.202",
   "package_status": "a4_runtime_flow_review_package_prepared_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -18,8 +18,8 @@
   "guardrails": [
     "This package prepares A4 reviewer inputs only; it does not record A4 acceptance.",
     "Every packaged item remains pending_a4_review until an A4 ux-acceptance-reviewer records a separate decision.",
-    "W1.5.201 refreshes the package with FR-011 combined project creation plus initial reference import evidence, but does not record A4 acceptance.",
-    "No package field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, secure paths, cache paths, output directory values, or full destination paths."
+    "W1.5.202 refreshes the package with FR-014 Skill candidate discovery plus secret-safe MCP configuration evidence, but does not record A4 acceptance.",
+    "No package field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, persisted params, raw MCP command_or_url or secret_ref values, secure paths, cache paths, output directory values, or full destination paths."
   ],
   "package_scope": {
     "source_review_status": "pending_a4_review",
@@ -28,14 +28,15 @@
       "runtime_bridge_evidence"
     ],
     "included_fr_ids": [
-      "FR-009",
-      "FR-010",
-      "FR-016",
       "FR-007",
       "FR-008",
+      "FR-009",
+      "FR-010",
       "FR-011",
       "FR-012",
       "FR-013",
+      "FR-014",
+      "FR-016",
       "FR-017"
     ],
     "included_runtime_bridge_fr_ids": [
@@ -44,10 +45,11 @@
       "FR-011",
       "FR-012",
       "FR-013",
+      "FR-014",
       "FR-017"
     ],
     "included_stream_candidate_fr_ids": ["FR-009", "FR-010", "FR-016"],
-    "excluded_partial_runtime_bridge_fr_ids": ["FR-014", "FR-015", "FR-018"],
+    "excluded_partial_runtime_bridge_fr_ids": ["FR-015", "FR-018"],
     "excluded_reason": "Partial runtime bridge items require follow-up implementation or stronger end-to-end proof before A4 review packaging."
   },
   "reviewer_contract": {
@@ -71,12 +73,12 @@
     },
     "runner_output_contract": {
       "status": "a4_runtime_flow_review_package_prepared_not_accepted",
-      "review_item_count": 9,
+      "review_item_count": 10,
       "stream_candidate_item_count": 3,
-      "runtime_bridge_item_count": 6,
-      "excluded_partial_runtime_bridge_item_count": 3,
+      "runtime_bridge_item_count": 7,
+      "excluded_partial_runtime_bridge_item_count": 2,
       "accepted_item_count": 0,
-      "pending_a4_review_item_count": 9,
+      "pending_a4_review_item_count": 10,
       "exit_p1_1_status": "not_ready",
       "sanitized_summary_only": true
     }
@@ -219,23 +221,39 @@
         "Metadata-only command evidence without artifact body, raw bytes, full destination path, secure path, cache path, or output directory values",
         "W1.5.195 preload/main native handoff coverage remains linked"
       ]
+    },
+    {
+      "id": "PKG-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "fr_id": "FR-014",
+      "review_item_id": "A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "Skill candidate discovery and secret-safe MCP configuration display",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Runtime-backed Skill candidate discovery evidence",
+        "Desktop Skill enable/disable/version command evidence",
+        "Secret-safe MCP configuration metadata display",
+        "No persisted params, raw command_or_url, or raw secret_ref retention in renderer evidence"
+      ]
     }
   ],
   "summary": {
-    "review_item_count": 9,
+    "review_item_count": 10,
     "stream_candidate_items": 3,
-    "runtime_bridge_items": 6,
-    "excluded_partial_runtime_bridge_items": 3,
+    "runtime_bridge_items": 7,
+    "excluded_partial_runtime_bridge_items": 2,
     "accepted_items": 0,
-    "pending_a4_review_items": 9,
+    "pending_a4_review_items": 10,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.202",
-      "title": "Desktop FR-014 skill configuration runtime follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-011 moved to A4 runtime-bridge review input."
+      "id": "W1.5.203",
+      "title": "Desktop FR-015 snapshot restore continue follow-up",
+      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
     }
   ]
 }

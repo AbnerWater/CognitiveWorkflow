@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.201",
+  "slice": "W1.5.202",
   "handoff_status": "a4_runtime_flow_decision_handoff_prepared_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -221,26 +221,46 @@
       "missing_before_acceptance": [
         "A4 UX acceptance evidence for node artifact detail display and safe open/download behavior is not recorded."
       ]
+    },
+    {
+      "id": "DECISION-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "fr_id": "FR-014",
+      "package_item_id": "PKG-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "review_item_id": "A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "review_focus": "Skill candidate discovery and secret-safe MCP configuration display",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
+      ]
     }
   ],
   "summary": {
-    "decision_item_count": 9,
+    "decision_item_count": 10,
     "stream_candidate_items": 3,
-    "runtime_bridge_items": 6,
+    "runtime_bridge_items": 7,
     "accepted_items": 0,
-    "pending_reviewer_decision_items": 9,
+    "pending_reviewer_decision_items": 10,
     "rejected_items": 0,
     "needs_followup_items": 0,
-    "source_package_pending_a4_review_items": 9,
+    "source_package_pending_a4_review_items": 10,
     "source_package_accepted_items": 0,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.202",
-      "title": "Desktop FR-014 skill configuration runtime follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-011 moved to A4 runtime-bridge review input."
+      "id": "W1.5.203",
+      "title": "Desktop FR-015 snapshot restore continue follow-up",
+      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
     }
   ]
 }

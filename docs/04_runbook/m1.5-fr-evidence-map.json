@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.201",
+  "slice": "W1.5.202",
   "map_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -14,12 +14,9 @@
     "uiux_baseline_docx": "AI_Agent_Workflow工作台_UIUX详细设计规范与需求规格说明书_v1.1_新增Workflow编排.docx"
   },
   "guardrails": [
-    "This map converts checklist items into evidence and gap tracks; it does not claim A4 acceptance.",
-    "No FR item is accepted until A4 UX acceptance review has recorded end-to-end user-path evidence.",
-    "Runtime bridge evidence means a reviewer has implementation and test artifacts to inspect; it is not phase-exit readiness.",
-    "Partial runtime bridge evidence means a bridge exists but one or more FR-required semantics remain missing.",
-    "Dependency-gated FR items stay blocked until the corresponding gate is explicitly approved and implemented.",
-    "W1.5.201 refreshes FR-011 after combined project creation plus initial reference import runtime bridge evidence; it changes no accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx content."
+    "This evidence map refreshes FR-014 after Skill candidate discovery plus secret-safe MCP configuration evidence; it does not claim A4 acceptance.",
+    "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
+    "Runtime bridge evidence stays metadata-only and must not include persisted params, raw command_or_url values, raw secret_ref values, credentials, secure paths, cache paths, response bodies, or output directory values."
   ],
   "allowed_acceptance_readiness": [
     "candidate_evidence_needs_a4_review",
@@ -289,24 +286,30 @@
     },
     {
       "id": "FR-014",
-      "checklist_status": "partial_runtime_bridge_evidence",
-      "acceptance_readiness": "partial_runtime_bridge_requires_followup",
+      "checklist_status": "runtime_bridge_evidence_available",
+      "acceptance_readiness": "runtime_bridge_needs_a4_review",
       "evidence_refs": [
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-014",
         "docs/04_runbook/m1.5-progress.md#W1.5.183",
+        "docs/04_runbook/m1.5-progress.md#W1.5.202",
         "docs/reviews/m1.5.183-skill-management-desktop-bridge-review.md",
+        "docs/reviews/m1.5.202-skill-configuration-runtime-followup-review.md",
+        "apps/desktop/src/renderer/runtime-workbench-session.ts",
         "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx",
         "apps/runtime/tests/test_m1_3_2_project_endpoints.py"
       ],
       "verification_commands": [
+        "pnpm --filter @cw/desktop run typecheck",
+        "pnpm --filter @cw/desktop build",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js",
         "pnpm --filter @cw/desktop run test",
         "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
       ],
       "missing_evidence": [
-        "Skill registry candidate discovery and MCP configuration UI remain incomplete.",
         "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
       ],
-      "next_action": "Complete candidate/configuration evidence before FR-014 acceptance."
+      "next_action": "Prepare A4 Skill configuration user-path evidence before FR-014 acceptance."
     },
     {
       "id": "FR-015",
@@ -435,8 +438,8 @@
     "source_should_items": 2,
     "accepted_items": 0,
     "candidate_evidence_available_items": 3,
-    "runtime_bridge_evidence_available_items": 6,
-    "partial_runtime_bridge_evidence_items": 3,
+    "runtime_bridge_evidence_available_items": 7,
+    "partial_runtime_bridge_evidence_items": 2,
     "partial_or_scaffold_items": 6,
     "backend_or_schema_only_items": 0,
     "blocked_by_dependency_gate_items": 2,
@@ -446,8 +449,8 @@
   },
   "acceptance_readiness_summary": {
     "candidate_evidence_needs_a4_review_items": 3,
-    "runtime_bridge_needs_a4_review_items": 6,
-    "partial_runtime_bridge_requires_followup_items": 3,
+    "runtime_bridge_needs_a4_review_items": 7,
+    "partial_runtime_bridge_requires_followup_items": 2,
     "partial_requires_ui_evidence_items": 6,
     "partial_requires_runtime_flow_items": 0,
     "backend_only_requires_desktop_flow_items": 0,
@@ -457,9 +460,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.202",
-      "title": "Desktop FR-014 skill configuration runtime follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-011 moved to A4 runtime-bridge review input."
+      "id": "W1.5.203",
+      "title": "Desktop FR-015 snapshot restore continue follow-up",
+      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
     }
   ]
 }
