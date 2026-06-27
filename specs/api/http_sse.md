@@ -1,24 +1,26 @@
 # Spec: HTTP / SSE API 契约
 
-| 字段 | 值 |
-|---|---|
-| Spec ID | `cw-spec-api-001` |
-| Version | `0.1.0` |
-| Status | Accepted |
-| Owners | CW Architecture |
-| Last updated | 2026-06-15 |
-| Baseline 引用 | 技术架构 v1.0 §10.2（关键接口建议）/ §10.3（流式输出事件 Schema）；UIUX v1.1 §8（流式输出面板）/ §11.3（核心交互流程）/ §18.11（数据对象与接口补充建议） |
-| 关联 spec | 全部已锁定 schema spec（被引用为请求 / 响应体）；`specs/protocols/agent_adapter.md`、`specs/protocols/model_router.md`、`specs/protocols/observability.md`、`specs/state_machines/planning_session.md`、`specs/runtime_harness.md` |
-| 关联 ADR | ADR-0006（Electron）、ADR-0008（StreamEvent）、ADR-0009（HITL） |
+| 字段          | 值                                                                                                                                                                                                                                                                     |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spec ID       | `cw-spec-api-001`                                                                                                                                                                                                                                                      |
+| Version       | `0.1.0`                                                                                                                                                                                                                                                                |
+| Status        | Accepted                                                                                                                                                                                                                                                               |
+| Owners        | CW Architecture                                                                                                                                                                                                                                                        |
+| Last updated  | 2026-06-27                                                                                                                                                                                                                                                             |
+| Baseline 引用 | 技术架构 v1.0 §10.2（关键接口建议）/ §10.3（流式输出事件 Schema）；UIUX v1.1 §8（流式输出面板）/ §11.3（核心交互流程）/ §18.11（数据对象与接口补充建议）                                                                                                               |
+| 关联 spec     | 全部已锁定 schema spec（被引用为请求 / 响应体）；`specs/schemas/runtime_actions.md`、`specs/protocols/agent_adapter.md`、`specs/protocols/model_router.md`、`specs/protocols/observability.md`、`specs/state_machines/planning_session.md`、`specs/runtime_harness.md` |
+| 关联 ADR      | ADR-0006（Electron）、ADR-0008（StreamEvent）、ADR-0009（HITL）、ADR-0011（Runtime Flow Desktop Actions Contract）                                                                                                                                                     |
 
 > **范围**：定义 Electron renderer 与 Python Runtime sidecar 之间的唯一通讯协议——所有 HTTP 端点 + SSE 频道的入参 / 出参 / 错误模型 / 鉴权 / 速率限制。本文是单一权威，与 docx 描述冲突时以本 spec 为准。
 >
 > **非范围**：
+>
 > - Electron 主进程 ↔ renderer 的 IPC（属 Electron 内部，由 `apps/desktop/preload` 实现，不在本 spec）
 > - 跨设备 / 跨主机部署（CW 运行模式是本机 sidecar，不开放公网；Phase 4 才考虑）
 > - WebSocket：CW 不使用（`stream_event.md` D-SE-2 已定型 SSE）
 >
 > **核心立场**：
+>
 > - 接口**完整覆盖**已锁定 spec 的所有"对象 → 操作"组合；不允许"前端要的 UI 操作没有对应端点"
 > - 接口**不重复造对象**：请求 / 响应体直接复用已定义的 Pydantic 模型，禁止在 API 层引入新的 schema
 > - **本机绑定 + 强凭证**：sidecar 仅监听 `127.0.0.1`，端口由主进程随机分配；所有请求带主进程注入的 token，防止其它本机进程调用
@@ -63,15 +65,15 @@ Authorization: Bearer <ephemeral_token>
 
 ### 1.3 通用 Header
 
-| Header | 必填 | 说明 |
-|---|---|---|
-| `Authorization` | ✅ | Bearer token |
-| `Content-Type` | 视方法 | JSON / multipart |
-| `Accept` | ❌ | `application/json` 默认；`text/event-stream` 触发 SSE |
-| `Idempotency-Key` | POST/PATCH 推荐 | UUID v4 |
-| `traceparent` | ❌ | W3C TraceID 透传（与 `observability.md` 一致） |
-| `X-Project-Id` | ✅（多项目时） | 多窗口共用 sidecar 时必填 |
-| `X-Cw-Client` | ✅ | `electron-renderer / cli / external-mcp` |
+| Header            | 必填            | 说明                                                  |
+| ----------------- | --------------- | ----------------------------------------------------- |
+| `Authorization`   | ✅              | Bearer token                                          |
+| `Content-Type`    | 视方法          | JSON / multipart                                      |
+| `Accept`          | ❌              | `application/json` 默认；`text/event-stream` 触发 SSE |
+| `Idempotency-Key` | POST/PATCH 推荐 | UUID v4                                               |
+| `traceparent`     | ❌              | W3C TraceID 透传（与 `observability.md` 一致）        |
+| `X-Project-Id`    | ✅（多项目时）  | 多窗口共用 sidecar 时必填                             |
+| `X-Cw-Client`     | ✅              | `electron-renderer / cli / external-mcp`              |
 
 ### 1.4 限流
 
@@ -86,7 +88,7 @@ Authorization: Bearer <ephemeral_token>
   "schema_version": "0.1.0",
   "error_code": "WG_L2_DUP_NODE_ID",
   "message": "Duplicate node_id detected: n_extract",
-  "details": {"node_id": "n_extract"},
+  "details": { "node_id": "n_extract" },
   "cw_failure_type": null,
   "retry_after_ms": null,
   "trace_id": "abc123..."
@@ -95,19 +97,19 @@ Authorization: Bearer <ephemeral_token>
 
 HTTP 状态码与 `error_code` 关系：
 
-| HTTP | 范围 | 例 |
-|---|---|---|
-| 400 | 请求格式 / schema 校验失败 | `WG_L1_*`、`NC_L2_*` |
-| 401 | 鉴权 | `AUTH_FORBIDDEN` |
-| 403 | 权限 / Provider 禁用 | `MR_SENSITIVE_DATA_REMOTE_FORBIDDEN` |
-| 404 | 资源不存在 | `RES_NOT_FOUND` |
-| 409 | 冲突 / revision 漂移 | `RH_MANIFEST_REVISION_MISMATCH` |
-| 410 | 过期资源 | `RES_GONE` |
-| 412 | 条件失败 | `SE_SSE_REPLAY_NOT_FOUND` |
-| 422 | 业务规则失败 | `RP_BUILD_KIND_NOT_ALLOWED` |
-| 423 | 锁冲突 | `RH_LOCK_TIMEOUT` |
-| 429 | 限流 | `RATE_LIMIT_EXCEEDED` |
-| 5xx | Runtime 内部 | `OB_EXPORT_SQLITE_BUSY` 等 |
+| HTTP | 范围                       | 例                                   |
+| ---- | -------------------------- | ------------------------------------ |
+| 400  | 请求格式 / schema 校验失败 | `WG_L1_*`、`NC_L2_*`                 |
+| 401  | 鉴权                       | `AUTH_FORBIDDEN`                     |
+| 403  | 权限 / Provider 禁用       | `MR_SENSITIVE_DATA_REMOTE_FORBIDDEN` |
+| 404  | 资源不存在                 | `RES_NOT_FOUND`                      |
+| 409  | 冲突 / revision 漂移       | `RH_MANIFEST_REVISION_MISMATCH`      |
+| 410  | 过期资源                   | `RES_GONE`                           |
+| 412  | 条件失败                   | `SE_SSE_REPLAY_NOT_FOUND`            |
+| 422  | 业务规则失败               | `RP_BUILD_KIND_NOT_ALLOWED`          |
+| 423  | 锁冲突                     | `RH_LOCK_TIMEOUT`                    |
+| 429  | 限流                       | `RATE_LIMIT_EXCEEDED`                |
+| 5xx  | Runtime 内部               | `OB_EXPORT_SQLITE_BUSY` 等           |
 
 ---
 
@@ -180,6 +182,8 @@ HTTP 状态码与 `error_code` 关系：
 │   ├── GET    /{run_id}/context-packs/{pack_id}          → ContextPack
 │   ├── GET    /{run_id}/evidence-packs/{pack_id}         → EvidencePack
 │   ├── GET    /{run_id}/execution-packs/{pack_id}        → ExecutionPack
+│   ├── POST   /{run_id}:submit-instruction               → Chat 指令（run scope，FR-008）
+│   ├── POST   /{run_id}/nodes/{node_id}:submit-instruction → Chat 指令（node scope，FR-008）
 │   ├── POST   /{run_id}/nodes/{node_id}:run-once         → 单节点执行（FR-007 单步）
 │   ├── POST   /{run_id}/nodes/{node_id}:re-evaluate      → 重新触发评价
 │   ├── POST   /{run_id}/nodes/{node_id}:repair           → 触发修复（手动）
@@ -227,8 +231,8 @@ HTTP 状态码与 `error_code` 关系：
   "display_name": "低空经济无人机交付研究",
   "host_path": "D:/Projects/drone_research",
   "settings_overrides": {
-    "models": {"default_model_profile_id": "claude-sonnet-default"},
-    "privacy": {"sensitive_data_mode": "strict"}
+    "models": { "default_model_profile_id": "claude-sonnet-default" },
+    "privacy": { "sensitive_data_mode": "strict" }
   }
 }
 ```
@@ -267,6 +271,7 @@ HTTP 状态码与 `error_code` 关系：
 ```
 
 后续状态推进通过：
+
 - `POST /sessions/{id}/messages` 提交对话消息
 - `POST /sessions/{id}/clarification` 提交澄清答案
 - `GET /sessions/{id}/stream` 监听 `planning.*` 事件
@@ -329,7 +334,7 @@ HTTP 状态码与 `error_code` 关系：
 {
   "schema_version": "0.1.0",
   "mode": "semi_auto",
-  "initial_input": {"project_goal": "...", "reference_summary": ["..."]},
+  "initial_input": { "project_goal": "...", "reference_summary": ["..."] },
   "metadata": {}
 }
 ```
@@ -382,7 +387,85 @@ HTTP 状态码与 `error_code` 关系：
 
 响应：返回 RepairPatch + 应用结果（同 `repair.patch_proposed / patch_applied` 事件）。
 
-### 3.8 `GET /cw/v1/runs/{run_id}/stream`（SSE）
+### 3.8 `POST /cw/v1/runs/{run_id}:submit-instruction`
+
+提交 Chat Box 指令到当前 run 的全局/工作流作用域（FR-008）。该端点不得复用 `run-once`；request/response 由 `specs/schemas/runtime_actions.md` 的 `RuntimeInstructionRequest` / `RuntimeInstructionAccepted` 拥有。
+
+Headers：
+
+- `Authorization: Bearer <ephemeral-token>`
+- `X-Project-Id: <project_id>`
+- `Idempotency-Key: <uuid-or-command-id>`
+
+请求：
+
+```json
+{
+  "schema_version": "0.1.0",
+  "scope": "run",
+  "instruction": "Summarize the current workflow state.",
+  "intent": "ask",
+  "correlation_id": "corr_chat_01",
+  "client_command_id": "cmd_chat_01",
+  "metadata": { "cw": { "source": "desktop_chat_box" } }
+}
+```
+
+响应 `202 Accepted`：
+
+```json
+{
+  "schema_version": "0.1.0",
+  "command_id": "ric_01J...",
+  "status": "accepted",
+  "run_id": "run_01J...",
+  "node_id": null,
+  "scope": "run",
+  "intent": "ask",
+  "accepted_at": "2026-06-27T08:00:00Z",
+  "stream_url": "/cw/v1/runs/run_01J.../stream",
+  "correlation_id": "corr_chat_01"
+}
+```
+
+安全边界：raw `instruction` 仅允许存在于 authenticated runtime request 与 runtime-controlled execution records；不得写入 renderer snapshot、visual-smoke evidence、runbook evidence、OTel attributes、command history 或 review artifact。
+
+### 3.9 `POST /cw/v1/runs/{run_id}/nodes/{node_id}:submit-instruction`
+
+提交 Chat Box 指令到当前 node scope。请求体仍为 `RuntimeInstructionRequest`，但 `scope` 必须为 `node`；响应为 `RuntimeInstructionAccepted`，其中 `node_id` 来自 path。
+
+请求：
+
+```json
+{
+  "schema_version": "0.1.0",
+  "scope": "node",
+  "instruction": "Repair the selected node using the latest review notes.",
+  "intent": "repair",
+  "correlation_id": "corr_chat_02",
+  "client_command_id": "cmd_chat_02",
+  "metadata": { "cw": { "source": "desktop_chat_box" } }
+}
+```
+
+响应 `202 Accepted`：
+
+```json
+{
+  "schema_version": "0.1.0",
+  "command_id": "ric_01J...",
+  "status": "accepted",
+  "run_id": "run_01J...",
+  "node_id": "n_review",
+  "scope": "node",
+  "intent": "repair",
+  "accepted_at": "2026-06-27T08:00:00Z",
+  "stream_url": "/cw/v1/runs/run_01J.../stream",
+  "correlation_id": "corr_chat_02"
+}
+```
+
+### 3.10 `GET /cw/v1/runs/{run_id}/stream`（SSE）
 
 SSE 帧格式（与 `stream_event.md` D-SE-2 一致）：
 
@@ -405,7 +488,7 @@ data: {"event_id":"evt_01J9N5_tool","schema_version":"0.1.0","seq":87, ...}
 
 请求 Header `Last-Event-ID: <event_id>` → 重连补播；找不到该 ID → `412` `SE_SSE_REPLAY_NOT_FOUND`。
 
-### 3.9 `GET /cw/v1/observability/traces/{trace_id}`
+### 3.11 `GET /cw/v1/observability/traces/{trace_id}`
 
 响应：完整 span 树（按 `start_unix_nano` 排序，父子关系展开）。
 
@@ -453,16 +536,27 @@ Content-Type: application/pdf
 - 大文件：`Content-Type: application/octet-stream`；支持 `Range: bytes=...` 部分请求
 - sensitivity=sensitive 的 artifact：仅本机 + token；`X-Cw-Sensitive: true` 标记后允许
 
+### 4.3 Desktop artifact native handoff（FR-017）
+
+Artifact open/download 不是 runtime JSON endpoint。Renderer 只能提交 `specs/schemas/runtime_actions.md` 的 `ArtifactActionRequest` metadata；Electron preload/main 在 privileged Desktop boundary：
+
+1. 使用 runtime token 调用 `GET /cw/v1/artifacts/{artifact_id}/content` 获取内容。
+2. `open` 写入/解析 project-scoped temporary file 并调用 native shell。
+3. `download` 写入 user-selected 或 project-scoped destination。
+4. 返回 `ArtifactActionResult`，只包含 `status / artifact_id / action / content_type / byte_count / content_hash / destination_kind / sensitive / error_code / correlation_id`。
+
+`ArtifactActionResult.destination_kind` 是安全分类，不是路径。Full absolute paths、response bodies、raw artifact bytes、prompt/model output、secure paths、cache paths、output directory values 不得进入 renderer snapshots、visual-smoke evidence、runbook evidence、OTel attributes 或 review artifacts。
+
 ---
 
 ## 5. SSE 频道分类
 
 CW 提供两个独立 SSE 频道（不允许合并到一个全局频道）：
 
-| 频道 | 端点 | 事件子集 |
-|---|---|---|
-| Run | `/runs/{run_id}/stream` | `run.* / node.* / attempt.* / model.* / tool.* / context.* / evidence.* / evaluation.* / repair.* / human.* / artifact.* / metric.* / error.* / system.heartbeat` |
-| Planning | `/workflow-planning/sessions/{session_id}/stream` | `planning.* / system.heartbeat` |
+| 频道     | 端点                                              | 事件子集                                                                                                                                                          |
+| -------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run      | `/runs/{run_id}/stream`                           | `run.* / node.* / attempt.* / model.* / tool.* / context.* / evidence.* / evaluation.* / repair.* / human.* / artifact.* / metric.* / error.* / system.heartbeat` |
+| Planning | `/workflow-planning/sessions/{session_id}/stream` | `planning.* / system.heartbeat`                                                                                                                                   |
 
 每个频道独立维护 `seq` 计数（`(run_id, attempt_id)` 或 `(session_id)` 作用域）。心跳 15s。
 
@@ -508,19 +602,19 @@ Idempotency-Key: 9a3c2f1e-...-uuid4
 
 ## 9. 错误码总表（API 层新增；与各 spec 错误码合并）
 
-| API 错误码 | HTTP | 含义 |
-|---|---|---|
-| `AUTH_FORBIDDEN` | 401 | 缺 / 错 token |
-| `RES_NOT_FOUND` | 404 | 资源不存在（项目 / Workflow / Run / Artifact / Trace） |
-| `RES_ALREADY_EXISTS` | 409 | 同名资源已存在 |
-| `RES_GONE` | 410 | 资源已 GC |
-| `RATE_LIMIT_EXCEEDED` | 429 | 触发限流 |
-| `IDEMPOTENCY_KEY_BODY_MISMATCH` | 409 | 同 key 不同 body |
-| `IDEMPOTENCY_KEY_REUSE_OUTSIDE_WINDOW` | 409 | TTL 外重用 |
-| `BAD_PROJECT_ID` | 400 | `X-Project-Id` 不存在或与端点不匹配 |
-| `SHUTDOWN_IN_PROGRESS` | 503 | sidecar 正在停机 |
-| `MULTIPART_TOO_LARGE` | 413 | 上传超过 settings 大小限制 |
-| `BAD_RANGE` | 416 | 二进制 Range 越界 |
+| API 错误码                             | HTTP | 含义                                                   |
+| -------------------------------------- | ---- | ------------------------------------------------------ |
+| `AUTH_FORBIDDEN`                       | 401  | 缺 / 错 token                                          |
+| `RES_NOT_FOUND`                        | 404  | 资源不存在（项目 / Workflow / Run / Artifact / Trace） |
+| `RES_ALREADY_EXISTS`                   | 409  | 同名资源已存在                                         |
+| `RES_GONE`                             | 410  | 资源已 GC                                              |
+| `RATE_LIMIT_EXCEEDED`                  | 429  | 触发限流                                               |
+| `IDEMPOTENCY_KEY_BODY_MISMATCH`        | 409  | 同 key 不同 body                                       |
+| `IDEMPOTENCY_KEY_REUSE_OUTSIDE_WINDOW` | 409  | TTL 外重用                                             |
+| `BAD_PROJECT_ID`                       | 400  | `X-Project-Id` 不存在或与端点不匹配                    |
+| `SHUTDOWN_IN_PROGRESS`                 | 503  | sidecar 正在停机                                       |
+| `MULTIPART_TOO_LARGE`                  | 413  | 上传超过 settings 大小限制                             |
+| `BAD_RANGE`                            | 416  | 二进制 Range 越界                                      |
 
 > 业务错误码（`WG_*` / `NC_*` / `CP_*` / `EP_*` / `ER_*` / `RP_*` / `SE_*` / `MR_*` / `RM_*` / `CB_*` / `EB_*` / `OB_*` / `RH_*` / `PS_*`）继承自各 spec，原样沿用。
 
@@ -528,12 +622,12 @@ Idempotency-Key: 9a3c2f1e-...-uuid4
 
 ## 10. 速率限制详细
 
-| 维度 | 默认 |
-|---|---|
-| 单连接 HTTP 请求 | 200/分钟 |
-| 单 SSE 订阅 events | 500/秒（与 `stream_event.md` 一致） |
-| 单 token 并发连接 | 64 |
-| 单 token 上传体积 | settings.api.max_upload_mb（默认 200 MiB） |
+| 维度               | 默认                                       |
+| ------------------ | ------------------------------------------ |
+| 单连接 HTTP 请求   | 200/分钟                                   |
+| 单 SSE 订阅 events | 500/秒（与 `stream_event.md` 一致）        |
+| 单 token 并发连接  | 64                                         |
+| 单 token 上传体积  | settings.api.max_upload_mb（默认 200 MiB） |
 
 超限时响应 `429 Too Many Requests` + `Retry-After: <seconds>`。
 
@@ -572,20 +666,22 @@ data: {"event_id":"evt_tool_call","schema_version":"0.1.0","seq":7,"parent_event
 
 ## 13. 已锁定设计决策
 
-| 序号 | 决策 |
-|---|---|
-| D-API-1 | sidecar 仅监听 `127.0.0.1`；端口由 OS 分配，主进程通过 IPC 告知 renderer；不允许 LAN 暴露 |
-| D-API-2 | 鉴权使用主进程内存中的 ephemeral Bearer token；不入磁盘，不跨进程持久 |
-| D-API-3 | API 层不引入新 schema；所有 body 直接复用已锁定 spec 的 Pydantic 模型 |
-| D-API-4 | URL 命名采用资源化 + `:action` 子路径（AIP-136），不滥用 RPC |
-| D-API-5 | 所有副作用 POST 必须支持 `Idempotency-Key`，TTL 24h |
-| D-API-6 | SSE 帧格式与 `stream_event.md` D-SE-2 一致；CW 不使用 WebSocket |
-| D-API-7 | 仅有两个 SSE 频道：`/runs/{id}/stream` 与 `/workflow-planning/sessions/{id}/stream`；不存在全局频道 |
-| D-API-8 | 错误响应统一 `ErrorEnvelope`；业务错误码继承自各 spec，HTTP 状态码按 §1.5 表映射 |
-| D-API-9 | `X-Project-Id` header 在多窗口共享 sidecar 时必填；缺失 → 400 |
-| D-API-10 | API 不直接接收 RepairPatch / WorkflowPatch ops 数组（仅内部）；用户走 `/patches` 端点提交修改意见，由 PatchAgent 生成 ops |
-| D-API-11 | 二进制 / 大文件走 `/artifacts/{id}/content` 与 multipart 上传；JSON 端点 body 不嵌入二进制 |
-| D-API-12 | `/cw/v1` 前缀冻结，不兼容变更通过 `/cw/v2` 并存 |
+| 序号     | 决策                                                                                                                              |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| D-API-1  | sidecar 仅监听 `127.0.0.1`；端口由 OS 分配，主进程通过 IPC 告知 renderer；不允许 LAN 暴露                                         |
+| D-API-2  | 鉴权使用主进程内存中的 ephemeral Bearer token；不入磁盘，不跨进程持久                                                             |
+| D-API-3  | API 层不引入新 schema；所有 body 直接复用已锁定 spec 的 Pydantic 模型                                                             |
+| D-API-4  | URL 命名采用资源化 + `:action` 子路径（AIP-136），不滥用 RPC                                                                      |
+| D-API-5  | 所有副作用 POST 必须支持 `Idempotency-Key`，TTL 24h                                                                               |
+| D-API-6  | SSE 帧格式与 `stream_event.md` D-SE-2 一致；CW 不使用 WebSocket                                                                   |
+| D-API-7  | 仅有两个 SSE 频道：`/runs/{id}/stream` 与 `/workflow-planning/sessions/{id}/stream`；不存在全局频道                               |
+| D-API-8  | 错误响应统一 `ErrorEnvelope`；业务错误码继承自各 spec，HTTP 状态码按 §1.5 表映射                                                  |
+| D-API-9  | `X-Project-Id` header 在多窗口共享 sidecar 时必填；缺失 → 400                                                                     |
+| D-API-10 | API 不直接接收 RepairPatch / WorkflowPatch ops 数组（仅内部）；用户走 `/patches` 端点提交修改意见，由 PatchAgent 生成 ops         |
+| D-API-11 | 二进制 / 大文件走 `/artifacts/{id}/content` 与 multipart 上传；JSON 端点 body 不嵌入二进制                                        |
+| D-API-12 | `/cw/v1` 前缀冻结，不兼容变更通过 `/cw/v2` 并存                                                                                   |
+| D-API-13 | FR-008 Chat instruction 必须走 `RuntimeInstructionRequest`；不得复用 FR-007 `run-once` 或在 API 层 ad hoc 增加 body               |
+| D-API-14 | FR-017 artifact open/download 必须经 Desktop preload/main native handoff；runtime content endpoint 只提供 artifact content source |
 
 ---
 
@@ -600,6 +696,7 @@ data: {"event_id":"evt_tool_call","schema_version":"0.1.0","seq":7,"parent_event
 
 ## 更新历史
 
-| 日期 | 版本 | 变更 |
-|---|---|---|
+| 日期       | 版本  | 变更                                                                                       |
+| ---------- | ----- | ------------------------------------------------------------------------------------------ |
+| 2026-06-27 | 0.1.0 | ADR-0011 accepted 后新增 Chat instruction endpoints 与 Desktop artifact handoff contract   |
 | 2026-06-15 | 0.1.0 | 初稿 + 锁定 D-API-1 ~ D-API-12；对齐技术架构 v1.0 §10 + UIUX v1.1 §18.11 + 全部已锁定 spec |

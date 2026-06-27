@@ -98,8 +98,11 @@ from .packs import (
 from .runtime import (
     EVALUATION_RESULT_SCHEMA_VERSION,
     REPAIR_PATCH_SCHEMA_VERSION,
+    RUNTIME_ACTION_SCHEMA_VERSION,
     AdapterError,
     ArbitrationOutcome,
+    ArtifactActionRequest,
+    ArtifactActionResult,
     ArtifactRef,
     AttemptOutcome,
     AttemptProvenance,
@@ -116,6 +119,8 @@ from .runtime import (
     RepairPatch,
     RepairProvenance,
     ReversalHint,
+    RuntimeInstructionAccepted,
+    RuntimeInstructionRequest,
     RunUsage,
 )
 from .workflow import (
@@ -145,7 +150,7 @@ from .workflow.graph import CURRENT_SCHEMA_VERSION
 
 __version__ = "0.1.0"
 
-# codegen 入口（W1.2.6 完成后共 90 个模型）
+# codegen 入口（W1.5.194 完成后共 94 个模型）
 __exported_models__: dict[str, type] = {
     # workflow
     "WorkflowGraph": WorkflowGraph,
@@ -230,6 +235,10 @@ __exported_models__: dict[str, type] = {
     "AdapterError": AdapterError,
     "ArtifactRef": ArtifactRef,
     "RunUsage": RunUsage,
+    "RuntimeInstructionRequest": RuntimeInstructionRequest,
+    "RuntimeInstructionAccepted": RuntimeInstructionAccepted,
+    "ArtifactActionRequest": ArtifactActionRequest,
+    "ArtifactActionResult": ArtifactActionResult,
     # events — 12 envelope（discriminator 由 category 字段，运行时反序列化为对应子类）
     "LifecycleEvent": LifecycleEvent,
     "ModelEvent": ModelEvent,
@@ -252,10 +261,13 @@ __all__ = [
     "EVIDENCE_PACK_SCHEMA_VERSION",
     "EXECUTION_PACK_SCHEMA_VERSION",
     "REPAIR_PATCH_SCHEMA_VERSION",
+    "RUNTIME_ACTION_SCHEMA_VERSION",
     "STREAM_EVENT_SCHEMA_VERSION",
     "AdapterError",
     "ArbitrationOutcome",
     "ArchiveAction",
+    "ArtifactActionRequest",
+    "ArtifactActionResult",
     "ArtifactEvent",
     "ArtifactRef",
     "AttemptOutcome",
@@ -338,6 +350,8 @@ __all__ = [
     "ReversalHint",
     "ReviewPolicy",
     "RunUsage",
+    "RuntimeInstructionAccepted",
+    "RuntimeInstructionRequest",
     "SkillRef",
     "StartNode",
     "StaticTextSelector",

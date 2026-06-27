@@ -1,0 +1,103 @@
+{
+  "$defs": {
+    "RuntimeInstructionIntent": {
+      "description": "Desktop Chat Box intent（runtime_actions.md §1.1）。",
+      "enum": ["ask", "revise", "repair"],
+      "title": "RuntimeInstructionIntent",
+      "type": "string"
+    },
+    "RuntimeInstructionScope": {
+      "description": "Chat instruction command scope（ADR-0011 / runtime_actions.md §1.1）。",
+      "enum": ["run", "node"],
+      "title": "RuntimeInstructionScope",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Accepted response for a runtime instruction command.",
+  "properties": {
+    "accepted_at": {
+      "description": "ISO-8601",
+      "minLength": 1,
+      "title": "Accepted At",
+      "type": "string"
+    },
+    "command_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Command Id",
+      "type": "string"
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correlation Id"
+    },
+    "intent": {
+      "$ref": "#/$defs/RuntimeInstructionIntent"
+    },
+    "node_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Node Id"
+    },
+    "run_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "$ref": "#/$defs/RuntimeInstructionScope"
+    },
+    "status": {
+      "const": "accepted",
+      "default": "accepted",
+      "title": "Status",
+      "type": "string"
+    },
+    "stream_url": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stream Url"
+    }
+  },
+  "required": ["command_id", "run_id", "scope", "intent", "accepted_at"],
+  "title": "RuntimeInstructionAccepted",
+  "type": "object"
+}

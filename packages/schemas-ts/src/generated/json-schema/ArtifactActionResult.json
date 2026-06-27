@@ -1,0 +1,128 @@
+{
+  "$defs": {
+    "ArtifactAction": {
+      "description": "Desktop artifact handoff action（runtime_actions.md §2.1）。",
+      "enum": ["open", "download"],
+      "title": "ArtifactAction",
+      "type": "string"
+    },
+    "ArtifactActionStatus": {
+      "description": "Artifact handoff result status（runtime_actions.md §2.2）。",
+      "enum": ["succeeded", "failed", "blocked", "cancelled"],
+      "title": "ArtifactActionStatus",
+      "type": "string"
+    },
+    "ArtifactDestinationKind": {
+      "description": "Sanitized artifact destination kind; never an absolute path.",
+      "enum": [
+        "project_temp",
+        "project_artifact",
+        "user_selected",
+        "native_shell",
+        "none"
+      ],
+      "title": "ArtifactDestinationKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Observable artifact action result with sanitized destination metadata.",
+  "properties": {
+    "action": {
+      "$ref": "#/$defs/ArtifactAction"
+    },
+    "artifact_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Artifact Id",
+      "type": "string"
+    },
+    "byte_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Byte Count"
+    },
+    "content_hash": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content Hash"
+    },
+    "content_type": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content Type"
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correlation Id"
+    },
+    "destination_kind": {
+      "$ref": "#/$defs/ArtifactDestinationKind"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sensitive": {
+      "default": false,
+      "title": "Sensitive",
+      "type": "boolean"
+    },
+    "status": {
+      "$ref": "#/$defs/ArtifactActionStatus"
+    }
+  },
+  "required": ["artifact_id", "action", "status", "destination_kind"],
+  "title": "ArtifactActionResult",
+  "type": "object"
+}

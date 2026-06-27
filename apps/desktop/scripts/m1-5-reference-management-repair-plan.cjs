@@ -119,6 +119,22 @@ function contractText(sourcePath, options) {
   return readText(repoPath(sourcePath));
 }
 
+function normalizeMarkdownAnchor(text) {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/gu, " ")
+    .replace(/\|\s+/gu, "| ")
+    .replace(/\s+\|/gu, " |")
+    .trim();
+}
+
+function contractTextIncludesPattern(text, pattern) {
+  return (
+    text.includes(pattern) ||
+    normalizeMarkdownAnchor(text).includes(normalizeMarkdownAnchor(pattern))
+  );
+}
+
 function validateReferenceManagementRepairPlan(options = {}) {
   const plan = readJson(options.planPath ?? planPath);
   const repairPlan = readJson(options.repairPlanPath ?? repairPlanPath);
@@ -332,7 +348,10 @@ function validateReferenceManagementRepairPlan(options = {}) {
         `${referenceItem.id} has invalid runtime contract reason`,
       );
       assertCondition(
-        contractText(contract.source, options).includes(contract.pattern),
+        contractTextIncludesPattern(
+          contractText(contract.source, options),
+          contract.pattern,
+        ),
         `${referenceItem.id} missing runtime contract anchor ${contract.pattern} in ${contract.source}`,
       );
       contractAnchorCount += 1;

@@ -14,6 +14,7 @@
 - workflow_run.md §1.1 + §2.1（RunState / NodeState）
 - stream_event.md §1.2 + §1.3（EventCategory / EventPhase / DisplayLevel / Sensitivity）
 - agent_adapter.md（AttemptState / ResumptionKind / AdapterErrorKind）
+- runtime_actions.md（RuntimeInstructionScope / RuntimeInstructionIntent / ArtifactAction*）
 
 约束：
 - 全部使用 StrEnum；不允许 Literal[...] 散落在各模型
@@ -453,6 +454,52 @@ class Sensitivity(StrEnum):
 
 
 # =============================================================================
+# Runtime actions（来自 runtime_actions.md §1 / §2）
+# =============================================================================
+
+
+class RuntimeInstructionScope(StrEnum):
+    """Chat instruction command scope（ADR-0011 / runtime_actions.md §1.1）。"""
+
+    RUN = "run"
+    NODE = "node"
+
+
+class RuntimeInstructionIntent(StrEnum):
+    """Desktop Chat Box intent（runtime_actions.md §1.1）。"""
+
+    ASK = "ask"
+    REVISE = "revise"
+    REPAIR = "repair"
+
+
+class ArtifactAction(StrEnum):
+    """Desktop artifact handoff action（runtime_actions.md §2.1）。"""
+
+    OPEN = "open"
+    DOWNLOAD = "download"
+
+
+class ArtifactActionStatus(StrEnum):
+    """Artifact handoff result status（runtime_actions.md §2.2）。"""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+    CANCELLED = "cancelled"
+
+
+class ArtifactDestinationKind(StrEnum):
+    """Sanitized artifact destination kind; never an absolute path."""
+
+    PROJECT_TEMP = "project_temp"
+    PROJECT_ARTIFACT = "project_artifact"
+    USER_SELECTED = "user_selected"
+    NATIVE_SHELL = "native_shell"
+    NONE = "none"
+
+
+# =============================================================================
 # 通用：Priority / EvidencePolarity / ConflictKind 等
 # =============================================================================
 
@@ -499,6 +546,9 @@ __all__ = [
     "AdapterErrorKind",
     "AdapterKind",
     "ArbitrationMode",
+    "ArtifactAction",
+    "ArtifactActionStatus",
+    "ArtifactDestinationKind",
     "AttemptState",
     "BackoffStrategy",
     "CancelReason",
@@ -526,6 +576,8 @@ __all__ = [
     "ReversalMode",
     "RiskLevel",
     "RunState",
+    "RuntimeInstructionIntent",
+    "RuntimeInstructionScope",
     "Sensitivity",
     "Severity",
     "StartTrigger",

@@ -1,0 +1,139 @@
+{
+  "$defs": {
+    "ArtifactAction": {
+      "description": "Desktop artifact handoff action（runtime_actions.md §2.1）。",
+      "enum": ["open", "download"],
+      "title": "ArtifactAction",
+      "type": "string"
+    },
+    "ArtifactDestinationKind": {
+      "description": "Sanitized artifact destination kind; never an absolute path.",
+      "enum": [
+        "project_temp",
+        "project_artifact",
+        "user_selected",
+        "native_shell",
+        "none"
+      ],
+      "title": "ArtifactDestinationKind",
+      "type": "string"
+    },
+    "RuntimeInstructionIntent": {
+      "description": "Desktop Chat Box intent（runtime_actions.md §1.1）。",
+      "enum": ["ask", "revise", "repair"],
+      "title": "RuntimeInstructionIntent",
+      "type": "string"
+    },
+    "Sensitivity": {
+      "description": "三级隐私分级（D-SE-5 / D-RH-3）。",
+      "enum": ["public", "project", "sensitive"],
+      "title": "Sensitivity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Renderer-to-Desktop artifact action request.\n\nThe request names the artifact and action only. Artifact bytes are fetched\nthrough the runtime content endpoint by the privileged Desktop boundary.",
+  "properties": {
+    "action": {
+      "$ref": "#/$defs/ArtifactAction"
+    },
+    "allow_sensitive_export": {
+      "default": false,
+      "title": "Allow Sensitive Export",
+      "type": "boolean"
+    },
+    "artifact_id": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+      "title": "Artifact Id",
+      "type": "string"
+    },
+    "artifact_sensitivity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Sensitivity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correlation Id"
+    },
+    "intent": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RuntimeInstructionIntent"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "node_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Node Id"
+    },
+    "requested_destination_kind": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArtifactDestinationKind"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": ["artifact_id", "action"],
+  "title": "ArtifactActionRequest",
+  "type": "object"
+}

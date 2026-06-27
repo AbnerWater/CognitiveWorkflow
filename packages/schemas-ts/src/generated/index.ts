@@ -6,6 +6,8 @@
 export type { AdapterError } from "./AdapterError.js";
 export type { ArbitrationOutcome } from "./ArbitrationOutcome.js";
 export type { ArchiveAction } from "./ArchiveAction.js";
+export type { ArtifactActionRequest } from "./ArtifactActionRequest.js";
+export type { ArtifactActionResult } from "./ArtifactActionResult.js";
 export type { ArtifactEvent } from "./ArtifactEvent.js";
 export type { ArtifactRef } from "./ArtifactRef.js";
 export type { AttemptOutcome } from "./AttemptOutcome.js";
@@ -79,6 +81,8 @@ export type { RequirementResolution } from "./RequirementResolution.js";
 export type { RetryPolicy } from "./RetryPolicy.js";
 export type { ReversalHint } from "./ReversalHint.js";
 export type { ReviewPolicy } from "./ReviewPolicy.js";
+export type { RuntimeInstructionAccepted } from "./RuntimeInstructionAccepted.js";
+export type { RuntimeInstructionRequest } from "./RuntimeInstructionRequest.js";
 export type { RunUsage } from "./RunUsage.js";
 export type { SkillRef } from "./SkillRef.js";
 export type { StartNode } from "./StartNode.js";

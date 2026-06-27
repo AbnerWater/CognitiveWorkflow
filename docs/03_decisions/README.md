@@ -20,7 +20,7 @@
 | [0008](0008-stream-event-protocol.md)                 | StreamEvent 协议与 AgentStreamEvent 转译                      | Accepted | 2026-06-15 |
 | [0009](0009-hitl-via-approval-required-toolset.md)    | HITL 落到 ApprovalRequiredToolset + AG-UI 通道                | Accepted | 2026-06-15 |
 | [0010](0010-durable-execution-dbos.md)                | Durable Execution 选 dbos                                     | Proposed | 2026-06-15 |
-| [0011](0011-runtime-flow-desktop-actions-contract.md) | Runtime Flow Desktop Actions Contract                         | Proposed | 2026-06-26 |
+| [0011](0011-runtime-flow-desktop-actions-contract.md) | Runtime Flow Desktop Actions Contract                         | Accepted | 2026-06-27 |
 
 ## 模板
 

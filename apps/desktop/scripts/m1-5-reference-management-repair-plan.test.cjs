@@ -45,6 +45,15 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, { encoding: "utf8" }));
 }
 
+function normalizeMarkdownAnchor(text) {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/gu, " ")
+    .replace(/\|\s+/gu, "| ")
+    .replace(/\s+\|/gu, " |")
+    .trim();
+}
+
 function sorted(values) {
   return [...values].sort((left, right) => left.localeCompare(right));
 }
@@ -175,7 +184,12 @@ test("M1.5 reference management repair plan references existing runtime API and 
         path.join(repoRoot, ...contract.source.split("/")),
         { encoding: "utf8" },
       );
-      assert.match(sourceText, new RegExp(escapeRegExp(contract.pattern), "u"));
+      assert.equal(
+        normalizeMarkdownAnchor(sourceText).includes(
+          normalizeMarkdownAnchor(contract.pattern),
+        ),
+        true,
+      );
       assert.equal(contract.reason.length > 0, true);
     }
   }
@@ -283,7 +297,3 @@ test("M1.5 reference management repair plan test is wired into desktop package g
     true,
   );
 });
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-}

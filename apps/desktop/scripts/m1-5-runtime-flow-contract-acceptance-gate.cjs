@@ -17,6 +17,20 @@ const adrPath = path.join(
 );
 const adrIndexPath = path.join(repoRoot, "docs", "03_decisions", "README.md");
 const apiSpecPath = path.join(repoRoot, "specs", "api", "http_sse.md");
+const runtimeHarnessPath = path.join(repoRoot, "specs", "runtime_harness.md");
+const runtimeActionsSpecPath = path.join(
+  repoRoot,
+  "specs",
+  "schemas",
+  "runtime_actions.md",
+);
+const generatedSchemaDir = path.join(
+  repoRoot,
+  "packages",
+  "schemas-ts",
+  "src",
+  "generated",
+);
 const desktopPackagePath = path.join(packageRoot, "package.json");
 
 function readJson(filePath) {
@@ -52,11 +66,22 @@ function adrStatus(adrText) {
   return match?.[1]?.trim() ?? "";
 }
 
+function assertTextIncludes(text, expected, message) {
+  assertCondition(text.includes(expected), message);
+}
+
 function validateRuntimeFlowContractAcceptanceGate(options = {}) {
   const gate = readJson(options.gatePath ?? gatePath);
   const adrText = readText(options.adrPath ?? adrPath);
   const adrIndexText = readText(options.adrIndexPath ?? adrIndexPath);
   const apiSpecText = readText(options.apiSpecPath ?? apiSpecPath);
+  const runtimeHarnessText = readText(
+    options.runtimeHarnessPath ?? runtimeHarnessPath,
+  );
+  const runtimeActionsSpecText = readText(
+    options.runtimeActionsSpecPath ?? runtimeActionsSpecPath,
+  );
+  const generatedDir = options.generatedSchemaDir ?? generatedSchemaDir;
   const desktopPackage = readJson(
     options.desktopPackagePath ?? desktopPackagePath,
   );
@@ -64,76 +89,71 @@ function validateRuntimeFlowContractAcceptanceGate(options = {}) {
   assertEqual(gate.schema_version, "0.1.0", "schema version");
   assertEqual(gate.milestone, "M1.5", "milestone");
   assertEqual(gate.slice, "W1.5.193", "slice id");
-  assertEqual(gate.gate_status, "pending_human_confirmation", "gate status");
+  assertEqual(gate.gate_status, "accepted_contract_delta_ready", "gate status");
   assertEqual(gate.exit_p1_1_status, "not_ready", "EXIT-P1-1 status");
   assertDeepEqual(gate.fr_scope, ["FR-008", "FR-017"], "FR scope");
   assertEqual(
     gate.current_decision_state.adr_0011_status,
-    "Proposed",
+    "Accepted",
     "declared ADR status",
   );
-  assertEqual(adrStatus(adrText), "Proposed", "actual ADR status");
-  assertCondition(
-    adrIndexText.includes(
-      "| [0011](0011-runtime-flow-desktop-actions-contract.md) | Runtime Flow Desktop Actions Contract                         | Proposed | 2026-06-26 |",
-    ),
-    "ADR index must keep ADR-0011 Proposed",
+  assertEqual(adrStatus(adrText), "Accepted", "actual ADR status");
+  assertTextIncludes(
+    adrIndexText,
+    "| [0011](0011-runtime-flow-desktop-actions-contract.md) | Runtime Flow Desktop Actions Contract                         | Accepted | 2026-06-27 |",
+    "ADR index must mark ADR-0011 Accepted",
   );
   assertEqual(
     gate.current_decision_state.human_confirmation_required,
-    true,
-    "human confirmation required",
+    false,
+    "human confirmation must be consumed",
   );
   assertEqual(
     gate.current_decision_state.accepted_spec_changes_allowed,
-    false,
-    "accepted spec changes must be blocked before confirmation",
+    true,
+    "accepted spec changes must be allowed after confirmation",
   );
   assertEqual(
     gate.current_decision_state.runtime_or_desktop_implementation_allowed,
-    false,
-    "implementation must be blocked before confirmation",
-  );
-  assertCondition(
-    gate.guardrails.some((guardrail) => guardrail.includes("run-once")),
-    "run-once overload guardrail",
-  );
-  assertCondition(
-    gate.guardrails.some((guardrail) => guardrail.includes("metadata-only")),
-    "metadata-only evidence guardrail",
-  );
-  assertEqual(
-    gate.required_human_decision.decision_id,
-    "HUMAN-ACCEPT-ADR-0011",
-    "human decision id",
+    true,
+    "implementation must be unlocked after accepted contract delta",
   );
   assertEqual(
     gate.required_human_decision.accepted_response,
     "ADR-0011 accepted",
     "accepted response",
   );
-  assertCondition(
-    gate.required_human_decision.on_acceptance_next_steps.some((step) =>
-      step.includes("Status to Accepted"),
-    ),
-    "acceptance must update ADR status",
+  assertEqual(
+    gate.required_human_decision.consumed_by_slice,
+    "W1.5.194",
+    "human decision consumed by slice",
   );
 
-  const chatDelta = gate.proposed_contract_delta.chat_instruction_command;
+  const chatDelta = gate.accepted_contract_delta.chat_instruction_command;
   assertEqual(chatDelta.fr_id, "FR-008", "chat FR id");
-  assertEqual(chatDelta.decision_status, "not_accepted", "chat decision");
+  assertEqual(chatDelta.decision_status, "accepted", "chat decision");
   assertEqual(
     chatDelta.must_not_reuse,
     "POST /cw/v1/runs/{run_id}/nodes/{node_id}:run-once",
     "chat must-not-reuse endpoint",
   );
   assertDeepEqual(
-    chatDelta.proposed_endpoints,
+    chatDelta.accepted_endpoints,
     [
       "POST /cw/v1/runs/{run_id}:submit-instruction",
       "POST /cw/v1/runs/{run_id}/nodes/{node_id}:submit-instruction",
     ],
-    "chat proposed endpoints",
+    "chat accepted endpoints",
+  );
+  assertEqual(
+    chatDelta.request_schema,
+    "RuntimeInstructionRequest",
+    "chat request schema",
+  );
+  assertEqual(
+    chatDelta.accepted_response_schema,
+    "RuntimeInstructionAccepted",
+    "chat accepted response schema",
   );
   assertDeepEqual(
     chatDelta.minimum_request_fields,
@@ -146,13 +166,9 @@ function validateRuntimeFlowContractAcceptanceGate(options = {}) {
     "chat required headers",
   );
 
-  const artifactDelta = gate.proposed_contract_delta.artifact_native_handoff;
+  const artifactDelta = gate.accepted_contract_delta.artifact_native_handoff;
   assertEqual(artifactDelta.fr_id, "FR-017", "artifact FR id");
-  assertEqual(
-    artifactDelta.decision_status,
-    "not_accepted",
-    "artifact decision",
-  );
+  assertEqual(artifactDelta.decision_status, "accepted", "artifact decision");
   assertEqual(
     artifactDelta.content_source,
     "GET /cw/v1/artifacts/{artifact_id}/content",
@@ -163,26 +179,92 @@ function validateRuntimeFlowContractAcceptanceGate(options = {}) {
     "preload/main native handoff",
     "artifact desktop boundary",
   );
+  assertEqual(
+    artifactDelta.request_schema,
+    "ArtifactActionRequest",
+    "artifact request schema",
+  );
+  assertEqual(
+    artifactDelta.result_schema,
+    "ArtifactActionResult",
+    "artifact result schema",
+  );
   assertDeepEqual(artifactDelta.actions, ["open", "download"], "actions");
   assertCondition(
     artifactDelta.observable_result_fields.includes("destination_kind"),
     "observable result must include sanitized destination kind",
   );
 
-  assertCondition(
-    !apiSpecText.includes(":submit-instruction"),
-    "accepted API spec must not contain unaccepted submit-instruction endpoints",
+  assertEqual(
+    adrStatus(runtimeActionsSpecText),
+    "Accepted",
+    "runtime actions spec status",
   );
-  assertCondition(
-    apiSpecText.includes("POST   /{run_id}/nodes/{node_id}:run-once"),
-    "accepted API spec still owns run-once",
+  assertTextIncludes(
+    runtimeActionsSpecText,
+    "RuntimeInstructionRequest",
+    "runtime actions spec must define RuntimeInstructionRequest",
   );
+  assertTextIncludes(
+    runtimeActionsSpecText,
+    "ArtifactActionResult",
+    "runtime actions spec must define ArtifactActionResult",
+  );
+  assertTextIncludes(
+    apiSpecText,
+    "POST   /{run_id}:submit-instruction",
+    "accepted API spec must contain run submit-instruction endpoint",
+  );
+  assertTextIncludes(
+    apiSpecText,
+    "POST   /{run_id}/nodes/{node_id}:submit-instruction",
+    "accepted API spec must contain node submit-instruction endpoint",
+  );
+  assertTextIncludes(
+    apiSpecText,
+    "RuntimeInstructionRequest",
+    "accepted API spec must reference RuntimeInstructionRequest",
+  );
+  assertTextIncludes(
+    apiSpecText,
+    "ArtifactActionResult.destination_kind",
+    "accepted API spec must document sanitized destination kind",
+  );
+  assertTextIncludes(
+    runtimeHarnessText,
+    "instruction-commands.jsonl",
+    "runtime harness must document instruction command metadata projection",
+  );
+  assertTextIncludes(
+    runtimeHarnessText,
+    "D-RH-14",
+    "runtime harness must lock artifact action metadata decision",
+  );
+
+  for (const modelName of [
+    "RuntimeInstructionRequest",
+    "RuntimeInstructionAccepted",
+    "ArtifactActionRequest",
+    "ArtifactActionResult",
+  ]) {
+    assertCondition(
+      fs.existsSync(path.join(generatedDir, `${modelName}.ts`)),
+      `generated TS type missing: ${modelName}.ts`,
+    );
+    assertCondition(
+      fs.existsSync(
+        path.join(generatedDir, "json-schema", `${modelName}.json`),
+      ),
+      `generated JSON schema missing: ${modelName}.json`,
+    );
+  }
+
   assertDeepEqual(
     gate.summary,
     {
-      accepted_items: 0,
+      accepted_items: 4,
       implemented_items: 0,
-      pending_human_decisions: 1,
+      pending_human_decisions: 0,
       blocked_fr_items: 2,
       exit_p1_1_status: "not_ready",
     },

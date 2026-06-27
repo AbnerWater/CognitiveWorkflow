@@ -2,10 +2,10 @@
   "schema_version": "0.1.0",
   "milestone": "M1.5",
   "slice": "W1.5.193",
-  "gate_status": "pending_human_confirmation",
+  "gate_status": "accepted_contract_delta_ready",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-26",
+  "observed_at": "2026-06-27",
   "source": {
     "adr": "docs/03_decisions/0011-runtime-flow-desktop-actions-contract.md",
     "adr_index": "docs/03_decisions/README.md",
@@ -15,12 +15,13 @@
     "w1_5_192_review": "docs/reviews/m1.5.192-runtime-flow-cleanup-review.md",
     "http_sse_api": "specs/api/http_sse.md",
     "runtime_harness": "specs/runtime_harness.md",
+    "runtime_action_schema": "specs/schemas/runtime_actions.md",
     "stream_event_schema": "specs/schemas/stream_event.md"
   },
   "guardrails": [
-    "ADR-0011 remains Proposed and cannot be used as an implementation contract until human confirmation promotes it to Accepted.",
-    "This gate does not modify accepted specs, schema models, generated schema, runtime behavior, renderer behavior, dependencies, or packaging.",
-    "FR-008 and FR-017 remain unclosed; EXIT-P1-1 remains not_ready.",
+    "ADR-0011 was explicitly accepted by the user on 2026-06-27 and may now authorize accepted contract delta work.",
+    "W1.5.194 updates accepted specs, schema models, and generated schema types but does not implement runtime behavior, renderer behavior, dependencies, or packaging.",
+    "FR-008 and FR-017 remain unclosed until follow-up implementation plus A4 evidence; EXIT-P1-1 remains not_ready.",
     "The existing FR-007 run-once endpoint must not be overloaded as Chat instruction routing.",
     "Artifact Open/Download must require observable preload/main native handoff before implementation closure.",
     "Evidence must remain metadata-only and exclude raw prompt, draft text, model output, uploaded-file bytes, response body, artifact body, secure paths, cache paths, and output directory values.",
@@ -28,16 +29,18 @@
   ],
   "fr_scope": ["FR-008", "FR-017"],
   "current_decision_state": {
-    "adr_0011_status": "Proposed",
-    "human_confirmation_required": true,
-    "accepted_spec_changes_allowed": false,
-    "runtime_or_desktop_implementation_allowed": false,
-    "reason": "AGENTS.md requires explicit confirmation before spec contract changes; ADR-0011 has not been accepted."
+    "adr_0011_status": "Accepted",
+    "human_confirmation_required": false,
+    "accepted_spec_changes_allowed": true,
+    "runtime_or_desktop_implementation_allowed": true,
+    "reason": "User explicitly replied \"ADR-0011 accepted\"; W1.5.194 consumed the decision and added accepted runtime action schema/API contract delta."
   },
   "required_human_decision": {
     "decision_id": "HUMAN-ACCEPT-ADR-0011",
     "prompt": "Accept ADR-0011 as the contract authority for FR-008 Chat instruction command and FR-017 artifact native handoff?",
     "accepted_response": "ADR-0011 accepted",
+    "accepted_at": "2026-06-27",
+    "consumed_by_slice": "W1.5.194",
     "on_acceptance_next_steps": [
       "Update docs/03_decisions/0011-runtime-flow-desktop-actions-contract.md Status to Accepted and add Proposed -> Accepted history.",
       "Update docs/03_decisions/README.md ADR-0011 status to Accepted.",
@@ -51,15 +54,17 @@
       "Do not modify accepted specs or implementation for FR-008/FR-017 using ADR-0011."
     ]
   },
-  "proposed_contract_delta": {
+  "accepted_contract_delta": {
     "chat_instruction_command": {
       "fr_id": "FR-008",
-      "decision_status": "not_accepted",
+      "decision_status": "accepted",
       "must_not_reuse": "POST /cw/v1/runs/{run_id}/nodes/{node_id}:run-once",
-      "proposed_endpoints": [
+      "accepted_endpoints": [
         "POST /cw/v1/runs/{run_id}:submit-instruction",
         "POST /cw/v1/runs/{run_id}/nodes/{node_id}:submit-instruction"
       ],
+      "request_schema": "RuntimeInstructionRequest",
+      "accepted_response_schema": "RuntimeInstructionAccepted",
       "minimum_request_fields": [
         "schema_version",
         "scope",
@@ -71,9 +76,11 @@
     },
     "artifact_native_handoff": {
       "fr_id": "FR-017",
-      "decision_status": "not_accepted",
+      "decision_status": "accepted",
       "content_source": "GET /cw/v1/artifacts/{artifact_id}/content",
       "required_desktop_boundary": "preload/main native handoff",
+      "request_schema": "ArtifactActionRequest",
+      "result_schema": "ArtifactActionResult",
       "actions": ["open", "download"],
       "observable_result_fields": [
         "status",
@@ -87,18 +94,22 @@
       "sanitization_boundary": "Full absolute paths, response bodies, raw artifact bytes, prompt/model output, secure paths, cache paths, and output directory values must not enter renderer snapshots or evidence."
     }
   },
-  "blocked_changes_until_acceptance": [
+  "contract_delta_artifacts": [
+    "specs/schemas/runtime_actions.md",
     "specs/api/http_sse.md submit-instruction endpoints",
-    "packages/schemas runtime instruction command models",
-    "packages/schemas-ts generated instruction command types",
+    "specs/runtime_harness.md runtime action metadata boundaries",
+    "packages/schemas runtime action models",
+    "packages/schemas-ts generated runtime action types"
+  ],
+  "remaining_implementation_changes": [
     "apps/runtime instruction command endpoint handlers",
     "apps/desktop runtime Chat command dispatch",
     "apps/desktop artifact open/download native handoff"
   ],
   "summary": {
-    "accepted_items": 0,
+    "accepted_items": 4,
     "implemented_items": 0,
-    "pending_human_decisions": 1,
+    "pending_human_decisions": 0,
     "blocked_fr_items": 2,
     "exit_p1_1_status": "not_ready"
   },
@@ -107,20 +118,20 @@
     "focused_test": "node --test apps/desktop/scripts/m1-5-runtime-flow-contract-acceptance-gate.test.cjs",
     "standard_desktop_test": "pnpm --filter @cw/desktop run test",
     "runner_output_contract": {
-      "status": "pending_human_confirmation",
+      "status": "accepted_contract_delta_ready",
       "fr_ids": ["FR-008", "FR-017"],
-      "accepted_item_count": 0,
+      "accepted_item_count": 4,
       "implemented_item_count": 0,
-      "pending_human_decision_count": 1,
+      "pending_human_decision_count": 0,
       "sanitized_summary_only": true
     }
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.194",
-      "title": "ADR-0011 acceptance and spec delta",
-      "precondition": "Human accepts ADR-0011.",
-      "reason": "Only an accepted contract can unlock real FR-008/FR-017 implementation."
+      "id": "W1.5.195",
+      "title": "Runtime instruction endpoint and Desktop artifact handoff implementation",
+      "precondition": "W1.5.194 contract delta passes schema/API/codegen review.",
+      "reason": "Accepted contract delta unlocks real FR-008/FR-017 implementation, but A4/EXIT-P1-1 remain not_ready until evidence passes."
     }
   ]
 }

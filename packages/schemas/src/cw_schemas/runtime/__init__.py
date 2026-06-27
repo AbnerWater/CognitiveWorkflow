@@ -5,6 +5,13 @@
 
 from __future__ import annotations
 
+from .actions import (
+    RUNTIME_ACTION_SCHEMA_VERSION,
+    ArtifactActionRequest,
+    ArtifactActionResult,
+    RuntimeInstructionAccepted,
+    RuntimeInstructionRequest,
+)
 from .attempt import AdapterError, ArtifactRef, AttemptOutcome, AttemptProvenance, NodeAttempt
 from .evaluation import (
     EVALUATION_RESULT_SCHEMA_VERSION,
@@ -64,6 +71,7 @@ from .usage import RunUsage
 __all__ = [
     "EVALUATION_RESULT_SCHEMA_VERSION",
     "REPAIR_PATCH_SCHEMA_VERSION",
+    "RUNTIME_ACTION_SCHEMA_VERSION",
     "AdapterError",
     "AddContextRequirementOp",
     "AddFewShotExampleOp",
@@ -73,6 +81,8 @@ __all__ = [
     "AppendToSystemPromptOp",
     "AppendToUserPromptTemplateOp",
     "ArbitrationOutcome",
+    "ArtifactActionRequest",
+    "ArtifactActionResult",
     "ArtifactRef",
     "AttemptOutcome",
     "AttemptProvenance",
@@ -109,6 +119,8 @@ __all__ = [
     "RequestUserInputOp",
     "ReversalHint",
     "RunUsage",
+    "RuntimeInstructionAccepted",
+    "RuntimeInstructionRequest",
     "SplitNodeOp",
     "SummarizeLongFragmentsOp",
     "SwitchToModelProfileOp",

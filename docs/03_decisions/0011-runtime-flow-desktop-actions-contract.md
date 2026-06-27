@@ -2,11 +2,11 @@
 
 | 项               | 值                                                                                                                                                                                      |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Status           | Proposed                                                                                                                                                                                |
+| Status           | Accepted                                                                                                                                                                                |
 | Date             | 2026-06-26                                                                                                                                                                              |
 | Decision Drivers | FR-008 requires runtime-visible user instructions; FR-017 requires observable open/download actions; W1.5.190 review found run-once reuse and metadata-only artifact fetch insufficient |
 | Related ADR      | ADR-0006、ADR-0008                                                                                                                                                                      |
-| Related Spec     | specs/api/http_sse.md、specs/runtime_harness.md、specs/schemas/stream_event.md                                                                                                          |
+| Related Spec     | specs/api/http_sse.md、specs/runtime_harness.md、specs/schemas/runtime_actions.md、specs/schemas/stream_event.md                                                                        |
 
 ## 1. 背景与问题
 
@@ -29,7 +29,7 @@ This ADR records the contract direction that must be accepted before another imp
 
 ## 3. 决策
 
-Propose option 3 for FR-008 and option 5 for FR-017.
+Accept option 3 for FR-008 and option 5 for FR-017.
 
 The follow-up accepted spec change should introduce a runtime instruction command contract before implementation. The proposed shape is:
 
@@ -63,6 +63,7 @@ The follow-up accepted Desktop artifact action contract should split retrieval f
 
 ## 更新历史
 
-| 日期       | 状态变更            | 备注                                                                         |
-| ---------- | ------------------- | ---------------------------------------------------------------------------- |
-| 2026-06-26 | Drafted as Proposed | Records W1.5.190 review failure contract direction; no accepted spec changed |
+| 日期       | 状态变更            | 备注                                                                           |
+| ---------- | ------------------- | ------------------------------------------------------------------------------ |
+| 2026-06-27 | Proposed → Accepted | User explicitly accepted ADR-0011; W1.5.194 may update accepted contract delta |
+| 2026-06-26 | Drafted as Proposed | Records W1.5.190 review failure contract direction; no accepted spec changed   |

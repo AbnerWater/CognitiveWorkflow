@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "RuntimeInstructionIntent": {
+      "description": "Desktop Chat Box intent（runtime_actions.md §1.1）。",
+      "enum": ["ask", "revise", "repair"],
+      "title": "RuntimeInstructionIntent",
+      "type": "string"
+    },
+    "RuntimeInstructionScope": {
+      "description": "Chat instruction command scope（ADR-0011 / runtime_actions.md §1.1）。",
+      "enum": ["run", "node"],
+      "title": "RuntimeInstructionScope",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Runtime-visible Chat instruction command request.\n\nRaw instruction text is allowed only in this authenticated runtime request\nand runtime-owned execution records; renderer snapshots and evidence must\nstore metadata only.",
+  "properties": {
+    "client_command_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Client Command Id"
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correlation Id"
+    },
+    "instruction": {
+      "maxLength": 20000,
+      "minLength": 1,
+      "title": "Instruction",
+      "type": "string"
+    },
+    "intent": {
+      "$ref": "#/$defs/RuntimeInstructionIntent"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "$ref": "#/$defs/RuntimeInstructionScope"
+    }
+  },
+  "required": ["scope", "instruction", "intent"],
+  "title": "RuntimeInstructionRequest",
+  "type": "object"
+}
