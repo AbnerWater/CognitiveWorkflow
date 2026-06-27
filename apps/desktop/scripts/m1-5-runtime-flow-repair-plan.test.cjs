@@ -36,7 +36,7 @@ const a4ManifestPath = path.join(
 const desktopPackagePath = path.join(packageRoot, "package.json");
 
 const expectedRuntimeFlowGapFrIds = [];
-const expectedPartialBridgeFollowupFrIds = ["FR-015", "FR-018"];
+const expectedPartialBridgeFollowupFrIds = ["FR-015"];
 const expectedA4ReadyBridgeFrIds = [
   "FR-007",
   "FR-008",
@@ -45,15 +45,13 @@ const expectedA4ReadyBridgeFrIds = [
   "FR-013",
   "FR-014",
   "FR-017",
+  "FR-018",
 ];
 const expectedRemainingFrIds = [
   ...expectedRuntimeFlowGapFrIds,
   ...expectedPartialBridgeFollowupFrIds,
 ].sort((left, right) => left.localeCompare(right));
-const expectedSequenceItemIds = [
-  "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
-  "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
-];
+const expectedSequenceItemIds = ["RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE"];
 const allowedPlanningStatuses = new Set([
   "planned_not_implemented",
   "partially_implemented_requires_a4_evidence",
@@ -78,15 +76,15 @@ function writeMutatedPlan(mutator) {
   return mutatedPlanPath;
 }
 
-test("M1.5 runtime flow repair plan runner returns a sanitized W1.5.206 summary", () => {
+test("M1.5 runtime flow repair plan runner returns a sanitized W1.5.207 summary", () => {
   const summary = validateRuntimeFlowRepairPlan();
 
   assert.equal(
     summary.status,
-    "remaining_runtime_flow_plan_refreshed_after_fr018_pending_decision_discovery",
+    "remaining_runtime_flow_plan_refreshed_after_fr018_high_risk_hitl_a4_package",
   );
   assert.equal(summary.exitP1_1Status, "not_ready");
-  assert.equal(summary.repairItemCount, 2);
+  assert.equal(summary.repairItemCount, 1);
   assert.deepEqual(sorted(summary.frIds), expectedRemainingFrIds);
   assert.deepEqual(summary.runtimeFlowGapFrIds, expectedRuntimeFlowGapFrIds);
   assert.deepEqual(
@@ -96,15 +94,15 @@ test("M1.5 runtime flow repair plan runner returns a sanitized W1.5.206 summary"
   assert.deepEqual(summary.a4ReadyBridgeFrIds, expectedA4ReadyBridgeFrIds);
   assert.equal(summary.acceptedItemCount, 0);
   assert.equal(summary.implementedItemCount, 0);
-  assert.equal(summary.pendingImplementationItemCount, 2);
+  assert.equal(summary.pendingImplementationItemCount, 1);
   assert.equal(summary.contractAnchorCount > 0, true);
-  assert.equal(summary.refreshedFrom, "W1.5.188");
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.207"]);
+  assert.equal(summary.refreshedFrom, "W1.5.206");
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.208"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });
 
-test("M1.5 runtime flow plan mirrors current W1.5.206 evidence buckets", () => {
+test("M1.5 runtime flow plan mirrors current W1.5.207 evidence buckets", () => {
   const plan = readJson(planPath);
   const evidenceMap = readJson(evidenceMapPath);
   const runtimeFlowGapFrIds = evidenceMap.fr_evidence_items
@@ -123,13 +121,13 @@ test("M1.5 runtime flow plan mirrors current W1.5.206 evidence buckets", () => {
     .sort();
 
   assert.equal(plan.schema_version, "0.1.0");
-  assert.equal(plan.slice, "W1.5.206");
+  assert.equal(plan.slice, "W1.5.207");
   assert.equal(
     plan.plan_status,
-    "remaining_runtime_flow_plan_refreshed_after_fr018_pending_decision_discovery",
+    "remaining_runtime_flow_plan_refreshed_after_fr018_high_risk_hitl_a4_package",
   );
   assert.equal(plan.exit_p1_1_status, "not_ready");
-  assert.equal(plan.refreshed_from?.slice, "W1.5.188");
+  assert.equal(plan.refreshed_from?.slice, "W1.5.206");
   assert.equal(
     plan.repair_track.source_track_id,
     "TRACK-REMAINING-RUNTIME-FLOW-IMPLEMENTATION",
@@ -237,7 +235,7 @@ test("M1.5 runtime flow plan keeps implementation sequence conservative", () => 
   );
   assert.deepEqual(
     plan.implementation_sequence.map((step) => step.order),
-    [1, 2],
+    [1],
   );
   assert.deepEqual(
     sorted(plan.implementation_sequence.map((step) => step.fr_id)),
@@ -245,7 +243,7 @@ test("M1.5 runtime flow plan keeps implementation sequence conservative", () => 
   );
   assert.deepEqual(
     plan.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.207"],
+    ["W1.5.208"],
   );
 });
 
@@ -283,11 +281,11 @@ test("M1.5 runtime flow plan summary does not claim acceptance or full implement
       (item) =>
         item.planning_status === "partially_implemented_requires_a4_evidence",
     ),
-    true,
+    false,
   );
 });
 
-test("M1.5 runtime flow plan rejects stale source evidence after W1.5.206 refresh", () => {
+test("M1.5 runtime flow plan rejects stale source evidence after W1.5.207 refresh", () => {
   const mutatedPlanPath = writeMutatedPlan((plan) => {
     plan.runtime_flow_items[0].source_next_action =
       "Route Chat Box submissions through local-only renderer state.";

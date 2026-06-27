@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.204",
+  "slice": "W1.5.207",
   "checklist_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-28",
+  "observed_at": "2026-06-27T19:12:38.042Z",
   "authority": {
     "roadmap": "docs/roadmap.md#5.3",
     "review_matrix": "docs/roadmap.md#5.4",
@@ -13,10 +13,10 @@
     "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
   },
   "guardrails": [
-    "This checklist refreshes FR-015 after accepted workflow_history endpoint and metadata-only Desktop timeline evidence; it does not claim A4 acceptance.",
+    "This checklist refreshes FR-018 after high-risk HITL review context evidence; it does not claim A4 acceptance.",
     "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
-    "W1.5.204 changes no accepted spec, ADR, schema, generated schema, dependency, IPC, renderer storage, packaging, updater, or baseline docx content.",
-    "Version Snapshot evidence must remain metadata-only: no raw prompt, raw model output, uploaded-file bytes, response body, artifact body, raw destination path, secure path, cache path, or output directory values."
+    "W1.5.207 changes no accepted spec, ADR, schema, generated schema, dependency, IPC, renderer storage, packaging, updater, or baseline docx content.",
+    "Evidence must remain metadata-only and must not retain raw prompt, model output, uploaded-file bytes, response body, custom_value content, secure path, cache path, or output directory values."
   ],
   "source_extraction": {
     "method": "read-only OOXML extraction from word/document.xml",
@@ -502,15 +502,15 @@
         "Human confirmation UI clearly shows the pending decision and safe actions.",
         "Resume path is recorded and reflected in runtime state."
       ],
-      "current_evidence_status": "partial_runtime_bridge_evidence",
+      "current_evidence_status": "runtime_bridge_evidence_available",
       "current_evidence": [
         "M1.3 and M1.4 HITL/resumption and approval bridge work exists on the runtime side.",
         "W1.5.184 added a desktop human decision submit surface for semi-auto HITL decisions.",
-        "W1.5.206 added runtime run discovery, sanitized pending human decision projection, and a Desktop refresh-pending command that populates the HITL form without retaining raw prompt or custom_value content."
+        "W1.5.206 added runtime run discovery, sanitized pending human decision projection, and a Desktop refresh-pending command that populates the HITL form without retaining raw prompt or custom_value content.",
+        "W1.5.207 adds high-risk HITL review context metadata for review kind, evidence/artifact presence, timeout, decision choices, and labels without retaining prompt_to_user or custom_value content."
       ],
       "remaining_gap": [
-        "High-risk-node review context UX and A4 pause/resume capture remain unrecorded.",
-        "A4 UX acceptance evidence for semi-auto HITL remains unrecorded."
+        "A4 UX acceptance evidence for high-risk HITL pause/resume behavior is not recorded."
       ]
     },
     {
@@ -560,22 +560,21 @@
     "phase_exit_required_items": 20,
     "source_must_items": 18,
     "source_should_items": 2,
-    "accepted_items": 0,
     "candidate_evidence_available_items": 3,
-    "runtime_bridge_evidence_available_items": 7,
-    "partial_runtime_bridge_evidence_items": 2,
+    "runtime_bridge_evidence_available_items": 8,
+    "partial_runtime_bridge_evidence_items": 1,
     "partial_or_scaffold_items": 6,
     "backend_or_schema_only_items": 0,
     "blocked_by_dependency_gate_items": 2,
     "not_started_items": 0,
-    "next_required_review": "A4 ux-acceptance-reviewer",
-    "phase_exit_claim": "EXIT-P1-1 remains not_ready until all 20 FR items have A4 acceptance evidence."
+    "accepted_items": 0,
+    "phase_exit_claim": "EXIT-P1-1 remains not_ready; A4 acceptance has not been recorded for every FR item."
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.205",
-      "title": "Desktop FR-015 snapshot ledger restore follow-up",
-      "reason": "Continue FR-015 after W1.5.204 workflow history timeline evidence: surface snapshot ledger state only after an accepted projection, then define restore/continue semantics before implementation."
+      "id": "W1.5.208",
+      "title": "A4 runtime-flow reviewer decision recording",
+      "reason": "Record A4 reviewer decisions for the 11 pending review inputs; keep FR-015 restore implementation blocked until ADR-0012 or another accepted contract is available."
     }
   ]
 }

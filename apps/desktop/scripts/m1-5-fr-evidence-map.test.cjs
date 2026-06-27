@@ -35,7 +35,7 @@ const expectedReadinessValues = new Set([
   "missing_implementation",
 ]);
 
-const expectedNextSlices = ["W1.5.207"];
+const expectedNextSlices = ["W1.5.208"];
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, { encoding: "utf8" }));
@@ -56,10 +56,10 @@ test("M1.5 FR evidence map preserves conservative source authority", () => {
 
   assert.equal(evidenceMap.schema_version, "0.1.0");
   assert.equal(evidenceMap.milestone, "M1.5");
-  assert.equal(evidenceMap.slice, "W1.5.206");
+  assert.equal(evidenceMap.slice, "W1.5.207");
   assert.equal(
     evidenceMap.map_status,
-    "evidence_refreshed_after_fr018_pending_decision_discovery",
+    "evidence_refreshed_after_fr018_high_risk_hitl_a4_package",
   );
   assert.equal(evidenceMap.exit_criterion, "EXIT-P1-1");
   assert.equal(evidenceMap.exit_p1_1_status, "not_ready");
@@ -262,6 +262,7 @@ test("M1.5 FR evidence map keeps candidate, bridge, and blocked tracks explicit"
     "FR-013",
     "FR-014",
     "FR-017",
+    "FR-018",
   ]) {
     const item = itemsById.get(id);
     assert.equal(item?.acceptance_readiness, "runtime_bridge_needs_a4_review");
@@ -269,7 +270,7 @@ test("M1.5 FR evidence map keeps candidate, bridge, and blocked tracks explicit"
     assert.match(item.missing_evidence.join(" "), /A4/u);
   }
 
-  for (const id of ["FR-015", "FR-018"]) {
+  for (const id of ["FR-015"]) {
     const item = itemsById.get(id);
     assert.equal(
       item?.acceptance_readiness,

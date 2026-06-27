@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.202",
+  "slice": "W1.5.207",
   "capture_status": "a4_capture_executed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-27",
+  "observed_at": "2026-06-27T19:12:38.042Z",
   "source": {
     "a4_evidence_manifest": "docs/04_runbook/m1.5-a4-evidence-manifest.json",
     "visual_smoke_matrix_artifact": "docs/04_runbook/m1.5-a4-capture-matrix.json",
@@ -16,9 +16,9 @@
     "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
   },
   "guardrails": [
-    "W1.5.202 refreshes pending stream and bridge capture inputs with FR-014 Skill candidate discovery plus secret-safe MCP configuration evidence without changing accepted FR status.",
-    "No accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx change is included in W1.5.202.",
-    "Capture evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, persisted params, raw MCP command_or_url or secret_ref values, secure paths, cache paths, output directory values, or full destination paths."
+    "W1.5.207 refreshes capture inputs with FR-018 high-risk HITL review context evidence without recording A4 acceptance.",
+    "No accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx change is included in W1.5.207.",
+    "Capture evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, persisted params, raw MCP command_or_url or secret_ref values, secure paths, cache paths, output directory values, full destination paths, prompt_to_user, or custom_value content."
   ],
   "runner_contract": {
     "runner_script": "apps/desktop/scripts/m1-5-a4-capture-execution.cjs",
@@ -29,12 +29,12 @@
     "runtime_project_endpoint_test": "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
     "runner_output_contract": {
       "status": "a4_capture_executed_not_accepted",
-      "review_item_count": 10,
+      "review_item_count": 11,
       "stream_capture_item_count": 3,
-      "bridge_capture_item_count": 7,
+      "bridge_capture_item_count": 8,
       "matrix_case_count": 8,
       "accepted_item_count": 0,
-      "pending_a4_review_item_count": 10,
+      "pending_a4_review_item_count": 11,
       "sanitized_summary_only": true
     }
   },
@@ -131,6 +131,14 @@
       "execution_status": "executed_passed",
       "command": "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js",
       "evidence_scope": "runtime-backed Skill candidate discovery, secret-safe MCP configuration metadata display, and renderer snapshot sanitization",
+      "accepted": false
+    },
+    {
+      "id": "BRIDGE-COMMAND-FR-018",
+      "fr_id": "FR-018",
+      "execution_status": "executed_passed",
+      "command": "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js",
+      "evidence_scope": "high-risk HITL pending decision discovery, review context metadata display, and metadata-only snapshot sanitization",
       "accepted": false
     }
   ],
@@ -342,24 +350,43 @@
       "missing_before_acceptance": [
         "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
       ]
+    },
+    {
+      "id": "CAPTURE-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "review_item_id": "A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "fr_id": "FR-018",
+      "review_group": "runtime_bridge_evidence",
+      "capture_status": "captured_not_accepted",
+      "source_review_status": "pending_a4_review",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-018",
+      "observed_matrix_cases": [],
+      "observed_a4_evidence_inputs": [
+        "Semi-auto waiting_user runs expose pending high-risk HITL decisions through the accepted run list and decisions projections.",
+        "Desktop HITL controls show review kind, evidence/artifact presence, timeout, decision choices, and labels from sanitized runtime metadata.",
+        "Runtime and Desktop evidence do not retain prompt_to_user, custom_value content, raw prompt, model output, uploaded-file bytes, response bodies, secure paths, cache paths, or output directory values.",
+        "Decision submission continues through the accepted POST /runs/{run_id}/decisions path and records only status/customValuePresent metadata in Desktop snapshots."
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for high-risk HITL pause/resume behavior is not recorded."
+      ]
     }
   ],
   "summary": {
-    "review_item_count": 10,
+    "review_item_count": 11,
     "stream_capture_items": 3,
-    "bridge_capture_items": 7,
+    "bridge_capture_items": 8,
     "matrix_case_count": 8,
     "required_matrix_case_count": 6,
     "accepted_items": 0,
-    "pending_a4_review_items": 10,
+    "pending_a4_review_items": 11,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.203",
-      "title": "Desktop FR-015 snapshot restore continue follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
+      "id": "W1.5.208",
+      "title": "A4 runtime-flow reviewer decision recording",
+      "reason": "Record A4 reviewer decisions for the 11 pending review inputs; keep FR-015 restore implementation blocked until ADR-0012 or another accepted contract is available."
     }
   ]
 }

@@ -38,12 +38,14 @@ from cw_runtime.persistence import (
     should_snapshot_event,
 )
 from cw_runtime.settings import RUNTIME_SCHEMA_VERSION
+from cw_schemas.contract import HumanGateContract
 from cw_schemas.events import LifecycleEvent, StreamEventBase, SystemEvent, validate_stream_event
 from cw_schemas.types import DisplayLevel, EventCategory, EventPhase, ExecutionMode, RunState, Sensitivity
 from cw_schemas.workflow import HumanCheckpointNode
 
 _CROCKFORD_ALPHABET: Final = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _TERMINAL_RUN_STATES: Final[frozenset[RunState]] = frozenset({RunState.COMPLETED, RunState.CANCELLED, RunState.FAILED})
+HumanDecisionReviewKind = Literal["human_checkpoint", "high_risk_approval"]
 
 
 class RunError(RuntimeError):
@@ -183,6 +185,26 @@ class HumanDecisionProjection(BaseModel):
     requested_at: str | None = None
     custom_value_present: bool = False
     available_decisions: list[str] = Field(default_factory=list)
+    review_kind: HumanDecisionReviewKind = "human_checkpoint"
+    present_artifacts: list[str] = Field(default_factory=list)
+    present_evidence: bool | None = None
+    timeout_seconds: int | None = None
+    timeout_action: str | None = None
+    decision_labels: dict[str, str] = Field(default_factory=dict)
+
+
+class _HumanGateContextProjection(BaseModel):
+    """Workflow-owned review context safe to expose through the decisions API."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    available_decisions: list[str] = Field(default_factory=list)
+    review_kind: HumanDecisionReviewKind = "human_checkpoint"
+    present_artifacts: list[str] = Field(default_factory=list)
+    present_evidence: bool | None = None
+    timeout_seconds: int | None = None
+    timeout_action: str | None = None
+    decision_labels: dict[str, str] = Field(default_factory=dict)
 
 
 class RunDecisionProjection(BaseModel):
@@ -303,7 +325,7 @@ def read_run_decisions(project_root: Path, run_id: str) -> RunDecisionProjection
 
     run = read_workflow_run(project_root, run_id)
     decisions_path = _run_root(project_root, run_id) / "decisions.jsonl"
-    decision_keys_by_node = _decision_keys_by_human_node(project_root)
+    human_gate_context_by_node = _human_gate_context_by_node(project_root)
     projections: list[HumanDecisionProjection] = []
     try:
         raw_lines = decisions_path.read_text(encoding="utf-8").splitlines()
@@ -333,7 +355,7 @@ def read_run_decisions(project_root: Path, run_id: str) -> RunDecisionProjection
                 status_code=500,
                 details={"run_id": run_id, "line_number": line_number},
             )
-        projections.append(_project_human_decision(run, loaded, decision_keys_by_node))
+        projections.append(_project_human_decision(run, loaded, human_gate_context_by_node))
     return RunDecisionProjection(run_id=run.run_id, decisions=projections)
 
 
@@ -1056,22 +1078,50 @@ def _read_workflow_run_document(path: Path) -> WorkflowRunDocument:
         ) from exc
 
 
-def _decision_keys_by_human_node(project_root: Path) -> dict[str, list[str]]:
+def _human_gate_context_by_node(project_root: Path) -> dict[str, _HumanGateContextProjection]:
     try:
         graph = load_workflow_graph(project_root)
     except WorkflowValidationError:
         return {}
-    decision_keys: dict[str, list[str]] = {}
+    contexts: dict[str, _HumanGateContextProjection] = {}
     for node in graph.nodes:
-        if isinstance(node, HumanCheckpointNode):
-            decision_keys[node.node_id] = [decision.key for decision in node.decisions]
-    return decision_keys
+        if not isinstance(node, HumanCheckpointNode) or not isinstance(node.contract, HumanGateContract):
+            continue
+        decision_labels: dict[str, str] = {}
+        for contract_decision in node.contract.decisions:
+            if contract_decision.label is not None:
+                decision_labels[contract_decision.key] = contract_decision.label
+        for node_decision in node.decisions:
+            if node_decision.label is not None:
+                decision_labels[node_decision.key] = node_decision.label
+        contexts[node.node_id] = _HumanGateContextProjection(
+            available_decisions=[decision.key for decision in node.decisions],
+            review_kind=_human_gate_review_kind(node.contract),
+            present_artifacts=list(node.contract.present_artifacts),
+            present_evidence=node.contract.present_evidence,
+            timeout_seconds=node.contract.timeout_seconds,
+            timeout_action=node.contract.timeout_action.value,
+            decision_labels=decision_labels,
+        )
+    return contexts
+
+
+def _human_gate_review_kind(contract: HumanGateContract) -> HumanDecisionReviewKind:
+    if contract.requires_human_approval:
+        return "high_risk_approval"
+    cw_metadata = contract.metadata.get("cw")
+    if isinstance(cw_metadata, Mapping):
+        review_kind = cw_metadata.get("review_kind")
+        risk_level = cw_metadata.get("risk_level")
+        if review_kind == "high_risk_approval" or risk_level == "high":
+            return "high_risk_approval"
+    return "human_checkpoint"
 
 
 def _project_human_decision(
     run: WorkflowRunDocument,
     record: Mapping[str, Any],
-    decision_keys_by_node: Mapping[str, list[str]],
+    human_gate_context_by_node: Mapping[str, _HumanGateContextProjection],
 ) -> HumanDecisionProjection:
     human_node_id = record.get("human_node_id")
     status = record.get("status")
@@ -1089,6 +1139,7 @@ def _project_human_decision(
             status_code=500,
             details={"run_id": run.run_id, "human_node_id": human_node_id},
         )
+    context = human_gate_context_by_node.get(human_node_id)
     return HumanDecisionProjection(
         human_node_id=human_node_id,
         status=cast(Literal["pending", "resolved"], status),
@@ -1097,7 +1148,13 @@ def _project_human_decision(
         decided_at=_optional_record_string(record, "decided_at"),
         requested_at=_optional_record_string(record, "requested_at"),
         custom_value_present=record.get("custom_value") is not None,
-        available_decisions=list(decision_keys_by_node.get(human_node_id, [])),
+        available_decisions=[] if context is None else list(context.available_decisions),
+        review_kind="human_checkpoint" if context is None else context.review_kind,
+        present_artifacts=[] if context is None else list(context.present_artifacts),
+        present_evidence=None if context is None else context.present_evidence,
+        timeout_seconds=None if context is None else context.timeout_seconds,
+        timeout_action=None if context is None else context.timeout_action,
+        decision_labels={} if context is None else dict(context.decision_labels),
     )
 
 

@@ -296,7 +296,7 @@ function validateFr015SnapshotRestoreContractGate(options = {}) {
   );
   assertDeepEqual(
     repairPlan.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.207"],
+    ["W1.5.208"],
     "source repair plan next slice",
   );
 

@@ -6594,6 +6594,15 @@ test("renderer runtime workbench React shell dispatches human decision commands 
       decision: "continue",
       availableDecisions: Object.freeze(["continue", "reject"]),
       pendingDecisionCount: 1,
+      reviewKind: "high_risk_approval",
+      presentArtifacts: Object.freeze(["primary_artifact", "risk_register"]),
+      presentEvidence: true,
+      timeoutSeconds: 900,
+      timeoutAction: "hold",
+      decisionLabels: Object.freeze({
+        continue: "Approve",
+        reject: "Reject",
+      }),
       by: "reviewer",
       customValuePresent: true,
       statusCode: 200,
@@ -6644,6 +6653,24 @@ test("renderer runtime workbench React shell dispatches human decision commands 
         "data-human-decision-custom-value-present",
       ),
       "true",
+    );
+    assert.equal(
+      humanDecisionControl.getAttribute("data-human-decision-review-kind"),
+      "high_risk_approval",
+    );
+    assert.equal(
+      humanDecisionControl.getAttribute(
+        "data-human-decision-present-artifact-count",
+      ),
+      "2",
+    );
+    assert.equal(
+      humanDecisionControl.getAttribute("data-human-decision-present-evidence"),
+      "true",
+    );
+    assert.equal(
+      humanDecisionControl.getAttribute("data-human-decision-timeout-action"),
+      "hold",
     );
     assert.equal(
       fakeRuntimeWorkbenchNodeTextContent(dom.container).includes(
@@ -7997,6 +8024,12 @@ test("renderer runtime workbench session submits human decisions through runtime
     decision: "continue",
     availableDecisions: [],
     pendingDecisionCount: 0,
+    reviewKind: null,
+    presentArtifacts: [],
+    presentEvidence: null,
+    timeoutSeconds: null,
+    timeoutAction: null,
+    decisionLabels: {},
     by: "tester",
     customValuePresent: true,
     statusCode: 200,
@@ -8056,6 +8089,18 @@ test("renderer runtime workbench session discovers pending human decisions witho
                 requested_at: "2026-06-25T05:59:00.000Z",
                 custom_value_present: false,
                 available_decisions: Object.freeze(["continue", "reject"]),
+                review_kind: "high_risk_approval",
+                present_artifacts: Object.freeze([
+                  "primary_artifact",
+                  "risk_register",
+                ]),
+                present_evidence: true,
+                timeout_seconds: 900,
+                timeout_action: "hold",
+                decision_labels: Object.freeze({
+                  continue: "Approve",
+                  reject: "Reject",
+                }),
               }),
             ]),
           }) as TBody,
@@ -8098,6 +8143,15 @@ test("renderer runtime workbench session discovers pending human decisions witho
     decision: "continue",
     availableDecisions: ["continue", "reject"],
     pendingDecisionCount: 1,
+    reviewKind: "high_risk_approval",
+    presentArtifacts: ["primary_artifact", "risk_register"],
+    presentEvidence: true,
+    timeoutSeconds: 900,
+    timeoutAction: "hold",
+    decisionLabels: {
+      continue: "Approve",
+      reject: "Reject",
+    },
     by: null,
     customValuePresent: false,
     statusCode: 200,
@@ -9522,6 +9576,12 @@ function createRuntimeWorkbenchShellReactHumanDecisionSnapshot(
     decision: input.decision ?? null,
     availableDecisions: input.availableDecisions ?? Object.freeze([]),
     pendingDecisionCount: input.pendingDecisionCount ?? 0,
+    reviewKind: input.reviewKind ?? null,
+    presentArtifacts: input.presentArtifacts ?? Object.freeze([]),
+    presentEvidence: input.presentEvidence ?? null,
+    timeoutSeconds: input.timeoutSeconds ?? null,
+    timeoutAction: input.timeoutAction ?? null,
+    decisionLabels: input.decisionLabels ?? Object.freeze({}),
     by: input.by ?? null,
     customValuePresent: input.customValuePresent ?? false,
     statusCode: input.statusCode ?? null,

@@ -38,6 +38,7 @@ const expectedBridgeFrIds = [
   "FR-013",
   "FR-014",
   "FR-017",
+  "FR-018",
 ];
 const expectedRequiredMatrixCases = [
   "known-desktop",
@@ -68,22 +69,22 @@ test("M1.5 A4 capture execution runner returns a sanitized conservative summary"
 
   assert.equal(summary.status, "a4_capture_executed_not_accepted");
   assert.equal(summary.exitP1_1Status, "not_ready");
-  assert.equal(summary.reviewItemCount, 10);
+  assert.equal(summary.reviewItemCount, 11);
   assert.equal(summary.streamCaptureItemCount, 3);
-  assert.equal(summary.bridgeCaptureItemCount, 7);
+  assert.equal(summary.bridgeCaptureItemCount, 8);
   assert.equal(summary.matrixCaseCount, 8);
   assert.deepEqual(
     sorted(summary.requiredMatrixCases),
     sorted(expectedRequiredMatrixCases),
   );
   assert.equal(summary.acceptedItemCount, 0);
-  assert.equal(summary.pendingA4ReviewItemCount, 10);
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.203"]);
+  assert.equal(summary.pendingA4ReviewItemCount, 11);
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.208"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });
 
-test("M1.5 A4 capture execution mirrors the W1.5.202 A4 manifest", () => {
+test("M1.5 A4 capture execution mirrors the W1.5.207 A4 manifest", () => {
   const capture = readJson(capturePath);
   const a4Manifest = readJson(a4ManifestPath);
   const captureByReviewId = new Map(
@@ -91,7 +92,7 @@ test("M1.5 A4 capture execution mirrors the W1.5.202 A4 manifest", () => {
   );
 
   assert.equal(capture.schema_version, "0.1.0");
-  assert.equal(capture.slice, "W1.5.202");
+  assert.equal(capture.slice, "W1.5.207");
   assert.equal(capture.capture_status, "a4_capture_executed_not_accepted");
   assert.equal(capture.exit_p1_1_status, "not_ready");
   assert.deepEqual(

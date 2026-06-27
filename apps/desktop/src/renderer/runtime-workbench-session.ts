@@ -275,6 +275,15 @@ export type RuntimeWorkbenchHumanDecisionBlockedReason =
   | "response_invalid"
   | "runtime_unavailable";
 
+export type RuntimeWorkbenchHumanDecisionReviewKind =
+  | "human_checkpoint"
+  | "high_risk_approval";
+
+export type RuntimeWorkbenchHumanDecisionTimeoutAction =
+  | "hold"
+  | "fallback"
+  | "abort";
+
 export interface RuntimeWorkbenchHumanDecisionSnapshot {
   readonly status: RuntimeWorkbenchHumanDecisionStatus;
   readonly activeProjectId: string | null;
@@ -285,6 +294,12 @@ export interface RuntimeWorkbenchHumanDecisionSnapshot {
   readonly decision: string | null;
   readonly availableDecisions: readonly string[];
   readonly pendingDecisionCount: number;
+  readonly reviewKind: RuntimeWorkbenchHumanDecisionReviewKind | null;
+  readonly presentArtifacts: readonly string[];
+  readonly presentEvidence: boolean | null;
+  readonly timeoutSeconds: number | null;
+  readonly timeoutAction: RuntimeWorkbenchHumanDecisionTimeoutAction | null;
+  readonly decisionLabels: Readonly<Record<string, string>>;
   readonly by: string | null;
   readonly customValuePresent: boolean;
   readonly statusCode: number | null;
@@ -2260,6 +2275,7 @@ export function createRuntimeWorkbenchSession(
           activeProjectId: projectId,
           availableDecisions: pendingDecision?.availableDecisions ?? [],
           decision: pendingDecision?.decision ?? null,
+          decisionLabels: pendingDecision?.decisionLabels ?? {},
           humanNodeId: pendingDecision?.humanNodeId ?? null,
           method: "GET",
           path:
@@ -2267,11 +2283,16 @@ export function createRuntimeWorkbenchSession(
               ? requestPath
               : buildRuntimeWorkbenchHumanDecisionPath(pendingDecision.runId),
           pendingDecisionCount,
+          presentArtifacts: pendingDecision?.presentArtifacts ?? [],
+          presentEvidence: pendingDecision?.presentEvidence ?? null,
           requestedAt: pendingDecision?.requestedAt ?? null,
+          reviewKind: pendingDecision?.reviewKind ?? null,
           runId: pendingDecision?.runId ?? null,
           runtimeAvailable: true,
           status: "succeeded",
           statusCode: 200,
+          timeoutAction: pendingDecision?.timeoutAction ?? null,
+          timeoutSeconds: pendingDecision?.timeoutSeconds ?? null,
           disposed,
         });
         publishIfChanged(true);
@@ -2989,6 +3010,8 @@ function createRuntimeWorkbenchHumanDecisionSnapshot(
   },
 ): RuntimeWorkbenchHumanDecisionSnapshot {
   const availableDecisions = input.availableDecisions ?? [];
+  const decisionLabels = input.decisionLabels ?? {};
+  const presentArtifacts = input.presentArtifacts ?? [];
   return Object.freeze({
     status: input.status,
     activeProjectId: input.activeProjectId ?? null,
@@ -2999,6 +3022,12 @@ function createRuntimeWorkbenchHumanDecisionSnapshot(
     decision: input.decision ?? null,
     availableDecisions: Object.freeze([...availableDecisions]),
     pendingDecisionCount: input.pendingDecisionCount ?? 0,
+    reviewKind: input.reviewKind ?? null,
+    presentArtifacts: Object.freeze([...presentArtifacts]),
+    presentEvidence: input.presentEvidence ?? null,
+    timeoutSeconds: input.timeoutSeconds ?? null,
+    timeoutAction: input.timeoutAction ?? null,
+    decisionLabels: Object.freeze({ ...decisionLabels }),
     by: input.by ?? null,
     customValuePresent: input.customValuePresent ?? false,
     statusCode: input.statusCode ?? null,
@@ -3808,6 +3837,12 @@ interface ParsedRuntimeWorkbenchPendingHumanDecision {
   readonly humanNodeId: string;
   readonly decision: string | null;
   readonly availableDecisions: readonly string[];
+  readonly reviewKind: RuntimeWorkbenchHumanDecisionReviewKind;
+  readonly presentArtifacts: readonly string[];
+  readonly presentEvidence: boolean | null;
+  readonly timeoutSeconds: number | null;
+  readonly timeoutAction: RuntimeWorkbenchHumanDecisionTimeoutAction | null;
+  readonly decisionLabels: Readonly<Record<string, string>>;
   readonly requestedAt: string | null;
 }
 
@@ -3912,6 +3947,12 @@ function parseRuntimeWorkbenchPendingHumanDecisionProjection(
     const status = decision.status;
     const requestedAt = decision.requested_at;
     const availableDecisions = decision.available_decisions;
+    const reviewKind = decision.review_kind ?? "human_checkpoint";
+    const presentArtifacts = decision.present_artifacts ?? [];
+    const presentEvidence = decision.present_evidence ?? null;
+    const timeoutSeconds = decision.timeout_seconds ?? null;
+    const timeoutAction = decision.timeout_action ?? null;
+    const decisionLabels = decision.decision_labels ?? {};
     if (
       typeof humanNodeId !== "string" ||
       humanNodeId.trim().length === 0 ||
@@ -3920,21 +3961,68 @@ function parseRuntimeWorkbenchPendingHumanDecisionProjection(
       !Array.isArray(availableDecisions) ||
       !availableDecisions.every(
         (item) => typeof item === "string" && item.trim().length > 0,
-      )
+      ) ||
+      (reviewKind !== "human_checkpoint" &&
+        reviewKind !== "high_risk_approval") ||
+      !Array.isArray(presentArtifacts) ||
+      !presentArtifacts.every(
+        (item) => typeof item === "string" && item.trim().length > 0,
+      ) ||
+      (presentEvidence !== null && typeof presentEvidence !== "boolean") ||
+      (timeoutSeconds !== null &&
+        (typeof timeoutSeconds !== "number" ||
+          !Number.isInteger(timeoutSeconds) ||
+          timeoutSeconds <= 0)) ||
+      (timeoutAction !== null &&
+        timeoutAction !== "hold" &&
+        timeoutAction !== "fallback" &&
+        timeoutAction !== "abort") ||
+      !isRecord(decisionLabels)
     ) {
       return null;
+    }
+    const normalizedDecisionLabels: Record<string, string> = {};
+    for (const [key, label] of Object.entries(decisionLabels)) {
+      if (
+        key.trim().length === 0 ||
+        typeof label !== "string" ||
+        label.trim().length === 0
+      ) {
+        return null;
+      }
+      normalizedDecisionLabels[key] = label;
     }
     if (status !== "pending") {
       continue;
     }
     pendingDecisionCount += 1;
-    const normalizedDecisions = Object.freeze([...availableDecisions]);
+    const normalizedDecisions: readonly string[] = Object.freeze([
+      ...(availableDecisions as string[]),
+    ]);
+    const normalizedPresentArtifacts: readonly string[] = Object.freeze([
+      ...(presentArtifacts as string[]),
+    ]);
+    const normalizedReviewKind: RuntimeWorkbenchHumanDecisionReviewKind =
+      reviewKind;
+    const normalizedPresentEvidence: boolean | null = presentEvidence;
+    const normalizedTimeoutSeconds: number | null =
+      typeof timeoutSeconds === "number" ? timeoutSeconds : null;
+    const normalizedTimeoutAction: RuntimeWorkbenchHumanDecisionTimeoutAction | null =
+      timeoutAction;
+    const normalizedRequestedAt: string | null =
+      typeof requestedAt === "string" ? requestedAt : null;
     firstPendingDecision ??= Object.freeze({
       runId: expectedRunId,
       humanNodeId,
       decision: normalizedDecisions[0] ?? null,
       availableDecisions: normalizedDecisions,
-      requestedAt,
+      reviewKind: normalizedReviewKind,
+      presentArtifacts: normalizedPresentArtifacts,
+      presentEvidence: normalizedPresentEvidence,
+      timeoutSeconds: normalizedTimeoutSeconds,
+      timeoutAction: normalizedTimeoutAction,
+      decisionLabels: Object.freeze({ ...normalizedDecisionLabels }),
+      requestedAt: normalizedRequestedAt,
     });
   }
   return Object.freeze({ pendingDecisionCount, firstPendingDecision });

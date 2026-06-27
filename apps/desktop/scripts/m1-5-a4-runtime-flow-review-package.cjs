@@ -99,7 +99,7 @@ function validateA4RuntimeFlowReviewPackage(options = {}) {
   assertSanitizedJson(reviewPackage, "A4 runtime-flow review package");
   assertEqual(reviewPackage.schema_version, "0.1.0", "schema version");
   assertEqual(reviewPackage.milestone, "M1.5", "milestone");
-  assertEqual(reviewPackage.slice, "W1.5.202", "slice id");
+  assertEqual(reviewPackage.slice, "W1.5.207", "slice id");
   assertEqual(
     reviewPackage.package_status,
     "a4_runtime_flow_review_package_prepared_not_accepted",
@@ -112,8 +112,8 @@ function validateA4RuntimeFlowReviewPackage(options = {}) {
     "required reviewer",
   );
 
-  assertEqual(manifest.slice, "W1.5.202", "manifest source slice");
-  assertEqual(capture.slice, "W1.5.202", "capture source slice");
+  assertEqual(manifest.slice, "W1.5.207", "manifest source slice");
+  assertEqual(capture.slice, "W1.5.207", "capture source slice");
   assertEqual(
     manifest.summary.accepted_items,
     0,
@@ -418,7 +418,7 @@ function validateA4RuntimeFlowReviewPackage(options = {}) {
   );
   assertDeepEqual(
     reviewPackage.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.203"],
+    ["W1.5.208"],
     "next recommended slices",
   );
 

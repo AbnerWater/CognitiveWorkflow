@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.204",
+  "slice": "W1.5.207",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -162,7 +162,8 @@
         "W1.5.202 adds runtime-backed Skill candidate discovery and secret-safe MCP configuration metadata evidence without accepting FR items",
         "W1.5.203 registers the accepted explicit workflow snapshot endpoint and records metadata-only snapshot ledger evidence without accepting FR-015",
         "W1.5.204 adds the accepted workflow_history endpoint plus Desktop metadata-only Version Snapshot timeline refresh evidence without accepting FR-015",
-        "W1.5.206 adds metadata-only pending HITL decision discovery and Desktop form population evidence without accepting FR-018"
+        "W1.5.206 adds metadata-only pending HITL decision discovery and Desktop form population evidence without accepting FR-018",
+        "W1.5.207 adds high-risk HITL pending decision review context and keeps evidence metadata-only without accepting FR-018"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
@@ -171,7 +172,8 @@
         "Task mutation commands remain incomplete",
         "Version Snapshot workflow_history timeline is visible, but snapshots/snapshots.jsonl ledger projection, restore-to-snapshot, and continue execution remain unimplemented",
         "A4 reviewer decision is not recorded for the Task Drawer artifact bridge.",
-        "Combined project creation plus initial reference import still requires A4 UX acceptance review."
+        "Combined project creation plus initial reference import still requires A4 UX acceptance review.",
+        "High-risk HITL pause/resume evidence still requires A4 UX acceptance review."
       ]
     },
     {
@@ -249,9 +251,9 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.205",
-      "title": "Desktop FR-015 snapshot ledger restore follow-up",
-      "reason": "Continue FR-015 after W1.5.204 workflow history timeline evidence: surface snapshot ledger state only after an accepted projection, then define restore/continue semantics before implementation."
+      "id": "W1.5.208",
+      "title": "A4 runtime-flow reviewer decision recording",
+      "reason": "Record A4 reviewer decisions for the 11 pending review inputs; keep FR-015 restore implementation blocked until ADR-0012 or another accepted contract is available."
     }
   ]
 }

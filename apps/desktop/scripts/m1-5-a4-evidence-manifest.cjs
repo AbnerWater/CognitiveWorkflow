@@ -67,7 +67,7 @@ function validateA4EvidenceManifest(options = {}) {
     options.matrixRunnerPath ?? matrixRunnerPath,
   );
 
-  assertEqual(manifest.slice, "W1.5.202", "slice id");
+  assertEqual(manifest.slice, "W1.5.207", "slice id");
   assertEqual(
     manifest.manifest_status,
     "a4_evidence_inputs_refreshed_not_accepted",

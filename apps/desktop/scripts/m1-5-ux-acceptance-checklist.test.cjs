@@ -177,7 +177,7 @@ test("M1.5 UX acceptance checklist preserves source authority and conservative s
   assert.equal(fs.existsSync(uiuxBaselinePath), true);
   assert.equal(checklist.schema_version, "0.1.0");
   assert.equal(checklist.milestone, "M1.5");
-  assert.equal(checklist.slice, "W1.5.204");
+  assert.equal(checklist.slice, "W1.5.207");
   assert.equal(checklist.checklist_status, "evidence_refreshed_not_accepted");
   assert.equal(checklist.exit_criterion, "EXIT-P1-1");
   assert.equal(checklist.exit_p1_1_status, "not_ready");
@@ -349,6 +349,6 @@ test("M1.5 UX acceptance checklist does not overclaim dependency-gated or scaffo
   assert.match(checklist.guardrails.join(" "), /does not claim A4 acceptance/u);
   assert.deepEqual(
     checklist.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.205"],
+    ["W1.5.208"],
   );
 });

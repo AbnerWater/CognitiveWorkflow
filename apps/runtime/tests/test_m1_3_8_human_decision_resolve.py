@@ -100,6 +100,26 @@ def _human_graph_payload() -> dict[str, Any]:
     }
 
 
+def _high_risk_human_graph_payload() -> dict[str, Any]:
+    payload = copy.deepcopy(_human_graph_payload())
+    human_node = payload["nodes"][1]
+    human_node["decisions"] = [
+        {"key": "continue", "label": "Approve"},
+        {"key": "reject", "label": "Reject"},
+    ]
+    human_node["contract"]["decisions"] = [
+        {"key": "continue", "label": "Approve"},
+        {"key": "reject", "label": "Reject"},
+    ]
+    human_node["contract"]["requires_human_approval"] = True
+    human_node["contract"]["present_artifacts"] = ["primary_artifact", "risk_register"]
+    human_node["contract"]["present_evidence"] = True
+    human_node["contract"]["timeout_seconds"] = 900
+    human_node["contract"]["timeout_action"] = "hold"
+    human_node["contract"]["metadata"] = {"cw": {"review_kind": "high_risk_approval", "risk_level": "high"}}
+    return payload
+
+
 def _human_edit_graph_payload() -> dict[str, Any]:
     payload = copy.deepcopy(_human_graph_payload())
     human_node = payload["nodes"][1]
@@ -379,9 +399,9 @@ def test_run_decision_endpoint_resolves_waiting_user_and_replays_idempotently(tm
     assert run.current_node_ids == ["n_continue"]
 
 
-def test_run_list_and_decision_projection_discover_pending_human_gate(tmp_path: Path) -> None:
+def test_run_list_and_decision_projection_discover_pending_high_risk_human_gate(tmp_path: Path) -> None:
     client = _test_client()
-    payload = _human_graph_payload()
+    payload = _high_risk_human_graph_payload()
     create_project = client.post(
         "/cw/v1/projects",
         headers={"Authorization": "Bearer expected-token"},
@@ -450,6 +470,12 @@ def test_run_list_and_decision_projection_discover_pending_human_gate(tmp_path: 
             "requested_at": read_workflow_run(project_root, run_id).paused_at,
             "custom_value_present": False,
             "available_decisions": ["continue", "reject"],
+            "review_kind": "high_risk_approval",
+            "present_artifacts": ["primary_artifact", "risk_register"],
+            "present_evidence": True,
+            "timeout_seconds": 900,
+            "timeout_action": "hold",
+            "decision_labels": {"continue": "Approve", "reject": "Reject"},
         }
     ]
     assert "prompt_to_user" not in json.dumps(decision_body)

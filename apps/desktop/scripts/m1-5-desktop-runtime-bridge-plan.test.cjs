@@ -48,7 +48,7 @@ const expectedCurrentReadinessByFrId = new Map([
   ["FR-011", "runtime_bridge_needs_a4_review"],
   ["FR-012", "runtime_bridge_needs_a4_review"],
   ["FR-014", "runtime_bridge_needs_a4_review"],
-  ["FR-018", "partial_runtime_bridge_requires_followup"],
+  ["FR-018", "runtime_bridge_needs_a4_review"],
 ]);
 
 function readJson(filePath) {

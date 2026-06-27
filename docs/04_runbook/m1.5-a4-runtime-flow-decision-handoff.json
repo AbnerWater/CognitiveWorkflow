@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.202",
+  "slice": "W1.5.207",
   "handoff_status": "a4_runtime_flow_decision_handoff_prepared_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-27",
+  "observed_at": "2026-06-27T19:12:38.042Z",
   "source": {
     "a4_runtime_flow_review_package": "docs/04_runbook/m1.5-a4-runtime-flow-review-package.json",
     "a4_evidence_manifest": "docs/04_runbook/m1.5-a4-evidence-manifest.json",
@@ -15,11 +15,11 @@
     "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
   },
   "guardrails": [
-    "This handoff prepares the A4 reviewer decision record only; it does not record A4 acceptance.",
-    "All decision items remain pending_reviewer_decision until an A4 ux-acceptance-reviewer records a separate decision.",
-    "The source review package accepted_items count must remain zero before reviewer approval.",
+    "W1.5.207 refreshes reviewer decision handoff inputs with FR-018 high-risk HITL review context evidence, but no reviewer decision is recorded here.",
     "EXIT-P1-1 remains not_ready until every FR-001 through FR-020 item has accepted A4 evidence and the other Phase 1 exit gates are satisfied.",
-    "No handoff field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, artifact bodies, secure paths, cache paths, output directory values, or full destination paths."
+    "No handoff field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, artifact bodies, secure paths, cache paths, output directory values, full destination paths, prompt_to_user, or custom_value content.",
+    "FR-015 remains excluded until ADR-0012 or another accepted restore/continue contract exists.",
+    "Accepted item count must remain zero until the A4 reviewer records explicit decisions."
   ],
   "reviewer_contract": {
     "required_reviewer": "A4 ux-acceptance-reviewer",
@@ -241,26 +241,46 @@
       "missing_before_acceptance": [
         "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
       ]
+    },
+    {
+      "id": "DECISION-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "fr_id": "FR-018",
+      "package_item_id": "PKG-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "review_item_id": "A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "review_focus": "High-risk HITL pause/resume review context and sanitized pending decision controls",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for high-risk HITL pause/resume behavior is not recorded."
+      ]
     }
   ],
   "summary": {
-    "decision_item_count": 10,
+    "decision_item_count": 11,
     "stream_candidate_items": 3,
-    "runtime_bridge_items": 7,
+    "runtime_bridge_items": 8,
     "accepted_items": 0,
-    "pending_reviewer_decision_items": 10,
+    "pending_reviewer_decision_items": 11,
     "rejected_items": 0,
     "needs_followup_items": 0,
-    "source_package_pending_a4_review_items": 10,
+    "source_package_pending_a4_review_items": 11,
     "source_package_accepted_items": 0,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.203",
-      "title": "Desktop FR-015 snapshot restore continue follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
+      "id": "W1.5.208",
+      "title": "A4 runtime-flow reviewer decision recording",
+      "reason": "Record A4 reviewer decisions for the 11 pending review inputs; keep FR-015 restore implementation blocked until ADR-0012 or another accepted contract is available."
     }
   ]
 }

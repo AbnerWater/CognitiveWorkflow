@@ -107,7 +107,7 @@ test("M1.5 UX gap repair plan assigns every FR exactly once", () => {
       evidenceMap.fr_evidence_items,
       (item) => item.acceptance_readiness === "runtime_bridge_needs_a4_review",
     ),
-    7,
+    8,
   );
   assert.equal(
     countItems(
@@ -116,7 +116,7 @@ test("M1.5 UX gap repair plan assigns every FR exactly once", () => {
         item.acceptance_readiness ===
         "partial_runtime_bridge_requires_followup",
     ),
-    2,
+    1,
   );
 });
 

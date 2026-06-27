@@ -42,8 +42,9 @@ const expectedBridgeFrIds = [
   "FR-013",
   "FR-014",
   "FR-017",
+  "FR-018",
 ];
-const expectedPartialBridgeFrIds = ["FR-015", "FR-018"];
+const expectedPartialBridgeFrIds = ["FR-015"];
 const expectedReviewFrIds = [...expectedCandidateFrIds, ...expectedBridgeFrIds];
 const expectedRequiredMatrixCases = [
   "known-desktop",
@@ -67,7 +68,7 @@ test("M1.5 A4 evidence manifest runner returns a sanitized conservative summary"
 
   assert.equal(summary.status, "a4_evidence_inputs_refreshed_not_accepted");
   assert.equal(summary.exitP1_1Status, "not_ready");
-  assert.equal(summary.reviewItemCount, 10);
+  assert.equal(summary.reviewItemCount, 11);
   assert.deepEqual(sorted(summary.frIds), sorted(expectedReviewFrIds));
   assert.deepEqual(sorted(summary.candidateFrIds), expectedCandidateFrIds);
   assert.deepEqual(sorted(summary.bridgeFrIds), expectedBridgeFrIds);
@@ -80,7 +81,7 @@ test("M1.5 A4 evidence manifest runner returns a sanitized conservative summary"
     sorted(summary.requiredMatrixCases),
     sorted(expectedRequiredMatrixCases),
   );
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.203"]);
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.208"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });
@@ -93,13 +94,13 @@ test("M1.5 A4 evidence manifest keeps stream candidate track and adds bridge can
   );
 
   assert.equal(manifest.schema_version, "0.1.0");
-  assert.equal(manifest.slice, "W1.5.202");
+  assert.equal(manifest.slice, "W1.5.207");
   assert.equal(
     manifest.manifest_status,
     "a4_evidence_inputs_refreshed_not_accepted",
   );
   assert.equal(manifest.exit_p1_1_status, "not_ready");
-  assert.equal(manifest.refreshed_from?.slice, "W1.5.197");
+  assert.equal(manifest.refreshed_from?.slice, "W1.5.206");
   assert.equal(manifest.review_track.source_track_id, candidateTrack?.id);
   assert.equal(
     manifest.review_track.candidate_evidence_readiness,

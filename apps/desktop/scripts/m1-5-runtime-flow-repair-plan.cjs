@@ -31,16 +31,16 @@ const a4ManifestPath = path.join(
 const runtimeFlowReadiness = "partial_requires_runtime_flow";
 const partialBridgeReadiness = "partial_runtime_bridge_requires_followup";
 const a4ReadyBridgeReadiness = "runtime_bridge_needs_a4_review";
-const currentPlanSlice = "W1.5.206";
+const currentPlanSlice = "W1.5.207";
 const currentPlanStatus =
-  "remaining_runtime_flow_plan_refreshed_after_fr018_pending_decision_discovery";
+  "remaining_runtime_flow_plan_refreshed_after_fr018_high_risk_hitl_a4_package";
 const currentSourceTrackStatus =
-  "refreshed_after_fr018_pending_decision_discovery";
+  "refreshed_after_fr018_high_risk_hitl_a4_package";
 const allowedPlanningStatuses = new Set([
   "planned_not_implemented",
   "partially_implemented_requires_a4_evidence",
 ]);
-const nextRecommendedSliceIds = ["W1.5.207"];
+const nextRecommendedSliceIds = ["W1.5.208"];
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, { encoding: "utf8" }));
@@ -146,7 +146,7 @@ function validateRuntimeFlowRepairPlan(options = {}) {
   assertEqual(plan.slice, currentPlanSlice, "slice id");
   assertEqual(plan.plan_status, currentPlanStatus, "plan status");
   assertEqual(plan.exit_p1_1_status, "not_ready", "EXIT-P1-1 status");
-  assertEqual(plan.refreshed_from?.slice, "W1.5.188", "refreshed-from slice");
+  assertEqual(plan.refreshed_from?.slice, "W1.5.206", "refreshed-from slice");
   assertEqual(
     plan.repair_track.source_track_id,
     "TRACK-REMAINING-RUNTIME-FLOW-IMPLEMENTATION",
@@ -328,10 +328,9 @@ function validateRuntimeFlowRepairPlan(options = {}) {
     }
   }
 
-  const expectedSequenceItemIds = [
-    "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
-    "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
-  ];
+  const expectedSequenceItemIds = plan.runtime_flow_items.map(
+    (item) => item.id,
+  );
   assertDeepEqual(
     plan.implementation_sequence.map((step) => step.item_id),
     expectedSequenceItemIds,

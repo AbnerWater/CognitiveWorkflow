@@ -2320,7 +2320,21 @@ function RuntimeWorkbenchShellHumanDecisionControls(props: {
       data-human-decision-pending-count={String(
         props.humanDecision.pendingDecisionCount,
       )}
+      data-human-decision-present-artifact-count={String(
+        props.humanDecision.presentArtifacts.length,
+      )}
+      data-human-decision-present-evidence={
+        props.humanDecision.presentEvidence === null
+          ? "unknown"
+          : props.humanDecision.presentEvidence
+            ? "true"
+            : "false"
+      }
+      data-human-decision-review-kind={props.humanDecision.reviewKind ?? "none"}
       data-human-decision-status={props.humanDecision.status}
+      data-human-decision-timeout-action={
+        props.humanDecision.timeoutAction ?? "none"
+      }
     >
       <div className="cw-workbench__human-decision-form">
         <label className="cw-workbench__human-decision-field">
@@ -2423,6 +2437,32 @@ function RuntimeWorkbenchShellHumanDecisionControls(props: {
         <div>
           <dt>Choices</dt>
           <dd>{props.humanDecision.availableDecisions.length}</dd>
+        </div>
+        <div>
+          <dt>Review</dt>
+          <dd>{props.humanDecision.reviewKind ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Evidence</dt>
+          <dd>
+            {props.humanDecision.presentEvidence === null
+              ? "unknown"
+              : props.humanDecision.presentEvidence
+                ? "present"
+                : "none"}
+          </dd>
+        </div>
+        <div>
+          <dt>Artifacts</dt>
+          <dd>{props.humanDecision.presentArtifacts.length}</dd>
+        </div>
+        <div>
+          <dt>Timeout</dt>
+          <dd>
+            {props.humanDecision.timeoutSeconds === null
+              ? (props.humanDecision.timeoutAction ?? "none")
+              : `${props.humanDecision.timeoutAction ?? "none"}:${props.humanDecision.timeoutSeconds}`}
+          </dd>
         </div>
         <div>
           <dt>Custom</dt>

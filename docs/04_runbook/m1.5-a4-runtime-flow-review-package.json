@@ -1,11 +1,11 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.202",
+  "slice": "W1.5.207",
   "package_status": "a4_runtime_flow_review_package_prepared_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
-  "observed_at": "2026-06-27",
+  "observed_at": "2026-06-27T19:12:38.042Z",
   "source": {
     "a4_evidence_manifest": "docs/04_runbook/m1.5-a4-evidence-manifest.json",
     "a4_capture_execution": "docs/04_runbook/m1.5-a4-capture-execution.json",
@@ -16,10 +16,10 @@
     "a4_review_matrix": "docs/roadmap.md#5.4"
   },
   "guardrails": [
-    "This package prepares A4 reviewer inputs only; it does not record A4 acceptance.",
-    "Every packaged item remains pending_a4_review until an A4 ux-acceptance-reviewer records a separate decision.",
-    "W1.5.202 refreshes the package with FR-014 Skill candidate discovery plus secret-safe MCP configuration evidence, but does not record A4 acceptance.",
-    "No package field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, persisted params, raw MCP command_or_url or secret_ref values, secure paths, cache paths, output directory values, or full destination paths."
+    "W1.5.207 refreshes the package with FR-018 high-risk HITL review context evidence, but does not record A4 acceptance.",
+    "No package field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, persisted params, raw MCP command_or_url or secret_ref values, secure paths, cache paths, output directory values, full destination paths, prompt_to_user, or custom_value content.",
+    "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
+    "FR-015 remains excluded until ADR-0012 or another accepted restore/continue contract exists."
   ],
   "package_scope": {
     "source_review_status": "pending_a4_review",
@@ -37,7 +37,8 @@
       "FR-013",
       "FR-014",
       "FR-016",
-      "FR-017"
+      "FR-017",
+      "FR-018"
     ],
     "included_runtime_bridge_fr_ids": [
       "FR-007",
@@ -46,11 +47,12 @@
       "FR-012",
       "FR-013",
       "FR-014",
-      "FR-017"
+      "FR-017",
+      "FR-018"
     ],
     "included_stream_candidate_fr_ids": ["FR-009", "FR-010", "FR-016"],
-    "excluded_partial_runtime_bridge_fr_ids": ["FR-015", "FR-018"],
-    "excluded_reason": "Partial runtime bridge items require follow-up implementation or stronger end-to-end proof before A4 review packaging."
+    "excluded_partial_runtime_bridge_fr_ids": ["FR-015"],
+    "excluded_reason": "FR-015 requires follow-up accepted snapshot ledger restore/continue contract work before A4 review packaging."
   },
   "reviewer_contract": {
     "required_reviewer": "A4 ux-acceptance-reviewer",
@@ -73,12 +75,12 @@
     },
     "runner_output_contract": {
       "status": "a4_runtime_flow_review_package_prepared_not_accepted",
-      "review_item_count": 10,
+      "review_item_count": 11,
       "stream_candidate_item_count": 3,
-      "runtime_bridge_item_count": 7,
-      "excluded_partial_runtime_bridge_item_count": 2,
+      "runtime_bridge_item_count": 8,
+      "excluded_partial_runtime_bridge_item_count": 1,
       "accepted_item_count": 0,
-      "pending_a4_review_item_count": 10,
+      "pending_a4_review_item_count": 11,
       "exit_p1_1_status": "not_ready",
       "sanitized_summary_only": true
     }
@@ -237,23 +239,39 @@
         "Secret-safe MCP configuration metadata display",
         "No persisted params, raw command_or_url, or raw secret_ref retention in renderer evidence"
       ]
+    },
+    {
+      "id": "PKG-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "fr_id": "FR-018",
+      "review_item_id": "A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "High-risk HITL pause/resume review context and sanitized pending decision controls",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Semi-auto waiting_user runs expose pending high-risk HITL decisions through the accepted run list and decisions projections.",
+        "Desktop HITL controls show review kind, evidence/artifact presence, timeout, decision choices, and labels from sanitized runtime metadata.",
+        "Runtime and Desktop evidence do not retain prompt_to_user, custom_value content, raw prompt, model output, uploaded-file bytes, response bodies, secure paths, cache paths, or output directory values.",
+        "Decision submission continues through the accepted POST /runs/{run_id}/decisions path and records only status/customValuePresent metadata in Desktop snapshots."
+      ]
     }
   ],
   "summary": {
-    "review_item_count": 10,
+    "review_item_count": 11,
     "stream_candidate_items": 3,
-    "runtime_bridge_items": 7,
-    "excluded_partial_runtime_bridge_items": 2,
+    "runtime_bridge_items": 8,
+    "excluded_partial_runtime_bridge_items": 1,
     "accepted_items": 0,
-    "pending_a4_review_items": 10,
+    "pending_a4_review_items": 11,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.203",
-      "title": "Desktop FR-015 snapshot restore continue follow-up",
-      "reason": "Continue remaining runtime-flow implementation after FR-014 moved to A4 runtime-bridge review input."
+      "id": "W1.5.208",
+      "title": "A4 runtime-flow reviewer decision recording",
+      "reason": "Record A4 reviewer decisions for the 11 pending review inputs; keep FR-015 restore implementation blocked until ADR-0012 or another accepted contract is available."
     }
   ]
 }
