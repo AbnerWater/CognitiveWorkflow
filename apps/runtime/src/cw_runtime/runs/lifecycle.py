@@ -17,7 +17,12 @@ from typing import Any, Final, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from cw_runtime.engine import compile_workflow_graph, load_project_workflow_validation_context, load_workflow_graph
+from cw_runtime.engine import (
+    WorkflowValidationError,
+    compile_workflow_graph,
+    load_project_workflow_validation_context,
+    load_workflow_graph,
+)
 from cw_runtime.harness.project import (
     AGENT_WORKFLOW_DIR,
     ProjectMCPToolDiscovery,
@@ -35,6 +40,7 @@ from cw_runtime.persistence import (
 from cw_runtime.settings import RUNTIME_SCHEMA_VERSION
 from cw_schemas.events import LifecycleEvent, StreamEventBase, SystemEvent, validate_stream_event
 from cw_schemas.types import DisplayLevel, EventCategory, EventPhase, ExecutionMode, RunState, Sensitivity
+from cw_schemas.workflow import HumanCheckpointNode
 
 _CROCKFORD_ALPHABET: Final = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _TERMINAL_RUN_STATES: Final[frozenset[RunState]] = frozenset({RunState.COMPLETED, RunState.CANCELLED, RunState.FAILED})
@@ -164,6 +170,31 @@ class WorkflowRunDocument(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class HumanDecisionProjection(BaseModel):
+    """Sanitized projection of one ``decisions.jsonl`` row."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    human_node_id: str
+    status: Literal["pending", "resolved"]
+    decision: str | None = None
+    by: str | None = None
+    decided_at: str | None = None
+    requested_at: str | None = None
+    custom_value_present: bool = False
+    available_decisions: list[str] = Field(default_factory=list)
+
+
+class RunDecisionProjection(BaseModel):
+    """Response body for ``GET /cw/v1/runs/{run_id}/decisions``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["0.1.0"] = RUNTIME_SCHEMA_VERSION
+    run_id: str
+    decisions: list[HumanDecisionProjection] = Field(default_factory=list)
+
+
 def create_workflow_run(
     project_root: Path,
     workflow_id: str,
@@ -253,6 +284,57 @@ def read_workflow_run(project_root: Path, run_id: str) -> WorkflowRunDocument:
     """Read ``runs/<run_id>/run.json``."""
 
     return _read_workflow_run_document(_run_root(project_root, run_id) / "run.json")
+
+
+def list_workflow_runs(project_root: Path) -> list[WorkflowRunDocument]:
+    """Read all persisted WorkflowRun documents for one project."""
+
+    runs_root = project_root.resolve() / AGENT_WORKFLOW_DIR / "runs"
+    if not runs_root.exists():
+        return []
+    runs: list[WorkflowRunDocument] = []
+    for run_json in sorted(runs_root.glob("*/run.json")):
+        runs.append(_read_workflow_run_document(run_json))
+    return runs
+
+
+def read_run_decisions(project_root: Path, run_id: str) -> RunDecisionProjection:
+    """Read ``decisions.jsonl`` as a metadata-only API projection."""
+
+    run = read_workflow_run(project_root, run_id)
+    decisions_path = _run_root(project_root, run_id) / "decisions.jsonl"
+    decision_keys_by_node = _decision_keys_by_human_node(project_root)
+    projections: list[HumanDecisionProjection] = []
+    try:
+        raw_lines = decisions_path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError as exc:
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run decisions.jsonl is missing.",
+            status_code=500,
+            details={"run_id": run_id},
+        ) from exc
+    for line_number, raw_line in enumerate(raw_lines, start=1):
+        if not raw_line.strip():
+            continue
+        try:
+            loaded = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            raise RunError(
+                "RH_RUN_DIR_CORRUPTED",
+                "Run decisions.jsonl contains invalid JSON.",
+                status_code=500,
+                details={"run_id": run_id, "line_number": line_number},
+            ) from exc
+        if not isinstance(loaded, dict):
+            raise RunError(
+                "RH_RUN_DIR_CORRUPTED",
+                "Run decisions.jsonl records must be JSON objects.",
+                status_code=500,
+                details={"run_id": run_id, "line_number": line_number},
+            )
+        projections.append(_project_human_decision(run, loaded, decision_keys_by_node))
+    return RunDecisionProjection(run_id=run.run_id, decisions=projections)
 
 
 def recover_project_runs(
@@ -974,6 +1056,56 @@ def _read_workflow_run_document(path: Path) -> WorkflowRunDocument:
         ) from exc
 
 
+def _decision_keys_by_human_node(project_root: Path) -> dict[str, list[str]]:
+    try:
+        graph = load_workflow_graph(project_root)
+    except WorkflowValidationError:
+        return {}
+    decision_keys: dict[str, list[str]] = {}
+    for node in graph.nodes:
+        if isinstance(node, HumanCheckpointNode):
+            decision_keys[node.node_id] = [decision.key for decision in node.decisions]
+    return decision_keys
+
+
+def _project_human_decision(
+    run: WorkflowRunDocument,
+    record: Mapping[str, Any],
+    decision_keys_by_node: Mapping[str, list[str]],
+) -> HumanDecisionProjection:
+    human_node_id = record.get("human_node_id")
+    status = record.get("status")
+    if not isinstance(human_node_id, str) or not human_node_id:
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run decisions.jsonl record is missing human_node_id.",
+            status_code=500,
+            details={"run_id": run.run_id},
+        )
+    if status not in {"pending", "resolved"}:
+        raise RunError(
+            "RH_RUN_DIR_CORRUPTED",
+            "Run decisions.jsonl record has an invalid status.",
+            status_code=500,
+            details={"run_id": run.run_id, "human_node_id": human_node_id},
+        )
+    return HumanDecisionProjection(
+        human_node_id=human_node_id,
+        status=cast(Literal["pending", "resolved"], status),
+        decision=_optional_record_string(record, "decision"),
+        by=_optional_record_string(record, "by"),
+        decided_at=_optional_record_string(record, "decided_at"),
+        requested_at=_optional_record_string(record, "requested_at"),
+        custom_value_present=record.get("custom_value") is not None,
+        available_decisions=list(decision_keys_by_node.get(human_node_id, [])),
+    )
+
+
+def _optional_record_string(record: Mapping[str, Any], key: str) -> str | None:
+    value = record.get(key)
+    return value if isinstance(value, str) and value else None
+
+
 def _write_json_atomic(path: Path, payload: object) -> None:
     _write_text_atomic(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
@@ -1019,10 +1151,12 @@ def _split_query_list(raw: str) -> Iterable[str]:
 
 
 __all__ = [
+    "HumanDecisionProjection",
     "ProjectRecoveryResult",
     "RecoveredWorkflowRun",
     "RunActionRequest",
     "RunCancellationSummary",
+    "RunDecisionProjection",
     "RunError",
     "RunFailureSummary",
     "WorkflowRunDocument",
@@ -1036,12 +1170,14 @@ __all__ = [
     "create_workflow_run",
     "format_sse_event",
     "list_stream_events",
+    "list_workflow_runs",
     "new_runtime_id",
     "next_event_seq",
     "parse_display_levels",
     "parse_event_categories",
     "pause_active_workflow_run",
     "pause_workflow_run",
+    "read_run_decisions",
     "read_workflow_run",
     "recover_project_runs",
     "resume_active_workflow_run",

@@ -113,6 +113,7 @@ export interface RuntimeWorkbenchShellReactSkillManagementFormState {
 }
 
 export interface RuntimeWorkbenchShellReactHumanDecisionFormState {
+  readonly projectId: string;
   readonly runId: string;
   readonly humanNodeId: string;
   readonly decision: string;
@@ -308,6 +309,7 @@ export function createRuntimeWorkbenchShellReactHumanDecisionFormState(
   input: Partial<RuntimeWorkbenchShellReactHumanDecisionFormState> = {},
 ): RuntimeWorkbenchShellReactHumanDecisionFormState {
   return Object.freeze({
+    projectId: input.projectId ?? "",
     runId: input.runId ?? "",
     humanNodeId: input.humanNodeId ?? "",
     decision: input.decision ?? "",
@@ -612,6 +614,13 @@ export function RuntimeWorkbenchShellReactView(
     skillId !== null &&
     skillVersion !== null &&
     skillVersion.length > 0;
+  const humanDecisionProjectId = useMemo(
+    () =>
+      normalizeRuntimeWorkbenchShellReactPathSegment(
+        humanDecisionForm.projectId,
+      ),
+    [humanDecisionForm.projectId],
+  );
   const humanDecisionRunId = useMemo(
     () =>
       normalizeRuntimeWorkbenchShellReactPathSegment(humanDecisionForm.runId),
@@ -646,6 +655,9 @@ export function RuntimeWorkbenchShellReactView(
     humanDecisionNodeId !== null &&
     humanDecisionChoice !== null &&
     humanDecisionActor !== null;
+  const humanDecisionRefreshReady =
+    snapshot.humanDecision.canRefreshPendingDecisions &&
+    humanDecisionProjectId !== null;
   const versionSnapshotWorkflowId = useMemo(
     () =>
       normalizeRuntimeWorkbenchShellReactPathSegment(
@@ -659,6 +671,37 @@ export function RuntimeWorkbenchShellReactView(
   const versionSnapshotTimelineReady =
     snapshot.versionSnapshot.canRefreshTimeline &&
     versionSnapshotWorkflowId !== null;
+  useEffect(() => {
+    if (
+      snapshot.humanDecision.pendingDecisionCount <= 0 ||
+      snapshot.humanDecision.runId === null ||
+      snapshot.humanDecision.humanNodeId === null
+    ) {
+      return;
+    }
+    setHumanDecisionForm((current) => {
+      if (
+        current.runId.trim().length > 0 ||
+        current.humanNodeId.trim().length > 0 ||
+        current.decision.trim().length > 0
+      ) {
+        return current;
+      }
+      return createRuntimeWorkbenchShellReactHumanDecisionFormState({
+        ...current,
+        projectId: snapshot.humanDecision.activeProjectId ?? current.projectId,
+        runId: snapshot.humanDecision.runId ?? current.runId,
+        humanNodeId: snapshot.humanDecision.humanNodeId ?? current.humanNodeId,
+        decision: snapshot.humanDecision.decision ?? current.decision,
+      });
+    });
+  }, [
+    snapshot.humanDecision.activeProjectId,
+    snapshot.humanDecision.decision,
+    snapshot.humanDecision.humanNodeId,
+    snapshot.humanDecision.pendingDecisionCount,
+    snapshot.humanDecision.runId,
+  ]);
   const handleActionError = useCallback(
     (error: unknown): void => {
       try {
@@ -1183,6 +1226,22 @@ export function RuntimeWorkbenchShellReactView(
     },
     [handleActionError, props.session, skillToggleProjectId, skillUpdateReady],
   );
+  const handleRefreshPendingHumanDecisionsClick = useCallback((): void => {
+    if (!humanDecisionRefreshReady || humanDecisionProjectId === null) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "refresh_pending_human_decisions",
+        projectId: humanDecisionProjectId,
+      })
+      .catch(handleActionError);
+  }, [
+    handleActionError,
+    humanDecisionProjectId,
+    humanDecisionRefreshReady,
+    props.session,
+  ]);
   const handleSubmitHumanDecisionClick = useCallback((): void => {
     if (
       !humanDecisionReady ||
@@ -1643,9 +1702,11 @@ export function RuntimeWorkbenchShellReactView(
             />
             <RuntimeWorkbenchShellHumanDecisionControls
               humanDecision={snapshot.humanDecision}
+              onRefreshPendingClick={handleRefreshPendingHumanDecisionsClick}
               onSubmitClick={handleSubmitHumanDecisionClick}
               onTextInputChange={handleHumanDecisionTextInputChange}
               ready={humanDecisionReady}
+              refreshReady={humanDecisionRefreshReady}
               state={humanDecisionForm}
             />
             <RuntimeWorkbenchShellExecutionControls
@@ -2240,7 +2301,9 @@ function RuntimeWorkbenchShellHumanDecisionControls(props: {
   readonly humanDecision: RuntimeWorkbenchShellSnapshot["humanDecision"];
   readonly state: RuntimeWorkbenchShellReactHumanDecisionFormState;
   readonly ready: boolean;
+  readonly refreshReady: boolean;
   readonly onTextInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  readonly onRefreshPendingClick: () => void;
   readonly onSubmitClick: () => void;
 }): ReactElement {
   return (
@@ -2254,9 +2317,21 @@ function RuntimeWorkbenchShellHumanDecisionControls(props: {
       data-human-decision-custom-value-present={
         props.humanDecision.customValuePresent ? "true" : "false"
       }
+      data-human-decision-pending-count={String(
+        props.humanDecision.pendingDecisionCount,
+      )}
       data-human-decision-status={props.humanDecision.status}
     >
       <div className="cw-workbench__human-decision-form">
+        <label className="cw-workbench__human-decision-field">
+          <span>Project id</span>
+          <input
+            data-human-decision-field="projectId"
+            inputMode="text"
+            onChange={props.onTextInputChange}
+            value={props.state.projectId}
+          />
+        </label>
         <label className="cw-workbench__human-decision-field">
           <span>Run id</span>
           <input
@@ -2294,6 +2369,18 @@ function RuntimeWorkbenchShellHumanDecisionControls(props: {
           />
         </label>
         <button
+          className="cw-workbench__human-decision-refresh"
+          data-human-decision-refresh="true"
+          data-human-decision-refresh-enabled={
+            props.refreshReady ? "true" : "false"
+          }
+          disabled={!props.refreshReady}
+          onClick={props.onRefreshPendingClick}
+          type="button"
+        >
+          Refresh pending
+        </button>
+        <button
           className="cw-workbench__human-decision-submit"
           data-human-decision-submit="true"
           data-human-decision-submit-enabled={props.ready ? "true" : "false"}
@@ -2310,6 +2397,10 @@ function RuntimeWorkbenchShellHumanDecisionControls(props: {
           <dd>{props.humanDecision.status}</dd>
         </div>
         <div>
+          <dt>Project</dt>
+          <dd>{props.humanDecision.activeProjectId ?? "none"}</dd>
+        </div>
+        <div>
           <dt>Run</dt>
           <dd>{props.humanDecision.runId ?? "none"}</dd>
         </div>
@@ -2324,6 +2415,14 @@ function RuntimeWorkbenchShellHumanDecisionControls(props: {
         <div>
           <dt>By</dt>
           <dd>{props.humanDecision.by ?? "none"}</dd>
+        </div>
+        <div>
+          <dt>Pending</dt>
+          <dd>{props.humanDecision.pendingDecisionCount}</dd>
+        </div>
+        <div>
+          <dt>Choices</dt>
+          <dd>{props.humanDecision.availableDecisions.length}</dd>
         </div>
         <div>
           <dt>Custom</dt>

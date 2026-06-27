@@ -1,8 +1,8 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.204",
-  "map_status": "evidence_refreshed_not_accepted",
+  "slice": "W1.5.206",
+  "map_status": "evidence_refreshed_after_fr018_pending_decision_discovery",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
   "observed_at": "2026-06-28",
@@ -14,7 +14,8 @@
     "uiux_baseline_docx": "AI_Agent_Workflow工作台_UIUX详细设计规范与需求规格说明书_v1.1_新增Workflow编排.docx"
   },
   "guardrails": [
-    "This evidence map refreshes FR-015 after accepted workflow_history endpoint and metadata-only Desktop timeline evidence; it does not claim A4 acceptance.",
+    "This evidence map refreshes FR-018 after metadata-only pending human decision discovery evidence; it does not claim A4 acceptance.",
+    "FR-015 remains partial and blocked from restore implementation until ADR-0012 or another accepted contract defines snapshot ledger projection and restore/continue semantics.",
     "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
     "Runtime bridge evidence stays metadata-only and must not include raw prompt, raw model output, uploaded-file bytes, response bodies, artifact bodies, raw destination paths, secure paths, cache paths, output directory values, or raw workflow change summaries."
   ],
@@ -396,19 +397,28 @@
       "evidence_refs": [
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-018",
         "docs/04_runbook/m1.5-progress.md#W1.5.184",
+        "docs/04_runbook/m1.5-progress.md#W1.5.206",
         "docs/reviews/m1.5.184-semi-auto-hitl-desktop-bridge-review.md",
         "specs/state_machines/workflow_run.md",
+        "apps/runtime/src/cw_runtime/api/app.py",
+        "apps/runtime/src/cw_runtime/runs/lifecycle.py",
+        "apps/runtime/tests/test_m1_3_8_human_decision_resolve.py",
+        "apps/desktop/src/renderer/runtime-workbench-session.ts",
+        "apps/desktop/src/renderer/runtime-workbench-interaction.ts",
         "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
       ],
       "verification_commands": [
-        "pnpm --filter @cw/desktop run test",
-        "uv run pytest apps/runtime/tests/test_m1_3_15_langgraph_hitl_bridge.py -q"
+        "uv run pytest apps/runtime/tests/test_m1_3_8_human_decision_resolve.py -q",
+        "uv run mypy apps/runtime/src/cw_runtime/runs/lifecycle.py apps/runtime/src/cw_runtime/api/app.py --strict",
+        "pnpm --filter @cw/desktop typecheck",
+        "pnpm --filter @cw/desktop build",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js"
       ],
       "missing_evidence": [
-        "Pending-decision discovery, full pause/resume user path, and high-risk-node review UX are not complete.",
+        "High-risk-node review context UX and A4 pause/resume capture remain unrecorded.",
         "A4 UX acceptance evidence for semi-auto HITL remains unrecorded."
       ],
-      "next_action": "Add pending-decision discovery and pause/resume A4 evidence before FR-018 acceptance."
+      "next_action": "Package high-risk-node review UX plus pause/resume evidence for A4 review before FR-018 acceptance."
     },
     {
       "id": "FR-019",
@@ -476,9 +486,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.205",
-      "title": "Desktop FR-015 snapshot ledger restore follow-up",
-      "reason": "Continue FR-015 after W1.5.204 workflow history timeline evidence: surface snapshot ledger state only after an accepted projection, then define restore/continue semantics before implementation."
+      "id": "W1.5.207",
+      "title": "Desktop FR-018 high-risk HITL A4 evidence package",
+      "reason": "Package high-risk-node review UX plus pause/resume evidence for A4 review; keep FR-015 restore implementation blocked until ADR-0012 or another accepted contract is available."
     }
   ]
 }

@@ -161,7 +161,8 @@
         "W1.5.201 adds combined project creation plus initial reference import runtime bridge evidence without accepting FR items",
         "W1.5.202 adds runtime-backed Skill candidate discovery and secret-safe MCP configuration metadata evidence without accepting FR items",
         "W1.5.203 registers the accepted explicit workflow snapshot endpoint and records metadata-only snapshot ledger evidence without accepting FR-015",
-        "W1.5.204 adds the accepted workflow_history endpoint plus Desktop metadata-only Version Snapshot timeline refresh evidence without accepting FR-015"
+        "W1.5.204 adds the accepted workflow_history endpoint plus Desktop metadata-only Version Snapshot timeline refresh evidence without accepting FR-015",
+        "W1.5.206 adds metadata-only pending HITL decision discovery and Desktop form population evidence without accepting FR-018"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",

@@ -1657,6 +1657,8 @@ function humanDecisionStatusLabel(
       return "Blocked";
     case "failed":
       return "Failed";
+    case "discovering":
+      return "Discovering";
     case "submitting":
       return "Submitting";
     case "succeeded":
@@ -1673,6 +1675,7 @@ function humanDecisionTone(
     case "blocked":
     case "failed":
       return "danger";
+    case "discovering":
     case "submitting":
       return "accent";
     case "succeeded":

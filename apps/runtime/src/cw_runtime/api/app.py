@@ -64,9 +64,11 @@ from cw_runtime.runs import (
     cancel_workflow_run,
     create_workflow_run,
     list_stream_events,
+    list_workflow_runs,
     parse_display_levels,
     parse_event_categories,
     pause_active_workflow_run,
+    read_run_decisions,
     read_workflow_run,
     resume_active_workflow_run,
     stream_sse_events,
@@ -603,6 +605,39 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
             return _harness_error_response(exc)
         return _dump_model(history)
 
+    def get_runs(request: Any) -> Any:
+        project_root_or_response = _project_root_from_header(request)
+        if not isinstance(project_root_or_response, Path):
+            return project_root_or_response
+        project_root = project_root_or_response
+        try:
+            runs = list_workflow_runs(project_root)
+        except RunError as exc:
+            return _run_error_response(exc)
+        for run in runs:
+            run_locations[run.run_id] = project_root
+        return {
+            "schema_version": RUNTIME_SCHEMA_VERSION,
+            "runs": [
+                {
+                    "run_id": run.run_id,
+                    "workflow_id": run.workflow_id,
+                    "workflow_version": run.workflow_version,
+                    "state": run.state.value,
+                    "mode": run.mode.value,
+                    "started_at": run.started_at,
+                    "paused_at": run.paused_at,
+                    "resumed_at": run.resumed_at,
+                    "completed_at": run.completed_at,
+                    "failed_at": run.failed_at,
+                    "cancelled_at": run.cancelled_at,
+                    "last_event_id": run.last_event_id,
+                    "current_node_ids": list(run.current_node_ids),
+                }
+                for run in runs
+            ],
+        }
+
     async def post_workflow_pause(workflow_id: str, request: Any) -> Any:
         return await _workflow_action(workflow_id, request, pause_active_workflow_run)
 
@@ -613,7 +648,7 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
         return await _workflow_action(workflow_id, request, cancel_active_workflow_run)
 
     def get_run(run_id: str) -> Any:
-        project_root = run_locations.get(run_id)
+        project_root = _project_root_for_run(run_id)
         if project_root is None:
             return _resource_not_found("Run is not registered in this runtime process.", {"run_id": run_id})
         try:
@@ -621,6 +656,15 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
         except RunError as exc:
             return _run_error_response(exc)
         return _dump_model(run)
+
+    def get_run_decisions(run_id: str) -> Any:
+        project_root = _project_root_for_run(run_id)
+        if project_root is None:
+            return _resource_not_found("Run is not registered in this runtime process.", {"run_id": run_id})
+        try:
+            return _dump_model(read_run_decisions(project_root, run_id))
+        except RunError as exc:
+            return _run_error_response(exc)
 
     async def post_run_cancel(run_id: str, request: Any) -> Any:
         return await _run_action(run_id, request, cancel_workflow_run)
@@ -1155,6 +1199,42 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
             ),
         )
 
+    def _project_root_from_header(request: Any) -> Path | Any:
+        project_id = request.headers.get("x-project-id")
+        if not isinstance(project_id, str) or not project_id:
+            return secure_json_response(
+                status_code=400,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.BAD_PROJECT_ID,
+                        message="X-Project-Id header is required for project-scoped run queries.",
+                    )
+                ),
+            )
+        project_root = project_locations.get(project_id)
+        if project_root is None:
+            return secure_json_response(
+                status_code=400,
+                content=_dump_model(
+                    build_error_envelope(
+                        error_code=APIErrorCode.BAD_PROJECT_ID,
+                        message="X-Project-Id does not identify a registered project.",
+                        details={"project_id": project_id},
+                    )
+                ),
+            )
+        return project_root
+
+    def _project_root_for_run(run_id: str) -> Path | None:
+        project_root = run_locations.get(run_id)
+        if project_root is not None:
+            return project_root
+        for candidate_root in project_locations.values():
+            if (candidate_root / ".agent-workflow" / "runs" / run_id / "run.json").exists():
+                run_locations[run_id] = candidate_root
+                return candidate_root
+        return None
+
     def _read_project_config(project_id: str, manifest_name: str) -> Any:
         project_root = project_locations.get(project_id)
         if project_root is None:
@@ -1187,6 +1267,7 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     post_workflow_pause.__annotations__["request"] = requests.Request
     post_workflow_resume.__annotations__["request"] = requests.Request
     post_workflow_cancel.__annotations__["request"] = requests.Request
+    get_runs.__annotations__["request"] = requests.Request
     post_run_decision.__annotations__["request"] = requests.Request
     post_run_instruction.__annotations__["request"] = requests.Request
     post_run_node_instruction.__annotations__["request"] = requests.Request
@@ -1216,7 +1297,9 @@ def create_app(settings: RuntimeSettings, *, adapter_registry: AdapterRegistry |
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/pause")(post_workflow_pause)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/resume")(post_workflow_resume)
     app.post(f"{settings.api_prefix}/workflows/{{workflow_id}}/cancel")(post_workflow_cancel)
+    app.get(f"{settings.api_prefix}/runs")(get_runs)
     app.get(f"{settings.api_prefix}/runs/{{run_id}}")(get_run)
+    app.get(f"{settings.api_prefix}/runs/{{run_id}}/decisions")(get_run_decisions)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/decisions")(post_run_decision)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}:submit-instruction", status_code=202)(post_run_instruction)
     app.post(f"{settings.api_prefix}/runs/{{run_id}}/nodes/{{node_id}}:submit-instruction", status_code=202)(

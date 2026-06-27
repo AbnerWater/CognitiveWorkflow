@@ -6569,12 +6569,14 @@ test("renderer runtime workbench React shell dispatches skill management command
 test("renderer runtime workbench React shell dispatches human decision commands without rendering custom values", async () => {
   assert.deepEqual(
     createRuntimeWorkbenchShellReactHumanDecisionFormState({
+      projectId: "project_human",
       runId: "run_waiting",
       humanNodeId: "n_review_gate",
       decision: "continue",
       by: "tester",
     }),
     {
+      projectId: "project_human",
       runId: "run_waiting",
       humanNodeId: "n_review_gate",
       decision: "continue",
@@ -6585,10 +6587,13 @@ test("renderer runtime workbench React shell dispatches human decision commands 
   const snapshot = createRuntimeWorkbenchShellReactSnapshot({
     humanDecision: {
       status: "succeeded",
+      activeProjectId: "project_human",
       path: "/runs/run_waiting/decisions",
       runId: "run_waiting",
       humanNodeId: "n_review_gate",
       decision: "continue",
+      availableDecisions: Object.freeze(["continue", "reject"]),
+      pendingDecisionCount: 1,
       by: "reviewer",
       customValuePresent: true,
       statusCode: 200,
@@ -6609,6 +6614,7 @@ test("renderer runtime workbench React shell dispatches human decision commands 
       root.render(
         <RuntimeWorkbenchShellReactView
           defaultHumanDecisionFormState={{
+            projectId: " project_human ",
             runId: " run_waiting ",
             humanNodeId: " n_review_gate ",
             decision: " continue ",
@@ -6624,6 +6630,10 @@ test("renderer runtime workbench React shell dispatches human decision commands 
       dom.container,
       "humanDecisionControl",
       "true",
+    );
+    assert.equal(
+      humanDecisionControl.getAttribute("data-human-decision-pending-count"),
+      "1",
     );
     assert.equal(
       humanDecisionControl.getAttribute("data-human-decision-status"),
@@ -6653,6 +6663,22 @@ test("renderer runtime workbench React shell dispatches human decision commands 
       "humanDecisionSubmit",
       "true",
     );
+    const refreshButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "humanDecisionRefresh",
+      "true",
+    );
+    assert.equal(
+      refreshButton.getAttribute("data-human-decision-refresh-enabled"),
+      "true",
+    );
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(refreshButton);
+    });
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "refresh_pending_human_decisions",
+      projectId: "project_human",
+    });
     assert.equal(
       submitButton.getAttribute("data-human-decision-submit-enabled"),
       "true",
@@ -7963,21 +7989,130 @@ test("renderer runtime workbench session submits human decisions through runtime
   );
   assert.deepEqual(resolved.humanDecision, {
     status: "succeeded",
+    activeProjectId: null,
     method: "POST",
     path: "/runs/run_waiting/decisions",
     runId: "run_waiting",
     humanNodeId: "n_review_gate",
     decision: "continue",
+    availableDecisions: [],
+    pendingDecisionCount: 0,
     by: "tester",
     customValuePresent: true,
     statusCode: 200,
     blockedReason: null,
     decidedAt: "2026-06-25T06:00:00.000Z",
     requestedAt: "2026-06-25T05:59:00.000Z",
+    canRefreshPendingDecisions: true,
     canSubmitDecision: true,
   });
   assert.equal(
     JSON.stringify(resolved.humanDecision).includes("raw_human_custom_value"),
+    false,
+  );
+});
+
+test("renderer runtime workbench session discovers pending human decisions without retaining raw prompts", async () => {
+  const calls: RuntimeWorkbenchRunOnceRuntimeCall[] = [];
+  const runtime: Pick<RuntimeBridge, "fetch"> = Object.freeze({
+    fetch: async <TBody,>(
+      path: RuntimeRequestPath,
+      init?: RuntimeRequestInit,
+    ): Promise<RuntimeResponse<TBody>> => {
+      calls.push(
+        init === undefined
+          ? { path }
+          : { path, init: Object.freeze({ ...init }) },
+      );
+      if (path === "/runs") {
+        return Object.freeze({
+          ok: true,
+          status: 200,
+          headers: Object.freeze({}),
+          body: Object.freeze({
+            schema_version: "0.1.0",
+            runs: Object.freeze([
+              Object.freeze({ run_id: "run_done", state: "completed" }),
+              Object.freeze({ run_id: "run_waiting", state: "waiting_user" }),
+            ]),
+          }) as TBody,
+        });
+      }
+      if (path === "/runs/run_waiting/decisions") {
+        return Object.freeze({
+          ok: true,
+          status: 200,
+          headers: Object.freeze({}),
+          body: Object.freeze({
+            schema_version: "0.1.0",
+            run_id: "run_waiting",
+            decisions: Object.freeze([
+              Object.freeze({
+                human_node_id: "n_gate",
+                status: "pending",
+                decision: null,
+                by: null,
+                decided_at: null,
+                requested_at: "2026-06-25T05:59:00.000Z",
+                custom_value_present: false,
+                available_decisions: Object.freeze(["continue", "reject"]),
+              }),
+            ]),
+          }) as TBody,
+        });
+      }
+      throw new Error(`Unexpected runtime path ${path}`);
+    },
+  });
+  const session = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+
+  const discovered = await session.refreshPendingHumanDecisions({
+    projectId: " project_hitl ",
+  });
+
+  assert.deepEqual(
+    calls.map((call) => ({
+      path: call.path,
+      method: call.init?.method,
+      projectId: call.init?.projectId,
+    })),
+    [
+      { path: "/runs", method: "GET", projectId: "project_hitl" },
+      {
+        path: "/runs/run_waiting/decisions",
+        method: "GET",
+        projectId: undefined,
+      },
+    ],
+  );
+  assert.deepEqual(discovered.humanDecision, {
+    status: "succeeded",
+    activeProjectId: "project_hitl",
+    method: "GET",
+    path: "/runs/run_waiting/decisions",
+    runId: "run_waiting",
+    humanNodeId: "n_gate",
+    decision: "continue",
+    availableDecisions: ["continue", "reject"],
+    pendingDecisionCount: 1,
+    by: null,
+    customValuePresent: false,
+    statusCode: 200,
+    blockedReason: null,
+    decidedAt: null,
+    requestedAt: "2026-06-25T05:59:00.000Z",
+    canRefreshPendingDecisions: true,
+    canSubmitDecision: true,
+  });
+  assert.equal(
+    JSON.stringify(discovered.humanDecision).includes("prompt_to_user"),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(discovered.humanDecision).includes("raw_prompt"),
     false,
   );
 });
@@ -9379,17 +9514,21 @@ function createRuntimeWorkbenchShellReactHumanDecisionSnapshot(
 ): RuntimeWorkbenchShellSnapshot["humanDecision"] {
   return Object.freeze({
     status: input.status ?? "idle",
-    method: "POST",
+    activeProjectId: input.activeProjectId ?? null,
+    method: input.method ?? "POST",
     path: input.path ?? null,
     runId: input.runId ?? null,
     humanNodeId: input.humanNodeId ?? null,
     decision: input.decision ?? null,
+    availableDecisions: input.availableDecisions ?? Object.freeze([]),
+    pendingDecisionCount: input.pendingDecisionCount ?? 0,
     by: input.by ?? null,
     customValuePresent: input.customValuePresent ?? false,
     statusCode: input.statusCode ?? null,
     blockedReason: input.blockedReason ?? null,
     decidedAt: input.decidedAt ?? null,
     requestedAt: input.requestedAt ?? null,
+    canRefreshPendingDecisions: input.canRefreshPendingDecisions ?? true,
     canSubmitDecision: input.canSubmitDecision ?? true,
   });
 }

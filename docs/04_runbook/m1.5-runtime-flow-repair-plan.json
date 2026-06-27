@@ -1,8 +1,8 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.204",
-  "plan_status": "remaining_runtime_flow_implementation_plan_refreshed_after_workflow_history_timeline_followup",
+  "slice": "W1.5.206",
+  "plan_status": "remaining_runtime_flow_plan_refreshed_after_fr018_pending_decision_discovery",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
   "observed_at": "2026-06-28",
@@ -24,9 +24,9 @@
     "agent_adapter_protocol": "specs/protocols/agent_adapter.md"
   },
   "guardrails": [
-    "This artifact refreshes the remaining implementation plan after W1.5.204 workflow_history endpoint plus metadata-only Desktop timeline evidence.",
+    "This artifact refreshes the remaining implementation plan after W1.5.206 pending human decision discovery plus metadata-only Desktop HITL form evidence.",
     "No FR item is marked accepted and EXIT-P1-1 remains not_ready.",
-    "W1.5.204 mirrors the current evidence map buckets after FR-015 gained workflow_history timeline evidence but remains partial_runtime_bridge_requires_followup.",
+    "W1.5.206 mirrors the current evidence map buckets after FR-018 gained pending-decision discovery evidence but remains partial_runtime_bridge_requires_followup.",
     "FR-007, FR-008, FR-011, FR-012, FR-013, FR-014, and FR-017 remain outside this implementation plan because they are pending A4 review inputs.",
     "W1.5.204 does not modify accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx content.",
     "Runtime-flow and bridge follow-up evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, response bodies, artifact bodies, raw workflow change summaries, secure paths, cache paths, or output directory values.",
@@ -35,7 +35,7 @@
   "repair_track": {
     "source_track_id": "TRACK-REMAINING-RUNTIME-FLOW-IMPLEMENTATION",
     "track_kind": "remaining_runtime_flow_and_partial_bridge_followup",
-    "source_track_status": "refreshed_after_workflow_history_timeline_followup",
+    "source_track_status": "refreshed_after_fr018_pending_decision_discovery",
     "priority": 3,
     "source_acceptance_readiness": [
       "partial_requires_runtime_flow",
@@ -64,30 +64,31 @@
       "FR-017"
     ],
     "blocked_by_dependency_gates": [],
-    "objective": "Re-plan only the remaining runtime-backed desktop behavior needed before FR-015 and FR-018 can move to A4 acceptance review; FR-015 now has workflow_history timeline evidence but still lacks snapshot ledger restore/continue semantics.",
+    "objective": "Re-plan only the remaining runtime-backed desktop behavior needed before FR-015 and FR-018 can move to A4 acceptance review; FR-015 remains blocked on accepted restore semantics, and FR-018 now has pending-decision discovery evidence but still lacks high-risk-node UX/A4 capture.",
     "entry_criteria": [
-      "Use W1.5.204 FR evidence map as the current source of truth for remaining implementation gaps.",
+      "Use W1.5.206 FR evidence map as the current source of truth for remaining implementation gaps.",
       "Keep A4-ready bridge items out of this implementation plan.",
       "Preserve metadata-only evidence boundaries for snapshot and HITL paths."
     ],
     "planned_repair_steps": [
       "Define or accept a snapshot ledger projection before surfacing snapshots/snapshots.jsonl automatic and explicit snapshot entries in Desktop.",
       "Define or accept restore-to-snapshot semantics before implementing Git-backed restore and continue execution for FR-015.",
-      "Add pending-decision discovery plus pause/resume UX evidence for semi-auto HITL in FR-018."
+      "Package high-risk-node review UX plus pause/resume evidence for semi-auto HITL in FR-018."
     ],
     "planned_verification": [
       "pnpm --filter @cw/desktop run test",
       "uv run pytest apps/runtime/tests -q",
       "Targeted visual smoke or reviewer capture only after implementation evidence exists"
     ],
-    "next_slice": "W1.5.205",
+    "next_slice": "W1.5.207",
     "implementation_notes": [
       "FR-008 is no longer a remaining implementation item after W1.5.195-W1.5.196; it stays unaccepted and moves to A4 pending review inputs.",
       "FR-011 is no longer a remaining implementation item after W1.5.201 combined project creation plus initial reference import evidence; it stays unaccepted and moves to A4 pending review inputs.",
       "FR-017 is no longer a remaining implementation item after W1.5.199 selected-node Task Drawer artifact detail and node-bound action dispatch evidence; it stays unaccepted and moves to A4 pending review inputs.",
       "FR-014 is no longer a remaining implementation item after W1.5.202 Skill candidate discovery plus secret-safe MCP configuration evidence; it stays unaccepted and moves to A4 pending review inputs.",
       "All remaining items still require follow-up implementation or A4 evidence before any FR acceptance claim.",
-      "FR-015 has workflow_history timeline evidence after W1.5.204, but remains partial because snapshots/snapshots.jsonl ledger projection, restore-to-snapshot, continue execution, and A4 acceptance are still missing."
+      "FR-015 has workflow_history timeline evidence after W1.5.204, but remains partial because snapshots/snapshots.jsonl ledger projection, restore-to-snapshot, continue execution, and A4 acceptance are still missing.",
+      "FR-018 has pending-decision discovery and status-only decision submission evidence after W1.5.206, but remains partial because high-risk-node review UX and A4 pause/resume capture are still missing."
     ]
   },
   "runtime_flow_items": [
@@ -183,27 +184,35 @@
         "docs/04_runbook/m1.5-fr-evidence-map.json#FR-018",
         "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-018",
         "docs/04_runbook/m1.5-progress.md#W1.5.184",
+        "docs/04_runbook/m1.5-progress.md#W1.5.206",
         "docs/reviews/m1.5.184-semi-auto-hitl-desktop-bridge-review.md",
         "specs/state_machines/workflow_run.md",
+        "apps/runtime/src/cw_runtime/api/app.py",
+        "apps/runtime/src/cw_runtime/runs/lifecycle.py",
+        "apps/runtime/tests/test_m1_3_8_human_decision_resolve.py",
+        "apps/desktop/src/renderer/runtime-workbench-session.ts",
+        "apps/desktop/src/renderer/runtime-workbench-interaction.ts",
         "apps/desktop/src/renderer/runtime-workbench-shell-react.tsx"
       ],
       "source_verification_commands": [
-        "pnpm --filter @cw/desktop run test",
-        "uv run pytest apps/runtime/tests/test_m1_3_15_langgraph_hitl_bridge.py -q"
+        "uv run pytest apps/runtime/tests/test_m1_3_8_human_decision_resolve.py -q",
+        "uv run mypy apps/runtime/src/cw_runtime/runs/lifecycle.py apps/runtime/src/cw_runtime/api/app.py --strict",
+        "pnpm --filter @cw/desktop typecheck",
+        "pnpm --filter @cw/desktop build",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js"
       ],
       "source_checklist_remaining_gap": [
-        "Pending-decision discovery, full pause/resume user path, and high-risk-node review UX are not complete.",
+        "High-risk-node review context UX and A4 pause/resume capture remain unrecorded.",
         "A4 UX acceptance evidence for semi-auto HITL remains unrecorded."
       ],
       "missing_before_implementation": [
-        "Pending-decision discovery, full pause/resume user path, and high-risk-node review UX are not complete.",
+        "High-risk-node review context UX and A4 pause/resume capture remain unrecorded.",
         "A4 UX acceptance evidence for semi-auto HITL remains unrecorded."
       ],
-      "source_next_action": "Add pending-decision discovery and pause/resume A4 evidence before FR-018 acceptance.",
-      "planning_status": "planned_not_implemented",
+      "source_next_action": "Package high-risk-node review UX plus pause/resume evidence for A4 review before FR-018 acceptance.",
+      "planning_status": "partially_implemented_requires_a4_evidence",
       "planned_repair_steps": [
-        "Add pending-decision discovery for waiting_user runs before claiming a complete semi-auto path.",
-        "Bind pause/resume decisions to the runtime decisions endpoint with status-only desktop evidence.",
+        "Package the high-risk-node review UX path without storing raw prompt, model output, uploaded-file bytes, response body, or custom_value content.",
         "Capture A4 evidence only after high-risk-node review UX and pause/resume transitions are visible end-to-end."
       ],
       "required_runtime_contracts": [
@@ -255,7 +264,7 @@
     "standard_desktop_test": "pnpm --filter @cw/desktop run test",
     "runtime_focused_test": "uv run pytest apps/runtime/tests -q",
     "runner_output_contract": {
-      "status": "remaining_runtime_flow_implementation_plan_refreshed_after_workflow_history_timeline_followup",
+      "status": "remaining_runtime_flow_plan_refreshed_after_fr018_pending_decision_discovery",
       "repair_item_count": 2,
       "accepted_item_count": 0,
       "implemented_item_count": 0,
@@ -274,13 +283,13 @@
     "implemented_items": 0,
     "pending_implementation_items": 2,
     "exit_p1_1_status": "not_ready",
-    "next_required_review": "A4 ux-acceptance-reviewer after implementation evidence"
+    "next_required_review": "A4 ux-acceptance-reviewer after high-risk-node HITL evidence"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.205",
-      "title": "Desktop FR-015 snapshot ledger restore follow-up",
-      "reason": "Continue FR-015 after W1.5.204 workflow history timeline evidence: surface snapshot ledger state only after an accepted projection, then define restore/continue semantics before implementation."
+      "id": "W1.5.207",
+      "title": "Desktop FR-018 high-risk HITL A4 evidence package",
+      "reason": "Package high-risk-node review UX plus pause/resume evidence for A4 review; keep FR-015 restore implementation blocked until ADR-0012 or another accepted contract is available."
     }
   ]
 }

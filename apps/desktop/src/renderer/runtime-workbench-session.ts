@@ -263,6 +263,7 @@ export interface RuntimeWorkbenchSkillManagementSnapshot {
 
 export type RuntimeWorkbenchHumanDecisionStatus =
   | "idle"
+  | "discovering"
   | "submitting"
   | "succeeded"
   | "failed"
@@ -276,17 +277,21 @@ export type RuntimeWorkbenchHumanDecisionBlockedReason =
 
 export interface RuntimeWorkbenchHumanDecisionSnapshot {
   readonly status: RuntimeWorkbenchHumanDecisionStatus;
-  readonly method: "POST";
+  readonly activeProjectId: string | null;
+  readonly method: "GET" | "POST" | null;
   readonly path: RuntimeRequestPath | null;
   readonly runId: string | null;
   readonly humanNodeId: string | null;
   readonly decision: string | null;
+  readonly availableDecisions: readonly string[];
+  readonly pendingDecisionCount: number;
   readonly by: string | null;
   readonly customValuePresent: boolean;
   readonly statusCode: number | null;
   readonly blockedReason: RuntimeWorkbenchHumanDecisionBlockedReason | null;
   readonly decidedAt: string | null;
   readonly requestedAt: string | null;
+  readonly canRefreshPendingDecisions: boolean;
   readonly canSubmitDecision: boolean;
 }
 
@@ -423,6 +428,10 @@ export interface RuntimeWorkbenchHumanDecisionInput {
   readonly idempotencyKey?: string;
 }
 
+export interface RuntimeWorkbenchPendingHumanDecisionRefreshInput {
+  readonly projectId: string;
+}
+
 export interface RuntimeWorkbenchVersionSnapshotInput {
   readonly workflowId: string;
   readonly idempotencyKey?: string;
@@ -509,6 +518,9 @@ export interface RuntimeWorkbenchSession {
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly submitHumanDecision: (
     input: RuntimeWorkbenchHumanDecisionInput,
+  ) => Promise<RuntimeWorkbenchSessionSnapshot>;
+  readonly refreshPendingHumanDecisions: (
+    input: RuntimeWorkbenchPendingHumanDecisionRefreshInput,
   ) => Promise<RuntimeWorkbenchSessionSnapshot>;
   readonly createWorkflowSnapshot: (
     input: RuntimeWorkbenchVersionSnapshotInput,
@@ -2110,6 +2122,176 @@ export function createRuntimeWorkbenchSession(
         throw error;
       }
     },
+    refreshPendingHumanDecisions: async (input) => {
+      assertActive();
+      const projectId = normalizeRuntimeWorkbenchRunOncePathSegment(
+        input.projectId,
+      );
+      const requestPath = buildRuntimeWorkbenchRunListPath();
+      if (projectId === null) {
+        humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+          activeProjectId: null,
+          blockedReason: "invalid_input",
+          method: "GET",
+          path: requestPath,
+          runtimeAvailable: options.runtime !== undefined,
+          status: "blocked",
+          disposed,
+        });
+        publishIfChanged(true);
+        throw new Error(
+          "Runtime workbench pending human decision project id is invalid",
+        );
+      }
+      if (options.runtime === undefined) {
+        humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+          activeProjectId: projectId,
+          blockedReason: "runtime_unavailable",
+          method: "GET",
+          path: requestPath,
+          runtimeAvailable: false,
+          status: "blocked",
+          disposed,
+        });
+        publishIfChanged(true);
+        throw new Error("Runtime workbench runtime bridge is unavailable");
+      }
+
+      humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+        activeProjectId: projectId,
+        method: "GET",
+        path: requestPath,
+        runtimeAvailable: true,
+        status: "discovering",
+        disposed,
+      });
+      publishIfChanged(true);
+      try {
+        const runsResponse = await options.runtime.fetch(requestPath, {
+          method: "GET",
+          projectId,
+        });
+        if (!runsResponse.ok) {
+          humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+            activeProjectId: projectId,
+            blockedReason: "request_failed",
+            method: "GET",
+            path: requestPath,
+            runtimeAvailable: true,
+            status: "failed",
+            statusCode: runsResponse.status,
+            disposed,
+          });
+          publishIfChanged(true);
+          return captureSnapshot();
+        }
+        const waitingRuns = parseRuntimeWorkbenchWaitingUserRuns(
+          runsResponse.body,
+        );
+        if (waitingRuns === null) {
+          humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+            activeProjectId: projectId,
+            blockedReason: "response_invalid",
+            method: "GET",
+            path: requestPath,
+            runtimeAvailable: true,
+            status: "failed",
+            statusCode: runsResponse.status,
+            disposed,
+          });
+          publishIfChanged(true);
+          throw new Error("Runtime workbench run list response is invalid");
+        }
+        let pendingDecision: ParsedRuntimeWorkbenchPendingHumanDecision | null =
+          null;
+        let pendingDecisionCount = 0;
+        for (const run of waitingRuns) {
+          const decisionsPath = buildRuntimeWorkbenchHumanDecisionPath(
+            run.runId,
+          );
+          const decisionsResponse = await options.runtime.fetch(decisionsPath, {
+            method: "GET",
+          });
+          if (!decisionsResponse.ok) {
+            humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot(
+              {
+                activeProjectId: projectId,
+                blockedReason: "request_failed",
+                method: "GET",
+                path: decisionsPath,
+                runId: run.runId,
+                runtimeAvailable: true,
+                status: "failed",
+                statusCode: decisionsResponse.status,
+                disposed,
+              },
+            );
+            publishIfChanged(true);
+            return captureSnapshot();
+          }
+          const decisionProjection =
+            parseRuntimeWorkbenchPendingHumanDecisionProjection(
+              decisionsResponse.body,
+              run.runId,
+            );
+          if (decisionProjection === null) {
+            humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot(
+              {
+                activeProjectId: projectId,
+                blockedReason: "response_invalid",
+                method: "GET",
+                path: decisionsPath,
+                runId: run.runId,
+                runtimeAvailable: true,
+                status: "failed",
+                statusCode: decisionsResponse.status,
+                disposed,
+              },
+            );
+            publishIfChanged(true);
+            throw new Error(
+              "Runtime workbench human decision projection is invalid",
+            );
+          }
+          pendingDecisionCount += decisionProjection.pendingDecisionCount;
+          pendingDecision ??= decisionProjection.firstPendingDecision;
+        }
+        humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+          activeProjectId: projectId,
+          availableDecisions: pendingDecision?.availableDecisions ?? [],
+          decision: pendingDecision?.decision ?? null,
+          humanNodeId: pendingDecision?.humanNodeId ?? null,
+          method: "GET",
+          path:
+            pendingDecision === null
+              ? requestPath
+              : buildRuntimeWorkbenchHumanDecisionPath(pendingDecision.runId),
+          pendingDecisionCount,
+          requestedAt: pendingDecision?.requestedAt ?? null,
+          runId: pendingDecision?.runId ?? null,
+          runtimeAvailable: true,
+          status: "succeeded",
+          statusCode: 200,
+          disposed,
+        });
+        publishIfChanged(true);
+        return captureSnapshot();
+      } catch (error) {
+        if (humanDecisionSnapshot.status !== "failed") {
+          humanDecisionSnapshot = createRuntimeWorkbenchHumanDecisionSnapshot({
+            activeProjectId: projectId,
+            blockedReason: "request_failed",
+            method: "GET",
+            path: requestPath,
+            runtimeAvailable: true,
+            status: "failed",
+            disposed,
+          });
+          publishIfChanged(true);
+        }
+        throw error;
+      }
+    },
     submitHumanDecision: async (input) => {
       assertActive();
       const runId = normalizeRuntimeWorkbenchRunOncePathSegment(input.runId);
@@ -2806,22 +2988,32 @@ function createRuntimeWorkbenchHumanDecisionSnapshot(
     readonly disposed: boolean;
   },
 ): RuntimeWorkbenchHumanDecisionSnapshot {
+  const availableDecisions = input.availableDecisions ?? [];
   return Object.freeze({
     status: input.status,
-    method: "POST",
+    activeProjectId: input.activeProjectId ?? null,
+    method: input.method ?? "POST",
     path: input.path ?? null,
     runId: input.runId ?? null,
     humanNodeId: input.humanNodeId ?? null,
     decision: input.decision ?? null,
+    availableDecisions: Object.freeze([...availableDecisions]),
+    pendingDecisionCount: input.pendingDecisionCount ?? 0,
     by: input.by ?? null,
     customValuePresent: input.customValuePresent ?? false,
     statusCode: input.statusCode ?? null,
     blockedReason: input.blockedReason ?? null,
     decidedAt: input.decidedAt ?? null,
     requestedAt: input.requestedAt ?? null,
+    canRefreshPendingDecisions:
+      !input.disposed &&
+      input.runtimeAvailable &&
+      input.status !== "discovering" &&
+      input.status !== "submitting",
     canSubmitDecision:
       !input.disposed &&
       input.runtimeAvailable &&
+      input.status !== "discovering" &&
       input.status !== "submitting",
   });
 }
@@ -2876,6 +3068,12 @@ function buildRuntimeWorkbenchRunOncePath(
   const requestPath = `/runs/${encodeURIComponent(
     runId,
   )}/nodes/${encodeURIComponent(nodeId)}:run-once`;
+  assertRuntimeRequestPath(requestPath);
+  return requestPath as RuntimeRequestPath;
+}
+
+function buildRuntimeWorkbenchRunListPath(): RuntimeRequestPath {
+  const requestPath = "/runs";
   assertRuntimeRequestPath(requestPath);
   return requestPath as RuntimeRequestPath;
 }
@@ -3601,6 +3799,23 @@ interface ParsedRuntimeWorkbenchHumanDecisionRecord {
   readonly requestedAt: string;
 }
 
+interface ParsedRuntimeWorkbenchWaitingUserRun {
+  readonly runId: string;
+}
+
+interface ParsedRuntimeWorkbenchPendingHumanDecision {
+  readonly runId: string;
+  readonly humanNodeId: string;
+  readonly decision: string | null;
+  readonly availableDecisions: readonly string[];
+  readonly requestedAt: string | null;
+}
+
+interface ParsedRuntimeWorkbenchPendingHumanDecisionProjection {
+  readonly pendingDecisionCount: number;
+  readonly firstPendingDecision: ParsedRuntimeWorkbenchPendingHumanDecision | null;
+}
+
 function parseRuntimeWorkbenchHumanDecisionRecord(
   body: unknown,
 ): ParsedRuntimeWorkbenchHumanDecisionRecord | null {
@@ -3639,6 +3854,90 @@ function parseRuntimeWorkbenchHumanDecisionRecord(
     decidedAt,
     requestedAt,
   };
+}
+
+function parseRuntimeWorkbenchWaitingUserRuns(
+  body: unknown,
+): readonly ParsedRuntimeWorkbenchWaitingUserRun[] | null {
+  if (!isRecord(body) || body.schema_version !== "0.1.0") {
+    return null;
+  }
+  const runs = body.runs;
+  if (!Array.isArray(runs)) {
+    return null;
+  }
+  const waitingRuns: ParsedRuntimeWorkbenchWaitingUserRun[] = [];
+  for (const run of runs) {
+    if (!isRecord(run)) {
+      return null;
+    }
+    const runId = run.run_id;
+    const state = run.state;
+    if (typeof runId !== "string" || runId.trim().length === 0) {
+      return null;
+    }
+    if (state === "waiting_user") {
+      waitingRuns.push(Object.freeze({ runId }));
+    }
+  }
+  return Object.freeze(waitingRuns);
+}
+
+function parseRuntimeWorkbenchPendingHumanDecisionProjection(
+  body: unknown,
+  expectedRunId: string,
+): ParsedRuntimeWorkbenchPendingHumanDecisionProjection | null {
+  if (
+    !isRecord(body) ||
+    body.schema_version !== "0.1.0" ||
+    body.run_id !== expectedRunId ||
+    !Array.isArray(body.decisions)
+  ) {
+    return null;
+  }
+  let firstPendingDecision: ParsedRuntimeWorkbenchPendingHumanDecision | null =
+    null;
+  let pendingDecisionCount = 0;
+  for (const decision of body.decisions) {
+    if (!isRecord(decision)) {
+      return null;
+    }
+    if (
+      Object.hasOwn(decision, "prompt_to_user") ||
+      Object.hasOwn(decision, "custom_value")
+    ) {
+      return null;
+    }
+    const humanNodeId = decision.human_node_id;
+    const status = decision.status;
+    const requestedAt = decision.requested_at;
+    const availableDecisions = decision.available_decisions;
+    if (
+      typeof humanNodeId !== "string" ||
+      humanNodeId.trim().length === 0 ||
+      (status !== "pending" && status !== "resolved") ||
+      (requestedAt !== null && typeof requestedAt !== "string") ||
+      !Array.isArray(availableDecisions) ||
+      !availableDecisions.every(
+        (item) => typeof item === "string" && item.trim().length > 0,
+      )
+    ) {
+      return null;
+    }
+    if (status !== "pending") {
+      continue;
+    }
+    pendingDecisionCount += 1;
+    const normalizedDecisions = Object.freeze([...availableDecisions]);
+    firstPendingDecision ??= Object.freeze({
+      runId: expectedRunId,
+      humanNodeId,
+      decision: normalizedDecisions[0] ?? null,
+      availableDecisions: normalizedDecisions,
+      requestedAt,
+    });
+  }
+  return Object.freeze({ pendingDecisionCount, firstPendingDecision });
 }
 
 interface ParsedRuntimeWorkbenchVersionSnapshotRecord {
@@ -3867,7 +4166,9 @@ function freezeRuntimeWorkbenchSessionSnapshot(
     humanDecision: createRuntimeWorkbenchHumanDecisionSnapshot({
       ...snapshot.humanDecision,
       runtimeAvailable:
+        snapshot.humanDecision.canRefreshPendingDecisions ||
         snapshot.humanDecision.canSubmitDecision ||
+        snapshot.humanDecision.status === "discovering" ||
         snapshot.humanDecision.status === "submitting",
       disposed: snapshot.disposed,
     }),

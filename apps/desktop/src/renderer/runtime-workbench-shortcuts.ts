@@ -489,6 +489,7 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
     case "set_reference_enabled":
     case "refresh_skills":
     case "set_skill_enabled":
+    case "refresh_pending_human_decisions":
     case "submit_human_decision":
     case "create_workflow_snapshot":
     case "refresh_workflow_history":
@@ -780,6 +781,11 @@ function cloneRuntimeWorkbenchInteractionCommand(
         skillId: command.skillId,
         enabled: command.enabled,
         ...(command.version !== undefined ? { version: command.version } : {}),
+      });
+    case "refresh_pending_human_decisions":
+      return Object.freeze({
+        type: command.type,
+        projectId: command.projectId,
       });
     case "submit_human_decision":
       return Object.freeze({

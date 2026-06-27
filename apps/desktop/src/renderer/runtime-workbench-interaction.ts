@@ -34,6 +34,7 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "set_reference_enabled",
   "refresh_skills",
   "set_skill_enabled",
+  "refresh_pending_human_decisions",
   "submit_human_decision",
   "create_workflow_snapshot",
   "refresh_workflow_history",
@@ -158,6 +159,10 @@ export type RuntimeWorkbenchInteractionCommand =
       readonly skillId: string;
       readonly enabled: boolean;
       readonly version?: string;
+    }
+  | {
+      readonly type: "refresh_pending_human_decisions";
+      readonly projectId: string;
     }
   | {
       readonly type: "submit_human_decision";
@@ -503,6 +508,11 @@ export function createRuntimeWorkbenchInteraction(
             : {}),
         });
         return completeAction();
+      case "refresh_pending_human_decisions":
+        await options.workbench.refreshPendingHumanDecisions({
+          projectId: safeCommand.projectId,
+        });
+        return completeAction();
       case "submit_human_decision":
         await options.workbench.submitHumanDecision({
           runId: safeCommand.runId,
@@ -637,6 +647,9 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
     }
     if (workbench.skillManagement.canUpdateSkill) {
       enabledCommandIds.push("set_skill_enabled");
+    }
+    if (workbench.humanDecision.canRefreshPendingDecisions) {
+      enabledCommandIds.push("refresh_pending_human_decisions");
     }
     if (workbench.humanDecision.canSubmitDecision) {
       enabledCommandIds.push("submit_human_decision");
@@ -850,6 +863,11 @@ function requireRuntimeWorkbenchInteractionCommand(
           command.version !== undefined &&
           typeof command.version !== "string")
       ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "refresh_pending_human_decisions":
+      if (typeof command.projectId !== "string") {
         throw new Error("Invalid runtime workbench interaction command");
       }
       return command;

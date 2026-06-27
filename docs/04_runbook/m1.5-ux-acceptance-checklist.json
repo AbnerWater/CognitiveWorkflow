@@ -505,10 +505,11 @@
       "current_evidence_status": "partial_runtime_bridge_evidence",
       "current_evidence": [
         "M1.3 and M1.4 HITL/resumption and approval bridge work exists on the runtime side.",
-        "W1.5.184 added a desktop human decision submit surface for semi-auto HITL decisions."
+        "W1.5.184 added a desktop human decision submit surface for semi-auto HITL decisions.",
+        "W1.5.206 added runtime run discovery, sanitized pending human decision projection, and a Desktop refresh-pending command that populates the HITL form without retaining raw prompt or custom_value content."
       ],
       "remaining_gap": [
-        "Pending-decision discovery, full pause/resume user path, and high-risk-node review UX are not complete.",
+        "High-risk-node review context UX and A4 pause/resume capture remain unrecorded.",
         "A4 UX acceptance evidence for semi-auto HITL remains unrecorded."
       ]
     },

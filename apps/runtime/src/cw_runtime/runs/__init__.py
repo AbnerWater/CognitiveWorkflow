@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from .lifecycle import (
+    HumanDecisionProjection,
     ProjectRecoveryResult,
     RecoveredWorkflowRun,
     RunActionRequest,
+    RunDecisionProjection,
     RunError,
     WorkflowRunDocument,
     WorkflowRunStartRequest,
@@ -16,10 +18,12 @@ from .lifecycle import (
     create_workflow_run,
     format_sse_event,
     list_stream_events,
+    list_workflow_runs,
     parse_display_levels,
     parse_event_categories,
     pause_active_workflow_run,
     pause_workflow_run,
+    read_run_decisions,
     read_workflow_run,
     recover_project_runs,
     resume_active_workflow_run,
@@ -28,9 +32,11 @@ from .lifecycle import (
 )
 
 __all__ = [
+    "HumanDecisionProjection",
     "ProjectRecoveryResult",
     "RecoveredWorkflowRun",
     "RunActionRequest",
+    "RunDecisionProjection",
     "RunError",
     "WorkflowRunDocument",
     "WorkflowRunStartRequest",
@@ -41,10 +47,12 @@ __all__ = [
     "create_workflow_run",
     "format_sse_event",
     "list_stream_events",
+    "list_workflow_runs",
     "parse_display_levels",
     "parse_event_categories",
     "pause_active_workflow_run",
     "pause_workflow_run",
+    "read_run_decisions",
     "read_workflow_run",
     "recover_project_runs",
     "resume_active_workflow_run",

@@ -35,7 +35,7 @@ const expectedReadinessValues = new Set([
   "missing_implementation",
 ]);
 
-const expectedNextSlices = ["W1.5.205"];
+const expectedNextSlices = ["W1.5.207"];
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, { encoding: "utf8" }));
@@ -56,8 +56,11 @@ test("M1.5 FR evidence map preserves conservative source authority", () => {
 
   assert.equal(evidenceMap.schema_version, "0.1.0");
   assert.equal(evidenceMap.milestone, "M1.5");
-  assert.equal(evidenceMap.slice, "W1.5.204");
-  assert.equal(evidenceMap.map_status, "evidence_refreshed_not_accepted");
+  assert.equal(evidenceMap.slice, "W1.5.206");
+  assert.equal(
+    evidenceMap.map_status,
+    "evidence_refreshed_after_fr018_pending_decision_discovery",
+  );
   assert.equal(evidenceMap.exit_criterion, "EXIT-P1-1");
   assert.equal(evidenceMap.exit_p1_1_status, "not_ready");
   assert.equal(checklist.exit_p1_1_status, "not_ready");

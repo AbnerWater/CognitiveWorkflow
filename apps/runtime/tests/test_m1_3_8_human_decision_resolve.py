@@ -379,6 +379,133 @@ def test_run_decision_endpoint_resolves_waiting_user_and_replays_idempotently(tm
     assert run.current_node_ids == ["n_continue"]
 
 
+def test_run_list_and_decision_projection_discover_pending_human_gate(tmp_path: Path) -> None:
+    client = _test_client()
+    payload = _human_graph_payload()
+    create_project = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={
+            "schema_version": "0.1.0",
+            "display_name": "Human Decision Discovery",
+            "host_path": str(tmp_path / "human_decision_discovery_project"),
+        },
+    )
+    assert create_project.status_code == 201
+    project_id = str(create_project.json()["project_id"])
+    project_root = Path(create_project.json()["host_path"])
+    _write_workflow(project_root, payload)
+
+    start = client.post(
+        f"/cw/v1/workflows/{payload['workflow_id']}/run",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "mode": "semi_auto", "initial_input": {}, "metadata": {}},
+    )
+    assert start.status_code == 201
+    run_id = str(start.json()["run_id"])
+    _enter_waiting_user(project_root, run_id)
+
+    missing_project = client.get("/cw/v1/runs", headers={"Authorization": "Bearer expected-token"})
+    runs_response = client.get(
+        "/cw/v1/runs",
+        headers={"Authorization": "Bearer expected-token", "X-Project-Id": project_id},
+    )
+    decisions_response = client.get(
+        f"/cw/v1/runs/{run_id}/decisions",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+
+    assert missing_project.status_code == 400
+    assert missing_project.json()["error_code"] == "BAD_PROJECT_ID"
+    assert runs_response.status_code == 200
+    assert runs_response.json()["schema_version"] == "0.1.0"
+    assert runs_response.json()["runs"] == [
+        {
+            "run_id": run_id,
+            "workflow_id": payload["workflow_id"],
+            "workflow_version": "0.1.0",
+            "state": "waiting_user",
+            "mode": "semi_auto",
+            "started_at": start.json()["started_at"],
+            "paused_at": read_workflow_run(project_root, run_id).paused_at,
+            "resumed_at": None,
+            "completed_at": None,
+            "failed_at": None,
+            "cancelled_at": None,
+            "last_event_id": read_workflow_run(project_root, run_id).last_event_id,
+            "current_node_ids": ["n_human"],
+        }
+    ]
+    assert decisions_response.status_code == 200
+    decision_body = decisions_response.json()
+    assert decision_body["schema_version"] == "0.1.0"
+    assert decision_body["run_id"] == run_id
+    assert decision_body["decisions"] == [
+        {
+            "human_node_id": "n_human",
+            "status": "pending",
+            "decision": None,
+            "by": None,
+            "decided_at": None,
+            "requested_at": read_workflow_run(project_root, run_id).paused_at,
+            "custom_value_present": False,
+            "available_decisions": ["continue", "reject"],
+        }
+    ]
+    assert "prompt_to_user" not in json.dumps(decision_body)
+    assert "custom_value" not in decision_body["decisions"][0]
+
+
+def test_run_decision_projection_does_not_return_resolved_custom_value(tmp_path: Path) -> None:
+    client = _test_client()
+    payload = _human_graph_payload()
+    create_project = client.post(
+        "/cw/v1/projects",
+        headers={"Authorization": "Bearer expected-token"},
+        json={
+            "schema_version": "0.1.0",
+            "display_name": "Human Decision Sanitized",
+            "host_path": str(tmp_path / "human_decision_sanitized_project"),
+        },
+    )
+    assert create_project.status_code == 201
+    project_root = Path(create_project.json()["host_path"])
+    _write_workflow(project_root, payload)
+
+    start = client.post(
+        f"/cw/v1/workflows/{payload['workflow_id']}/run",
+        headers={"Authorization": "Bearer expected-token"},
+        json={"schema_version": "0.1.0", "mode": "semi_auto", "initial_input": {}, "metadata": {}},
+    )
+    assert start.status_code == 201
+    run_id = str(start.json()["run_id"])
+    _enter_waiting_user(project_root, run_id)
+    response = client.post(
+        f"/cw/v1/runs/{run_id}/decisions",
+        headers={"Authorization": "Bearer expected-token"},
+        json={
+            "schema_version": "0.1.0",
+            "human_node_id": "n_human",
+            "decision": "continue",
+            "by": "tester",
+            "custom_value": {"sensitive_note": "do not echo this"},
+        },
+    )
+    assert response.status_code == 200
+
+    decisions_response = client.get(
+        f"/cw/v1/runs/{run_id}/decisions",
+        headers={"Authorization": "Bearer expected-token"},
+    )
+
+    assert decisions_response.status_code == 200
+    decision_body = decisions_response.json()
+    assert [record["status"] for record in decision_body["decisions"]] == ["pending", "resolved"]
+    assert decision_body["decisions"][1]["custom_value_present"] is True
+    assert "custom_value" not in decision_body["decisions"][1]
+    assert "do not echo this" not in json.dumps(decision_body)
+
+
 def test_run_decision_endpoint_returns_run_error_envelope(tmp_path: Path) -> None:
     client = _test_client()
     payload = _human_graph_payload()

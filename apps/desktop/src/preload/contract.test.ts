@@ -266,17 +266,21 @@ function createDefaultRuntimeWorkbenchSkillManagement(): RuntimeWorkbenchShellSn
 function createDefaultRuntimeWorkbenchHumanDecision(): RuntimeWorkbenchShellSnapshot["humanDecision"] {
   return Object.freeze({
     status: "idle",
+    activeProjectId: null,
     method: "POST",
     path: null,
     runId: null,
     humanNodeId: null,
     decision: null,
+    availableDecisions: Object.freeze([]),
+    pendingDecisionCount: 0,
     by: null,
     customValuePresent: false,
     statusCode: null,
     blockedReason: null,
     decidedAt: null,
     requestedAt: null,
+    canRefreshPendingDecisions: false,
     canSubmitDecision: false,
   });
 }
@@ -4074,6 +4078,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "set_reference_enabled",
     "refresh_skills",
     "set_skill_enabled",
+    "refresh_pending_human_decisions",
     "submit_human_decision",
     "create_workflow_snapshot",
     "refresh_workflow_history",
@@ -4094,6 +4099,7 @@ test("renderer runtime workbench interaction routes UI commands", async () => {
     "set_reference_enabled",
     "refresh_skills",
     "set_skill_enabled",
+    "refresh_pending_human_decisions",
     "submit_human_decision",
     "create_workflow_snapshot",
     "refresh_workflow_history",
