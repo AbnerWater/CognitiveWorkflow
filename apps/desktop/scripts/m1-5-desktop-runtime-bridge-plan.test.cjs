@@ -45,7 +45,7 @@ const expectedBridgeItemIds = [
 ];
 const expectedCurrentReadinessByFrId = new Map([
   ["FR-007", "runtime_bridge_needs_a4_review"],
-  ["FR-011", "partial_runtime_bridge_requires_followup"],
+  ["FR-011", "runtime_bridge_needs_a4_review"],
   ["FR-012", "runtime_bridge_needs_a4_review"],
   ["FR-014", "partial_runtime_bridge_requires_followup"],
   ["FR-018", "partial_runtime_bridge_requires_followup"],

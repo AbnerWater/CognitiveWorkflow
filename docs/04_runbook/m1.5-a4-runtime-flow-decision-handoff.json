@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.200",
+  "slice": "W1.5.201",
   "handoff_status": "a4_runtime_flow_decision_handoff_prepared_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -120,6 +120,47 @@
       ]
     },
     {
+      "id": "DECISION-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "fr_id": "FR-008",
+      "package_item_id": "PKG-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "review_item_id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "review_focus": "Runtime-backed Chat instruction routing for current node and global Workflow scopes",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for the runtime-backed current-node/global Workflow Chat instruction path is not recorded.",
+        "Project-backed command history and persistence remain outside this evidence refresh and must not be inferred from local receipt metadata."
+      ]
+    },
+    {
+      "id": "DECISION-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "fr_id": "FR-011",
+      "package_item_id": "PKG-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "review_item_id": "A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "review_focus": "Combined project creation and initial reference import user path",
+      "decision_status": "pending_reviewer_decision",
+      "required_decision_fields": [
+        "decision",
+        "reviewer",
+        "decided_at",
+        "rationale",
+        "evidence_refs"
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for the full new-project path is not recorded."
+      ]
+    },
+    {
       "id": "DECISION-A4-FR-012-MANDATORY-GIT-BRIDGE",
       "fr_id": "FR-012",
       "package_item_id": "PKG-A4-FR-012-MANDATORY-GIT-BRIDGE",
@@ -162,27 +203,6 @@
       ]
     },
     {
-      "id": "DECISION-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
-      "fr_id": "FR-008",
-      "package_item_id": "PKG-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
-      "review_item_id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
-      "capture_id": "CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
-      "review_group": "runtime_bridge_evidence",
-      "review_focus": "Runtime-backed Chat instruction routing for current node and global Workflow scopes",
-      "decision_status": "pending_reviewer_decision",
-      "required_decision_fields": [
-        "decision",
-        "reviewer",
-        "decided_at",
-        "rationale",
-        "evidence_refs"
-      ],
-      "missing_before_acceptance": [
-        "A4 UX acceptance evidence for the runtime-backed current-node/global Workflow Chat instruction path is not recorded.",
-        "Project-backed command history and persistence remain outside this evidence refresh and must not be inferred from local receipt metadata."
-      ]
-    },
-    {
       "id": "DECISION-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
       "fr_id": "FR-017",
       "package_item_id": "PKG-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
@@ -204,23 +224,23 @@
     }
   ],
   "summary": {
-    "decision_item_count": 8,
+    "decision_item_count": 9,
     "stream_candidate_items": 3,
-    "runtime_bridge_items": 5,
+    "runtime_bridge_items": 6,
     "accepted_items": 0,
-    "pending_reviewer_decision_items": 8,
+    "pending_reviewer_decision_items": 9,
     "rejected_items": 0,
     "needs_followup_items": 0,
-    "source_package_pending_a4_review_items": 8,
+    "source_package_pending_a4_review_items": 9,
     "source_package_accepted_items": 0,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.201",
-      "title": "Desktop FR-011 project-reference runtime follow-up",
-      "reason": "Continue remaining runtime-flow implementation while the A4 decision handoff remains pending reviewer approval."
+      "id": "W1.5.202",
+      "title": "Desktop FR-014 skill configuration runtime follow-up",
+      "reason": "Continue remaining runtime-flow implementation after FR-011 moved to A4 runtime-bridge review input."
     }
   ]
 }

@@ -483,6 +483,7 @@ function runtimeWorkbenchShortcutBindingIsEnabled(
     case "submit_chat_instruction":
     case "run_artifact_action":
     case "create_project":
+    case "create_project_with_reference":
     case "refresh_references":
     case "import_reference":
     case "set_reference_enabled":
@@ -711,6 +712,30 @@ function cloneRuntimeWorkbenchInteractionCommand(
           : {}),
         ...(command.settingsOverrides !== undefined
           ? { settingsOverrides: command.settingsOverrides }
+          : {}),
+      });
+    case "create_project_with_reference":
+      return Object.freeze({
+        type: command.type,
+        displayName: command.displayName,
+        hostPath: command.hostPath,
+        fileName: command.fileName,
+        fileContentBase64: command.fileContentBase64,
+        kind: command.kind,
+        ...(command.idempotencyKey !== undefined
+          ? { idempotencyKey: command.idempotencyKey }
+          : {}),
+        ...(command.settingsOverrides !== undefined
+          ? { settingsOverrides: command.settingsOverrides }
+          : {}),
+        ...(command.sensitive !== undefined
+          ? { sensitive: command.sensitive }
+          : {}),
+        ...(command.autoChunk !== undefined
+          ? { autoChunk: command.autoChunk }
+          : {}),
+        ...(command.sourceUrl !== undefined
+          ? { sourceUrl: command.sourceUrl }
           : {}),
       });
     case "refresh_references":

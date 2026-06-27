@@ -101,7 +101,7 @@ function validateA4RuntimeFlowDecisionHandoff(options = {}) {
   assertSanitizedJson(handoff, "A4 runtime-flow decision handoff");
   assertEqual(handoff.schema_version, "0.1.0", "schema version");
   assertEqual(handoff.milestone, "M1.5", "milestone");
-  assertEqual(handoff.slice, "W1.5.200", "slice id");
+  assertEqual(handoff.slice, "W1.5.201", "slice id");
   assertEqual(
     handoff.handoff_status,
     "a4_runtime_flow_decision_handoff_prepared_not_accepted",
@@ -323,7 +323,7 @@ function validateA4RuntimeFlowDecisionHandoff(options = {}) {
   );
   assertDeepEqual(
     handoff.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.201"],
+    ["W1.5.202"],
     "next recommended slices",
   );
 

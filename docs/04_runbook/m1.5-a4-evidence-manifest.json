@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.199",
+  "slice": "W1.5.201",
   "manifest_status": "a4_evidence_inputs_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -19,9 +19,9 @@
   "guardrails": [
     "This manifest prepares A4 review inputs only; it does not claim A4 acceptance.",
     "Every review item remains pending_a4_review until an A4 reviewer records end-to-end UX acceptance evidence.",
-    "W1.5.199 keeps prior stream candidate items and adds FR-017 runtime_bridge_needs_a4_review evidence.",
+    "W1.5.201 keeps prior stream candidate items and adds FR-011 runtime_bridge_needs_a4_review evidence.",
     "Partial runtime bridge evidence remains excluded from A4 candidate review until the missing FR semantics are implemented.",
-    "No accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx change is included in W1.5.199.",
+    "No accepted spec, ADR, schema, generated schema, dependency, packaging, updater, or baseline docx change is included in W1.5.201.",
     "Visual-smoke and bridge evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, or output directory values."
   ],
   "review_track": {
@@ -44,11 +44,11 @@
     },
     "runner_output_contract": {
       "status": "a4_evidence_inputs_refreshed_not_accepted",
-      "review_item_count": 8,
+      "review_item_count": 9,
       "accepted_item_count": 0,
       "required_matrix_case_count": 6,
       "sanitized_summary_only": true,
-      "bridge_review_item_count": 5
+      "bridge_review_item_count": 6
     }
   },
   "matrix_case_contract": {
@@ -197,6 +197,78 @@
       ]
     },
     {
+      "id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "fr_id": "FR-008",
+      "review_group": "runtime_bridge_evidence",
+      "source_acceptance_readiness": "runtime_bridge_needs_a4_review",
+      "review_status": "pending_a4_review",
+      "review_focus": "Runtime-backed Chat instruction routing for current node and global Workflow scopes",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-008",
+        "docs/04_runbook/m1.5-progress.md#W1.5.195",
+        "docs/04_runbook/m1.5-progress.md#W1.5.196",
+        "docs/reviews/m1.5.195-runtime-flow-implementation-review.md",
+        "docs/reviews/m1.5.196-chat-instruction-scope-repair-review.md",
+        "apps/runtime/tests/test_w1_5_195_runtime_instruction_api.py",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "required_commands": [
+        "uv run pytest apps/runtime/tests/test_w1_5_195_runtime_instruction_api.py -q",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "required_matrix_cases": [],
+      "required_evidence_fields": [],
+      "required_a4_evidence_inputs": [
+        "Bottom Chat Box exposes Workflow and Current node scope controls.",
+        "Workflow-scope submit routes to the accepted runtime submit-instruction endpoint without nodeId.",
+        "Current-node submit routes to the accepted node-scoped submit-instruction endpoint with structured nodeId.",
+        "Runtime command projection and renderer snapshots remain metadata-only and do not retain raw instruction text.",
+        "No selected/active node disables Current node scope rather than falling back to the first canvas node."
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for the runtime-backed current-node/global Workflow Chat instruction path is not recorded.",
+        "Project-backed command history and persistence remain outside this evidence refresh and must not be inferred from local receipt metadata."
+      ]
+    },
+    {
+      "id": "A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "fr_id": "FR-011",
+      "review_group": "runtime_bridge_evidence",
+      "source_acceptance_readiness": "runtime_bridge_needs_a4_review",
+      "review_status": "pending_a4_review",
+      "review_focus": "Combined project creation and initial reference import user path",
+      "source_evidence_refs": [
+        "docs/04_runbook/m1.5-fr-evidence-map.json#FR-011",
+        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-011",
+        "docs/04_runbook/m1.5-progress.md#W1.5.181",
+        "docs/04_runbook/m1.5-progress.md#W1.5.201",
+        "docs/reviews/m1.5.181-project-creation-git-desktop-bridge-review.md",
+        "docs/reviews/m1.5.201-project-reference-runtime-followup-review.md",
+        "specs/api/http_sse.md#3.1",
+        "specs/runtime_harness.md",
+        "apps/desktop/src/renderer/runtime-workbench-interaction.ts",
+        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
+      ],
+      "required_commands": [
+        "pnpm --filter @cw/desktop build",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js",
+        "pnpm --filter @cw/desktop run test",
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
+      ],
+      "required_matrix_cases": [],
+      "required_evidence_fields": [],
+      "required_a4_evidence_inputs": [
+        "Desktop exposes a reviewer-facing Create + import path that combines project creation and initial reference import.",
+        "Project creation success remains gated on git_initialized=true and a non-empty first_commit_sha before the initial reference import runs.",
+        "Initial reference import routes through the runtime references endpoint for the created project id.",
+        "Renderer evidence does not render or snapshot raw reference bytes, uploaded-file content, task background text, runtime response bodies, secure paths, cache paths, or output directory values."
+      ],
+      "missing_before_acceptance": [
+        "A4 UX acceptance evidence for the full new-project path is not recorded."
+      ]
+    },
+    {
       "id": "A4-FR-012-MANDATORY-GIT-BRIDGE",
       "fr_id": "FR-012",
       "review_group": "runtime_bridge_evidence",
@@ -261,41 +333,6 @@
       ]
     },
     {
-      "id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
-      "fr_id": "FR-008",
-      "review_group": "runtime_bridge_evidence",
-      "source_acceptance_readiness": "runtime_bridge_needs_a4_review",
-      "review_status": "pending_a4_review",
-      "review_focus": "Runtime-backed Chat instruction routing for current node and global Workflow scopes",
-      "source_evidence_refs": [
-        "docs/04_runbook/m1.5-ux-acceptance-checklist.json#FR-008",
-        "docs/04_runbook/m1.5-progress.md#W1.5.195",
-        "docs/04_runbook/m1.5-progress.md#W1.5.196",
-        "docs/reviews/m1.5.195-runtime-flow-implementation-review.md",
-        "docs/reviews/m1.5.196-chat-instruction-scope-repair-review.md",
-        "apps/runtime/tests/test_w1_5_195_runtime_instruction_api.py",
-        "apps/desktop/src/renderer/runtime-workbench-shell-react.test.tsx"
-      ],
-      "required_commands": [
-        "uv run pytest apps/runtime/tests/test_w1_5_195_runtime_instruction_api.py -q",
-        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js",
-        "pnpm --filter @cw/desktop run test"
-      ],
-      "required_matrix_cases": [],
-      "required_evidence_fields": [],
-      "required_a4_evidence_inputs": [
-        "Bottom Chat Box exposes Workflow and Current node scope controls.",
-        "Workflow-scope submit routes to the accepted runtime submit-instruction endpoint without nodeId.",
-        "Current-node submit routes to the accepted node-scoped submit-instruction endpoint with structured nodeId.",
-        "Runtime command projection and renderer snapshots remain metadata-only and do not retain raw instruction text.",
-        "No selected/active node disables Current node scope rather than falling back to the first canvas node."
-      ],
-      "missing_before_acceptance": [
-        "A4 UX acceptance evidence for the runtime-backed current-node/global Workflow Chat instruction path is not recorded.",
-        "Project-backed command history and persistence remain outside this evidence refresh and must not be inferred from local receipt metadata."
-      ]
-    },
-    {
       "id": "A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
       "fr_id": "FR-017",
       "review_group": "runtime_bridge_evidence",
@@ -330,21 +367,21 @@
     }
   ],
   "summary": {
-    "review_item_count": 8,
+    "review_item_count": 9,
     "candidate_fr_items": 3,
-    "bridge_a4_candidate_items": 5,
+    "bridge_a4_candidate_items": 6,
     "accepted_items": 0,
-    "pending_a4_review_items": 8,
+    "pending_a4_review_items": 9,
     "required_matrix_case_count": 6,
-    "excluded_partial_runtime_bridge_items": 4,
+    "excluded_partial_runtime_bridge_items": 3,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.201",
-      "title": "Desktop FR-011 project-reference runtime follow-up",
-      "reason": "Continue remaining runtime-flow implementation while the A4 runtime-flow decision handoff remains pending reviewer approval."
+      "id": "W1.5.202",
+      "title": "Desktop FR-014 skill configuration runtime follow-up",
+      "reason": "Continue remaining runtime-flow implementation after FR-011 moved to A4 runtime-bridge review input."
     }
   ],
   "refreshed_from": {
@@ -353,14 +390,9 @@
   },
   "bridge_review_track": {
     "source_acceptance_readiness": "runtime_bridge_needs_a4_review",
-    "fr_ids": ["FR-007", "FR-008", "FR-012", "FR-013", "FR-017"],
+    "fr_ids": ["FR-007", "FR-008", "FR-011", "FR-012", "FR-013", "FR-017"],
     "source_map": "docs/04_runbook/m1.5-fr-evidence-map.json#acceptance_readiness=runtime_bridge_needs_a4_review",
-    "excluded_partial_runtime_bridge_fr_ids": [
-      "FR-011",
-      "FR-014",
-      "FR-015",
-      "FR-018"
-    ],
+    "excluded_partial_runtime_bridge_fr_ids": ["FR-014", "FR-015", "FR-018"],
     "excluded_reason": "These FRs still have partial runtime bridge evidence and require follow-up implementation before A4 candidate review."
   }
 }

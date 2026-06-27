@@ -36,15 +36,11 @@ const a4ManifestPath = path.join(
 const desktopPackagePath = path.join(packageRoot, "package.json");
 
 const expectedRuntimeFlowGapFrIds = [];
-const expectedPartialBridgeFollowupFrIds = [
-  "FR-011",
-  "FR-014",
-  "FR-015",
-  "FR-018",
-];
+const expectedPartialBridgeFollowupFrIds = ["FR-014", "FR-015", "FR-018"];
 const expectedA4ReadyBridgeFrIds = [
   "FR-007",
   "FR-008",
+  "FR-011",
   "FR-012",
   "FR-013",
   "FR-017",
@@ -54,7 +50,6 @@ const expectedRemainingFrIds = [
   ...expectedPartialBridgeFollowupFrIds,
 ].sort((left, right) => left.localeCompare(right));
 const expectedSequenceItemIds = [
-  "RUNTIME-FR-011-PROJECT-CREATION-REFERENCE-FOLLOWUP",
   "RUNTIME-FR-014-SKILL-CONFIGURATION-FOLLOWUP",
   "RUNTIME-FR-015-SNAPSHOT-RESTORE-CONTINUE",
   "RUNTIME-FR-018-PENDING-DECISION-PAUSE-RESUME",
@@ -79,15 +74,15 @@ function writeMutatedPlan(mutator) {
   return mutatedPlanPath;
 }
 
-test("M1.5 runtime flow repair plan runner returns a sanitized W1.5.199 summary", () => {
+test("M1.5 runtime flow repair plan runner returns a sanitized W1.5.201 summary", () => {
   const summary = validateRuntimeFlowRepairPlan();
 
   assert.equal(
     summary.status,
-    "remaining_runtime_flow_implementation_plan_refreshed_after_artifact_task_drawer_detail",
+    "remaining_runtime_flow_implementation_plan_refreshed_after_project_reference_followup",
   );
   assert.equal(summary.exitP1_1Status, "not_ready");
-  assert.equal(summary.repairItemCount, 4);
+  assert.equal(summary.repairItemCount, 3);
   assert.deepEqual(sorted(summary.frIds), expectedRemainingFrIds);
   assert.deepEqual(summary.runtimeFlowGapFrIds, expectedRuntimeFlowGapFrIds);
   assert.deepEqual(
@@ -97,15 +92,15 @@ test("M1.5 runtime flow repair plan runner returns a sanitized W1.5.199 summary"
   assert.deepEqual(summary.a4ReadyBridgeFrIds, expectedA4ReadyBridgeFrIds);
   assert.equal(summary.acceptedItemCount, 0);
   assert.equal(summary.implementedItemCount, 0);
-  assert.equal(summary.pendingImplementationItemCount, 4);
+  assert.equal(summary.pendingImplementationItemCount, 3);
   assert.equal(summary.contractAnchorCount > 0, true);
   assert.equal(summary.refreshedFrom, "W1.5.188");
-  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.201"]);
+  assert.deepEqual(summary.nextRecommendedSlices, ["W1.5.202"]);
   assert.equal("rawPrompt" in summary, false);
   assert.equal("outputDir" in summary, false);
 });
 
-test("M1.5 runtime flow plan mirrors current W1.5.199 evidence buckets", () => {
+test("M1.5 runtime flow plan mirrors current W1.5.201 evidence buckets", () => {
   const plan = readJson(planPath);
   const evidenceMap = readJson(evidenceMapPath);
   const runtimeFlowGapFrIds = evidenceMap.fr_evidence_items
@@ -124,10 +119,10 @@ test("M1.5 runtime flow plan mirrors current W1.5.199 evidence buckets", () => {
     .sort();
 
   assert.equal(plan.schema_version, "0.1.0");
-  assert.equal(plan.slice, "W1.5.199");
+  assert.equal(plan.slice, "W1.5.201");
   assert.equal(
     plan.plan_status,
-    "remaining_runtime_flow_implementation_plan_refreshed_after_artifact_task_drawer_detail",
+    "remaining_runtime_flow_implementation_plan_refreshed_after_project_reference_followup",
   );
   assert.equal(plan.exit_p1_1_status, "not_ready");
   assert.equal(plan.refreshed_from?.slice, "W1.5.188");
@@ -235,7 +230,7 @@ test("M1.5 runtime flow plan keeps implementation sequence conservative", () => 
   );
   assert.deepEqual(
     plan.implementation_sequence.map((step) => step.order),
-    [1, 2, 3, 4],
+    [1, 2, 3],
   );
   assert.deepEqual(
     sorted(plan.implementation_sequence.map((step) => step.fr_id)),
@@ -243,7 +238,7 @@ test("M1.5 runtime flow plan keeps implementation sequence conservative", () => 
   );
   assert.deepEqual(
     plan.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.201"],
+    ["W1.5.202"],
   );
 });
 
@@ -278,7 +273,7 @@ test("M1.5 runtime flow plan summary does not claim acceptance or implementation
   );
 });
 
-test("M1.5 runtime flow plan rejects stale source evidence after W1.5.199 refresh", () => {
+test("M1.5 runtime flow plan rejects stale source evidence after W1.5.201 refresh", () => {
   const mutatedPlanPath = writeMutatedPlan((plan) => {
     plan.runtime_flow_items[0].source_next_action =
       "Route Chat Box submissions through local-only renderer state.";
@@ -286,7 +281,7 @@ test("M1.5 runtime flow plan rejects stale source evidence after W1.5.199 refres
 
   assert.throws(
     () => validateRuntimeFlowRepairPlan({ planPath: mutatedPlanPath }),
-    /RUNTIME-FR-011-PROJECT-CREATION-REFERENCE-FOLLOWUP source next action/u,
+    /RUNTIME-FR-014-SKILL-CONFIGURATION-FOLLOWUP source next action/u,
   );
 });
 
@@ -298,7 +293,7 @@ test("M1.5 runtime flow plan rejects missing runtime contract anchors", () => {
 
   assert.throws(
     () => validateRuntimeFlowRepairPlan({ planPath: mutatedPlanPath }),
-    /RUNTIME-FR-011-PROJECT-CREATION-REFERENCE-FOLLOWUP missing runtime contract anchor unknown-runtime-contract-anchor/u,
+    /RUNTIME-FR-014-SKILL-CONFIGURATION-FOLLOWUP missing runtime contract anchor unknown-runtime-contract-anchor/u,
   );
 });
 

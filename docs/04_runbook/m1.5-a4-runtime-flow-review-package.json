@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.199",
+  "slice": "W1.5.201",
   "package_status": "a4_runtime_flow_review_package_prepared_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -18,7 +18,7 @@
   "guardrails": [
     "This package prepares A4 reviewer inputs only; it does not record A4 acceptance.",
     "Every packaged item remains pending_a4_review until an A4 ux-acceptance-reviewer records a separate decision.",
-    "W1.5.199 refreshes the package with selected-node Task Drawer artifact detail evidence, but does not record A4 acceptance.",
+    "W1.5.201 refreshes the package with FR-011 combined project creation plus initial reference import evidence, but does not record A4 acceptance.",
     "No package field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, secure paths, cache paths, output directory values, or full destination paths."
   ],
   "package_scope": {
@@ -28,29 +28,26 @@
       "runtime_bridge_evidence"
     ],
     "included_fr_ids": [
-      "FR-007",
-      "FR-008",
       "FR-009",
       "FR-010",
+      "FR-016",
+      "FR-007",
+      "FR-008",
+      "FR-011",
       "FR-012",
       "FR-013",
-      "FR-017",
-      "FR-016"
+      "FR-017"
     ],
     "included_runtime_bridge_fr_ids": [
       "FR-007",
       "FR-008",
+      "FR-011",
       "FR-012",
       "FR-013",
       "FR-017"
     ],
     "included_stream_candidate_fr_ids": ["FR-009", "FR-010", "FR-016"],
-    "excluded_partial_runtime_bridge_fr_ids": [
-      "FR-011",
-      "FR-014",
-      "FR-015",
-      "FR-018"
-    ],
+    "excluded_partial_runtime_bridge_fr_ids": ["FR-014", "FR-015", "FR-018"],
     "excluded_reason": "Partial runtime bridge items require follow-up implementation or stronger end-to-end proof before A4 review packaging."
   },
   "reviewer_contract": {
@@ -74,12 +71,12 @@
     },
     "runner_output_contract": {
       "status": "a4_runtime_flow_review_package_prepared_not_accepted",
-      "review_item_count": 8,
+      "review_item_count": 9,
       "stream_candidate_item_count": 3,
-      "runtime_bridge_item_count": 5,
-      "excluded_partial_runtime_bridge_item_count": 4,
+      "runtime_bridge_item_count": 6,
+      "excluded_partial_runtime_bridge_item_count": 3,
       "accepted_item_count": 0,
-      "pending_a4_review_item_count": 8,
+      "pending_a4_review_item_count": 9,
       "exit_p1_1_status": "not_ready",
       "sanitized_summary_only": true
     }
@@ -146,6 +143,38 @@
       ]
     },
     {
+      "id": "PKG-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "fr_id": "FR-008",
+      "review_item_id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "Runtime-backed Chat instruction routing for current node and global Workflow scopes",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Runtime submit-instruction endpoint tests",
+        "Desktop Chat Workflow/current-node scope evidence",
+        "No-current-node fallback prevention",
+        "Metadata-only command projection without raw instruction retention"
+      ]
+    },
+    {
+      "id": "PKG-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "fr_id": "FR-011",
+      "review_item_id": "A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "capture_id": "CAPTURE-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "review_group": "runtime_bridge_evidence",
+      "package_status": "ready_for_a4_review_not_accepted",
+      "review_focus": "Combined project creation and initial reference import user path",
+      "reviewer_decision_required": true,
+      "acceptance_inputs": [
+        "Combined desktop Create + import command path",
+        "Runtime project creation followed by project-scoped reference import",
+        "Mandatory Git evidence remains visible before reference import",
+        "Metadata-only renderer evidence without raw reference bytes or task background text"
+      ]
+    },
+    {
       "id": "PKG-A4-FR-012-MANDATORY-GIT-BRIDGE",
       "fr_id": "FR-012",
       "review_item_id": "A4-FR-012-MANDATORY-GIT-BRIDGE",
@@ -176,22 +205,6 @@
       ]
     },
     {
-      "id": "PKG-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
-      "fr_id": "FR-008",
-      "review_item_id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
-      "capture_id": "CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
-      "review_group": "runtime_bridge_evidence",
-      "package_status": "ready_for_a4_review_not_accepted",
-      "review_focus": "Runtime-backed Chat instruction routing for current node and global Workflow scopes",
-      "reviewer_decision_required": true,
-      "acceptance_inputs": [
-        "Runtime submit-instruction endpoint tests",
-        "Desktop Chat Workflow/current-node scope evidence",
-        "No-current-node fallback prevention",
-        "Metadata-only command projection without raw instruction retention"
-      ]
-    },
-    {
       "id": "PKG-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
       "fr_id": "FR-017",
       "review_item_id": "A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
@@ -209,20 +222,20 @@
     }
   ],
   "summary": {
-    "review_item_count": 8,
+    "review_item_count": 9,
     "stream_candidate_items": 3,
-    "runtime_bridge_items": 5,
-    "excluded_partial_runtime_bridge_items": 4,
+    "runtime_bridge_items": 6,
+    "excluded_partial_runtime_bridge_items": 3,
     "accepted_items": 0,
-    "pending_a4_review_items": 8,
+    "pending_a4_review_items": 9,
     "exit_p1_1_status": "not_ready",
     "next_required_review": "A4 ux-acceptance-reviewer"
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.201",
-      "title": "Desktop FR-011 project-reference runtime follow-up",
-      "reason": "Continue remaining runtime-flow implementation while the A4 runtime-flow decision handoff remains pending reviewer approval."
+      "id": "W1.5.202",
+      "title": "Desktop FR-014 skill configuration runtime follow-up",
+      "reason": "Continue remaining runtime-flow implementation after FR-011 moved to A4 runtime-bridge review input."
     }
   ]
 }

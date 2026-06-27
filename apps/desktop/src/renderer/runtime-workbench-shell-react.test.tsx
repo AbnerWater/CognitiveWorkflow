@@ -26,6 +26,7 @@ import type {
 import { DEFAULT_RUNTIME_WORKBENCH_SHORTCUT_BINDINGS } from "./runtime-workbench-shortcuts.js";
 import type { RuntimeWorkbenchShortcutKeyEvent } from "./runtime-workbench-shortcuts.js";
 import {
+  createRuntimeWorkbenchInteraction,
   RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS,
   type RuntimeWorkbenchInteractionCommand,
 } from "./runtime-workbench-interaction.js";
@@ -5826,6 +5827,286 @@ test("renderer runtime workbench React shell dispatches project creation without
   }
 });
 
+test("renderer runtime workbench React shell dispatches combined project creation and initial reference import", async () => {
+  const fileContentBase64 = btoa("initial_reference_content");
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const snapshot = createRuntimeWorkbenchShellReactSnapshot();
+  const successSnapshot = createRuntimeWorkbenchShellReactSnapshot({
+    projectCreation: {
+      status: "succeeded",
+      projectId: "prj_project_with_refs",
+      gitInitialized: true,
+      firstCommitSha: "0123456789abcdef",
+      statusCode: 201,
+      canCreateProject: true,
+    },
+    referenceManagement: {
+      status: "succeeded",
+      activeProjectId: "prj_project_with_refs",
+      lastReferenceId: "ref_initial",
+      statusCode: 201,
+      canImportReference: true,
+    },
+  });
+  const session = createFakeRuntimeWorkbenchShellReactSession(
+    snapshot,
+    successSnapshot,
+  );
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          defaultReferenceImportFormState={{
+            kind: "pdf",
+            fileName: " research.pdf ",
+            fileContentBase64,
+            sourceUrl: "",
+            sensitive: false,
+            autoChunk: true,
+            fileLabel: "research.pdf",
+            fileByteLength: 25,
+          }}
+          session={session}
+          title="Project Reference Runtime Workbench"
+        />,
+      );
+    });
+
+    const initialReferenceButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "projectReferenceSubmit",
+      "true",
+    );
+    assert.equal(
+      initialReferenceButton.getAttribute("data-project-reference-enabled"),
+      "false",
+    );
+    assert.equal(
+      initialReferenceButton.getAttribute("data-project-reference-file-ready"),
+      "true",
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container).includes(
+        "initial_reference_content",
+      ),
+      false,
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchElementAttributeValues(dom.container).includes(
+        fileContentBase64,
+      ),
+      false,
+    );
+
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "projectCreateField",
+          "displayName",
+        ),
+        " Project with refs ",
+      );
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "projectCreateField",
+          "hostPath",
+        ),
+        " D:/CW/Project_With_Refs ",
+      );
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "projectCreateField",
+          "taskBackground",
+        ),
+        "Use the uploaded material as initialization context",
+      );
+    });
+
+    const readyReferenceButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "projectReferenceSubmit",
+      "true",
+    );
+    assert.equal(
+      readyReferenceButton.getAttribute("data-project-reference-enabled"),
+      "true",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(readyReferenceButton);
+    });
+
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "create_project_with_reference",
+      displayName: "Project with refs",
+      hostPath: "D:/CW/Project_With_Refs",
+      fileName: "research.pdf",
+      fileContentBase64,
+      kind: "pdf",
+      sensitive: false,
+      autoChunk: true,
+    });
+    assert.equal(
+      JSON.stringify(session.dispatchedCommands().at(-1)).includes(
+        "Use the uploaded material as initialization context",
+      ),
+      false,
+    );
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "projectReferenceSubmit",
+        "true",
+      ).getAttribute("data-project-reference-file-ready"),
+      "false",
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container).includes(
+        "initial_reference_content",
+      ),
+      false,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    session.dispose();
+    dom.restore();
+  }
+});
+
+test("renderer runtime workbench React shell preserves initial reference selection when combined creation fails", async () => {
+  const fileContentBase64 = btoa("initial_reference_content");
+  const dom = installFakeRuntimeWorkbenchReactDom();
+  const snapshot = createRuntimeWorkbenchShellReactSnapshot();
+  const failedSnapshot = createRuntimeWorkbenchShellReactSnapshot({
+    projectCreation: {
+      status: "failed",
+      statusCode: 500,
+      blockedReason: "request_failed",
+      canCreateProject: true,
+    },
+    referenceManagement: {
+      status: "idle",
+      lastReferenceId: null,
+      canImportReference: true,
+    },
+  });
+  const session = createFakeRuntimeWorkbenchShellReactSession(
+    snapshot,
+    failedSnapshot,
+  );
+  try {
+    const [{ createRoot }, { act }] = await Promise.all([
+      import("react-dom/client"),
+      import("react"),
+    ]);
+    const root = createRoot(dom.container as unknown as Element);
+
+    await act(async () => {
+      root.render(
+        <RuntimeWorkbenchShellReactView
+          defaultReferenceImportFormState={{
+            kind: "pdf",
+            fileName: " research.pdf ",
+            fileContentBase64,
+            sourceUrl: "",
+            sensitive: false,
+            autoChunk: true,
+            fileLabel: "research.pdf",
+            fileByteLength: 25,
+          }}
+          session={session}
+          title="Project Reference Runtime Workbench"
+        />,
+      );
+    });
+
+    await act(async () => {
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "projectCreateField",
+          "displayName",
+        ),
+        " Project with refs ",
+      );
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "projectCreateField",
+          "hostPath",
+        ),
+        " D:/CW/Project_With_Refs ",
+      );
+      inputFakeRuntimeWorkbenchElement(
+        requireFakeRuntimeWorkbenchElementByData(
+          dom.container,
+          "projectCreateField",
+          "taskBackground",
+        ),
+        "Use the uploaded material as initialization context",
+      );
+    });
+
+    const readyReferenceButton = requireFakeRuntimeWorkbenchElementByData(
+      dom.container,
+      "projectReferenceSubmit",
+      "true",
+    );
+    assert.equal(
+      readyReferenceButton.getAttribute("data-project-reference-enabled"),
+      "true",
+    );
+
+    await act(async () => {
+      clickFakeRuntimeWorkbenchElement(readyReferenceButton);
+    });
+
+    assert.deepEqual(session.dispatchedCommands().at(-1), {
+      type: "create_project_with_reference",
+      displayName: "Project with refs",
+      hostPath: "D:/CW/Project_With_Refs",
+      fileName: "research.pdf",
+      fileContentBase64,
+      kind: "pdf",
+      sensitive: false,
+      autoChunk: true,
+    });
+    assert.equal(
+      requireFakeRuntimeWorkbenchElementByData(
+        dom.container,
+        "projectReferenceSubmit",
+        "true",
+      ).getAttribute("data-project-reference-file-ready"),
+      "true",
+    );
+    assert.equal(
+      fakeRuntimeWorkbenchNodeTextContent(dom.container).includes(
+        "initial_reference_content",
+      ),
+      false,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    session.dispose();
+    dom.restore();
+  }
+});
+
 test("renderer runtime workbench React shell dispatches reference management commands without rendering file content", async () => {
   assert.deepEqual(
     createRuntimeWorkbenchShellReactReferenceImportFormState({
@@ -6993,6 +7274,133 @@ test("renderer runtime workbench session manages references through runtime fetc
     toggled.referenceManagement.entries.find(
       (entry) => entry.referenceId === "ref_new",
     )?.enabled,
+    false,
+  );
+});
+
+test("renderer runtime workbench interaction creates a project before importing its initial reference", async () => {
+  const calls: RuntimeWorkbenchRunOnceRuntimeCall[] = [];
+  const importedEntry = Object.freeze({
+    reference_id: "ref_initial",
+    path: "references/initial.md",
+    kind: "md",
+    enabled: true,
+    source_url: null,
+    content_hash:
+      "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    chunk_status: "indexed",
+    chunk_size_tokens: 64,
+    sensitive: false,
+    imported_at: "2026-06-27T00:01:00.000Z",
+  });
+  const runtime: Pick<RuntimeBridge, "fetch"> = Object.freeze({
+    fetch: async <TBody,>(
+      path: RuntimeRequestPath,
+      init?: RuntimeRequestInit,
+    ): Promise<RuntimeResponse<TBody>> => {
+      calls.push(
+        init === undefined
+          ? { path }
+          : { path, init: Object.freeze({ ...init }) },
+      );
+      if (path === "/projects" && init?.method === "POST") {
+        return {
+          ok: true,
+          status: 201,
+          headers: {},
+          body: Object.freeze({
+            schema_version: "0.1.0",
+            project_id: "prj_initial_refs",
+            host_path: "D:/CW/InitialRefs",
+            git_initialized: true,
+            first_commit_sha: "0123456789abcdef",
+            raw_runtime_detail: "must not be retained",
+          }) as TBody,
+        };
+      }
+      if (
+        path === "/projects/prj_initial_refs/references" &&
+        init?.method === "POST"
+      ) {
+        return {
+          ok: true,
+          status: 201,
+          headers: {},
+          body: importedEntry as TBody,
+        };
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: {},
+        body: null,
+      };
+    },
+  });
+  const workbench = createRuntimeWorkbenchRunOnceSession({
+    runtime,
+    executionMode: "semi_auto",
+  });
+  const interaction = createRuntimeWorkbenchInteraction({ workbench });
+
+  const snapshot = await interaction.dispatch({
+    type: "create_project_with_reference",
+    displayName: " Initial refs ",
+    hostPath: " D:/CW/InitialRefs ",
+    idempotencyKey: "idem_initial_refs",
+    fileName: "initial.md",
+    fileContentBase64: btoa("initial reference bytes"),
+    kind: "md",
+    sensitive: false,
+    autoChunk: true,
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.path, "/projects");
+  assert.deepEqual(
+    calls[0]?.init === undefined ? null : JSON.parse(calls[0].init.body ?? ""),
+    {
+      schema_version: "0.1.0",
+      display_name: "Initial refs",
+      host_path: "D:/CW/InitialRefs",
+    },
+  );
+  assert.equal(calls[0]?.init?.idempotencyKey, "idem_initial_refs");
+  assert.equal(calls[1]?.path, "/projects/prj_initial_refs/references");
+  assert.equal(calls[1]?.init?.method, "POST");
+  assert.match(
+    calls[1]?.init?.headers?.["Content-Type"] ?? "",
+    /^multipart\/form-data; boundary=----cw-reference-/u,
+  );
+  assert.equal(Object.hasOwn(calls[1]?.init ?? {}, "body"), false);
+  assert.ok(calls[1]?.init?.bodyBase64 !== undefined);
+  assert.match(
+    Buffer.from(calls[1].init.bodyBase64, "base64").toString("utf8"),
+    /initial reference bytes/u,
+  );
+  assert.equal(snapshot.workbench.projectCreation.status, "succeeded");
+  assert.equal(
+    snapshot.workbench.projectCreation.projectId,
+    "prj_initial_refs",
+  );
+  assert.equal(
+    snapshot.workbench.referenceManagement.activeProjectId,
+    "prj_initial_refs",
+  );
+  assert.equal(
+    snapshot.workbench.referenceManagement.lastReferenceId,
+    "ref_initial",
+  );
+  assert.equal(
+    JSON.stringify(snapshot.workbench.referenceManagement).includes(
+      "initial reference bytes",
+    ),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(snapshot.workbench.projectCreation).includes(
+      "raw_runtime_detail",
+    ),
     false,
   );
 });
@@ -8614,6 +9022,9 @@ function createRuntimeWorkbenchShellReactSnapshot(
   options: {
     readonly activePanel?: RuntimeWorkbenchPanelId;
     readonly executionMode?: RuntimeWorkbenchShellSnapshot["executionPolicy"]["mode"];
+    readonly projectCreation?: Partial<
+      RuntimeWorkbenchShellSnapshot["projectCreation"]
+    >;
     readonly referenceManagement?: Partial<
       RuntimeWorkbenchShellSnapshot["referenceManagement"]
     >;
@@ -8635,7 +9046,9 @@ function createRuntimeWorkbenchShellReactSnapshot(
     ),
     chatInstruction: createRuntimeWorkbenchShellReactChatInstructionSnapshot(),
     artifactAction: createRuntimeWorkbenchShellReactArtifactActionSnapshot(),
-    projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(),
+    projectCreation: createRuntimeWorkbenchShellReactProjectCreationSnapshot(
+      options.projectCreation,
+    ),
     referenceManagement:
       createRuntimeWorkbenchShellReactReferenceManagementSnapshot(
         options.referenceManagement,
@@ -9277,6 +9690,7 @@ function requireRuntimeWorkbenchShellReactAction(
 
 function createFakeRuntimeWorkbenchShellReactSession(
   initialSnapshot: RuntimeWorkbenchShellSnapshot,
+  dispatchSnapshot: RuntimeWorkbenchShellSnapshot = initialSnapshot,
 ): RuntimeWorkbenchShellDomSession & {
   readonly bindKeyboardTargetCount: () => number;
   readonly dispatchedCommands: () => readonly RuntimeWorkbenchInteractionCommand[];
@@ -9324,6 +9738,10 @@ function createFakeRuntimeWorkbenchShellReactSession(
     },
     dispatch: async (command) => {
       commands.push(command);
+      snapshot = dispatchSnapshot;
+      for (const listener of listeners) {
+        listener();
+      }
       return snapshot;
     },
     setActivePanel: (panel) => {

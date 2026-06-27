@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.199",
+  "slice": "W1.5.201",
   "checklist_status": "evidence_refreshed_not_accepted",
   "exit_criterion": "EXIT-P1-1",
   "exit_p1_1_status": "not_ready",
@@ -17,7 +17,7 @@
     "Every FR item remains phase-exit required even when the UIUX source priority is SHOULD.",
     "Scaffold, bridge, or backend-only evidence is not enough to mark a FR accepted.",
     "Dependency-gated items remain blocked until the corresponding W1.5.171 dependency gate receives explicit human approval and implementation evidence.",
-    "W1.5.199 refreshes current evidence status after selected-node Task Drawer artifact detail implementation; it changes no accepted spec, ADR, schema, generated schema, dependency, IPC, renderer storage, packaging, updater, or baseline docx content."
+    "W1.5.201 refreshes FR-011 after combined project creation plus initial reference import runtime bridge evidence; it changes no accepted spec, ADR, schema, generated schema, dependency, IPC, renderer storage, packaging, updater, or baseline docx content."
   ],
   "source_extraction": {
     "method": "read-only OOXML extraction from word/document.xml",
@@ -344,13 +344,13 @@
         "Reference upload/import is available during project initialization.",
         "Created project opens into the desktop workbench with runtime connection metadata."
       ],
-      "current_evidence_status": "partial_runtime_bridge_evidence",
+      "current_evidence_status": "runtime_bridge_evidence_available",
       "current_evidence": [
         "Runtime project initialization APIs and harness structures exist from M1.3 work.",
-        "W1.5.181 added desktop project creation dispatch with task-background local UI state and strict runtime request validation."
+        "W1.5.181 added desktop project creation dispatch with task-background local UI state and strict runtime request validation.",
+        "W1.5.201 added a combined desktop project creation plus initial reference import command path that creates the project, verifies mandatory Git evidence, then imports the initial reference through the runtime references endpoint without rendering raw file content."
       ],
       "remaining_gap": [
-        "Reference upload during project initialization remains outside the project creation bridge and needs a combined user-path proof.",
         "A4 UX acceptance evidence for the full new-project path is not recorded."
       ]
     },
@@ -558,8 +558,8 @@
     "source_should_items": 2,
     "accepted_items": 0,
     "candidate_evidence_available_items": 3,
-    "runtime_bridge_evidence_available_items": 5,
-    "partial_runtime_bridge_evidence_items": 4,
+    "runtime_bridge_evidence_available_items": 6,
+    "partial_runtime_bridge_evidence_items": 3,
     "partial_or_scaffold_items": 6,
     "backend_or_schema_only_items": 0,
     "blocked_by_dependency_gate_items": 2,
@@ -569,9 +569,9 @@
   },
   "next_recommended_slices": [
     {
-      "id": "W1.5.201",
-      "title": "Desktop FR-011 project-reference runtime follow-up",
-      "reason": "Continue remaining runtime-flow implementation while the A4 runtime-flow decision handoff remains pending reviewer approval."
+      "id": "W1.5.202",
+      "title": "Desktop FR-014 skill configuration runtime follow-up",
+      "reason": "Continue remaining runtime-flow implementation after FR-011 moved to A4 runtime-bridge review input."
     }
   ]
 }

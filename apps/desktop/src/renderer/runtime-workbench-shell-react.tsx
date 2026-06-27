@@ -566,6 +566,13 @@ export function RuntimeWorkbenchShellReactView(
     referenceFileName !== null &&
     referenceImportForm.fileContentBase64.length > 0 &&
     referenceSourceUrl !== null;
+  const projectReferenceImportReady =
+    snapshot.referenceManagement.canImportReference &&
+    referenceFileName !== null &&
+    referenceImportForm.fileContentBase64.length > 0 &&
+    referenceSourceUrl !== null;
+  const projectReferenceCreationReady =
+    projectCreationReady && projectReferenceImportReady;
   const referenceToggleProjectId =
     snapshot.referenceManagement.activeProjectId ?? referenceProjectId;
   const referenceUpdateReady =
@@ -955,6 +962,65 @@ export function RuntimeWorkbenchShellReactView(
     projectCreationHostPath,
     projectCreationReady,
     props.session,
+  ]);
+  const handleCreateProjectWithReferenceClick = useCallback((): void => {
+    if (
+      !projectReferenceCreationReady ||
+      projectCreationDisplayName === null ||
+      projectCreationHostPath === null ||
+      referenceFileName === null ||
+      referenceSourceUrl === null
+    ) {
+      return;
+    }
+    void props.session
+      .dispatch({
+        type: "create_project_with_reference",
+        displayName: projectCreationDisplayName,
+        hostPath: projectCreationHostPath,
+        fileName: referenceFileName,
+        fileContentBase64: referenceImportForm.fileContentBase64,
+        kind: referenceImportForm.kind,
+        sensitive: referenceImportForm.sensitive,
+        autoChunk: referenceImportForm.autoChunk,
+        ...(referenceSourceUrl.length > 0
+          ? { sourceUrl: referenceSourceUrl }
+          : {}),
+      })
+      .then((result) => {
+        if (
+          result.projectCreation.status !== "succeeded" ||
+          result.referenceManagement.status !== "succeeded" ||
+          result.referenceManagement.lastReferenceId === null
+        ) {
+          return;
+        }
+        if (referenceFileInputRef.current !== null) {
+          referenceFileInputRef.current.value = "";
+        }
+        setReferenceImportForm((current) =>
+          createRuntimeWorkbenchShellReactReferenceImportFormState({
+            ...current,
+            fileName: "",
+            fileContentBase64: "",
+            fileLabel: null,
+            fileByteLength: null,
+          }),
+        );
+      })
+      .catch(handleActionError);
+  }, [
+    handleActionError,
+    projectCreationDisplayName,
+    projectCreationHostPath,
+    projectReferenceCreationReady,
+    props.session,
+    referenceFileName,
+    referenceImportForm.autoChunk,
+    referenceImportForm.fileContentBase64,
+    referenceImportForm.kind,
+    referenceImportForm.sensitive,
+    referenceSourceUrl,
   ]);
   const handleRefreshReferencesClick = useCallback((): void => {
     if (!referenceRefreshReady || referenceProjectId === null) {
@@ -1516,9 +1582,15 @@ export function RuntimeWorkbenchShellReactView(
             />
             <RuntimeWorkbenchShellProjectCreationControls
               onCreateProjectClick={handleCreateProjectClick}
+              onCreateProjectWithReferenceClick={
+                handleCreateProjectWithReferenceClick
+              }
               onTextInputChange={handleProjectCreationTextInputChange}
               projectCreation={snapshot.projectCreation}
+              projectReferenceCreationReady={projectReferenceCreationReady}
               projectCreationReady={projectCreationReady}
+              referenceFileByteLength={referenceImportForm.fileByteLength}
+              referenceFileLabel={referenceImportForm.fileLabel}
               state={projectCreationForm}
             />
             <RuntimeWorkbenchShellReferenceManagementControls
@@ -1624,8 +1696,12 @@ function RuntimeWorkbenchShellProjectCreationControls(props: {
   readonly projectCreation: RuntimeWorkbenchShellSnapshot["projectCreation"];
   readonly state: RuntimeWorkbenchShellReactProjectCreationFormState;
   readonly projectCreationReady: boolean;
+  readonly projectReferenceCreationReady: boolean;
+  readonly referenceFileLabel: string | null;
+  readonly referenceFileByteLength: number | null;
   readonly onTextInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
   readonly onCreateProjectClick: () => void;
+  readonly onCreateProjectWithReferenceClick: () => void;
 }): ReactElement {
   return (
     <section
@@ -1681,6 +1757,21 @@ function RuntimeWorkbenchShellProjectCreationControls(props: {
       >
         Create project
       </button>
+      <button
+        className="cw-workbench__project-reference-submit"
+        data-project-reference-enabled={
+          props.projectReferenceCreationReady ? "true" : "false"
+        }
+        data-project-reference-file-ready={
+          props.referenceFileLabel === null ? "false" : "true"
+        }
+        data-project-reference-submit="true"
+        disabled={!props.projectReferenceCreationReady}
+        onClick={props.onCreateProjectWithReferenceClick}
+        type="button"
+      >
+        Create + import
+      </button>
       <dl className="cw-workbench__project-creation-status">
         <div>
           <dt>Git</dt>
@@ -1694,6 +1785,14 @@ function RuntimeWorkbenchShellProjectCreationControls(props: {
           <dt>Project id</dt>
           <dd>
             {props.projectCreation.projectId ?? props.projectCreation.status}
+          </dd>
+        </div>
+        <div>
+          <dt>Initial reference</dt>
+          <dd>
+            {props.referenceFileLabel === null
+              ? "No file"
+              : `${props.referenceFileLabel} (${props.referenceFileByteLength ?? 0} bytes)`}
           </dd>
         </div>
       </dl>

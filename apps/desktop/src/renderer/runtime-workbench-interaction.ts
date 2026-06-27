@@ -28,6 +28,7 @@ export const RUNTIME_WORKBENCH_INTERACTION_COMMAND_IDS = [
   "submit_chat_instruction",
   "run_artifact_action",
   "create_project",
+  "create_project_with_reference",
   "refresh_references",
   "import_reference",
   "set_reference_enabled",
@@ -112,6 +113,19 @@ export type RuntimeWorkbenchInteractionCommand =
       readonly hostPath: string;
       readonly idempotencyKey?: string;
       readonly settingsOverrides?: Readonly<Record<string, unknown>>;
+    }
+  | {
+      readonly type: "create_project_with_reference";
+      readonly displayName: string;
+      readonly hostPath: string;
+      readonly idempotencyKey?: string;
+      readonly settingsOverrides?: Readonly<Record<string, unknown>>;
+      readonly fileName: string;
+      readonly fileContentBase64: string;
+      readonly kind: RuntimeWorkbenchReferenceKind;
+      readonly sensitive?: boolean;
+      readonly autoChunk?: boolean;
+      readonly sourceUrl?: string;
     }
   | {
       readonly type: "refresh_references";
@@ -407,6 +421,39 @@ export function createRuntimeWorkbenchInteraction(
             : {}),
         });
         return completeAction();
+      case "create_project_with_reference": {
+        await options.workbench.createProject({
+          displayName: safeCommand.displayName,
+          hostPath: safeCommand.hostPath,
+          ...(safeCommand.idempotencyKey !== undefined
+            ? { idempotencyKey: safeCommand.idempotencyKey }
+            : {}),
+          ...(safeCommand.settingsOverrides !== undefined
+            ? { settingsOverrides: safeCommand.settingsOverrides }
+            : {}),
+        });
+        const projectCreation = options.workbench.getSnapshot().projectCreation;
+        const projectId = projectCreation.projectId;
+        if (projectCreation.status !== "succeeded" || projectId === null) {
+          return completeAction();
+        }
+        await options.workbench.importReference({
+          projectId,
+          fileName: safeCommand.fileName,
+          fileContentBase64: safeCommand.fileContentBase64,
+          kind: safeCommand.kind,
+          ...(safeCommand.sensitive !== undefined
+            ? { sensitive: safeCommand.sensitive }
+            : {}),
+          ...(safeCommand.autoChunk !== undefined
+            ? { autoChunk: safeCommand.autoChunk }
+            : {}),
+          ...(safeCommand.sourceUrl !== undefined
+            ? { sourceUrl: safeCommand.sourceUrl }
+            : {}),
+        });
+        return completeAction();
+      }
       case "refresh_references":
         await options.workbench.refreshReferences({
           projectId: safeCommand.projectId,
@@ -560,6 +607,12 @@ export function buildRuntimeWorkbenchInteractionSnapshot(
     if (workbench.projectCreation.canCreateProject) {
       enabledCommandIds.push("create_project");
     }
+    if (
+      workbench.projectCreation.canCreateProject &&
+      workbench.referenceManagement.canImportReference
+    ) {
+      enabledCommandIds.push("create_project_with_reference");
+    }
     if (workbench.referenceManagement.canRefreshReferences) {
       enabledCommandIds.push("refresh_references");
     }
@@ -707,6 +760,32 @@ function requireRuntimeWorkbenchInteractionCommand(
         ("settingsOverrides" in command &&
           command.settingsOverrides !== undefined &&
           !isRecord(command.settingsOverrides))
+      ) {
+        throw new Error("Invalid runtime workbench interaction command");
+      }
+      return command;
+    case "create_project_with_reference":
+      if (
+        typeof command.displayName !== "string" ||
+        typeof command.hostPath !== "string" ||
+        typeof command.fileName !== "string" ||
+        typeof command.fileContentBase64 !== "string" ||
+        typeof command.kind !== "string" ||
+        ("idempotencyKey" in command &&
+          command.idempotencyKey !== undefined &&
+          typeof command.idempotencyKey !== "string") ||
+        ("settingsOverrides" in command &&
+          command.settingsOverrides !== undefined &&
+          !isRecord(command.settingsOverrides)) ||
+        ("sensitive" in command &&
+          command.sensitive !== undefined &&
+          typeof command.sensitive !== "boolean") ||
+        ("autoChunk" in command &&
+          command.autoChunk !== undefined &&
+          typeof command.autoChunk !== "boolean") ||
+        ("sourceUrl" in command &&
+          command.sourceUrl !== undefined &&
+          typeof command.sourceUrl !== "string")
       ) {
         throw new Error("Invalid runtime workbench interaction command");
       }
