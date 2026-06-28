@@ -31,7 +31,7 @@ test("M1.5 readiness ledger keeps phase status conservative", () => {
 
   assert.equal(ledger.schema_version, "0.1.0");
   assert.equal(ledger.milestone, "M1.5");
-  assert.equal(ledger.slice, "W1.5.224");
+  assert.equal(ledger.slice, "W1.5.225");
   assert.equal(ledger.status, "in_progress");
   assert.match(roadmap, /Electron Forge \+ Vite \+ React 18/u);
   assert.match(roadmap, /React Flow Canvas/u);
@@ -129,6 +129,14 @@ test("M1.5 readiness ledger records roadmap item gaps without claiming exit read
     /remaining acceptance blocker plan/u,
   );
   assert.match(
+    roadmapItemsById.get("M1.5-R7")?.verified_evidence.join(" ") ?? "",
+    /W1\.5\.225/u,
+  );
+  assert.match(
+    roadmapItemsById.get("M1.5-R7")?.verified_evidence.join(" ") ?? "",
+    /reviewer-owned A4\/A8 package routes/u,
+  );
+  assert.match(
     roadmapItemsById.get("M1.5-R7")?.remaining_gap.join(" ") ?? "",
     /stream packaged follow-up reviewer decisions .* needs_followup_not_accepted/u,
   );
@@ -147,6 +155,14 @@ test("M1.5 readiness ledger records roadmap item gaps without claiming exit read
   assert.match(
     roadmapItemsById.get("M1.5-R7")?.remaining_gap.join(" ") ?? "",
     /11 remaining blocker items planned_not_implemented/u,
+  );
+  assert.match(
+    roadmapItemsById.get("M1.5-R7")?.remaining_gap.join(" ") ?? "",
+    /11 routed blocker items/u,
+  );
+  assert.match(
+    roadmapItemsById.get("M1.5-R7")?.remaining_gap.join(" ") ?? "",
+    /3 target route packages not accepted/u,
   );
   assert.match(
     roadmapItemsById.get("M1.5-R7")?.remaining_gap.join(" ") ?? "",
@@ -176,6 +192,6 @@ test("M1.5 readiness ledger records roadmap item gaps without claiming exit read
 
   assert.deepEqual(
     ledger.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.225"],
+    ["W1.5.226"],
   );
 });

@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.224",
+  "slice": "W1.5.225",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -191,7 +191,8 @@
         "W1.5.221 packages the runtime UX acceptance follow-up items for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 while leaving A4 reviewer decisions pending",
         "W1.5.222 packages the FR-012 A8 Git-history conformance follow-up item and all 10 runtime_harness.md §8.2 trigger rows while leaving A8 reviewer decisions pending",
         "W1.5.223 records the W1.5.220 stream, W1.5.221 runtime UX, and W1.5.222 A8 packaged follow-up reviewer decisions as needs_followup without accepting FR or EXIT criteria",
-        "W1.5.224 converts the W1.5.223 needs_followup_not_accepted decisions into an explicit remaining acceptance blocker plan without accepting FR or EXIT criteria"
+        "W1.5.224 converts the W1.5.223 needs_followup_not_accepted decisions into an explicit remaining acceptance blocker plan without accepting FR or EXIT criteria",
+        "W1.5.225 routes the W1.5.224 planned remaining blockers into reviewer-owned A4/A8 package routes without accepting FR or EXIT criteria"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
@@ -200,7 +201,8 @@
         "W1.5.223 records stream packaged follow-up reviewer decisions for FR-009, FR-010, and FR-016 as needs_followup_not_accepted, so accepted_items stay 0.",
         "W1.5.223 records runtime UX packaged follow-up reviewer decisions for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 as needs_followup_not_accepted, so accepted_items stay 0.",
         "W1.5.223 records the FR-012 A8 packaged follow-up reviewer decision as needs_followup_not_accepted; EXIT-P1-10 remains not_ready because 6 runtime_harness.md §8.2 rows are still explicitly deferred and not accepted as conformant.",
-        "W1.5.224 keeps 11 remaining blocker items planned_not_implemented, adds dependency-gated, FR-015 contract-gated, and M1.6-deferred cross-cutting blockers, and leaves accepted_items at 0."
+        "W1.5.224 keeps 11 remaining blocker items planned_not_implemented, adds dependency-gated, FR-015 contract-gated, and M1.6-deferred cross-cutting blockers, and leaves accepted_items at 0.",
+        "W1.5.225 keeps all 11 routed blocker items and all 3 target route packages not accepted, while dependency-gated, FR-015 contract-gated, and M1.6-deferred routes remain blocked or deferred."
       ]
     },
     {
@@ -218,7 +220,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map; W1.5.208 records 11 A4 needs_followup decisions, W1.5.209 plans their repair/capture tasks, W1.5.210 executes the stream phase capture track, W1.5.211 executes the runtime bridge user-path capture track, W1.5.212 records A8 Git-history prerequisite evidence for FR-012, W1.5.213 records post-capture decisions for all 11 follow-up inputs, W1.5.214 plans the remaining blocker repairs, W1.5.215 executes the stream blocker repair handoff, W1.5.216 executes the runtime UX blocker repair handoff, W1.5.217 executes the A8 Git-history conformance blocker repair handoff, W1.5.218 records all 11 post-repair blocker decisions as needs_followup, W1.5.219 converts those decisions into scoped follow-up plan items, W1.5.220 packages the stream acceptance follow-up items, W1.5.221 packages the runtime UX acceptance follow-up items, and W1.5.222 packages the A8 Git-history conformance follow-up item, and W1.5.223 records all 11 packaged follow-up reviewer decisions as needs_followup_not_accepted, but accepted_items remain 0 and several surfaces still need implementation, final reviewer decisions, dependency-gated, phase-level A8 conformance, or end-to-end evidence. W1.5.224 converts the W1.5.223 needs_followup_not_accepted decisions into an explicit remaining acceptance blocker plan, but accepted_items remain 0 and the blockers stay planned, dependency-gated, contract-gated, or deferred."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map; W1.5.208 records 11 A4 needs_followup decisions, W1.5.209 plans their repair/capture tasks, W1.5.210 executes the stream phase capture track, W1.5.211 executes the runtime bridge user-path capture track, W1.5.212 records A8 Git-history prerequisite evidence for FR-012, W1.5.213 records post-capture decisions for all 11 follow-up inputs, W1.5.214 plans the remaining blocker repairs, W1.5.215 executes the stream blocker repair handoff, W1.5.216 executes the runtime UX blocker repair handoff, W1.5.217 executes the A8 Git-history conformance blocker repair handoff, W1.5.218 records all 11 post-repair blocker decisions as needs_followup, W1.5.219 converts those decisions into scoped follow-up plan items, W1.5.220 packages the stream acceptance follow-up items, W1.5.221 packages the runtime UX acceptance follow-up items, and W1.5.222 packages the A8 Git-history conformance follow-up item, and W1.5.223 records all 11 packaged follow-up reviewer decisions as needs_followup_not_accepted, but accepted_items remain 0 and several surfaces still need implementation, final reviewer decisions, dependency-gated, phase-level A8 conformance, or end-to-end evidence. W1.5.224 converts the W1.5.223 needs_followup_not_accepted decisions into an explicit remaining acceptance blocker plan, but accepted_items remain 0 and the blockers stay planned, dependency-gated, contract-gated, or deferred. W1.5.225 routes the W1.5.224 planned blockers into reviewer-owned package routes, but all route packages remain not accepted and accepted_items remain 0."
     },
     {
       "id": "EXIT-P1-2",
@@ -263,7 +265,7 @@
     {
       "id": "EXIT-P1-10",
       "status": "not_ready",
-      "reason": "W1.5.212 records A8 Git-history prerequisite evidence for FR-012, W1.5.213 keeps FR-012 as needs_followup, W1.5.214 plans the FR-012 Git-history conformance repair, W1.5.217 carries forward 4 runtime_harness.md §8.2 trigger rows while explicitly deferring 6 rows, W1.5.218 records the FR-012 A8 blocker repair decision as needs_followup, W1.5.219 plans the A8 follow-up, and W1.5.222 packages the FR-012 A8 follow-up as packaged_not_accepted, and W1.5.223 records the FR-012 packaged follow-up reviewer decision as needs_followup_not_accepted; phase-level EXIT-P1-10 remains not_ready because deferred rows still lack implementation or accepted conformance evidence. W1.5.224 carries the FR-012 A8 blocker into the remaining blocker plan and keeps all six deferred runtime_harness.md section 8.2 rows not accepted, so EXIT-P1-10 remains not_ready."
+      "reason": "W1.5.212 records A8 Git-history prerequisite evidence for FR-012, W1.5.213 keeps FR-012 as needs_followup, W1.5.214 plans the FR-012 Git-history conformance repair, W1.5.217 carries forward 4 runtime_harness.md §8.2 trigger rows while explicitly deferring 6 rows, W1.5.218 records the FR-012 A8 blocker repair decision as needs_followup, W1.5.219 plans the A8 follow-up, and W1.5.222 packages the FR-012 A8 follow-up as packaged_not_accepted, and W1.5.223 records the FR-012 packaged follow-up reviewer decision as needs_followup_not_accepted; phase-level EXIT-P1-10 remains not_ready because deferred rows still lack implementation or accepted conformance evidence. W1.5.224 carries the FR-012 A8 blocker into the remaining blocker plan and keeps all six deferred runtime_harness.md section 8.2 rows not accepted, so EXIT-P1-10 remains not_ready. W1.5.225 routes the FR-012 A8 blocker into the A8 phase-conformance package route and keeps all six deferred runtime_harness.md section 8.2 rows not accepted, so EXIT-P1-10 remains not_ready."
     },
     {
       "id": "EXIT-P1-11",
@@ -278,9 +280,9 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.225",
-      "title": "A4/A8 remaining blocker package routing",
-      "reason": "Route the W1.5.224 remaining blocker tracks into reviewer-owned follow-up packages while keeping dependency-gated, phase-level A8, FR-015, and M1.6-deferred evidence blocked from acceptance."
+      "id": "W1.5.226",
+      "title": "A4/A8 routed blocker package decision record",
+      "reason": "Record reviewer decisions over the W1.5.225 routed blocker packages while keeping dependency-gated, FR-015, M1.6-deferred, and unresolved A8 phase evidence blocked from acceptance."
     }
   ]
 }
