@@ -1,0 +1,223 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.215",
+  "repair_status": "a4_stream_acceptance_blocker_repair_executed_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "exit_p1_10_status": "not_ready",
+  "observed_at": "2026-06-28T12:05:00.000Z",
+  "source": {
+    "a4_post_capture_blocker_repair_plan": "docs/04_runbook/m1.5-a4-post-capture-blocker-repair-plan.json",
+    "a4_post_capture_decision_record": "docs/04_runbook/m1.5-a4-post-capture-decision-record.json",
+    "a4_stream_phase_capture_execution": "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json",
+    "a4_capture_matrix": "docs/04_runbook/m1.5-a4-capture-matrix.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "W1.5.215 executes only the W1.5.214 stream final acceptance blocker repair track for FR-009, FR-010, and FR-016.",
+    "W1.5.215 does not execute runtime UX blocker repairs, A8 Git-history conformance repairs, runtime/Desktop production behavior, accepted spec changes, ADR changes, schema changes, generated schema changes, dependency changes, packaging, updater work, or baseline docx changes.",
+    "No repair field may mark any FR accepted, ready, completed, implemented, or phase-exit satisfied.",
+    "Stream acceptance repair evidence remains metadata-only and must not include raw prompts, raw model output, uploaded-file bytes, instruction text, response bodies, artifact bodies, secure paths, cache paths, output directory values, full destination paths, credentials, or user staged file content.",
+    "FR-015 remains excluded while ADR-0012 is Proposed.",
+    "accepted_items and implemented_items remain zero; EXIT-P1-1 and EXIT-P1-10 remain not_ready."
+  ],
+  "track_execution": {
+    "source_track_id": "TRACK-A4-STREAM-FINAL-ACCEPTANCE",
+    "source_track_status": "planned_not_implemented",
+    "execution_status": "executed_not_accepted",
+    "fr_ids": ["FR-009", "FR-010", "FR-016"],
+    "entry_slice": "W1.5.215",
+    "next_review_required": "A4 ux-acceptance-reviewer",
+    "decision_record_required": true,
+    "acceptance_decision_status": "pending_reviewer_decision"
+  },
+  "runner_contract": {
+    "runner_script": "apps/desktop/scripts/m1-5-a4-stream-acceptance-blocker-repair.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-a4-stream-acceptance-blocker-repair.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-a4-stream-acceptance-blocker-repair.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "runner_output_contract": {
+      "status": "a4_stream_acceptance_blocker_repair_executed_not_accepted",
+      "repair_item_count": 3,
+      "accepted_item_count": 0,
+      "implemented_item_count": 0,
+      "pending_a4_decision_item_count": 3,
+      "source_stream_blocker_item_count": 3,
+      "sanitized_summary_only": true
+    }
+  },
+  "stream_evidence_package": {
+    "source_capture_slice": "W1.5.210",
+    "source_capture_status": "a4_stream_phase_capture_executed_not_accepted",
+    "matrix_manifest_artifact": "docs/04_runbook/m1.5-a4-capture-matrix.json",
+    "matrix_case_count": 8,
+    "required_case_names": [
+      "known-desktop",
+      "known-mobile",
+      "unknown-desktop",
+      "unknown-mobile",
+      "unknown-mobile-scroll-900",
+      "unknown-mobile-scroll-1440"
+    ],
+    "source_failure_count": 0,
+    "raw_output_dir_recorded": false,
+    "query_hash_recorded": false,
+    "acceptance_decision_recorded": false
+  },
+  "repair_items": [
+    {
+      "id": "STREAM-BLOCKER-REPAIR-A4-FR-009-STREAM-COLLAPSED",
+      "source_blocker_repair_item_id": "BLOCKER-REPAIR-A4-FR-009-STREAM-COLLAPSED",
+      "source_post_capture_decision_id": "POST-CAPTURE-DECISION-A4-FR-009-STREAM-COLLAPSED",
+      "source_phase_capture_item_id": "PHASE-CAPTURE-A4-FR-009-STREAM-COLLAPSED",
+      "fr_id": "FR-009",
+      "track_id": "TRACK-A4-STREAM-FINAL-ACCEPTANCE",
+      "repair_status": "executed_not_accepted",
+      "source_implementation_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "reviewer_decision_required": true,
+      "acceptance_decision_status": "pending_reviewer_decision",
+      "objective": "Package first-viewport default collapsed stream evidence for a future A4 decision without marking FR-009 accepted.",
+      "repair_actions_executed": [
+        "Mapped W1.5.214 FR-009 blocker repair item to the W1.5.213 source decision and W1.5.210 phase capture evidence.",
+        "Confirmed known desktop and mobile matrix cases are the only evidence basis for this repair handoff.",
+        "Kept formal A4 accept or reject decision outside this slice."
+      ],
+      "source_acceptance_blockers": [
+        "The evidence is still matrix metadata and does not record formal first-viewport A4 acceptance.",
+        "A phase-level UX acceptance artifact must explicitly accept or reject the default collapsed stream path."
+      ],
+      "remaining_acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for the default collapsed stream path is still not recorded.",
+        "FR-009 remains blocked until the reviewer decision record consumes this repaired stream evidence package."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-stream-acceptance-blocker-repair.cjs --check",
+        "node --test apps/desktop/scripts/m1-5-a4-stream-acceptance-blocker-repair.test.cjs"
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-post-capture-blocker-repair-plan.json#BLOCKER-REPAIR-A4-FR-009-STREAM-COLLAPSED",
+        "docs/04_runbook/m1.5-a4-post-capture-decision-record.json#POST-CAPTURE-DECISION-A4-FR-009-STREAM-COLLAPSED",
+        "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json#PHASE-CAPTURE-A4-FR-009-STREAM-COLLAPSED"
+      ]
+    },
+    {
+      "id": "STREAM-BLOCKER-REPAIR-A4-FR-010-STREAM-EXPANDED",
+      "source_blocker_repair_item_id": "BLOCKER-REPAIR-A4-FR-010-STREAM-EXPANDED",
+      "source_post_capture_decision_id": "POST-CAPTURE-DECISION-A4-FR-010-STREAM-EXPANDED",
+      "source_phase_capture_item_id": "PHASE-CAPTURE-A4-FR-010-STREAM-EXPANDED",
+      "fr_id": "FR-010",
+      "track_id": "TRACK-A4-STREAM-FINAL-ACCEPTANCE",
+      "repair_status": "executed_not_accepted",
+      "source_implementation_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "reviewer_decision_required": true,
+      "acceptance_decision_status": "pending_reviewer_decision",
+      "objective": "Package expanded stream readability and event taxonomy evidence for a future A4 decision without marking FR-010 accepted.",
+      "repair_actions_executed": [
+        "Mapped W1.5.214 FR-010 blocker repair item to the W1.5.213 source decision and W1.5.210 phase capture evidence.",
+        "Confirmed expanded stream detail evidence remains based on structured matrix fields rather than raw stream payloads.",
+        "Kept end-to-end workflow stream demo and formal A4 decision outside this slice."
+      ],
+      "source_acceptance_blockers": [
+        "The end-to-end workflow stream demo remains deferred to later phase-level demo work.",
+        "Expanded event taxonomy acceptance is not proven by fixture and matrix metadata alone."
+      ],
+      "remaining_acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for expanded stream readability is still not recorded.",
+        "End-to-end workflow stream demo evidence remains deferred to M1.6 or another explicit phase-level demo slice."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-stream-acceptance-blocker-repair.cjs --check",
+        "node --test apps/desktop/scripts/m1-5-a4-stream-acceptance-blocker-repair.test.cjs"
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-post-capture-blocker-repair-plan.json#BLOCKER-REPAIR-A4-FR-010-STREAM-EXPANDED",
+        "docs/04_runbook/m1.5-a4-post-capture-decision-record.json#POST-CAPTURE-DECISION-A4-FR-010-STREAM-EXPANDED",
+        "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json#PHASE-CAPTURE-A4-FR-010-STREAM-EXPANDED"
+      ]
+    },
+    {
+      "id": "STREAM-BLOCKER-REPAIR-A4-FR-016-EVENT-CLASSIFICATION",
+      "source_blocker_repair_item_id": "BLOCKER-REPAIR-A4-FR-016-EVENT-CLASSIFICATION",
+      "source_post_capture_decision_id": "POST-CAPTURE-DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+      "source_phase_capture_item_id": "PHASE-CAPTURE-A4-FR-016-EVENT-CLASSIFICATION",
+      "fr_id": "FR-016",
+      "track_id": "TRACK-A4-STREAM-FINAL-ACCEPTANCE",
+      "repair_status": "executed_not_accepted",
+      "source_implementation_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "reviewer_decision_required": true,
+      "acceptance_decision_status": "pending_reviewer_decision",
+      "objective": "Package final user-facing event classification evidence for a future A4 decision without marking FR-016 accepted.",
+      "repair_actions_executed": [
+        "Mapped W1.5.214 FR-016 blocker repair item to the W1.5.213 source decision and W1.5.210 phase capture evidence.",
+        "Confirmed known and unknown event classification evidence remains represented by structured booleans and fallback visibility only.",
+        "Kept final label acceptance outside this slice."
+      ],
+      "source_acceptance_blockers": [
+        "Final user-facing label acceptance is not separately recorded.",
+        "The labels still need phase-level stream evidence in a reviewer-approved context."
+      ],
+      "remaining_acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for final event labels is still not recorded.",
+        "FR-016 remains blocked until the reviewer decision record consumes this repaired stream evidence package."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-stream-acceptance-blocker-repair.cjs --check",
+        "node --test apps/desktop/scripts/m1-5-a4-stream-acceptance-blocker-repair.test.cjs"
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-post-capture-blocker-repair-plan.json#BLOCKER-REPAIR-A4-FR-016-EVENT-CLASSIFICATION",
+        "docs/04_runbook/m1.5-a4-post-capture-decision-record.json#POST-CAPTURE-DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+        "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json#PHASE-CAPTURE-A4-FR-016-EVENT-CLASSIFICATION"
+      ]
+    }
+  ],
+  "excluded_items": [
+    {
+      "track_id": "TRACK-A4-RUNTIME-UX-FINAL-ACCEPTANCE",
+      "reason": "Runtime UX final acceptance blocker repairs belong to W1.5.216.",
+      "status": "not_executed_in_this_slice"
+    },
+    {
+      "track_id": "TRACK-A8-GIT-HISTORY-CONFORMANCE",
+      "reason": "A8 Git-history conformance repairs belong to W1.5.217 or another dedicated audit slice.",
+      "status": "not_executed_in_this_slice"
+    },
+    {
+      "fr_id": "FR-015",
+      "reason": "Snapshot restore/continue remains blocked while ADR-0012 is Proposed.",
+      "status": "blocked_by_contract_gate"
+    }
+  ],
+  "summary": {
+    "repair_item_count": 3,
+    "stream_acceptance_repair_items": 3,
+    "runtime_ux_repair_items": 0,
+    "git_history_conformance_items": 0,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "executed_not_accepted_items": 3,
+    "pending_a4_decision_items": 3,
+    "source_stream_blocker_items": 3,
+    "source_phase_capture_items": 3,
+    "matrix_case_count": 8,
+    "required_matrix_case_count": 6,
+    "excluded_items": 3,
+    "exit_p1_1_status": "not_ready",
+    "exit_p1_10_status": "not_ready",
+    "next_required_review": "A4 stream acceptance blocker repair review"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.216",
+      "title": "A4 runtime UX acceptance blocker repair",
+      "reason": "Execute the W1.5.214 runtime UX repair track for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 while keeping unsupported acceptance blocked."
+    }
+  ]
+}
