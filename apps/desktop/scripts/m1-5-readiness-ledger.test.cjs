@@ -31,7 +31,7 @@ test("M1.5 readiness ledger keeps phase status conservative", () => {
 
   assert.equal(ledger.schema_version, "0.1.0");
   assert.equal(ledger.milestone, "M1.5");
-  assert.equal(ledger.slice, "W1.5.232");
+  assert.equal(ledger.slice, "W1.5.233");
   assert.equal(ledger.status, "in_progress");
   assert.match(roadmap, /Electron Forge \+ Vite \+ React 18/u);
   assert.match(roadmap, /React Flow Canvas/u);
@@ -193,6 +193,14 @@ test("M1.5 readiness ledger records roadmap item gaps without claiming exit read
     /reviewer decisions .*needs_followup_not_accepted/u,
   );
   assert.match(
+    roadmapItemsById.get("M1.5-R7")?.verified_evidence.join(" ") ?? "",
+    /W1\.5\.233/u,
+  );
+  assert.match(
+    roadmapItemsById.get("M1.5-R7")?.verified_evidence.join(" ") ?? "",
+    /planned_not_implemented follow-up items/u,
+  );
+  assert.match(
     roadmapItemsById.get("M1.5-R7")?.remaining_gap.join(" ") ?? "",
     /stream packaged follow-up reviewer decisions .* needs_followup_not_accepted/u,
   );
@@ -258,6 +266,14 @@ test("M1.5 readiness ledger records roadmap item gaps without claiming exit read
   );
   assert.match(
     roadmapItemsById.get("M1.5-R7")?.remaining_gap.join(" ") ?? "",
+    /W1\.5\.233/u,
+  );
+  assert.match(
+    roadmapItemsById.get("M1.5-R7")?.remaining_gap.join(" ") ?? "",
+    /handoff follow-up package follow-up items .*planned_not_implemented/u,
+  );
+  assert.match(
+    roadmapItemsById.get("M1.5-R7")?.remaining_gap.join(" ") ?? "",
     /3 handoff package decisions/u,
   );
   assert.match(
@@ -316,6 +332,6 @@ test("M1.5 readiness ledger records roadmap item gaps without claiming exit read
 
   assert.deepEqual(
     ledger.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.233"],
+    ["W1.5.234"],
   );
 });
