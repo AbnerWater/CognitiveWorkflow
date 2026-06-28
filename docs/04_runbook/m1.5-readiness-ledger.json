@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.210",
+  "slice": "W1.5.211",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -130,12 +130,13 @@
         "W1.5.108-W1.5.112 local draft, intent, preview, and send guard",
         "W1.5.150-W1.5.169 local metadata-only send/history/focus and visual smoke matrix evidence",
         "W1.5.195 runtime submit-instruction endpoint, metadata-only projection, and renderer dispatch evidence",
-        "W1.5.196 Workflow/Current node scope controls and no-current-node fallback regression evidence"
+        "W1.5.196 Workflow/Current node scope controls and no-current-node fallback regression evidence",
+        "W1.5.211 executes runtime bridge user-path capture evidence for FR-008 Chat instruction routing without accepting FR items"
       ],
       "remaining_gap": [
-        "A4 UX acceptance evidence for runtime-backed Chat instruction routing is not recorded",
+        "A4 reviewer acceptance for runtime-backed Chat instruction routing is not recorded",
         "Project-backed command history and persistence remain outside this evidence refresh",
-        "W1.5.200-W1.5.204 evidence refreshes do not record A4 reviewer acceptance."
+        "W1.5.211 runtime bridge user-path capture evidence does not record A4 reviewer acceptance."
       ]
     },
     {
@@ -167,16 +168,17 @@
         "W1.5.207 adds high-risk HITL pending decision review context and keeps evidence metadata-only without accepting FR-018",
         "W1.5.208 records A4 reviewer decisions for 11 runtime-flow review inputs as needs_followup without accepting FR items",
         "W1.5.209 converts the 11 needs_followup decisions into scoped repair and capture plan items without implementing or accepting them",
-        "W1.5.210 executes the stream phase capture track for FR-009, FR-010, and FR-016 without accepting FR items"
+        "W1.5.210 executes the stream phase capture track for FR-009, FR-010, and FR-016 without accepting FR items",
+        "W1.5.211 executes runtime bridge user-path capture evidence for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 without accepting FR items"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
-        "Selected-node Task Drawer artifact detail display still requires A4 UX acceptance review",
-        "Skill configuration display still requires A4 UX acceptance review",
+        "Selected-node Task Drawer artifact detail display still requires A4 reviewer acceptance",
+        "Skill configuration display still requires A4 reviewer acceptance",
         "Task mutation commands remain incomplete",
         "Version Snapshot workflow_history timeline is visible, but snapshots/snapshots.jsonl ledger projection, restore-to-snapshot, and continue execution remain unimplemented",
         "W1.5.210 stream phase capture evidence is executed, but A4 reviewer acceptance decisions for FR-009, FR-010, and FR-016 are not recorded.",
-        "W1.5.209 repair plan is prepared, but runtime bridge user-path captures are not executed.",
+        "W1.5.211 runtime bridge user-path capture evidence is executed, but A4 reviewer acceptance decisions for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 are not recorded.",
         "W1.5.209 repair plan is prepared, but A8 Git-history prerequisite evidence for FR-012 is not recorded."
       ]
     },
@@ -195,7 +197,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map; W1.5.208 records 11 A4 needs_followup decisions, W1.5.209 plans their repair/capture tasks, and W1.5.210 executes the stream phase capture track, but accepted_items remain 0 and several surfaces still need A4 reviewer decisions, dependency-gated, or end-to-end evidence."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map; W1.5.208 records 11 A4 needs_followup decisions, W1.5.209 plans their repair/capture tasks, W1.5.210 executes the stream phase capture track, and W1.5.211 executes the runtime bridge user-path capture track, but accepted_items remain 0 and several surfaces still need A4 reviewer decisions, dependency-gated, A8 audit, or end-to-end evidence."
     },
     {
       "id": "EXIT-P1-2",
@@ -255,9 +257,9 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.211",
-      "title": "A4 runtime bridge user-path capture",
-      "reason": "Execute the second W1.5.209 repair track for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 while keeping all FR acceptance decisions pending A4 review."
+      "id": "W1.5.212",
+      "title": "A8 Git-history prerequisite evidence",
+      "reason": "Execute the third W1.5.209 repair track for FR-012 before any A4 acceptance decision can be recorded."
     }
   ]
 }

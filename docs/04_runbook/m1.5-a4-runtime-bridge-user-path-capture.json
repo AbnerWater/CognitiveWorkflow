@@ -1,0 +1,433 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.211",
+  "capture_status": "a4_runtime_bridge_user_path_capture_executed_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-28T09:10:00.000Z",
+  "source": {
+    "needs_followup_repair_plan": "docs/04_runbook/m1.5-a4-needs-followup-repair-plan.json",
+    "a4_decision_record": "docs/04_runbook/m1.5-a4-runtime-flow-decision-record.json",
+    "a4_capture_execution": "docs/04_runbook/m1.5-a4-capture-execution.json",
+    "a4_stream_phase_capture_execution": "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "W1.5.211 executes only the W1.5.209 runtime bridge user-path capture track for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018.",
+    "W1.5.211 does not execute stream phase capture, A8 Git-history audit, runtime/Desktop production behavior, accepted spec changes, ADR changes, schema changes, generated schema changes, dependency changes, packaging, updater work, or baseline docx changes.",
+    "No field may mark any FR accepted, ready, completed, or phase-exit satisfied.",
+    "Capture evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, artifact bodies, secure paths, cache paths, output directory values, full destination paths, HITL prompt content, or custom decision values.",
+    "FR-012 remains excluded until A8 Git-history prerequisite evidence exists.",
+    "FR-015 remains excluded until ADR-0012 or another accepted restore/continue contract exists.",
+    "EXIT-P1-1 remains not_ready and accepted_items remains zero."
+  ],
+  "track_execution": {
+    "source_track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+    "source_track_status": "planned_not_implemented",
+    "execution_status": "executed_not_accepted",
+    "fr_ids": [
+      "FR-007",
+      "FR-008",
+      "FR-011",
+      "FR-013",
+      "FR-014",
+      "FR-017",
+      "FR-018"
+    ],
+    "entry_slice": "W1.5.211",
+    "next_review_required": "A4 ux-acceptance-reviewer"
+  },
+  "runner_contract": {
+    "runner_script": "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "runner_output_contract": {
+      "status": "a4_runtime_bridge_user_path_capture_executed_not_accepted",
+      "runtime_bridge_capture_item_count": 7,
+      "accepted_item_count": 0,
+      "pending_a4_review_item_count": 7,
+      "source_needs_followup_item_count": 7,
+      "sanitized_summary_only": true
+    }
+  },
+  "command_execution_evidence": [
+    {
+      "id": "COMMAND-W1-5-211-DESKTOP-REACT-PRELOAD",
+      "command": "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js",
+      "execution_status": "executed_passed",
+      "applies_to_fr_ids": [
+        "FR-007",
+        "FR-008",
+        "FR-011",
+        "FR-013",
+        "FR-014",
+        "FR-017",
+        "FR-018"
+      ],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    },
+    {
+      "id": "COMMAND-W1-5-211-DESKTOP-ARTIFACT-HANDOFF",
+      "command": "node --test apps/desktop/dist/main/runtime-ipc-handlers.test.js apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/shared/runtime-ipc.test.js apps/desktop/dist/preload/contract.test.js",
+      "execution_status": "executed_passed",
+      "applies_to_fr_ids": ["FR-017"],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    },
+    {
+      "id": "COMMAND-W1-5-211-RUNTIME-INSTRUCTION-API",
+      "command": "uv run pytest apps/runtime/tests/test_w1_5_195_runtime_instruction_api.py -q",
+      "execution_status": "executed_passed",
+      "applies_to_fr_ids": ["FR-008"],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    },
+    {
+      "id": "COMMAND-W1-5-211-RUNTIME-PROJECT-REFERENCE",
+      "command": "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
+      "execution_status": "executed_passed",
+      "applies_to_fr_ids": ["FR-011", "FR-013", "FR-014"],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    },
+    {
+      "id": "COMMAND-W1-5-211-RUNTIME-HITL-DECISIONS",
+      "command": "uv run pytest apps/runtime/tests/test_m1_3_8_human_decision_resolve.py -q",
+      "execution_status": "executed_passed",
+      "applies_to_fr_ids": ["FR-018"],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    },
+    {
+      "id": "COMMAND-W1-5-211-DESKTOP-STANDARD",
+      "command": "pnpm --filter @cw/desktop run test",
+      "execution_status": "executed_passed",
+      "applies_to_fr_ids": [
+        "FR-007",
+        "FR-008",
+        "FR-011",
+        "FR-013",
+        "FR-014",
+        "FR-017",
+        "FR-018"
+      ],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    }
+  ],
+  "runtime_bridge_capture_items": [
+    {
+      "id": "USER-PATH-CAPTURE-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "source_capture_id": "CAPTURE-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "review_item_id": "A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-007",
+      "command_evidence_ids": [
+        "COMMAND-W1-5-211-DESKTOP-REACT-PRELOAD",
+        "COMMAND-W1-5-211-DESKTOP-STANDARD"
+      ],
+      "fr_id": "FR-007",
+      "review_group": "runtime_bridge_evidence",
+      "user_path_capture_status": "executed_not_accepted",
+      "source_decision": "needs_followup",
+      "source_repair_status": "planned_not_implemented",
+      "source_capture_status": "captured_not_accepted",
+      "accepted": false,
+      "reviewer_decision_required": true,
+      "observed_a4_evidence_inputs": [
+        "Execution mode controls for step, semi_auto, and auto are visible near run actions.",
+        "Step mode dispatch records method, path, run id, node id, status, status code, and blocked reason only.",
+        "Semi-auto and auto modes remain fail-closed for run-once when the accepted backend contract does not support them.",
+        "A4 capture must show no raw response body, prompt, model output, or arbitrary payload values."
+      ],
+      "user_path_capture_inputs": [
+        "Desktop execution controls expose step, semi_auto, and auto modes near the run action.",
+        "Step mode run-once evidence is represented as structured command metadata only.",
+        "Unsupported execution modes remain fail-closed rather than being inferred as successful."
+      ],
+      "source_acceptance_blockers": [
+        "Backend run-once execution success has not been proven end-to-end from the desktop workbench.",
+        "A4 UX acceptance evidence for execution mode placement and behavior is not recorded."
+      ],
+      "post_capture_remaining_blockers": [
+        "A4 reviewer has not reviewed W1.5.211 runtime bridge user-path capture evidence for execution mode behavior."
+      ]
+    },
+    {
+      "id": "USER-PATH-CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "source_capture_id": "CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "review_item_id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-008",
+      "command_evidence_ids": [
+        "COMMAND-W1-5-211-DESKTOP-REACT-PRELOAD",
+        "COMMAND-W1-5-211-RUNTIME-INSTRUCTION-API",
+        "COMMAND-W1-5-211-DESKTOP-STANDARD"
+      ],
+      "fr_id": "FR-008",
+      "review_group": "runtime_bridge_evidence",
+      "user_path_capture_status": "executed_not_accepted",
+      "source_decision": "needs_followup",
+      "source_repair_status": "planned_not_implemented",
+      "source_capture_status": "captured_not_accepted",
+      "accepted": false,
+      "reviewer_decision_required": true,
+      "observed_a4_evidence_inputs": [
+        "Bottom Chat Box exposes Workflow and Current node scope controls.",
+        "Workflow-scope submit routes to the accepted runtime submit-instruction endpoint without nodeId.",
+        "Current-node submit routes to the accepted node-scoped submit-instruction endpoint with structured nodeId.",
+        "Runtime command projection and renderer snapshots remain metadata-only and do not retain raw instruction text.",
+        "No selected/active node disables Current node scope rather than falling back to the first canvas node."
+      ],
+      "user_path_capture_inputs": [
+        "Workflow and Current node Chat scopes are captured as visible user choices.",
+        "Runtime submit-instruction routing is covered by runtime and renderer command evidence.",
+        "Raw instruction text and project-backed history are intentionally absent from the capture."
+      ],
+      "source_acceptance_blockers": [
+        "A4 UX acceptance evidence for the runtime-backed current-node/global Workflow Chat instruction path is not recorded.",
+        "Project-backed command history and persistence remain outside this evidence refresh and must not be inferred from local receipt metadata."
+      ],
+      "post_capture_remaining_blockers": [
+        "A4 reviewer has not reviewed W1.5.211 runtime bridge user-path capture evidence for Chat instruction routing.",
+        "Project-backed command history remains outside this slice."
+      ]
+    },
+    {
+      "id": "USER-PATH-CAPTURE-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "source_capture_id": "CAPTURE-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "review_item_id": "A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-011",
+      "command_evidence_ids": [
+        "COMMAND-W1-5-211-DESKTOP-REACT-PRELOAD",
+        "COMMAND-W1-5-211-RUNTIME-PROJECT-REFERENCE",
+        "COMMAND-W1-5-211-DESKTOP-STANDARD"
+      ],
+      "fr_id": "FR-011",
+      "review_group": "runtime_bridge_evidence",
+      "user_path_capture_status": "executed_not_accepted",
+      "source_decision": "needs_followup",
+      "source_repair_status": "planned_not_implemented",
+      "source_capture_status": "captured_not_accepted",
+      "accepted": false,
+      "reviewer_decision_required": true,
+      "observed_a4_evidence_inputs": [
+        "Desktop exposes a reviewer-facing Create + import path that combines project creation and initial reference import.",
+        "Project creation success remains gated on git_initialized=true and a non-empty first_commit_sha before the initial reference import runs.",
+        "Initial reference import routes through the runtime references endpoint for the created project id.",
+        "Renderer evidence does not render or snapshot raw reference bytes, uploaded-file content, task background text, runtime response bodies, secure paths, cache paths, or output directory values."
+      ],
+      "user_path_capture_inputs": [
+        "Project creation, Git proof, and initial reference import are captured as one reviewer-visible path.",
+        "Runtime project and reference endpoint evidence is captured through focused tests.",
+        "Task background and reference bytes remain excluded from the artifact."
+      ],
+      "source_acceptance_blockers": [
+        "A4 UX acceptance evidence for the full new-project path is not recorded."
+      ],
+      "post_capture_remaining_blockers": [
+        "A4 reviewer has not reviewed W1.5.211 runtime bridge user-path capture evidence for project creation plus initial reference import."
+      ]
+    },
+    {
+      "id": "USER-PATH-CAPTURE-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "source_capture_id": "CAPTURE-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "review_item_id": "A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-013",
+      "command_evidence_ids": [
+        "COMMAND-W1-5-211-DESKTOP-REACT-PRELOAD",
+        "COMMAND-W1-5-211-RUNTIME-PROJECT-REFERENCE",
+        "COMMAND-W1-5-211-DESKTOP-STANDARD"
+      ],
+      "fr_id": "FR-013",
+      "review_group": "runtime_bridge_evidence",
+      "user_path_capture_status": "executed_not_accepted",
+      "source_decision": "needs_followup",
+      "source_repair_status": "planned_not_implemented",
+      "source_capture_status": "captured_not_accepted",
+      "accepted": false,
+      "reviewer_decision_required": true,
+      "observed_a4_evidence_inputs": [
+        "Reference import/list/enable/disable/view controls are available from the desktop workbench.",
+        "Reference state changes are backed by runtime reference endpoints and manifest safety checks.",
+        "Delete semantics remain out of A4 scope until accepted spec material defines them.",
+        "A4 capture must not retain raw file content, secure paths, cache paths, or uploaded-file bytes."
+      ],
+      "user_path_capture_inputs": [
+        "Reference import, list, enable, disable, and view paths are captured as structured control evidence.",
+        "Runtime reference endpoint tests provide backing command evidence.",
+        "Delete semantics and raw file content remain out of scope."
+      ],
+      "source_acceptance_blockers": [
+        "A4 UX acceptance evidence for reference import, enable, disable, and view user paths is not recorded.",
+        "Delete semantics remain intentionally out of scope until accepted spec material defines them."
+      ],
+      "post_capture_remaining_blockers": [
+        "A4 reviewer has not reviewed W1.5.211 runtime bridge user-path capture evidence for reference lifecycle operations."
+      ]
+    },
+    {
+      "id": "USER-PATH-CAPTURE-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "source_capture_id": "CAPTURE-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "review_item_id": "A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-014",
+      "command_evidence_ids": [
+        "COMMAND-W1-5-211-DESKTOP-REACT-PRELOAD",
+        "COMMAND-W1-5-211-RUNTIME-PROJECT-REFERENCE",
+        "COMMAND-W1-5-211-DESKTOP-STANDARD"
+      ],
+      "fr_id": "FR-014",
+      "review_group": "runtime_bridge_evidence",
+      "user_path_capture_status": "executed_not_accepted",
+      "source_decision": "needs_followup",
+      "source_repair_status": "planned_not_implemented",
+      "source_capture_status": "captured_not_accepted",
+      "accepted": false,
+      "reviewer_decision_required": true,
+      "observed_a4_evidence_inputs": [
+        "Workbench Skill management reads candidate Skills from the runtime project configuration rather than static renderer state.",
+        "Skill enable/disable/version commands remain runtime-backed through the accepted skills endpoint.",
+        "MCP configuration metadata is visible as server id, transport, enabled, approval, and secret-ref-present status only.",
+        "Renderer snapshots and evidence do not retain persisted params, raw command_or_url values, raw secret_ref values, credentials, secure paths, cache paths, or response bodies."
+      ],
+      "user_path_capture_inputs": [
+        "Runtime-backed Skill candidate discovery and per-project enable/disable state are captured.",
+        "MCP configuration is represented only as safe metadata and secret-presence flags.",
+        "Raw commands, secret values, persisted params, and credentials remain absent."
+      ],
+      "source_acceptance_blockers": [
+        "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
+      ],
+      "post_capture_remaining_blockers": [
+        "A4 reviewer has not reviewed W1.5.211 runtime bridge user-path capture evidence for Skill configuration."
+      ]
+    },
+    {
+      "id": "USER-PATH-CAPTURE-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "source_capture_id": "CAPTURE-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "review_item_id": "A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-017",
+      "command_evidence_ids": [
+        "COMMAND-W1-5-211-DESKTOP-ARTIFACT-HANDOFF",
+        "COMMAND-W1-5-211-DESKTOP-STANDARD"
+      ],
+      "fr_id": "FR-017",
+      "review_group": "runtime_bridge_evidence",
+      "user_path_capture_status": "executed_not_accepted",
+      "source_decision": "needs_followup",
+      "source_repair_status": "planned_not_implemented",
+      "source_capture_status": "captured_not_accepted",
+      "accepted": false,
+      "reviewer_decision_required": true,
+      "observed_a4_evidence_inputs": [
+        "Task Drawer exposes selected-node artifact metadata from runtime StreamEvent artifact_refs.",
+        "Task Drawer artifact controls dispatch open/download through the accepted ArtifactActionRequest path with run_id and node_id metadata.",
+        "Renderer command evidence remains metadata-only and does not include artifact body, raw bytes, full destination path, secure path, cache path, or output directory values.",
+        "Desktop native handoff remains covered by W1.5.195 preload/main tests and runtime_actions/http_sse contract anchors."
+      ],
+      "user_path_capture_inputs": [
+        "Selected-node artifact metadata is captured in the Task Drawer path.",
+        "Open/download handoff is covered by preload, main, shared IPC, and renderer command evidence.",
+        "Artifact body, raw bytes, destination paths, secure paths, cache paths, and output directories remain absent."
+      ],
+      "source_acceptance_blockers": [
+        "A4 UX acceptance evidence for node artifact detail display and safe open/download behavior is not recorded."
+      ],
+      "post_capture_remaining_blockers": [
+        "A4 reviewer has not reviewed W1.5.211 runtime bridge user-path capture evidence for artifact detail and open/download behavior."
+      ]
+    },
+    {
+      "id": "USER-PATH-CAPTURE-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "source_capture_id": "CAPTURE-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "review_item_id": "A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "bridge_command_id": "BRIDGE-COMMAND-FR-018",
+      "command_evidence_ids": [
+        "COMMAND-W1-5-211-DESKTOP-REACT-PRELOAD",
+        "COMMAND-W1-5-211-RUNTIME-HITL-DECISIONS",
+        "COMMAND-W1-5-211-DESKTOP-STANDARD"
+      ],
+      "fr_id": "FR-018",
+      "review_group": "runtime_bridge_evidence",
+      "user_path_capture_status": "executed_not_accepted",
+      "source_decision": "needs_followup",
+      "source_repair_status": "planned_not_implemented",
+      "source_capture_status": "captured_not_accepted",
+      "accepted": false,
+      "reviewer_decision_required": true,
+      "observed_a4_evidence_inputs": [
+        "Semi-auto waiting_user runs expose pending high-risk HITL decisions through the accepted run list and decisions projections.",
+        "Desktop HITL controls show review kind, evidence/artifact presence, timeout, decision choices, and labels from sanitized runtime metadata.",
+        "Runtime and Desktop evidence do not retain prompt_to_user, custom_value content, raw prompt, model output, uploaded-file bytes, response bodies, secure paths, cache paths, or output directory values.",
+        "Decision submission continues through the accepted POST /runs/{run_id}/decisions path and records only status/customValuePresent metadata in Desktop snapshots."
+      ],
+      "user_path_capture_inputs": [
+        "Pending high-risk HITL decision discovery, review context, choices, and labels are captured as metadata.",
+        "Runtime decision resolution tests provide backing command evidence.",
+        "HITL prompt text, custom decision values, prompt/model output, and response bodies remain absent."
+      ],
+      "source_acceptance_blockers": [
+        "A4 UX acceptance evidence for high-risk HITL pause/resume behavior is not recorded."
+      ],
+      "post_capture_remaining_blockers": [
+        "A4 reviewer has not reviewed W1.5.211 runtime bridge user-path capture evidence for high-risk HITL pause/resume behavior."
+      ]
+    }
+  ],
+  "excluded_items": [
+    {
+      "track_id": "TRACK-A4-STREAM-PHASE-CAPTURE",
+      "fr_ids": ["FR-009", "FR-010", "FR-016"],
+      "reason": "Stream phase captures were executed in W1.5.210 and are not repeated in this slice.",
+      "status": "completed_elsewhere_not_in_scope"
+    },
+    {
+      "track_id": "TRACK-A8-GIT-HISTORY-PREREQ",
+      "fr_id": "FR-012",
+      "reason": "A8 Git-history prerequisite evidence belongs to W1.5.212 or a later dedicated audit slice.",
+      "status": "not_executed_in_this_slice"
+    },
+    {
+      "fr_id": "FR-015",
+      "reason": "Snapshot restore/continue remains blocked until ADR-0012 or another accepted contract exists.",
+      "status": "blocked_by_contract_gate"
+    }
+  ],
+  "summary": {
+    "runtime_bridge_capture_item_count": 7,
+    "stream_phase_capture_items": 0,
+    "runtime_bridge_capture_items": 7,
+    "git_history_prereq_items": 0,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "pending_a4_review_items": 7,
+    "source_needs_followup_items": 7,
+    "source_repair_items": 7,
+    "command_evidence_count": 6,
+    "excluded_fr_ids": ["FR-009", "FR-010", "FR-012", "FR-015", "FR-016"],
+    "exit_p1_1_status": "not_ready",
+    "next_required_review": "A4 runtime bridge user-path capture implementation review"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.212",
+      "title": "A8 Git-history prerequisite evidence",
+      "reason": "Execute the third W1.5.209 repair track for FR-012 before any A4 acceptance decision can be recorded."
+    }
+  ]
+}
