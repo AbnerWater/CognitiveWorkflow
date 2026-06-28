@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.207",
+  "slice": "W1.5.208",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -163,7 +163,8 @@
         "W1.5.203 registers the accepted explicit workflow snapshot endpoint and records metadata-only snapshot ledger evidence without accepting FR-015",
         "W1.5.204 adds the accepted workflow_history endpoint plus Desktop metadata-only Version Snapshot timeline refresh evidence without accepting FR-015",
         "W1.5.206 adds metadata-only pending HITL decision discovery and Desktop form population evidence without accepting FR-018",
-        "W1.5.207 adds high-risk HITL pending decision review context and keeps evidence metadata-only without accepting FR-018"
+        "W1.5.207 adds high-risk HITL pending decision review context and keeps evidence metadata-only without accepting FR-018",
+        "W1.5.208 records A4 reviewer decisions for 11 runtime-flow review inputs as needs_followup without accepting FR items"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
@@ -171,9 +172,9 @@
         "Skill configuration display still requires A4 UX acceptance review",
         "Task mutation commands remain incomplete",
         "Version Snapshot workflow_history timeline is visible, but snapshots/snapshots.jsonl ledger projection, restore-to-snapshot, and continue execution remain unimplemented",
-        "A4 reviewer decision is not recorded for the Task Drawer artifact bridge.",
-        "Combined project creation plus initial reference import still requires A4 UX acceptance review.",
-        "High-risk HITL pause/resume evidence still requires A4 UX acceptance review."
+        "A4 reviewer recorded needs_followup for the Task Drawer artifact bridge.",
+        "A4 reviewer recorded needs_followup for combined project creation plus initial reference import.",
+        "A4 reviewer recorded needs_followup for high-risk HITL pause/resume evidence."
       ]
     },
     {
@@ -191,7 +192,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 have a refreshed W1.5.204 evidence map, but accepted_items remain 0 and several surfaces still need A4, dependency-gated, or end-to-end evidence."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map and W1.5.208 records 11 A4 needs_followup decisions, but accepted_items remain 0 and several surfaces still need A4 repairs, dependency-gated, or end-to-end evidence."
     },
     {
       "id": "EXIT-P1-2",
@@ -251,9 +252,9 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.208",
-      "title": "A4 runtime-flow reviewer decision recording",
-      "reason": "Record A4 reviewer decisions for the 11 pending review inputs; keep FR-015 restore implementation blocked until ADR-0012 or another accepted contract is available."
+      "id": "W1.5.209",
+      "title": "A4 needs-followup repair plan",
+      "reason": "Turn the 11 W1.5.208 needs_followup decisions into scoped repair or capture tasks while keeping FR-015 blocked until ADR-0012 or another accepted contract is available."
     }
   ]
 }
