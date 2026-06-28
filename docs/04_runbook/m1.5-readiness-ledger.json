@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.215",
+  "slice": "W1.5.216",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -133,10 +133,11 @@
         "W1.5.196 Workflow/Current node scope controls and no-current-node fallback regression evidence",
         "W1.5.211 executes runtime bridge user-path capture evidence for FR-008 Chat instruction routing without accepting FR items",
         "W1.5.213 records the post-capture FR-008 A4 decision as needs_followup without accepting FR items",
-        "W1.5.214 plans FR-008 post-capture blocker repair as planned_not_implemented without accepting FR items"
+        "W1.5.214 plans FR-008 post-capture blocker repair as planned_not_implemented without accepting FR items",
+        "W1.5.216 executes the FR-008 runtime UX blocker repair handoff without accepting FR items"
       ],
       "remaining_gap": [
-        "Runtime-backed Chat instruction routing remains planned_not_implemented in the W1.5.214 blocker repair plan",
+        "W1.5.216 records executed_not_accepted runtime UX blocker repair for FR-008, but final A4 reviewer decisions are still pending and accepted_items stay 0.",
         "Project-backed command history and persistence remain outside this evidence refresh",
         "Final A4 reviewer acceptance for current-node and Workflow instruction UX is not recorded."
       ]
@@ -176,16 +177,15 @@
         "W1.5.212 records A8 Git-history prerequisite evidence for FR-012 without accepting FR items",
         "W1.5.213 records post-capture A4 needs_followup decisions for all 11 W1.5.210/W1.5.211/W1.5.212 follow-up inputs without accepting FR items",
         "W1.5.214 converts all 11 W1.5.213 needs_followup decisions into planned_not_implemented blocker repair items without accepting FR items",
-        "W1.5.215 executes the FR-009, FR-010, and FR-016 stream blocker repair handoff without accepting FR items"
+        "W1.5.215 executes the FR-009, FR-010, and FR-016 stream blocker repair handoff without accepting FR items",
+        "W1.5.216 executes the FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 runtime UX blocker repair handoff without accepting FR items"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
-        "Selected-node Task Drawer artifact detail display remains planned_not_implemented in the W1.5.214 blocker repair plan",
-        "Skill configuration display remains planned_not_implemented in the W1.5.214 blocker repair plan",
         "Task mutation commands remain incomplete",
         "Version Snapshot workflow_history timeline is visible, but snapshots/snapshots.jsonl ledger projection, restore-to-snapshot, and continue execution remain unimplemented",
         "W1.5.215 records executed_not_accepted stream blocker repairs for FR-009, FR-010, and FR-016, but final A4 reviewer decisions are still pending and accepted_items stay 0.",
-        "W1.5.214 still leaves the runtime UX blocker repairs for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 as planned_not_implemented.",
+        "W1.5.216 records executed_not_accepted runtime UX blocker repairs for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018, but final A4 reviewer decisions are still pending and accepted_items stay 0.",
         "FR-012 remains planned_not_implemented because EXIT-P1-10 stays not_ready and several runtime_harness.md §8.2 trigger rows still lack implementation or phase-level conformance evidence."
       ]
     },
@@ -204,7 +204,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map; W1.5.208 records 11 A4 needs_followup decisions, W1.5.209 plans their repair/capture tasks, W1.5.210 executes the stream phase capture track, W1.5.211 executes the runtime bridge user-path capture track, W1.5.212 records A8 Git-history prerequisite evidence for FR-012, W1.5.213 records post-capture decisions for all 11 follow-up inputs, W1.5.214 plans the remaining blocker repairs, and W1.5.215 executes the stream blocker repair handoff, but accepted_items remain 0 and several surfaces still need implementation, final A4 decisions, dependency-gated, phase-level A8 conformance, or end-to-end evidence."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map; W1.5.208 records 11 A4 needs_followup decisions, W1.5.209 plans their repair/capture tasks, W1.5.210 executes the stream phase capture track, W1.5.211 executes the runtime bridge user-path capture track, W1.5.212 records A8 Git-history prerequisite evidence for FR-012, W1.5.213 records post-capture decisions for all 11 follow-up inputs, W1.5.214 plans the remaining blocker repairs, W1.5.215 executes the stream blocker repair handoff, and W1.5.216 executes the runtime UX blocker repair handoff, but accepted_items remain 0 and several surfaces still need implementation, final A4 decisions, dependency-gated, phase-level A8 conformance, or end-to-end evidence."
     },
     {
       "id": "EXIT-P1-2",
@@ -264,9 +264,9 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.216",
-      "title": "A4 runtime UX acceptance blocker repair",
-      "reason": "Execute the W1.5.214 runtime UX repair track for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 while keeping unsupported acceptance blocked."
+      "id": "W1.5.217",
+      "title": "A8 Git-history conformance blocker repair",
+      "reason": "Execute the W1.5.214 A8 repair track for FR-012 while keeping unsupported acceptance blocked."
     }
   ]
 }
