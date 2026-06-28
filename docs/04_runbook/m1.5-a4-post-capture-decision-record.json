@@ -1,0 +1,435 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.213",
+  "decision_record_status": "a4_post_capture_reviewer_decisions_recorded_needs_followup",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "exit_p1_10_status": "not_ready",
+  "observed_at": "2026-06-28T10:35:00.000Z",
+  "source": {
+    "a4_decision_record": "docs/04_runbook/m1.5-a4-runtime-flow-decision-record.json",
+    "needs_followup_repair_plan": "docs/04_runbook/m1.5-a4-needs-followup-repair-plan.json",
+    "a4_stream_phase_capture_execution": "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json",
+    "a4_runtime_bridge_user_path_capture": "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json",
+    "a8_git_history_prerequisite_evidence": "docs/04_runbook/m1.5-a8-git-history-prerequisite-evidence.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "W1.5.213 records post-capture A4 reviewer decisions after W1.5.210, W1.5.211, and W1.5.212 produced follow-up evidence.",
+    "Every W1.5.213 decision remains needs_followup; no FR, A4 item, EXIT-P1-1, or EXIT-P1-10 is accepted or marked ready.",
+    "W1.5.213 does not implement runtime/Desktop production behavior, accepted spec changes, ADR changes, schema changes, generated schema changes, dependency changes, packaging, updater work, or baseline docx changes.",
+    "No field may contain raw prompts, raw model output, uploaded-file bytes, instruction text, HITL prompt content, custom decision values, response bodies, artifact bodies, secure paths, cache paths, output directory values, full destination paths, credential values, or user staged file content.",
+    "FR-015 remains excluded until ADR-0012 or another accepted restore/continue contract exists.",
+    "accepted_items and implemented_items remain zero."
+  ],
+  "reviewer_contract": {
+    "reviewer": "A4 ux-acceptance-reviewer",
+    "reviewer_source": "post-capture review of W1.5.210 stream phase capture, W1.5.211 runtime bridge user-path capture, and W1.5.212 A8 prerequisite evidence",
+    "allowed_decisions": ["accepted", "rejected", "needs_followup"],
+    "decision_record_required": true,
+    "decision_record_status": "recorded",
+    "accepted_item_count_must_remain_zero": true,
+    "phase_exit_status_must_remain_not_ready": true,
+    "runner_script": "apps/desktop/scripts/m1-5-a4-post-capture-decision-record.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-a4-post-capture-decision-record.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-a4-post-capture-decision-record.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test"
+  },
+  "post_capture_decision_items": [
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-009-STREAM-COLLAPSED",
+      "fr_id": "FR-009",
+      "review_group": "candidate_stream_evidence",
+      "follow_up_track_id": "TRACK-A4-STREAM-PHASE-CAPTURE",
+      "source_decision_id": "DECISION-A4-FR-009-STREAM-COLLAPSED",
+      "repair_item_id": "REPAIR-A4-FR-009-STREAM-COLLAPSED",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json",
+      "follow_up_item_id": "PHASE-CAPTURE-A4-FR-009-STREAM-COLLAPSED",
+      "review_item_id": "A4-FR-009-STREAM-COLLAPSED",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.210 stream phase capture evidence for first-viewport collapsed stream acceptance."
+      ],
+      "remaining_acceptance_blockers": [
+        "The evidence is still matrix metadata and does not record formal first-viewport A4 acceptance.",
+        "A phase-level UX acceptance artifact must explicitly accept or reject the default collapsed stream path."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json#PHASE-CAPTURE-A4-FR-009-STREAM-COLLAPSED",
+        "apps/desktop/scripts/m1-5-a4-stream-phase-capture-execution.cjs",
+        "apps/desktop/scripts/m1-5-a4-stream-phase-capture-execution.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan the remaining A4 acceptance blocker repairs without marking FR-009 accepted."
+      ]
+    },
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-010-STREAM-EXPANDED",
+      "fr_id": "FR-010",
+      "review_group": "candidate_stream_evidence",
+      "follow_up_track_id": "TRACK-A4-STREAM-PHASE-CAPTURE",
+      "source_decision_id": "DECISION-A4-FR-010-STREAM-EXPANDED",
+      "repair_item_id": "REPAIR-A4-FR-010-STREAM-EXPANDED",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json",
+      "follow_up_item_id": "PHASE-CAPTURE-A4-FR-010-STREAM-EXPANDED",
+      "review_item_id": "A4-FR-010-STREAM-EXPANDED",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.210 stream phase capture evidence for expanded stream readability."
+      ],
+      "remaining_acceptance_blockers": [
+        "The end-to-end workflow stream demo remains deferred to later phase-level demo work.",
+        "Expanded event taxonomy acceptance is not proven by fixture and matrix metadata alone."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json#PHASE-CAPTURE-A4-FR-010-STREAM-EXPANDED",
+        "apps/desktop/scripts/m1-5-a4-stream-phase-capture-execution.cjs",
+        "apps/desktop/scripts/m1-5-a4-stream-phase-capture-execution.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan workflow-backed stream demo evidence before any FR-010 acceptance decision."
+      ]
+    },
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+      "fr_id": "FR-016",
+      "review_group": "candidate_stream_evidence",
+      "follow_up_track_id": "TRACK-A4-STREAM-PHASE-CAPTURE",
+      "source_decision_id": "DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+      "repair_item_id": "REPAIR-A4-FR-016-EVENT-CLASSIFICATION",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json",
+      "follow_up_item_id": "PHASE-CAPTURE-A4-FR-016-EVENT-CLASSIFICATION",
+      "review_item_id": "A4-FR-016-EVENT-CLASSIFICATION",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.210 stream phase capture evidence for final user-facing event labels."
+      ],
+      "remaining_acceptance_blockers": [
+        "Final user-facing label acceptance is not separately recorded.",
+        "The labels still need phase-level stream evidence in a reviewer-approved context."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json#PHASE-CAPTURE-A4-FR-016-EVENT-CLASSIFICATION",
+        "apps/desktop/scripts/m1-5-a4-stream-phase-capture-execution.cjs",
+        "apps/desktop/scripts/m1-5-a4-stream-phase-capture-execution.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan final event-label acceptance evidence without treating unknown fallback coverage as FR-016 closure."
+      ]
+    },
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "fr_id": "FR-007",
+      "review_group": "runtime_bridge_evidence",
+      "follow_up_track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision_id": "DECISION-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json",
+      "follow_up_item_id": "USER-PATH-CAPTURE-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "review_item_id": "A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.211 runtime bridge user-path capture evidence for execution mode behavior."
+      ],
+      "remaining_acceptance_blockers": [
+        "Semi-auto and auto behavior remain fail-closed rather than accepted runtime-backed execution modes.",
+        "A reviewer-visible end-to-end mode-change path must still record final UX acceptance."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json#USER-PATH-CAPTURE-A4-FR-007-EXECUTION-MODE-BRIDGE",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.cjs",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan FR-007 acceptance blocker repair around mode policy and end-to-end execution proof."
+      ]
+    },
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "fr_id": "FR-008",
+      "review_group": "runtime_bridge_evidence",
+      "follow_up_track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision_id": "DECISION-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json",
+      "follow_up_item_id": "USER-PATH-CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "review_item_id": "A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.211 runtime bridge user-path capture evidence for Chat instruction routing."
+      ],
+      "remaining_acceptance_blockers": [
+        "Project-backed command history remains outside this slice.",
+        "Formal A4 acceptance for current-node and Workflow instruction UX is not recorded."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json#USER-PATH-CAPTURE-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.cjs",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan command-history and final A4 UX acceptance separately from the runtime instruction bridge."
+      ]
+    },
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "fr_id": "FR-011",
+      "review_group": "runtime_bridge_evidence",
+      "follow_up_track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision_id": "DECISION-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json",
+      "follow_up_item_id": "USER-PATH-CAPTURE-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "review_item_id": "A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.211 runtime bridge user-path capture evidence for project creation plus initial reference import."
+      ],
+      "remaining_acceptance_blockers": [
+        "Full new-project UX acceptance remains unrecorded.",
+        "Task background and reference bytes remain intentionally excluded from evidence and cannot be inferred as reviewed content."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json#USER-PATH-CAPTURE-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.cjs",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan final project creation acceptance evidence with reference import still metadata-only."
+      ]
+    },
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "fr_id": "FR-013",
+      "review_group": "runtime_bridge_evidence",
+      "follow_up_track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision_id": "DECISION-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json",
+      "follow_up_item_id": "USER-PATH-CAPTURE-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "review_item_id": "A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.211 runtime bridge user-path capture evidence for reference lifecycle operations."
+      ],
+      "remaining_acceptance_blockers": [
+        "Reference lifecycle evidence still needs formal UX acceptance.",
+        "Delete semantics remain outside accepted spec scope and must not be inferred from import/list/enable/disable/view evidence."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json#USER-PATH-CAPTURE-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.cjs",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan final reference lifecycle acceptance while keeping delete semantics outside this scope."
+      ]
+    },
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "fr_id": "FR-014",
+      "review_group": "runtime_bridge_evidence",
+      "follow_up_track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision_id": "DECISION-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json",
+      "follow_up_item_id": "USER-PATH-CAPTURE-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "review_item_id": "A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.211 runtime bridge user-path capture evidence for Skill configuration."
+      ],
+      "remaining_acceptance_blockers": [
+        "Skill candidate and MCP metadata display still needs final UX acceptance.",
+        "Secret-safe metadata evidence is not a substitute for accepted Skill configuration behavior."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json#USER-PATH-CAPTURE-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.cjs",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan FR-014 final acceptance evidence without exposing raw MCP command or secret values."
+      ]
+    },
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "fr_id": "FR-017",
+      "review_group": "runtime_bridge_evidence",
+      "follow_up_track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision_id": "DECISION-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json",
+      "follow_up_item_id": "USER-PATH-CAPTURE-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "review_item_id": "A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.211 runtime bridge user-path capture evidence for artifact detail and open/download behavior."
+      ],
+      "remaining_acceptance_blockers": [
+        "No real generated artifact end-to-end workflow output is accepted yet.",
+        "Artifact body inspection remains intentionally excluded; UX acceptance must focus on safe metadata and handoff result."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json#USER-PATH-CAPTURE-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.cjs",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan real workflow artifact evidence before any FR-017 acceptance decision."
+      ]
+    },
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "fr_id": "FR-018",
+      "review_group": "runtime_bridge_evidence",
+      "follow_up_track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision_id": "DECISION-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json",
+      "follow_up_item_id": "USER-PATH-CAPTURE-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "review_item_id": "A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.211 runtime bridge user-path capture evidence for high-risk HITL pause/resume behavior."
+      ],
+      "remaining_acceptance_blockers": [
+        "A full semi-auto workflow pause/resume UX recording is still missing.",
+        "Pending decision metadata alone cannot prove accepted high-risk HITL resume behavior."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json#USER-PATH-CAPTURE-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.cjs",
+        "apps/desktop/scripts/m1-5-a4-runtime-bridge-user-path-capture.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan final pause/resume evidence while keeping prompt_to_user and custom_value content absent."
+      ]
+    },
+    {
+      "id": "POST-CAPTURE-DECISION-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "fr_id": "FR-012",
+      "review_group": "git_history_prereq_evidence",
+      "follow_up_track_id": "TRACK-A8-GIT-HISTORY-PREREQ",
+      "source_decision_id": "DECISION-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "repair_item_id": "REPAIR-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "follow_up_artifact": "docs/04_runbook/m1.5-a8-git-history-prerequisite-evidence.json",
+      "follow_up_item_id": "A8-PREREQ-FR-012-MANDATORY-GIT-BRIDGE",
+      "review_item_id": "A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "post_capture_decision": "needs_followup",
+      "post_capture_review_status": "reviewed_needs_followup_not_accepted",
+      "source_decision": "needs_followup",
+      "accepted": false,
+      "rejected": false,
+      "follow_up_required": true,
+      "evidence_reviewed": true,
+      "resolved_source_blockers": [
+        "A4 reviewer has now reviewed W1.5.212 A8 prerequisite evidence for FR-012."
+      ],
+      "remaining_acceptance_blockers": [
+        "EXIT-P1-10 remains not_ready because several runtime_harness.md §8.2 trigger rows still need implementation or phase-level conformance evidence.",
+        "Mandatory Git project creation evidence cannot close FR-012 until the remaining A8 Git-history rows are covered or explicitly deferred."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a8-git-history-prerequisite-evidence.json#A8-PREREQ-FR-012-MANDATORY-GIT-BRIDGE",
+        "apps/desktop/scripts/m1-5-a8-git-history-prerequisite-evidence.cjs",
+        "apps/desktop/scripts/m1-5-a8-git-history-prerequisite-evidence.test.cjs"
+      ],
+      "next_action_refs": [
+        "Plan the remaining A8 Git-history trigger evidence before any FR-012 acceptance decision."
+      ]
+    }
+  ],
+  "excluded_items": [
+    {
+      "fr_id": "FR-015",
+      "reason": "Snapshot restore/continue remains blocked until ADR-0012 or another accepted contract exists.",
+      "status": "blocked_by_contract_gate"
+    }
+  ],
+  "summary": {
+    "decision_item_count": 11,
+    "stream_phase_decision_items": 3,
+    "runtime_bridge_decision_items": 7,
+    "git_history_prereq_decision_items": 1,
+    "accepted_items": 0,
+    "rejected_items": 0,
+    "needs_followup_items": 11,
+    "post_capture_reviewed_items": 11,
+    "source_w1_5_210_items": 3,
+    "source_w1_5_211_items": 7,
+    "source_w1_5_212_items": 1,
+    "excluded_items": 1,
+    "exit_p1_1_status": "not_ready",
+    "exit_p1_10_status": "not_ready",
+    "next_required_review": "A4 post-capture blocker repair planning"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.214",
+      "title": "A4 post-capture blocker repair plan",
+      "reason": "Convert the 11 W1.5.213 needs_followup post-capture decisions into the next scoped blocker repair plan while keeping unsupported acceptance blocked."
+    }
+  ]
+}
