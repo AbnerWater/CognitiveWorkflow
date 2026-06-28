@@ -1,0 +1,325 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.209",
+  "plan_status": "a4_needs_followup_repair_plan_prepared_not_implemented",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-28T07:40:05.494Z",
+  "source": {
+    "a4_decision_record": "docs/04_runbook/m1.5-a4-runtime-flow-decision-record.json",
+    "a4_runtime_flow_decision_handoff": "docs/04_runbook/m1.5-a4-runtime-flow-decision-handoff.json",
+    "a4_capture_execution": "docs/04_runbook/m1.5-a4-capture-execution.json",
+    "fr_evidence_map": "docs/04_runbook/m1.5-fr-evidence-map.json",
+    "ux_acceptance_checklist": "docs/04_runbook/m1.5-ux-acceptance-checklist.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "W1.5.209 turns W1.5.208 needs_followup decisions into scoped repair or capture tasks without implementing those tasks.",
+    "No repair-plan field may mark any FR accepted, ready, completed, or phase-exit satisfied.",
+    "No plan field may contain raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, artifact bodies, secure paths, cache paths, output directory values, full destination paths, prompt_to_user, or custom_value content.",
+    "FR-015 remains excluded until ADR-0012 or another accepted restore/continue contract exists.",
+    "EXIT-P1-1 remains not_ready and accepted_items remains zero."
+  ],
+  "repair_tracks": [
+    {
+      "id": "TRACK-A4-STREAM-PHASE-CAPTURE",
+      "title": "A4 stream phase capture",
+      "fr_ids": ["FR-009", "FR-010", "FR-016"],
+      "objective": "Replace stream-panel fixture evidence gaps with reviewer-visible phase-level capture evidence and final event labels.",
+      "entry_slice": "W1.5.210",
+      "status": "planned_not_implemented"
+    },
+    {
+      "id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "title": "A4 runtime bridge user-path capture",
+      "fr_ids": [
+        "FR-007",
+        "FR-008",
+        "FR-011",
+        "FR-013",
+        "FR-014",
+        "FR-017",
+        "FR-018"
+      ],
+      "objective": "Capture reviewer-visible Desktop/runtime user paths for bridge-ready work without storing raw content.",
+      "entry_slice": "W1.5.211",
+      "status": "planned_not_implemented"
+    },
+    {
+      "id": "TRACK-A8-GIT-HISTORY-PREREQ",
+      "title": "A8 Git-history prerequisite",
+      "fr_ids": ["FR-012"],
+      "objective": "Produce the Git-history audit prerequisite before FR-012 can receive A4 acceptance.",
+      "entry_slice": "W1.5.212",
+      "status": "planned_not_implemented"
+    }
+  ],
+  "repair_items": [
+    {
+      "id": "REPAIR-A4-FR-009-STREAM-COLLAPSED",
+      "source_decision_id": "DECISION-A4-FR-009-STREAM-COLLAPSED",
+      "fr_id": "FR-009",
+      "track_id": "TRACK-A4-STREAM-PHASE-CAPTURE",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Capture first-viewport default collapsed stream panel behavior as reviewer-visible UX evidence.",
+      "required_actions": [
+        "Run or prepare a phase-level stream UX capture showing the panel above the Chat Box in default collapsed state.",
+        "Record summary and unread affordances without raw stream payload values.",
+        "Route the resulting capture back into A4 review rather than marking FR-009 accepted."
+      ],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run visual-smoke:matrix",
+        "node apps/desktop/scripts/m1-5-a4-capture-execution.cjs --check"
+      ],
+      "acceptance_blockers": [
+        "A4 reviewer has not recorded first-viewport collapsed stream acceptance.",
+        "Phase-level UX recording is still missing."
+      ]
+    },
+    {
+      "id": "REPAIR-A4-FR-010-STREAM-EXPANDED",
+      "source_decision_id": "DECISION-A4-FR-010-STREAM-EXPANDED",
+      "fr_id": "FR-010",
+      "track_id": "TRACK-A4-STREAM-PHASE-CAPTURE",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Capture expanded stream panel readability against workflow-backed or equivalent phase-level events.",
+      "required_actions": [
+        "Show thought summary, tool call, phase result, and AI reply classes in an expanded stream panel.",
+        "Keep unknown-event fallback visible without raw payload exposure.",
+        "Record A4 decision only after reviewer-visible capture exists."
+      ],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run visual-smoke:matrix",
+        "node apps/desktop/scripts/m1-5-a4-capture-execution.cjs --check"
+      ],
+      "acceptance_blockers": [
+        "A4 reviewer has not accepted the full expanded event taxonomy as an end-user path.",
+        "Real workflow stream demo evidence is still missing."
+      ]
+    },
+    {
+      "id": "REPAIR-A4-FR-016-EVENT-CLASSIFICATION",
+      "source_decision_id": "DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+      "fr_id": "FR-016",
+      "track_id": "TRACK-A4-STREAM-PHASE-CAPTURE",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Prepare final user-facing StreamEvent labels and capture them in phase-level stream evidence.",
+      "required_actions": [
+        "Define the reviewer-visible event label set from accepted stream_event.md categories.",
+        "Capture known and unknown event rendering with final labels.",
+        "Keep payload summaries metadata-only."
+      ],
+      "verification_commands": [
+        "pnpm --filter @cw/desktop run visual-smoke:matrix",
+        "node apps/desktop/scripts/m1-5-a4-capture-execution.cjs --check"
+      ],
+      "acceptance_blockers": [
+        "A4 reviewer has not accepted final user-facing labels for every event class.",
+        "Phase-level demo stream evidence is still missing."
+      ]
+    },
+    {
+      "id": "REPAIR-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "fr_id": "FR-007",
+      "track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Prove desktop-to-runtime run-once success and capture mode placement behavior.",
+      "required_actions": [
+        "Run a desktop workbench path that dispatches step-mode run-once to runtime and observes success metadata.",
+        "Capture mode controls near the execution action without response body retention.",
+        "Keep semi_auto and auto behavior fail-closed unless accepted backend support exists."
+      ],
+      "verification_commands": [
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Backend run-once execution success has not been proven end-to-end from the desktop workbench.",
+        "A4 UX acceptance evidence for execution mode placement and behavior is not recorded."
+      ]
+    },
+    {
+      "id": "REPAIR-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "fr_id": "FR-008",
+      "track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Capture current-node and global Workflow Chat instruction routing as A4 user paths.",
+      "required_actions": [
+        "Show both Workflow and Current node Chat scopes in reviewer-visible Desktop capture.",
+        "Confirm runtime submit-instruction routing without retaining raw instruction text.",
+        "Do not claim project-backed command history unless a separate accepted follow-up implements it."
+      ],
+      "verification_commands": [
+        "uv run pytest apps/runtime/tests/test_w1_5_195_runtime_instruction_api.py -q",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js"
+      ],
+      "acceptance_blockers": [
+        "A4 UX acceptance evidence for the runtime-backed current-node/global Workflow Chat instruction path is not recorded.",
+        "Project-backed command history and persistence remain outside this evidence refresh and must not be inferred from local receipt metadata."
+      ]
+    },
+    {
+      "id": "REPAIR-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "fr_id": "FR-011",
+      "track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Capture the full new-project UX path with initial reference import.",
+      "required_actions": [
+        "Show project creation, mandatory Git proof, and initial reference import in one reviewer-visible path.",
+        "Keep task background and reference bytes out of evidence snapshots.",
+        "Return the result to A4 review before claiming FR-011 acceptance."
+      ],
+      "verification_commands": [
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js"
+      ],
+      "acceptance_blockers": [
+        "A4 UX acceptance evidence for the full new-project path is not recorded."
+      ]
+    },
+    {
+      "id": "REPAIR-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-012-MANDATORY-GIT-BRIDGE",
+      "fr_id": "FR-012",
+      "track_id": "TRACK-A8-GIT-HISTORY-PREREQ",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Prepare A8 Git-history audit evidence before FR-012 A4 acceptance.",
+      "required_actions": [
+        "Audit automatic commit and tag behavior against runtime_harness.md.",
+        "Capture that project creation cannot bypass Git initialization.",
+        "Route A8 evidence into A4 acceptance only after audit material exists."
+      ],
+      "verification_commands": [
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
+        "git diff --check"
+      ],
+      "acceptance_blockers": [
+        "A8 git-history audit evidence for automatic commit/tag behavior is not recorded.",
+        "A4 UX acceptance evidence for the mandatory Git path is not recorded."
+      ]
+    },
+    {
+      "id": "REPAIR-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "fr_id": "FR-013",
+      "track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Capture reference import, list, enable, disable, and view user paths.",
+      "required_actions": [
+        "Show reference lifecycle operations from the desktop workbench.",
+        "Keep raw file content and uploaded bytes out of capture artifacts.",
+        "Keep delete semantics excluded until accepted spec material defines them."
+      ],
+      "verification_commands": [
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js"
+      ],
+      "acceptance_blockers": [
+        "A4 UX acceptance evidence for reference import, enable, disable, and view user paths is not recorded.",
+        "Delete semantics remain intentionally out of scope until accepted spec material defines them."
+      ]
+    },
+    {
+      "id": "REPAIR-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "fr_id": "FR-014",
+      "track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Capture Skill candidate discovery and secret-safe MCP configuration display.",
+      "required_actions": [
+        "Show runtime-backed Skill candidate discovery and per-project enable or disable state.",
+        "Show MCP metadata as server id, transport, enabled, approval, and secret-ref-present only.",
+        "Reject persisted params, raw command_or_url, raw secret_ref, or credentials in evidence."
+      ],
+      "verification_commands": [
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js",
+        "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q"
+      ],
+      "acceptance_blockers": [
+        "A4 UX acceptance evidence for secret-safe Skill configuration display is not recorded."
+      ]
+    },
+    {
+      "id": "REPAIR-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "fr_id": "FR-017",
+      "track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Capture selected-node Task Drawer artifact details and native open/download user path.",
+      "required_actions": [
+        "Show selected-node artifact metadata in the Task Drawer.",
+        "Exercise open/download handoff with metadata-only action evidence.",
+        "Do not expose artifact body, raw bytes, full destination path, secure path, cache path, or output directory values."
+      ],
+      "verification_commands": [
+        "node --test apps/desktop/dist/main/runtime-ipc-handlers.test.js apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/shared/runtime-ipc.test.js apps/desktop/dist/preload/contract.test.js",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "A4 UX acceptance evidence for node artifact detail display and safe open/download behavior is not recorded."
+      ]
+    },
+    {
+      "id": "REPAIR-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "source_decision_id": "DECISION-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "fr_id": "FR-018",
+      "track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "source_decision": "needs_followup",
+      "implementation_status": "planned_not_implemented",
+      "objective": "Capture high-risk HITL pause, decision, and resume as a reviewer-visible path.",
+      "required_actions": [
+        "Show pending high-risk HITL decision discovery, review context, decision choices, and labels.",
+        "Submit a safe decision through the accepted decisions path and observe resume metadata.",
+        "Keep prompt_to_user, custom_value content, raw prompt, model output, and response bodies out of evidence."
+      ],
+      "verification_commands": [
+        "uv run pytest apps/runtime/tests/test_m1_3_8_human_decision_resolve.py -q",
+        "node --test apps/desktop/dist/renderer/runtime-workbench-shell-react.test.js apps/desktop/dist/preload/contract.test.js"
+      ],
+      "acceptance_blockers": [
+        "A4 UX acceptance evidence for high-risk HITL pause/resume behavior is not recorded."
+      ]
+    }
+  ],
+  "excluded_items": [
+    {
+      "fr_id": "FR-015",
+      "reason": "Snapshot restore/continue remains blocked until ADR-0012 or another accepted contract exists.",
+      "status": "blocked_by_contract_gate"
+    }
+  ],
+  "summary": {
+    "repair_item_count": 11,
+    "stream_phase_capture_items": 3,
+    "runtime_bridge_capture_items": 7,
+    "git_history_prereq_items": 1,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "planned_not_implemented_items": 11,
+    "excluded_items": 1,
+    "source_needs_followup_items": 11,
+    "exit_p1_1_status": "not_ready",
+    "next_required_review": "A4 repair-plan implementation review"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.210",
+      "title": "A4 stream phase capture execution",
+      "reason": "Execute the first W1.5.209 repair track for FR-009, FR-010, and FR-016 while keeping all FR acceptance decisions pending A4 review."
+    }
+  ]
+}

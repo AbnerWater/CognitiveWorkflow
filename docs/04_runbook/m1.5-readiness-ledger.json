@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.208",
+  "slice": "W1.5.209",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -164,7 +164,8 @@
         "W1.5.204 adds the accepted workflow_history endpoint plus Desktop metadata-only Version Snapshot timeline refresh evidence without accepting FR-015",
         "W1.5.206 adds metadata-only pending HITL decision discovery and Desktop form population evidence without accepting FR-018",
         "W1.5.207 adds high-risk HITL pending decision review context and keeps evidence metadata-only without accepting FR-018",
-        "W1.5.208 records A4 reviewer decisions for 11 runtime-flow review inputs as needs_followup without accepting FR items"
+        "W1.5.208 records A4 reviewer decisions for 11 runtime-flow review inputs as needs_followup without accepting FR items",
+        "W1.5.209 converts the 11 needs_followup decisions into scoped repair and capture plan items without implementing or accepting them"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
@@ -172,9 +173,9 @@
         "Skill configuration display still requires A4 UX acceptance review",
         "Task mutation commands remain incomplete",
         "Version Snapshot workflow_history timeline is visible, but snapshots/snapshots.jsonl ledger projection, restore-to-snapshot, and continue execution remain unimplemented",
-        "A4 reviewer recorded needs_followup for the Task Drawer artifact bridge.",
-        "A4 reviewer recorded needs_followup for combined project creation plus initial reference import.",
-        "A4 reviewer recorded needs_followup for high-risk HITL pause/resume evidence."
+        "W1.5.209 repair plan is prepared, but A4 stream phase capture tasks are not executed.",
+        "W1.5.209 repair plan is prepared, but runtime bridge user-path captures are not executed.",
+        "W1.5.209 repair plan is prepared, but A8 Git-history prerequisite evidence for FR-012 is not recorded."
       ]
     },
     {
@@ -192,7 +193,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map and W1.5.208 records 11 A4 needs_followup decisions, but accepted_items remain 0 and several surfaces still need A4 repairs, dependency-gated, or end-to-end evidence."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map; W1.5.208 records 11 A4 needs_followup decisions and W1.5.209 plans their repair/capture tasks, but accepted_items remain 0 and several surfaces still need A4 repairs, dependency-gated, or end-to-end evidence."
     },
     {
       "id": "EXIT-P1-2",
@@ -252,9 +253,9 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.209",
-      "title": "A4 needs-followup repair plan",
-      "reason": "Turn the 11 W1.5.208 needs_followup decisions into scoped repair or capture tasks while keeping FR-015 blocked until ADR-0012 or another accepted contract is available."
+      "id": "W1.5.210",
+      "title": "A4 stream phase capture execution",
+      "reason": "Execute the first W1.5.209 repair track for FR-009, FR-010, and FR-016 while keeping all FR acceptance decisions pending A4 review."
     }
   ]
 }
