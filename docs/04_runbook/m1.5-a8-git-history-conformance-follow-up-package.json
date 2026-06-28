@@ -1,0 +1,299 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.222",
+  "package_status": "a8_git_history_conformance_follow_up_package_packaged_not_accepted",
+  "exit_criterion": "EXIT-P1-10",
+  "exit_p1_1_status": "not_ready",
+  "exit_p1_10_status": "not_ready",
+  "observed_at": "2026-06-28T21:30:00.000Z",
+  "source": {
+    "a4_blocker_follow_up_plan": "docs/04_runbook/m1.5-a4-blocker-follow-up-plan.json",
+    "a4_blocker_repair_decision_record": "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json",
+    "a8_git_history_conformance_blocker_repair": "docs/04_runbook/m1.5-a8-git-history-conformance-blocker-repair.json",
+    "a8_git_history_prerequisite_evidence": "docs/04_runbook/m1.5-a8-git-history-prerequisite-evidence.json",
+    "runtime_harness_spec": "specs/runtime_harness.md#8.2",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "W1.5.222 packages only the W1.5.219 A8 Git-history conformance follow-up track for FR-012.",
+    "No package item, trigger row, or conformance row is accepted, implemented, completed, ready, or eligible for FR closure in this slice.",
+    "W1.5.222 does not modify runtime behavior, Desktop production behavior, accepted specs, ADR status, schemas, generated schemas, dependencies, packaging, updater work, or baseline docx files.",
+    "Evidence and package fields remain metadata-only and must not contain prompt text, model output, uploaded-file bytes, instruction text, HITL prompt content, custom decision values, response bodies, artifact bodies, secure paths, cache paths, output directory values, full destination paths, credentials, raw file content, or staged user file content.",
+    "The six explicitly deferred runtime_harness.md section 8.2 rows remain not implemented and are not treated as accepted deferrals.",
+    "FR-015 remains excluded while ADR-0012 is Proposed.",
+    "accepted_items, implemented_items, and phase_conformance_accepted_items remain zero; EXIT-P1-1 and EXIT-P1-10 remain not_ready."
+  ],
+  "track_execution": {
+    "source_track_id": "TRACK-A8-GIT-HISTORY-CONFORMANCE-FOLLOWUP",
+    "source_track_status": "planned_not_implemented",
+    "execution_status": "packaged_not_accepted",
+    "fr_ids": ["FR-012"],
+    "entry_slice": "W1.5.222",
+    "next_review_required": "A8 git-history-auditor",
+    "decision_record_required": true,
+    "phase_exit_decision_status": "not_ready"
+  },
+  "runner_contract": {
+    "runner_script": "apps/desktop/scripts/m1-5-a8-git-history-conformance-follow-up-package.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-a8-git-history-conformance-follow-up-package.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-a8-git-history-conformance-follow-up-package.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "runner_output_contract": {
+      "status": "a8_git_history_conformance_follow_up_package_packaged_not_accepted",
+      "package_item_count": 1,
+      "accepted_item_count": 0,
+      "implemented_item_count": 0,
+      "runtime_harness_8_2_trigger_count": 10,
+      "evidence_carried_forward_trigger_count": 4,
+      "explicitly_deferred_trigger_count": 6,
+      "phase_conformance_accepted_item_count": 0,
+      "sanitized_summary_only": true
+    }
+  },
+  "a8_follow_up_package": {
+    "source_follow_up_slice": "W1.5.219",
+    "source_follow_up_track": "TRACK-A8-GIT-HISTORY-CONFORMANCE-FOLLOWUP",
+    "source_decision_slice": "W1.5.218",
+    "source_repair_slice": "W1.5.217",
+    "source_prerequisite_slice": "W1.5.212",
+    "source_runtime_harness_spec": "specs/runtime_harness.md#8.2",
+    "package_scope": "a8_git_history_conformance_follow_up_only",
+    "phase_exit_decision_recorded": false,
+    "accepted_conformance_rows": 0,
+    "file_content_retained": false,
+    "user_staged_content_retained": false,
+    "path_values_retained": false,
+    "credential_values_recorded": false
+  },
+  "package_items": [
+    {
+      "id": "GIT-HISTORY-FOLLOW-UP-PACKAGE-A8-FR-012-MANDATORY-GIT-BRIDGE",
+      "source_follow_up_item_id": "FOLLOW-UP-A8-FR-012-MANDATORY-GIT-BRIDGE",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A8-FR-012-MANDATORY-GIT-BRIDGE",
+      "source_repair_item_id": "A8-BLOCKER-REPAIR-FR-012-MANDATORY-GIT-BRIDGE",
+      "source_prerequisite_item_id": "A8-PREREQ-FR-012-MANDATORY-GIT-BRIDGE",
+      "fr_id": "FR-012",
+      "review_group": "git_history_conformance_repair",
+      "decision_owner": "A8 git-history-auditor",
+      "package_status": "packaged_not_accepted",
+      "source_follow_up_status": "planned_not_implemented",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "source_prerequisite_status": "audit_evidence_recorded_not_accepted",
+      "accepted": false,
+      "implemented": false,
+      "reviewer_decision_required": true,
+      "phase_exit_decision_status": "not_ready",
+      "objective": "Package the FR-012 A8 Git-history conformance follow-up for a subsequent A8 decision without marking FR-012 or EXIT-P1-10 ready.",
+      "package_actions_executed": [
+        "Mapped the W1.5.219 FR-012 follow-up plan item to the W1.5.218 decision, W1.5.217 A8 repair package, and W1.5.212 prerequisite evidence.",
+        "Carried forward the W1.5.217 runtime_harness.md section 8.2 matrix without changing trigger dispositions.",
+        "Kept six runtime_harness.md section 8.2 rows explicitly deferred and not accepted as conformant.",
+        "Kept the formal A8 accept, reject, or accepted-deferral decision outside this slice."
+      ],
+      "remaining_acceptance_blockers": [
+        "EXIT-P1-10 remains not_ready because six runtime_harness.md §8.2 trigger rows are explicitly deferred rather than accepted as conformant.",
+        "FR-012 cannot be accepted until A8 reviewer evidence covers or accepts a formal deferral for every runtime_harness.md §8.2 trigger row.",
+        "Phase-level automatic commit failure surfacing and pre-commit negative hook coverage are still not accepted."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-follow-up-plan.json#FOLLOW-UP-A8-FR-012-MANDATORY-GIT-BRIDGE",
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A8-FR-012-MANDATORY-GIT-BRIDGE",
+        "docs/04_runbook/m1.5-a8-git-history-conformance-blocker-repair.json#A8-BLOCKER-REPAIR-FR-012-MANDATORY-GIT-BRIDGE",
+        "docs/04_runbook/m1.5-a8-git-history-prerequisite-evidence.json#A8-PREREQ-FR-012-MANDATORY-GIT-BRIDGE",
+        "specs/runtime_harness.md#8.2"
+      ],
+      "next_action_refs": [
+        "Record a future A8 reviewer decision before any FR-012 or EXIT-P1-10 acceptance claim."
+      ]
+    }
+  ],
+  "runtime_harness_8_2_follow_up_matrix": [
+    {
+      "id": "workflow_draft_instantiated",
+      "trigger": "WorkflowDraft 实例化为正式 Workflow",
+      "expected_commit_message": "chore(workflow): instantiate <workflow_id> v<ver>",
+      "expected_tag": "workflow-<id>-v<ver>",
+      "source_evidence_status": "gap_not_implemented_or_not_audited",
+      "conformance_disposition": "explicitly_deferred_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "deferred_reason": "WorkflowDraft instantiate auto-commit/tag behavior remains outside W1.5.222 and needs future implementation or phase-level A8 evidence."
+    },
+    {
+      "id": "workflow_patch_applied_draft",
+      "trigger": "WorkflowPatch 应用（草案阶段）",
+      "expected_commit_message": "chore(planning): apply patch <patch_id> to draft v<n>",
+      "expected_tag": null,
+      "source_evidence_status": "gap_not_implemented_or_not_audited",
+      "conformance_disposition": "explicitly_deferred_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "deferred_reason": "WorkflowPatch draft auto-commit behavior remains outside W1.5.222 and needs future implementation or phase-level A8 evidence."
+    },
+    {
+      "id": "workflow_manual_edit_saved",
+      "trigger": "Workflow 内手动编辑保存",
+      "expected_commit_message": "chore(workflow): manual edit v<ver+0.0.1>",
+      "expected_tag": "workflow-<id>-v<ver+0.0.1>",
+      "source_evidence_status": "gap_not_implemented_or_not_audited",
+      "conformance_disposition": "explicitly_deferred_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "deferred_reason": "Workflow manual edit auto-commit/tag behavior remains outside W1.5.222 and needs future implementation or phase-level A8 evidence."
+    },
+    {
+      "id": "run_started",
+      "trigger": "RunStarted",
+      "expected_commit_message": "chore(run): start <run_id> on workflow <id> v<ver>",
+      "expected_tag": null,
+      "source_evidence_status": "evidence_available",
+      "conformance_disposition": "evidence_carried_forward_not_phase_accepted",
+      "accepted": false,
+      "implemented": false,
+      "evidence_refs": [
+        "apps/runtime/src/cw_runtime/persistence/runtime_store.py#_snapshot_plan",
+        "apps/runtime/tests/test_m1_3_7_persistence_observability.py#test_git_snapshots_are_recorded_without_tracking_stream_or_sqlite_outputs"
+      ]
+    },
+    {
+      "id": "attempt_completed_important_node",
+      "trigger": "attempt.completed（重要节点）",
+      "expected_commit_message": "snapshot(run/<run_id>): node <node_id> attempt <idx>",
+      "expected_tag": null,
+      "source_evidence_status": "evidence_available",
+      "conformance_disposition": "evidence_carried_forward_not_phase_accepted",
+      "accepted": false,
+      "implemented": false,
+      "evidence_refs": [
+        "apps/runtime/src/cw_runtime/persistence/runtime_store.py#_snapshot_plan",
+        "apps/runtime/tests/test_m1_3_7_persistence_observability.py#test_git_snapshots_are_recorded_without_tracking_stream_or_sqlite_outputs"
+      ]
+    },
+    {
+      "id": "human_gate_resolved",
+      "trigger": "human.gate_resolved",
+      "expected_commit_message": "chore(human): decision on <human_node_id> by <user>",
+      "expected_tag": null,
+      "source_evidence_status": "gap_not_implemented_or_not_audited",
+      "conformance_disposition": "explicitly_deferred_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "deferred_reason": "human.gate_resolved events exist, but automatic git commit evidence matching runtime_harness.md §8.2 remains outside W1.5.222."
+    },
+    {
+      "id": "repair_patch_applied",
+      "trigger": "repair.patch_applied",
+      "expected_commit_message": "chore(repair): apply <patch_id> on <node_id>",
+      "expected_tag": null,
+      "source_evidence_status": "gap_not_implemented_or_not_audited",
+      "conformance_disposition": "explicitly_deferred_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "deferred_reason": "repair.patch_applied events exist, but automatic git commit evidence matching runtime_harness.md §8.2 remains outside W1.5.222."
+    },
+    {
+      "id": "run_terminal",
+      "trigger": "run.completed / run.failed / run.cancelled",
+      "expected_commit_message": "chore(run): end <run_id> state=<state>",
+      "expected_tag": "run-<run_id>-<state>",
+      "source_evidence_status": "evidence_available",
+      "conformance_disposition": "evidence_carried_forward_not_phase_accepted",
+      "accepted": false,
+      "implemented": false,
+      "evidence_refs": [
+        "apps/runtime/src/cw_runtime/persistence/runtime_store.py#_snapshot_plan",
+        "apps/runtime/tests/test_m1_3_7_persistence_observability.py#test_git_snapshots_are_recorded_without_tracking_stream_or_sqlite_outputs"
+      ]
+    },
+    {
+      "id": "memory_json_write",
+      "trigger": "memory.json 写入",
+      "expected_commit_message": "chore(memory): update v<n> — <topic>",
+      "expected_tag": null,
+      "source_evidence_status": "gap_not_implemented_or_not_audited",
+      "conformance_disposition": "explicitly_deferred_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "deferred_reason": "Direct memory.json writes are blocked, but memory_task auto-commit evidence matching runtime_harness.md §8.2 remains outside W1.5.222."
+    },
+    {
+      "id": "references_manifest_change",
+      "trigger": "references.manifest.json 变更",
+      "expected_commit_message": "chore(refs): import/enable/disable <reference_id>",
+      "expected_tag": null,
+      "source_evidence_status": "evidence_available",
+      "conformance_disposition": "evidence_carried_forward_not_phase_accepted",
+      "accepted": false,
+      "implemented": false,
+      "evidence_refs": [
+        "apps/runtime/src/cw_runtime/harness/project.py#_commit_reference_manifest_change_locked",
+        "apps/runtime/tests/test_m1_3_2_project_endpoints.py#test_reference_management_endpoint_imports_and_updates_manifest"
+      ]
+    }
+  ],
+  "runtime_harness_8_3_8_4_boundary": {
+    "hook_audit_status": "partial_evidence_recorded_not_phase_exit_ready",
+    "invariant_audit_status": "partial_evidence_recorded_not_phase_exit_ready",
+    "accepted": false,
+    "implemented": false,
+    "phase_exit_ready": false,
+    "remaining_gap": [
+      "Phase-level A8 negative commit tests for every pre-commit hook failure mode are not recorded.",
+      "Automatic commit failure surfacing as error.exception StreamEvent plus UI prompt is not recorded."
+    ]
+  },
+  "excluded_items": [
+    {
+      "track_id": "TRACK-A4-STREAM-ACCEPTANCE-FOLLOWUP",
+      "reason": "Stream acceptance follow-up was packaged in W1.5.220 and is not re-executed in this A8 slice.",
+      "status": "not_executed_in_this_slice"
+    },
+    {
+      "track_id": "TRACK-A4-RUNTIME-UX-ACCEPTANCE-FOLLOWUP",
+      "reason": "Runtime UX acceptance follow-up was packaged in W1.5.221 and is not re-executed in this A8 slice.",
+      "status": "not_executed_in_this_slice"
+    },
+    {
+      "fr_id": "FR-015",
+      "reason": "Snapshot restore, continue execution, and snapshot ledger projection remain excluded while ADR-0012 is Proposed.",
+      "status": "blocked_by_contract_gate"
+    },
+    {
+      "scope": "phase_exit_acceptance",
+      "reason": "The A8 package item and trigger rows remain pending reviewer decision; Phase 1 exit criteria are not ready."
+    }
+  ],
+  "summary": {
+    "package_item_count": 1,
+    "git_history_package_items": 1,
+    "stream_acceptance_package_items": 0,
+    "runtime_ux_package_items": 0,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "packaged_not_accepted_items": 1,
+    "pending_a8_decision_items": 1,
+    "runtime_harness_8_2_trigger_count": 10,
+    "evidence_carried_forward_trigger_count": 4,
+    "explicitly_deferred_trigger_count": 6,
+    "source_trigger_gap_items": 6,
+    "phase_conformance_accepted_items": 0,
+    "source_command_evidence_items": 5,
+    "source_follow_up_items": 1,
+    "source_decision_items": 1,
+    "source_a8_repair_items": 1,
+    "source_prerequisite_items": 1,
+    "excluded_items": 4,
+    "exit_p1_1_status": "not_ready",
+    "exit_p1_10_status": "not_ready",
+    "next_required_review": "A8 Git-history follow-up package review"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.223",
+      "title": "A4/A8 packaged follow-up decision record",
+      "reason": "Record reviewer decisions for the W1.5.220 stream, W1.5.221 runtime UX, and W1.5.222 A8 packaged follow-up artifacts while keeping unsupported acceptance blocked."
+    }
+  ]
+}
