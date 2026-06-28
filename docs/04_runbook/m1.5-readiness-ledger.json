@@ -1,7 +1,7 @@
 {
   "schema_version": "0.1.0",
   "milestone": "M1.5",
-  "slice": "W1.5.211",
+  "slice": "W1.5.212",
   "status": "in_progress",
   "authority": {
     "roadmap": "docs/roadmap.md#5.2",
@@ -169,7 +169,8 @@
         "W1.5.208 records A4 reviewer decisions for 11 runtime-flow review inputs as needs_followup without accepting FR items",
         "W1.5.209 converts the 11 needs_followup decisions into scoped repair and capture plan items without implementing or accepting them",
         "W1.5.210 executes the stream phase capture track for FR-009, FR-010, and FR-016 without accepting FR items",
-        "W1.5.211 executes runtime bridge user-path capture evidence for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 without accepting FR items"
+        "W1.5.211 executes runtime bridge user-path capture evidence for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 without accepting FR items",
+        "W1.5.212 records A8 Git-history prerequisite evidence for FR-012 without accepting FR items"
       ],
       "remaining_gap": [
         "React Flow dependency gate still blocks final Canvas implementation and 100-node performance evidence",
@@ -179,7 +180,7 @@
         "Version Snapshot workflow_history timeline is visible, but snapshots/snapshots.jsonl ledger projection, restore-to-snapshot, and continue execution remain unimplemented",
         "W1.5.210 stream phase capture evidence is executed, but A4 reviewer acceptance decisions for FR-009, FR-010, and FR-016 are not recorded.",
         "W1.5.211 runtime bridge user-path capture evidence is executed, but A4 reviewer acceptance decisions for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 are not recorded.",
-        "W1.5.209 repair plan is prepared, but A8 Git-history prerequisite evidence for FR-012 is not recorded."
+        "W1.5.212 A8 Git-history prerequisite evidence is recorded for FR-012, but A4 reviewer acceptance for FR-012 is not recorded and EXIT-P1-10 remains not_ready."
       ]
     },
     {
@@ -197,7 +198,7 @@
     {
       "id": "EXIT-P1-1",
       "status": "not_ready",
-      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map; W1.5.208 records 11 A4 needs_followup decisions, W1.5.209 plans their repair/capture tasks, W1.5.210 executes the stream phase capture track, and W1.5.211 executes the runtime bridge user-path capture track, but accepted_items remain 0 and several surfaces still need A4 reviewer decisions, dependency-gated, A8 audit, or end-to-end evidence."
+      "reason": "FR-001 through FR-020 have a refreshed W1.5.207 evidence map; W1.5.208 records 11 A4 needs_followup decisions, W1.5.209 plans their repair/capture tasks, W1.5.210 executes the stream phase capture track, W1.5.211 executes the runtime bridge user-path capture track, and W1.5.212 records A8 Git-history prerequisite evidence for FR-012, but accepted_items remain 0 and several surfaces still need A4 reviewer decisions, dependency-gated, phase-level A8 conformance, or end-to-end evidence."
     },
     {
       "id": "EXIT-P1-2",
@@ -242,7 +243,7 @@
     {
       "id": "EXIT-P1-10",
       "status": "not_ready",
-      "reason": "A8 git-history audit must verify automatic commit/tag behavior before phase exit."
+      "reason": "W1.5.212 records A8 Git-history prerequisite evidence for FR-012, but phase-level EXIT-P1-10 remains not_ready because several runtime_harness.md §8.2 trigger rows still lack implementation or conformance evidence."
     },
     {
       "id": "EXIT-P1-11",
@@ -257,9 +258,9 @@
   ],
   "next_recommended_slices": [
     {
-      "id": "W1.5.212",
-      "title": "A8 Git-history prerequisite evidence",
-      "reason": "Execute the third W1.5.209 repair track for FR-012 before any A4 acceptance decision can be recorded."
+      "id": "W1.5.213",
+      "title": "A4 post-capture decision record",
+      "reason": "Record reviewer decisions after W1.5.210, W1.5.211, and W1.5.212 have produced the requested follow-up evidence while keeping unsupported acceptance blocked."
     }
   ]
 }

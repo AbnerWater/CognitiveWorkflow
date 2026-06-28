@@ -1,0 +1,362 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.212",
+  "evidence_status": "a8_git_history_prerequisite_evidence_recorded_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "exit_p1_10_status": "not_ready",
+  "observed_at": "2026-06-28T09:55:00.000Z",
+  "source": {
+    "needs_followup_repair_plan": "docs/04_runbook/m1.5-a4-needs-followup-repair-plan.json",
+    "a4_decision_record": "docs/04_runbook/m1.5-a4-runtime-flow-decision-record.json",
+    "a4_capture_execution": "docs/04_runbook/m1.5-a4-capture-execution.json",
+    "a4_runtime_bridge_user_path_capture": "docs/04_runbook/m1.5-a4-runtime-bridge-user-path-capture.json",
+    "runtime_harness_spec": "specs/runtime_harness.md#8",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "W1.5.212 executes only the W1.5.209 A8 Git-history prerequisite track for FR-012.",
+    "W1.5.212 records audit evidence and gaps; it does not execute A4 reviewer acceptance and does not mark FR-012 accepted.",
+    "W1.5.212 does not modify accepted specs, ADRs, schemas, generated schemas, dependencies, runtime/Desktop production behavior, packaging, updater work, or baseline docx.",
+    "No field may mark EXIT-P1-1 or EXIT-P1-10 ready.",
+    "Audit evidence must remain sanitized and must not include raw file content, uploaded bytes, response bodies, secure paths, cache paths, output directory values, credential values, or user staged file content.",
+    "FR-015 remains excluded until ADR-0012 or another accepted restore/continue contract exists.",
+    "accepted_items and implemented_items remain zero."
+  ],
+  "track_execution": {
+    "source_track_id": "TRACK-A8-GIT-HISTORY-PREREQ",
+    "source_track_status": "planned_not_implemented",
+    "execution_status": "audit_evidence_recorded_not_accepted",
+    "fr_ids": ["FR-012"],
+    "entry_slice": "W1.5.212",
+    "next_review_required": "A8 git-history-auditor plus A4 ux-acceptance-reviewer"
+  },
+  "runner_contract": {
+    "runner_script": "apps/desktop/scripts/m1-5-a8-git-history-prerequisite-evidence.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-a8-git-history-prerequisite-evidence.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-a8-git-history-prerequisite-evidence.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "runner_output_contract": {
+      "status": "a8_git_history_prerequisite_evidence_recorded_not_accepted",
+      "fr_id": "FR-012",
+      "accepted_item_count": 0,
+      "implemented_item_count": 0,
+      "runtime_harness_8_2_trigger_count": 10,
+      "trigger_gap_item_count": 6,
+      "sanitized_summary_only": true
+    }
+  },
+  "command_execution_evidence": [
+    {
+      "id": "COMMAND-W1-5-212-RUNTIME-PROJECT-ENDPOINTS",
+      "command": "uv run pytest apps/runtime/tests/test_m1_3_2_project_endpoints.py -q",
+      "execution_status": "executed_passed",
+      "applies_to": [
+        "FR-012 mandatory Git project creation",
+        "references.manifest.json import/enable/disable auto-commit",
+        "git.lock cleanup",
+        "user staged file preservation through reference auto-commit"
+      ],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    },
+    {
+      "id": "COMMAND-W1-5-212-RUNTIME-PROJECT-HARNESS-STAGED",
+      "command": "uv run pytest apps/runtime/tests/test_m1_3_2_project_harness.py -q -k initialize_project_preserves_pre_staged_user_files",
+      "execution_status": "executed_passed",
+      "applies_to": [
+        "runtime_harness.md §8.4 staged-file preservation invariant"
+      ],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    },
+    {
+      "id": "COMMAND-W1-5-212-RUNTIME-PERSISTENCE-GIT-SNAPSHOTS",
+      "command": "uv run pytest apps/runtime/tests/test_m1_3_7_persistence_observability.py -q -k \"initialize_project_creates_runtime_databases_and_initial_snapshot or git_snapshots_are_recorded_without_tracking_stream_or_sqlite_outputs\"",
+      "execution_status": "executed_passed",
+      "applies_to": [
+        "runtime_harness.md §8.1 initial commit snapshot ledger",
+        "runtime_harness.md §8.2 run.started, attempt.completed, and terminal run snapshot/tag behavior",
+        "runtime_harness.md §8.3 stream/cache/traces non-tracking evidence"
+      ],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    },
+    {
+      "id": "COMMAND-W1-5-212-RUNTIME-STREAM-GIT-HOOK",
+      "command": "uv run pytest apps/runtime/tests/test_m1_3_4_run_lifecycle.py -q -k stream_events_are_blocked_from_git_tracking",
+      "execution_status": "executed_passed",
+      "applies_to": [
+        "runtime_harness.md §8.3 stream-events gitignore and pre-commit hook evidence"
+      ],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    },
+    {
+      "id": "COMMAND-W1-5-212-GIT-DIFF-CHECK",
+      "command": "git diff --check",
+      "execution_status": "executed_passed",
+      "applies_to": [
+        "workspace whitespace hygiene after W1.5.212 evidence updates"
+      ],
+      "raw_stdout_stderr_retained": false,
+      "accepted": false
+    }
+  ],
+  "fr012_prerequisite_item": {
+    "id": "A8-PREREQ-FR-012-MANDATORY-GIT-BRIDGE",
+    "repair_item_id": "REPAIR-A4-FR-012-MANDATORY-GIT-BRIDGE",
+    "source_decision_id": "DECISION-A4-FR-012-MANDATORY-GIT-BRIDGE",
+    "source_capture_id": "CAPTURE-A4-FR-012-MANDATORY-GIT-BRIDGE",
+    "review_item_id": "A4-FR-012-MANDATORY-GIT-BRIDGE",
+    "bridge_command_id": "BRIDGE-COMMAND-FR-012",
+    "fr_id": "FR-012",
+    "review_group": "runtime_bridge_evidence",
+    "a8_evidence_status": "audit_evidence_recorded_not_accepted",
+    "source_decision": "needs_followup",
+    "source_repair_status": "planned_not_implemented",
+    "source_capture_status": "captured_not_accepted",
+    "accepted": false,
+    "reviewer_decision_required": true,
+    "observed_a4_evidence_inputs": [
+      "Project creation success is blocked unless git_initialized is true and first_commit_sha is non-empty.",
+      "Reviewer evidence includes the desktop create-project path and runtime project endpoint coverage.",
+      "A8 git-history audit remains required before FR-012 acceptance.",
+      "A4 capture must not expose secure paths, cache paths, raw uploaded content, or credentials."
+    ],
+    "a8_audit_inputs": [
+      "runtime_harness.md §8.1 project initialization requires git init, baseline files, initial commit, and snapshots/snapshots.jsonl record.",
+      "runtime_harness.md §8.2 defines ten automatic commit/tag trigger rows.",
+      "runtime_harness.md §8.3 defines pre-commit hook safety constraints.",
+      "runtime_harness.md §8.4 defines staged-file preservation and failure-surfacing invariants."
+    ],
+    "source_acceptance_blockers": [
+      "A8 git-history audit evidence for automatic commit/tag behavior is not recorded.",
+      "A4 UX acceptance evidence for the mandatory Git path is not recorded."
+    ],
+    "post_audit_remaining_blockers": [
+      "A4 reviewer has not reviewed W1.5.212 A8 prerequisite evidence for FR-012.",
+      "EXIT-P1-10 remains not_ready because several runtime_harness.md §8.2 trigger rows still need implementation or phase-level conformance evidence."
+    ]
+  },
+  "runtime_harness_8_1_initialization_audit": {
+    "audit_status": "evidence_available_not_accepted",
+    "spec_anchor": "specs/runtime_harness.md#8.1",
+    "expected_behavior": [
+      "git init -b main when the project is not already a git repository",
+      "write .gitignore and .gitattributes",
+      "write the empty .agent-workflow skeleton",
+      "create the initial chore(cw) commit",
+      "record the initial commit in snapshots/snapshots.jsonl"
+    ],
+    "evidence_refs": [
+      "apps/runtime/src/cw_runtime/harness/project.py#_initialize_git_and_commit",
+      "apps/runtime/src/cw_runtime/persistence/runtime_store.py#record_initial_git_snapshot",
+      "apps/runtime/tests/test_m1_3_2_project_endpoints.py#test_create_and_read_project_endpoint",
+      "apps/runtime/tests/test_m1_3_7_persistence_observability.py#test_initialize_project_creates_runtime_databases_and_initial_snapshot",
+      "apps/runtime/tests/test_m1_3_2_project_harness.py#test_initialize_project_preserves_pre_staged_user_files"
+    ],
+    "remaining_gap": [
+      "A4 UX acceptance evidence for the mandatory Git path is not recorded."
+    ]
+  },
+  "runtime_harness_8_2_trigger_audit": {
+    "audit_status": "partial_evidence_recorded_not_phase_exit_ready",
+    "spec_anchor": "specs/runtime_harness.md#8.2",
+    "trigger_rows": [
+      {
+        "id": "workflow_draft_instantiated",
+        "trigger": "WorkflowDraft 实例化为正式 Workflow",
+        "expected_commit_message": "chore(workflow): instantiate <workflow_id> v<ver>",
+        "expected_tag": "workflow-<id>-v<ver>",
+        "evidence_status": "gap_not_implemented_or_not_audited",
+        "evidence_refs": [],
+        "remaining_gap": "WorkflowDraft instantiate auto-commit/tag evidence is not recorded."
+      },
+      {
+        "id": "workflow_patch_applied_draft",
+        "trigger": "WorkflowPatch 应用（草案阶段）",
+        "expected_commit_message": "chore(planning): apply patch <patch_id> to draft v<n>",
+        "expected_tag": null,
+        "evidence_status": "gap_not_implemented_or_not_audited",
+        "evidence_refs": [],
+        "remaining_gap": "WorkflowPatch draft auto-commit evidence is not recorded."
+      },
+      {
+        "id": "workflow_manual_edit_saved",
+        "trigger": "Workflow 内手动编辑保存",
+        "expected_commit_message": "chore(workflow): manual edit v<ver+0.0.1>",
+        "expected_tag": "workflow-<id>-v<ver+0.0.1>",
+        "evidence_status": "gap_not_implemented_or_not_audited",
+        "evidence_refs": [],
+        "remaining_gap": "Workflow manual edit auto-commit/tag evidence is not recorded."
+      },
+      {
+        "id": "run_started",
+        "trigger": "RunStarted",
+        "expected_commit_message": "chore(run): start <run_id> on workflow <id> v<ver>",
+        "expected_tag": null,
+        "evidence_status": "evidence_available",
+        "evidence_refs": [
+          "apps/runtime/src/cw_runtime/persistence/runtime_store.py#_snapshot_plan",
+          "apps/runtime/tests/test_m1_3_7_persistence_observability.py#test_git_snapshots_are_recorded_without_tracking_stream_or_sqlite_outputs"
+        ],
+        "remaining_gap": null
+      },
+      {
+        "id": "attempt_completed_important_node",
+        "trigger": "attempt.completed（重要节点）",
+        "expected_commit_message": "snapshot(run/<run_id>): node <node_id> attempt <idx>",
+        "expected_tag": null,
+        "evidence_status": "evidence_available",
+        "evidence_refs": [
+          "apps/runtime/src/cw_runtime/persistence/runtime_store.py#_snapshot_plan",
+          "apps/runtime/tests/test_m1_3_7_persistence_observability.py#test_git_snapshots_are_recorded_without_tracking_stream_or_sqlite_outputs"
+        ],
+        "remaining_gap": null
+      },
+      {
+        "id": "human_gate_resolved",
+        "trigger": "human.gate_resolved",
+        "expected_commit_message": "chore(human): decision on <human_node_id> by <user>",
+        "expected_tag": null,
+        "evidence_status": "gap_not_implemented_or_not_audited",
+        "evidence_refs": [
+          "apps/runtime/src/cw_runtime/runner/node_runner.py#_emit_human_gate_resolved"
+        ],
+        "remaining_gap": "human.gate_resolved events exist, but automatic git commit evidence matching runtime_harness.md §8.2 is not recorded."
+      },
+      {
+        "id": "repair_patch_applied",
+        "trigger": "repair.patch_applied",
+        "expected_commit_message": "chore(repair): apply <patch_id> on <node_id>",
+        "expected_tag": null,
+        "evidence_status": "gap_not_implemented_or_not_audited",
+        "evidence_refs": [
+          "apps/runtime/src/cw_runtime/runner/node_runner.py#repair.patch_applied"
+        ],
+        "remaining_gap": "repair.patch_applied events exist, but automatic git commit evidence matching runtime_harness.md §8.2 is not recorded."
+      },
+      {
+        "id": "run_terminal",
+        "trigger": "run.completed / run.failed / run.cancelled",
+        "expected_commit_message": "chore(run): end <run_id> state=<state>",
+        "expected_tag": "run-<run_id>-<state>",
+        "evidence_status": "evidence_available",
+        "evidence_refs": [
+          "apps/runtime/src/cw_runtime/persistence/runtime_store.py#_snapshot_plan",
+          "apps/runtime/tests/test_m1_3_7_persistence_observability.py#test_git_snapshots_are_recorded_without_tracking_stream_or_sqlite_outputs"
+        ],
+        "remaining_gap": null
+      },
+      {
+        "id": "memory_json_write",
+        "trigger": "memory.json 写入",
+        "expected_commit_message": "chore(memory): update v<n> — <topic>",
+        "expected_tag": null,
+        "evidence_status": "gap_not_implemented_or_not_audited",
+        "evidence_refs": [
+          "apps/runtime/tests/test_m1_3_2_project_harness.py#test_update_manifest_json_blocks_direct_memory_write"
+        ],
+        "remaining_gap": "Direct memory.json write is blocked, but memory_task auto-commit evidence matching runtime_harness.md §8.2 is not recorded."
+      },
+      {
+        "id": "references_manifest_change",
+        "trigger": "references.manifest.json 变更",
+        "expected_commit_message": "chore(refs): import/enable/disable <reference_id>",
+        "expected_tag": null,
+        "evidence_status": "evidence_available",
+        "evidence_refs": [
+          "apps/runtime/src/cw_runtime/harness/project.py#_commit_reference_manifest_change_locked",
+          "apps/runtime/tests/test_m1_3_2_project_endpoints.py#test_reference_management_endpoint_imports_and_updates_manifest"
+        ],
+        "remaining_gap": null
+      }
+    ]
+  },
+  "runtime_harness_8_3_hook_audit": {
+    "audit_status": "partial_evidence_recorded_not_phase_exit_ready",
+    "spec_anchor": "specs/runtime_harness.md#8.3",
+    "evidence_refs": [
+      "apps/runtime/src/cw_runtime/harness/project.py#_install_pre_commit_hook",
+      "apps/runtime/tests/test_m1_3_4_run_lifecycle.py#test_stream_events_are_blocked_from_git_tracking",
+      "apps/runtime/tests/test_m1_3_7_persistence_observability.py#test_git_snapshots_are_recorded_without_tracking_stream_or_sqlite_outputs"
+    ],
+    "observed_constraints": [
+      "pre-commit hook body blocks secure/cache files, stream-events, encrypted sqlite outside secure, and known secret prefixes.",
+      "gitignore includes run and planning stream-event outputs.",
+      "completed run evidence keeps stream-events, traces, and cache paths out of tracked files."
+    ],
+    "remaining_gap": [
+      "Phase-level A8 audit has not attempted every hook failure mode as a negative commit test."
+    ]
+  },
+  "runtime_harness_8_4_invariant_audit": {
+    "audit_status": "partial_evidence_recorded_not_phase_exit_ready",
+    "spec_anchor": "specs/runtime_harness.md#8.4",
+    "evidence_refs": [
+      "apps/runtime/src/cw_runtime/harness/project.py#_commit_reference_manifest_change_locked",
+      "apps/runtime/tests/test_m1_3_2_project_endpoints.py#reference user staged preservation",
+      "apps/runtime/tests/test_m1_3_2_project_harness.py#test_initialize_project_preserves_pre_staged_user_files"
+    ],
+    "observed_constraints": [
+      "Initial project creation uses commit --only and preserves pre-staged user files in an existing git repository.",
+      "Reference manifest auto-commit stashes and restores user staged files.",
+      "git.lock is removed after reference endpoint operations."
+    ],
+    "remaining_gap": [
+      "Phase-level A8 evidence for automatic commit failure surfacing as error.exception StreamEvent plus UI prompt is not recorded."
+    ]
+  },
+  "excluded_items": [
+    {
+      "track_id": "TRACK-A4-STREAM-PHASE-CAPTURE",
+      "fr_ids": ["FR-009", "FR-010", "FR-016"],
+      "reason": "Stream phase captures were executed in W1.5.210 and are outside W1.5.212.",
+      "status": "completed_elsewhere_not_in_scope"
+    },
+    {
+      "track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "fr_ids": [
+        "FR-007",
+        "FR-008",
+        "FR-011",
+        "FR-013",
+        "FR-014",
+        "FR-017",
+        "FR-018"
+      ],
+      "reason": "Runtime bridge user-path captures were executed in W1.5.211 and are outside W1.5.212.",
+      "status": "completed_elsewhere_not_in_scope"
+    },
+    {
+      "fr_id": "FR-015",
+      "reason": "Snapshot restore/continue remains blocked until ADR-0012 or another accepted contract exists.",
+      "status": "blocked_by_contract_gate"
+    }
+  ],
+  "summary": {
+    "fr_id": "FR-012",
+    "a8_prerequisite_items": 1,
+    "runtime_harness_8_2_trigger_count": 10,
+    "trigger_evidence_available_items": 4,
+    "trigger_gap_items": 6,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "pending_a4_review_items": 1,
+    "source_needs_followup_items": 1,
+    "source_repair_items": 1,
+    "command_evidence_count": 5,
+    "exit_p1_1_status": "not_ready",
+    "exit_p1_10_status": "not_ready",
+    "next_required_review": "A8 git-history audit implementation review"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.213",
+      "title": "A4 post-capture decision record",
+      "reason": "Record reviewer decisions after W1.5.210, W1.5.211, and W1.5.212 have produced the requested follow-up evidence while keeping unsupported acceptance blocked."
+    }
+  ]
+}
