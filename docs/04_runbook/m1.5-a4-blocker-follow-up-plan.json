@@ -1,0 +1,429 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.219",
+  "plan_status": "a4_blocker_follow_up_plan_prepared_not_implemented",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "exit_p1_10_status": "not_ready",
+  "observed_at": "2026-06-28T15:40:00.000Z",
+  "source": {
+    "a4_blocker_repair_decision_record": "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json",
+    "a4_stream_acceptance_blocker_repair": "docs/04_runbook/m1.5-a4-stream-acceptance-blocker-repair.json",
+    "a4_runtime_ux_acceptance_blocker_repair": "docs/04_runbook/m1.5-a4-runtime-ux-acceptance-blocker-repair.json",
+    "a8_git_history_conformance_blocker_repair": "docs/04_runbook/m1.5-a8-git-history-conformance-blocker-repair.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "W1.5.219 converts the 11 W1.5.218 needs_followup blocker decisions into scoped follow-up plan items only.",
+    "No follow-up item is accepted, implemented, completed, ready, or eligible for FR closure in this slice.",
+    "W1.5.219 does not modify runtime behavior, Desktop production behavior, accepted specs, ADR status, schemas, generated schemas, dependencies, packaging, updater work, or baseline docx files.",
+    "Evidence and plan fields remain metadata-only and must not contain prompt text, model output, uploaded-file bytes, instruction text, HITL prompt content, custom decision values, response bodies, artifact bodies, secure paths, cache paths, output directory values, full destination paths, credentials, raw file content, or staged user file content.",
+    "FR-015 remains excluded while ADR-0012 is Proposed.",
+    "accepted_items and implemented_items remain zero; EXIT-P1-1 and EXIT-P1-10 remain not_ready."
+  ],
+  "follow_up_tracks": [
+    {
+      "id": "TRACK-A4-STREAM-ACCEPTANCE-FOLLOWUP",
+      "title": "A4 stream acceptance follow-up",
+      "fr_ids": ["FR-009", "FR-010", "FR-016"],
+      "objective": "Prepare the next reviewer-facing stream acceptance follow-up package without treating repaired evidence as FR closure.",
+      "entry_slice": "W1.5.220",
+      "status": "planned_not_implemented"
+    },
+    {
+      "id": "TRACK-A4-RUNTIME-UX-ACCEPTANCE-FOLLOWUP",
+      "title": "A4 runtime UX acceptance follow-up",
+      "fr_ids": [
+        "FR-007",
+        "FR-008",
+        "FR-011",
+        "FR-013",
+        "FR-014",
+        "FR-017",
+        "FR-018"
+      ],
+      "objective": "Prepare the next reviewer-facing runtime UX acceptance follow-up package while preserving metadata-only evidence boundaries.",
+      "entry_slice": "W1.5.221",
+      "status": "planned_not_implemented"
+    },
+    {
+      "id": "TRACK-A8-GIT-HISTORY-CONFORMANCE-FOLLOWUP",
+      "title": "A8 Git-history conformance follow-up",
+      "fr_ids": ["FR-012"],
+      "objective": "Plan the remaining Git-history conformance follow-up for deferred runtime_harness.md section 8.2 rows before any FR-012 or EXIT-P1-10 readiness claim.",
+      "entry_slice": "W1.5.222",
+      "status": "planned_not_implemented"
+    }
+  ],
+  "follow_up_items": [
+    {
+      "id": "FOLLOW-UP-A4-FR-009-STREAM-COLLAPSED",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-009-STREAM-COLLAPSED",
+      "fr_id": "FR-009",
+      "track_id": "TRACK-A4-STREAM-ACCEPTANCE-FOLLOWUP",
+      "review_group": "stream_acceptance_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan final reviewer-facing acceptance evidence for the default collapsed stream path without marking FR-009 accepted.",
+      "required_actions": [
+        "Carry forward the W1.5.218 default collapsed stream blockers into a focused follow-up package.",
+        "Require a subsequent A4 decision record before any FR-009 acceptance claim."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for the default collapsed stream path is still not recorded.",
+        "FR-009 remains blocked until the reviewer decision record consumes this repaired stream evidence package."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-009-STREAM-COLLAPSED",
+        "docs/04_runbook/m1.5-a4-stream-acceptance-blocker-repair.json#STREAM-BLOCKER-REPAIR-A4-FR-009-STREAM-COLLAPSED"
+      ]
+    },
+    {
+      "id": "FOLLOW-UP-A4-FR-010-STREAM-EXPANDED",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-010-STREAM-EXPANDED",
+      "fr_id": "FR-010",
+      "track_id": "TRACK-A4-STREAM-ACCEPTANCE-FOLLOWUP",
+      "review_group": "stream_acceptance_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan workflow-backed expanded stream acceptance follow-up while keeping M1.6 demo evidence deferred.",
+      "required_actions": [
+        "Carry forward expanded stream readability and taxonomy blockers into a focused follow-up package.",
+        "Keep end-to-end workflow demo evidence explicitly deferred unless a later slice provides it."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for expanded stream readability is still not recorded.",
+        "End-to-end workflow stream demo evidence remains deferred to M1.6 or another explicit phase-level demo slice."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-010-STREAM-EXPANDED",
+        "docs/04_runbook/m1.5-a4-stream-acceptance-blocker-repair.json#STREAM-BLOCKER-REPAIR-A4-FR-010-STREAM-EXPANDED"
+      ]
+    },
+    {
+      "id": "FOLLOW-UP-A4-FR-016-EVENT-CLASSIFICATION",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+      "fr_id": "FR-016",
+      "track_id": "TRACK-A4-STREAM-ACCEPTANCE-FOLLOWUP",
+      "review_group": "stream_acceptance_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan final event-label acceptance follow-up without treating fallback rendering coverage as FR closure.",
+      "required_actions": [
+        "Carry forward final event-label blockers into a focused follow-up package.",
+        "Require A4 reviewer acceptance or rejection before any FR-016 closure claim."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for final event labels is still not recorded.",
+        "FR-016 remains blocked until the reviewer decision record consumes this repaired stream evidence package."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+        "docs/04_runbook/m1.5-a4-stream-acceptance-blocker-repair.json#STREAM-BLOCKER-REPAIR-A4-FR-016-EVENT-CLASSIFICATION"
+      ]
+    },
+    {
+      "id": "FOLLOW-UP-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-007-EXECUTION-MODE-BRIDGE",
+      "fr_id": "FR-007",
+      "track_id": "TRACK-A4-RUNTIME-UX-ACCEPTANCE-FOLLOWUP",
+      "review_group": "runtime_ux_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan final execution-mode UX acceptance follow-up while keeping unsupported semi-auto and auto behavior blocked.",
+      "required_actions": [
+        "Carry forward execution-mode UX blockers into the runtime UX follow-up package.",
+        "Keep semi-auto and auto behavior fail-closed unless accepted backend support exists."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for execution mode behavior is still not recorded.",
+        "FR-007 remains blocked until the reviewer decision record consumes this repaired runtime UX evidence package."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-007-EXECUTION-MODE-BRIDGE",
+        "docs/04_runbook/m1.5-a4-runtime-ux-acceptance-blocker-repair.json#RUNTIME-UX-BLOCKER-REPAIR-A4-FR-007-EXECUTION-MODE-BRIDGE"
+      ]
+    },
+    {
+      "id": "FOLLOW-UP-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+      "fr_id": "FR-008",
+      "track_id": "TRACK-A4-RUNTIME-UX-ACCEPTANCE-FOLLOWUP",
+      "review_group": "runtime_ux_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan final Chat instruction UX acceptance follow-up separately from command-history persistence.",
+      "required_actions": [
+        "Carry forward current-node and Workflow instruction UX blockers into the runtime UX follow-up package.",
+        "Keep project-backed command history and persistence outside this acceptance plan unless separately implemented."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for current-node and Workflow instruction UX is still not recorded.",
+        "Project-backed command history and persistence remain outside this repair handoff."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-008-CHAT-INSTRUCTION-BRIDGE",
+        "docs/04_runbook/m1.5-a4-runtime-ux-acceptance-blocker-repair.json#RUNTIME-UX-BLOCKER-REPAIR-A4-FR-008-CHAT-INSTRUCTION-BRIDGE"
+      ]
+    },
+    {
+      "id": "FOLLOW-UP-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+      "fr_id": "FR-011",
+      "track_id": "TRACK-A4-RUNTIME-UX-ACCEPTANCE-FOLLOWUP",
+      "review_group": "runtime_ux_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan final new-project UX acceptance follow-up with metadata-only reference import evidence.",
+      "required_actions": [
+        "Carry forward new-project UX blockers into the runtime UX follow-up package.",
+        "Keep task background and reference bytes out of evidence snapshots."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for full new-project UX is still not recorded.",
+        "Task background and reference bytes remain intentionally excluded and cannot be treated as reviewed content."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-011-PROJECT-REFERENCE-BRIDGE",
+        "docs/04_runbook/m1.5-a4-runtime-ux-acceptance-blocker-repair.json#RUNTIME-UX-BLOCKER-REPAIR-A4-FR-011-PROJECT-REFERENCE-BRIDGE"
+      ]
+    },
+    {
+      "id": "FOLLOW-UP-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+      "fr_id": "FR-013",
+      "track_id": "TRACK-A4-RUNTIME-UX-ACCEPTANCE-FOLLOWUP",
+      "review_group": "runtime_ux_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan final reference lifecycle UX acceptance follow-up while delete semantics stay out of scope.",
+      "required_actions": [
+        "Carry forward reference lifecycle blockers into the runtime UX follow-up package.",
+        "Keep delete semantics excluded until accepted spec material defines them."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for reference lifecycle evidence is still not recorded.",
+        "Delete semantics remain outside accepted spec scope and cannot be inferred from this repair handoff."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE",
+        "docs/04_runbook/m1.5-a4-runtime-ux-acceptance-blocker-repair.json#RUNTIME-UX-BLOCKER-REPAIR-A4-FR-013-REFERENCE-MANAGEMENT-BRIDGE"
+      ]
+    },
+    {
+      "id": "FOLLOW-UP-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+      "fr_id": "FR-014",
+      "track_id": "TRACK-A4-RUNTIME-UX-ACCEPTANCE-FOLLOWUP",
+      "review_group": "runtime_ux_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan final Skill configuration UX acceptance follow-up with secret-safe MCP metadata only.",
+      "required_actions": [
+        "Carry forward Skill configuration blockers into the runtime UX follow-up package.",
+        "Keep raw MCP command, raw secret, and credential values out of evidence."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for Skill configuration behavior is still not recorded.",
+        "Secret-safe metadata evidence remains insufficient for FR-014 acceptance until consumed by a reviewer decision record."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-014-SKILL-CONFIGURATION-BRIDGE",
+        "docs/04_runbook/m1.5-a4-runtime-ux-acceptance-blocker-repair.json#RUNTIME-UX-BLOCKER-REPAIR-A4-FR-014-SKILL-CONFIGURATION-BRIDGE"
+      ]
+    },
+    {
+      "id": "FOLLOW-UP-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+      "fr_id": "FR-017",
+      "track_id": "TRACK-A4-RUNTIME-UX-ACCEPTANCE-FOLLOWUP",
+      "review_group": "runtime_ux_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan final artifact Task Drawer UX acceptance follow-up without exposing artifact bodies or raw paths.",
+      "required_actions": [
+        "Carry forward artifact detail and open/download blockers into the runtime UX follow-up package.",
+        "Keep real generated artifact output acceptance separate from metadata-only safe handoff proof."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for artifact detail and open/download behavior is still not recorded.",
+        "No real generated artifact end-to-end workflow output is accepted by this repair handoff."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE",
+        "docs/04_runbook/m1.5-a4-runtime-ux-acceptance-blocker-repair.json#RUNTIME-UX-BLOCKER-REPAIR-A4-FR-017-ARTIFACT-TASK-DRAWER-BRIDGE"
+      ]
+    },
+    {
+      "id": "FOLLOW-UP-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+      "fr_id": "FR-018",
+      "track_id": "TRACK-A4-RUNTIME-UX-ACCEPTANCE-FOLLOWUP",
+      "review_group": "runtime_ux_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan final high-risk HITL pause/resume UX acceptance follow-up without retaining raw HITL values.",
+      "required_actions": [
+        "Carry forward high-risk HITL pause/resume blockers into the runtime UX follow-up package.",
+        "Keep HITL prompt text, custom decision content, prompt text, model output, and response bodies out of evidence."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "pnpm --filter @cw/desktop run test"
+      ],
+      "acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for high-risk HITL pause and resume behavior is still not recorded.",
+        "Pending decision metadata alone remains insufficient to prove accepted high-risk HITL resume behavior."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-018-HIGH-RISK-HITL-BRIDGE",
+        "docs/04_runbook/m1.5-a4-runtime-ux-acceptance-blocker-repair.json#RUNTIME-UX-BLOCKER-REPAIR-A4-FR-018-HIGH-RISK-HITL-BRIDGE"
+      ]
+    },
+    {
+      "id": "FOLLOW-UP-A8-FR-012-MANDATORY-GIT-BRIDGE",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A8-FR-012-MANDATORY-GIT-BRIDGE",
+      "fr_id": "FR-012",
+      "track_id": "TRACK-A8-GIT-HISTORY-CONFORMANCE-FOLLOWUP",
+      "review_group": "git_history_conformance_repair",
+      "decision_owner": "A8 git-history-auditor",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "follow_up_status": "planned_not_implemented",
+      "accepted": false,
+      "implemented": false,
+      "objective": "Plan A8 conformance follow-up for deferred runtime_harness.md section 8.2 rows before any EXIT-P1-10 readiness claim.",
+      "required_actions": [
+        "Carry forward the six explicitly deferred runtime_harness.md section 8.2 rows into A8 follow-up planning.",
+        "Keep FR-012 and EXIT-P1-10 not_ready until implementation or accepted deferral evidence exists for every trigger row."
+      ],
+      "verification_commands": [
+        "node apps/desktop/scripts/m1-5-a4-blocker-follow-up-plan.cjs --check",
+        "git diff --check"
+      ],
+      "acceptance_blockers": [
+        "EXIT-P1-10 remains not_ready because six runtime_harness.md §8.2 trigger rows are explicitly deferred rather than accepted as conformant.",
+        "FR-012 cannot be accepted until A8 reviewer evidence covers or accepts a formal deferral for every runtime_harness.md §8.2 trigger row.",
+        "Phase-level automatic commit failure surfacing and pre-commit negative hook coverage are still not accepted."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A8-FR-012-MANDATORY-GIT-BRIDGE",
+        "docs/04_runbook/m1.5-a8-git-history-conformance-blocker-repair.json#A8-BLOCKER-REPAIR-FR-012-MANDATORY-GIT-BRIDGE"
+      ]
+    }
+  ],
+  "excluded_items": [
+    {
+      "fr_id": "FR-015",
+      "reason": "Snapshot restore, continue execution, and snapshot ledger projection remain excluded while ADR-0012 is Proposed.",
+      "status": "blocked_by_contract_gate"
+    },
+    {
+      "scope": "production_behavior",
+      "reason": "W1.5.219 plans follow-up work only and does not implement runtime/Desktop behavior."
+    },
+    {
+      "scope": "phase_exit_acceptance",
+      "reason": "All source decisions remain needs_followup; Phase 1 exit criteria are not ready."
+    }
+  ],
+  "summary": {
+    "follow_up_item_count": 11,
+    "stream_acceptance_follow_up_items": 3,
+    "runtime_ux_acceptance_follow_up_items": 7,
+    "git_history_conformance_follow_up_items": 1,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "planned_not_implemented_items": 11,
+    "excluded_items": 3,
+    "source_needs_followup_items": 11,
+    "source_executed_not_accepted_items": 11,
+    "exit_p1_1_status": "not_ready",
+    "exit_p1_10_status": "not_ready",
+    "next_required_review": "A4 and A8 follow-up plan implementation review"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.220",
+      "title": "A4 stream acceptance follow-up package",
+      "reason": "Execute the W1.5.219 stream follow-up track for FR-009, FR-010, and FR-016 while keeping unsupported acceptance blocked."
+    }
+  ]
+}

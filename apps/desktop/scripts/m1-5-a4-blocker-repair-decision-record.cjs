@@ -574,11 +574,19 @@ function validateA4BlockerRepairDecisionRecord(options = {}) {
     ["W1.5.219"],
     "next recommended slices",
   );
-  assertDeepEqual(
-    readinessLedger.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.219"],
-    "ledger next recommended slices",
-  );
+  if (readinessLedger.slice === "W1.5.218") {
+    assertDeepEqual(
+      readinessLedger.next_recommended_slices.map((slice) => slice.id),
+      ["W1.5.219"],
+      "ledger next recommended slices",
+    );
+  } else {
+    const ledgerText = JSON.stringify(readinessLedger);
+    assertCondition(
+      ledgerText.includes("W1.5.218"),
+      "future readiness ledger must retain W1.5.218 evidence",
+    );
+  }
 
   return {
     status: decisionRecord.decision_record_status,

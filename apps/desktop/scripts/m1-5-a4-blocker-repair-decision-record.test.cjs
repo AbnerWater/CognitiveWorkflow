@@ -33,6 +33,12 @@ const a8RepairPath = path.join(
   "04_runbook",
   "m1.5-a8-git-history-conformance-blocker-repair.json",
 );
+const readinessLedgerPath = path.join(
+  repoRoot,
+  "docs",
+  "04_runbook",
+  "m1.5-readiness-ledger.json",
+);
 const desktopPackagePath = path.join(packageRoot, "package.json");
 
 const expectedStreamFrIds = ["FR-009", "FR-010", "FR-016"];
@@ -63,6 +69,13 @@ function writeMutatedDecisionRecord(mutator) {
   const mutatedRecordPath = path.join(tempDir, "decision-record.json");
   fs.writeFileSync(mutatedRecordPath, JSON.stringify(record, null, 2));
   return mutatedRecordPath;
+}
+
+function writeJsonTemp(prefix, fileName, value) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const tempPath = path.join(tempDir, fileName);
+  fs.writeFileSync(tempPath, JSON.stringify(value, null, 2));
+  return tempPath;
 }
 
 test("M1.5 A4 blocker repair decision record returns a conservative summary", () => {
@@ -261,6 +274,29 @@ test("M1.5 A4 blocker repair decision record rejects missing blockers or evidenc
       }),
     /evidence ref/u,
   );
+});
+
+test("M1.5 A4 blocker repair decision record tolerates later ledger slices with retained evidence", () => {
+  const readinessLedger = readJson(readinessLedgerPath);
+  readinessLedger.slice = "W1.5.219";
+  readinessLedger.next_recommended_slices = [
+    {
+      id: "W1.5.220",
+      title: "future slice",
+      reason: "W1.5.218 evidence retained while later ledger advances.",
+    },
+  ];
+  const mutatedLedgerPath = writeJsonTemp(
+    "cw-a4-blocker-decision-ledger-",
+    "readiness-ledger.json",
+    readinessLedger,
+  );
+
+  const summary = validateA4BlockerRepairDecisionRecord({
+    readinessLedgerPath: mutatedLedgerPath,
+  });
+
+  assert.equal(summary.decisionItemCount, 11);
 });
 
 test("M1.5 A4 blocker repair decision record test is wired into desktop package gates", () => {
