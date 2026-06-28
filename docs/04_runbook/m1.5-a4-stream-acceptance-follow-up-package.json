@@ -1,0 +1,214 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.220",
+  "package_status": "a4_stream_acceptance_follow_up_package_packaged_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "exit_p1_10_status": "not_ready",
+  "observed_at": "2026-06-28T16:20:00.000Z",
+  "source": {
+    "a4_blocker_follow_up_plan": "docs/04_runbook/m1.5-a4-blocker-follow-up-plan.json",
+    "a4_blocker_repair_decision_record": "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json",
+    "a4_stream_acceptance_blocker_repair": "docs/04_runbook/m1.5-a4-stream-acceptance-blocker-repair.json",
+    "a4_stream_phase_capture_execution": "docs/04_runbook/m1.5-a4-stream-phase-capture-execution.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "W1.5.220 packages only the W1.5.219 stream acceptance follow-up track for FR-009, FR-010, and FR-016.",
+    "No package item is accepted, implemented, completed, ready, or eligible for FR closure in this slice.",
+    "W1.5.220 does not modify runtime behavior, Desktop production behavior, accepted specs, ADR status, schemas, generated schemas, dependencies, packaging, updater work, or baseline docx files.",
+    "Evidence and package fields remain metadata-only and must not contain prompt text, model output, uploaded-file bytes, instruction text, HITL prompt content, custom decision values, response bodies, artifact bodies, secure paths, cache paths, output directory values, full destination paths, credentials, raw file content, or staged user file content.",
+    "FR-015 remains excluded while ADR-0012 is Proposed.",
+    "accepted_items and implemented_items remain zero; EXIT-P1-1 and EXIT-P1-10 remain not_ready."
+  ],
+  "track_execution": {
+    "source_track_id": "TRACK-A4-STREAM-ACCEPTANCE-FOLLOWUP",
+    "source_track_status": "planned_not_implemented",
+    "execution_status": "packaged_not_accepted",
+    "fr_ids": ["FR-009", "FR-010", "FR-016"],
+    "entry_slice": "W1.5.220",
+    "next_review_required": "A4 ux-acceptance-reviewer",
+    "decision_record_required": true,
+    "acceptance_decision_status": "pending_reviewer_decision"
+  },
+  "runner_contract": {
+    "runner_script": "apps/desktop/scripts/m1-5-a4-stream-acceptance-follow-up-package.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-a4-stream-acceptance-follow-up-package.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-a4-stream-acceptance-follow-up-package.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "runner_output_contract": {
+      "status": "a4_stream_acceptance_follow_up_package_packaged_not_accepted",
+      "package_item_count": 3,
+      "accepted_item_count": 0,
+      "implemented_item_count": 0,
+      "pending_a4_decision_item_count": 3,
+      "source_follow_up_item_count": 3,
+      "sanitized_summary_only": true
+    }
+  },
+  "stream_follow_up_package": {
+    "source_follow_up_slice": "W1.5.219",
+    "source_follow_up_track": "TRACK-A4-STREAM-ACCEPTANCE-FOLLOWUP",
+    "source_repair_slice": "W1.5.215",
+    "source_decision_slice": "W1.5.218",
+    "source_capture_slice": "W1.5.210",
+    "package_scope": "stream_acceptance_follow_up_only",
+    "acceptance_decision_recorded": false,
+    "raw_output_dir_recorded": false,
+    "query_hash_recorded": false,
+    "raw_stream_payload_recorded": false
+  },
+  "package_items": [
+    {
+      "id": "STREAM-FOLLOW-UP-PACKAGE-A4-FR-009-STREAM-COLLAPSED",
+      "source_follow_up_item_id": "FOLLOW-UP-A4-FR-009-STREAM-COLLAPSED",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-009-STREAM-COLLAPSED",
+      "source_repair_item_id": "STREAM-BLOCKER-REPAIR-A4-FR-009-STREAM-COLLAPSED",
+      "fr_id": "FR-009",
+      "review_group": "stream_acceptance_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "package_status": "packaged_not_accepted",
+      "source_follow_up_status": "planned_not_implemented",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "accepted": false,
+      "implemented": false,
+      "reviewer_decision_required": true,
+      "acceptance_decision_status": "pending_reviewer_decision",
+      "objective": "Package default collapsed stream follow-up evidence for a subsequent A4 decision without marking FR-009 accepted.",
+      "package_actions_executed": [
+        "Mapped the W1.5.219 FR-009 follow-up plan item to the W1.5.218 decision and W1.5.215 stream repair package.",
+        "Preserved the remaining default collapsed stream acceptance blockers without adding production behavior.",
+        "Kept the formal A4 accept or reject decision outside this slice."
+      ],
+      "remaining_acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for the default collapsed stream path is still not recorded.",
+        "FR-009 remains blocked until the reviewer decision record consumes this repaired stream evidence package."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-follow-up-plan.json#FOLLOW-UP-A4-FR-009-STREAM-COLLAPSED",
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-009-STREAM-COLLAPSED",
+        "docs/04_runbook/m1.5-a4-stream-acceptance-blocker-repair.json#STREAM-BLOCKER-REPAIR-A4-FR-009-STREAM-COLLAPSED"
+      ],
+      "next_action_refs": [
+        "Record a future A4 reviewer decision before any FR-009 acceptance claim."
+      ]
+    },
+    {
+      "id": "STREAM-FOLLOW-UP-PACKAGE-A4-FR-010-STREAM-EXPANDED",
+      "source_follow_up_item_id": "FOLLOW-UP-A4-FR-010-STREAM-EXPANDED",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-010-STREAM-EXPANDED",
+      "source_repair_item_id": "STREAM-BLOCKER-REPAIR-A4-FR-010-STREAM-EXPANDED",
+      "fr_id": "FR-010",
+      "review_group": "stream_acceptance_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "package_status": "packaged_not_accepted",
+      "source_follow_up_status": "planned_not_implemented",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "accepted": false,
+      "implemented": false,
+      "reviewer_decision_required": true,
+      "acceptance_decision_status": "pending_reviewer_decision",
+      "objective": "Package expanded stream follow-up evidence for a subsequent A4 decision without marking FR-010 accepted.",
+      "package_actions_executed": [
+        "Mapped the W1.5.219 FR-010 follow-up plan item to the W1.5.218 decision and W1.5.215 stream repair package.",
+        "Preserved the expanded stream readability blockers and explicit M1.6 demo deferral.",
+        "Kept the formal A4 accept or reject decision outside this slice."
+      ],
+      "remaining_acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for expanded stream readability is still not recorded.",
+        "End-to-end workflow stream demo evidence remains deferred to M1.6 or another explicit phase-level demo slice."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-follow-up-plan.json#FOLLOW-UP-A4-FR-010-STREAM-EXPANDED",
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-010-STREAM-EXPANDED",
+        "docs/04_runbook/m1.5-a4-stream-acceptance-blocker-repair.json#STREAM-BLOCKER-REPAIR-A4-FR-010-STREAM-EXPANDED"
+      ],
+      "next_action_refs": [
+        "Record a future A4 reviewer decision before any FR-010 acceptance claim."
+      ]
+    },
+    {
+      "id": "STREAM-FOLLOW-UP-PACKAGE-A4-FR-016-EVENT-CLASSIFICATION",
+      "source_follow_up_item_id": "FOLLOW-UP-A4-FR-016-EVENT-CLASSIFICATION",
+      "source_blocker_repair_decision_id": "BLOCKER-REPAIR-DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+      "source_repair_item_id": "STREAM-BLOCKER-REPAIR-A4-FR-016-EVENT-CLASSIFICATION",
+      "fr_id": "FR-016",
+      "review_group": "stream_acceptance_repair",
+      "decision_owner": "A4 ux-acceptance-reviewer",
+      "package_status": "packaged_not_accepted",
+      "source_follow_up_status": "planned_not_implemented",
+      "source_decision": "needs_followup",
+      "source_repair_status": "executed_not_accepted",
+      "accepted": false,
+      "implemented": false,
+      "reviewer_decision_required": true,
+      "acceptance_decision_status": "pending_reviewer_decision",
+      "objective": "Package final event-label follow-up evidence for a subsequent A4 decision without marking FR-016 accepted.",
+      "package_actions_executed": [
+        "Mapped the W1.5.219 FR-016 follow-up plan item to the W1.5.218 decision and W1.5.215 stream repair package.",
+        "Preserved the final event-label acceptance blockers without treating fallback coverage as closure.",
+        "Kept the formal A4 accept or reject decision outside this slice."
+      ],
+      "remaining_acceptance_blockers": [
+        "Formal A4 reviewer acceptance or rejection for final event labels is still not recorded.",
+        "FR-016 remains blocked until the reviewer decision record consumes this repaired stream evidence package."
+      ],
+      "evidence_refs": [
+        "docs/04_runbook/m1.5-a4-blocker-follow-up-plan.json#FOLLOW-UP-A4-FR-016-EVENT-CLASSIFICATION",
+        "docs/04_runbook/m1.5-a4-blocker-repair-decision-record.json#BLOCKER-REPAIR-DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+        "docs/04_runbook/m1.5-a4-stream-acceptance-blocker-repair.json#STREAM-BLOCKER-REPAIR-A4-FR-016-EVENT-CLASSIFICATION"
+      ],
+      "next_action_refs": [
+        "Record a future A4 reviewer decision before any FR-016 acceptance claim."
+      ]
+    }
+  ],
+  "excluded_items": [
+    {
+      "track_id": "TRACK-A4-RUNTIME-UX-ACCEPTANCE-FOLLOWUP",
+      "reason": "Runtime UX acceptance follow-up belongs to W1.5.221 or another dedicated runtime UX follow-up slice.",
+      "status": "not_executed_in_this_slice"
+    },
+    {
+      "track_id": "TRACK-A8-GIT-HISTORY-CONFORMANCE-FOLLOWUP",
+      "reason": "A8 Git-history conformance follow-up belongs to W1.5.222 or another dedicated A8 follow-up slice.",
+      "status": "not_executed_in_this_slice"
+    },
+    {
+      "fr_id": "FR-015",
+      "reason": "Snapshot restore, continue execution, and snapshot ledger projection remain excluded while ADR-0012 is Proposed.",
+      "status": "blocked_by_contract_gate"
+    },
+    {
+      "scope": "phase_exit_acceptance",
+      "reason": "All package items remain pending reviewer decision; Phase 1 exit criteria are not ready."
+    }
+  ],
+  "summary": {
+    "package_item_count": 3,
+    "stream_acceptance_package_items": 3,
+    "runtime_ux_package_items": 0,
+    "git_history_package_items": 0,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "packaged_not_accepted_items": 3,
+    "pending_a4_decision_items": 3,
+    "source_follow_up_items": 3,
+    "source_decision_items": 3,
+    "source_stream_repair_items": 3,
+    "excluded_items": 4,
+    "exit_p1_1_status": "not_ready",
+    "exit_p1_10_status": "not_ready",
+    "next_required_review": "A4 stream acceptance follow-up package review"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.221",
+      "title": "A4 runtime UX acceptance follow-up package",
+      "reason": "Execute the W1.5.219 runtime UX follow-up track for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 while keeping unsupported acceptance blocked."
+    }
+  ]
+}
