@@ -1,0 +1,259 @@
+{
+  "schema_version": "0.1.0",
+  "milestone": "M1.5",
+  "slice": "W1.5.210",
+  "capture_status": "a4_stream_phase_capture_executed_not_accepted",
+  "exit_criterion": "EXIT-P1-1",
+  "exit_p1_1_status": "not_ready",
+  "observed_at": "2026-06-28T08:10:00.000Z",
+  "source": {
+    "needs_followup_repair_plan": "docs/04_runbook/m1.5-a4-needs-followup-repair-plan.json",
+    "a4_decision_record": "docs/04_runbook/m1.5-a4-runtime-flow-decision-record.json",
+    "a4_capture_execution": "docs/04_runbook/m1.5-a4-capture-execution.json",
+    "a4_capture_matrix": "docs/04_runbook/m1.5-a4-capture-matrix.json",
+    "a4_evidence_manifest": "docs/04_runbook/m1.5-a4-evidence-manifest.json",
+    "readiness_ledger": "docs/04_runbook/m1.5-readiness-ledger.json"
+  },
+  "guardrails": [
+    "W1.5.210 executes only the W1.5.209 stream phase capture track for FR-009, FR-010, and FR-016.",
+    "W1.5.210 does not implement runtime bridge captures, A8 Git-history audit, runtime/Desktop production behavior, accepted spec changes, ADR changes, schema changes, generated schema changes, dependency changes, packaging, updater work, or baseline docx changes.",
+    "No field may mark any FR accepted, ready, completed, or phase-exit satisfied.",
+    "Capture evidence must remain sanitized and must not include raw prompts, raw model output, uploaded-file bytes, query/hash secrets, response bodies, artifact bodies, secure paths, cache paths, output directory values, full destination paths, prompt_to_user, or custom_value content.",
+    "FR-015 remains excluded until ADR-0012 or another accepted restore/continue contract exists.",
+    "EXIT-P1-1 remains not_ready and accepted_items remains zero."
+  ],
+  "track_execution": {
+    "source_track_id": "TRACK-A4-STREAM-PHASE-CAPTURE",
+    "source_track_status": "planned_not_implemented",
+    "execution_status": "executed_not_accepted",
+    "fr_ids": ["FR-009", "FR-010", "FR-016"],
+    "entry_slice": "W1.5.210",
+    "next_review_required": "A4 ux-acceptance-reviewer"
+  },
+  "runner_contract": {
+    "runner_script": "apps/desktop/scripts/m1-5-a4-stream-phase-capture-execution.cjs",
+    "focused_check": "node apps/desktop/scripts/m1-5-a4-stream-phase-capture-execution.cjs --check",
+    "focused_test": "node --test apps/desktop/scripts/m1-5-a4-stream-phase-capture-execution.test.cjs",
+    "standard_desktop_test": "pnpm --filter @cw/desktop run test",
+    "visual_smoke_stream_case_command": "pnpm --filter @cw/desktop run visual-smoke",
+    "runner_output_contract": {
+      "status": "a4_stream_phase_capture_executed_not_accepted",
+      "phase_capture_item_count": 3,
+      "accepted_item_count": 0,
+      "pending_a4_review_item_count": 3,
+      "source_needs_followup_item_count": 3,
+      "sanitized_summary_only": true
+    }
+  },
+  "stream_required_case_capture": {
+    "execution_status": "executed_passed",
+    "command": "pnpm --filter @cw/desktop run visual-smoke",
+    "case_count": 6,
+    "case_names": [
+      "known-desktop",
+      "known-mobile",
+      "unknown-desktop",
+      "unknown-mobile",
+      "unknown-mobile-scroll-900",
+      "unknown-mobile-scroll-1440"
+    ],
+    "chat_enabled_optional_context_in_scope": false,
+    "raw_output_dir_recorded": false,
+    "query_hash_recorded": false
+  },
+  "visual_smoke_matrix_capture": {
+    "source_execution_status": "executed_passed",
+    "command": "pnpm --filter @cw/desktop run visual-smoke:matrix",
+    "target": {
+      "origin": "http://127.0.0.1:5174",
+      "pathname": "/visual-smoke.html"
+    },
+    "matrix_manifest_artifact": "docs/04_runbook/m1.5-a4-capture-matrix.json",
+    "output_evidence": {
+      "manifest_file_name": "matrix.json",
+      "case_count": 8
+    },
+    "required_case_names": [
+      "known-desktop",
+      "known-mobile",
+      "unknown-desktop",
+      "unknown-mobile",
+      "unknown-mobile-scroll-900",
+      "unknown-mobile-scroll-1440"
+    ],
+    "optional_context_case_names": [
+      "chat-enabled-desktop",
+      "chat-enabled-mobile"
+    ],
+    "observed_case_names": [
+      "known-desktop",
+      "known-mobile",
+      "chat-enabled-desktop",
+      "chat-enabled-mobile",
+      "unknown-desktop",
+      "unknown-mobile",
+      "unknown-mobile-scroll-900",
+      "unknown-mobile-scroll-1440"
+    ],
+    "source_failure_count": 0,
+    "raw_output_dir_recorded": false,
+    "query_hash_recorded": false
+  },
+  "phase_capture_items": [
+    {
+      "id": "PHASE-CAPTURE-A4-FR-009-STREAM-COLLAPSED",
+      "repair_item_id": "REPAIR-A4-FR-009-STREAM-COLLAPSED",
+      "source_decision_id": "DECISION-A4-FR-009-STREAM-COLLAPSED",
+      "source_capture_id": "CAPTURE-A4-FR-009-STREAM-COLLAPSED",
+      "review_item_id": "A4-FR-009-STREAM-COLLAPSED",
+      "fr_id": "FR-009",
+      "review_group": "candidate_stream_evidence",
+      "phase_capture_status": "executed_not_accepted",
+      "source_decision": "needs_followup",
+      "source_repair_status": "planned_not_implemented",
+      "source_capture_status": "captured_not_accepted",
+      "accepted": false,
+      "reviewer_decision_required": true,
+      "observed_matrix_cases": ["known-desktop", "known-mobile"],
+      "observed_evidence_fields": [
+        "streamCollapsedMetrics.streamPanelExpanded=false",
+        "streamCollapsedMetrics.streamPanelToggleExpanded=false",
+        "streamCollapsedMetrics.streamPanelControls=0",
+        "streamCollapsedMetrics.streamPanelBodies=0",
+        "streamCollapsedMetrics.streamPanelCollapsedVisible=1",
+        "streamCollapsedMetrics.streamPanelCollapsedUnread=1",
+        "streamExpandedMetrics.streamPanelExpanded=true"
+      ],
+      "phase_level_capture_inputs": [
+        "Known desktop and mobile matrix cases show the first-viewport stream panel in its default collapsed state.",
+        "Collapsed summary and unread affordance evidence is recorded as structured booleans and counts only.",
+        "The expanded-state control is observed as an affordance check, not as an A4 acceptance decision."
+      ],
+      "source_acceptance_blockers": [
+        "A4 reviewer has not recorded first-viewport collapsed stream acceptance.",
+        "Phase-level UX recording is still missing."
+      ],
+      "post_capture_remaining_blockers": [
+        "A4 reviewer has not reviewed W1.5.210 stream phase capture evidence for first-viewport collapsed stream acceptance."
+      ]
+    },
+    {
+      "id": "PHASE-CAPTURE-A4-FR-010-STREAM-EXPANDED",
+      "repair_item_id": "REPAIR-A4-FR-010-STREAM-EXPANDED",
+      "source_decision_id": "DECISION-A4-FR-010-STREAM-EXPANDED",
+      "source_capture_id": "CAPTURE-A4-FR-010-STREAM-EXPANDED",
+      "review_item_id": "A4-FR-010-STREAM-EXPANDED",
+      "fr_id": "FR-010",
+      "review_group": "candidate_stream_evidence",
+      "phase_capture_status": "executed_not_accepted",
+      "source_decision": "needs_followup",
+      "source_repair_status": "planned_not_implemented",
+      "source_capture_status": "captured_not_accepted",
+      "accepted": false,
+      "reviewer_decision_required": true,
+      "observed_matrix_cases": ["known-desktop", "known-mobile"],
+      "observed_evidence_fields": [
+        "streamEventExpandedMetrics.streamEventDetailKnownType=true",
+        "streamEventCollapsedMetrics.streamEventDetailPanels=0",
+        "streamControlsExpandedMetrics.streamControlsBodies=1",
+        "streamGroupExpandedMetrics.streamEventGroupBodies=1",
+        "streamSelectionExpandedMetrics.streamSelectionDetails=1",
+        "streamSelectionMetadataExpandedMetrics.streamSelectionMetadataDetails=1"
+      ],
+      "phase_level_capture_inputs": [
+        "Known desktop and mobile matrix cases show expanded stream event detail readability.",
+        "Control, group, selection, and metadata detail panels are captured as structured counts and booleans only.",
+        "The capture confirms observable event detail surfaces without treating fixture evidence as final A4 acceptance."
+      ],
+      "source_acceptance_blockers": [
+        "A4 reviewer has not accepted the full expanded event taxonomy as an end-user path.",
+        "Real workflow stream demo evidence is still missing."
+      ],
+      "post_capture_remaining_blockers": [
+        "A4 reviewer has not reviewed W1.5.210 stream phase capture evidence for expanded stream readability.",
+        "End-to-end workflow stream demo evidence remains deferred to later phase-level demo work."
+      ]
+    },
+    {
+      "id": "PHASE-CAPTURE-A4-FR-016-EVENT-CLASSIFICATION",
+      "repair_item_id": "REPAIR-A4-FR-016-EVENT-CLASSIFICATION",
+      "source_decision_id": "DECISION-A4-FR-016-EVENT-CLASSIFICATION",
+      "source_capture_id": "CAPTURE-A4-FR-016-EVENT-CLASSIFICATION",
+      "review_item_id": "A4-FR-016-EVENT-CLASSIFICATION",
+      "fr_id": "FR-016",
+      "review_group": "candidate_stream_evidence",
+      "phase_capture_status": "executed_not_accepted",
+      "source_decision": "needs_followup",
+      "source_repair_status": "planned_not_implemented",
+      "source_capture_status": "captured_not_accepted",
+      "accepted": false,
+      "reviewer_decision_required": true,
+      "observed_matrix_cases": [
+        "known-desktop",
+        "known-mobile",
+        "unknown-desktop",
+        "unknown-mobile",
+        "unknown-mobile-scroll-900",
+        "unknown-mobile-scroll-1440"
+      ],
+      "observed_evidence_fields": [
+        "known cases: streamEventExpandedMetrics.streamEventDetailKnownType=true",
+        "known cases: streamSelectionMetadataExpandedMetrics.streamSelectionMetadataKnownType=true",
+        "unknown cases: streamEventExpandedMetrics.streamEventDetailKnownType=false",
+        "unknown cases: streamSelectionMetadataExpandedMetrics.streamSelectionMetadataKnownType=false",
+        "unknown cases: fallback label remains visible without raw payload exposure"
+      ],
+      "phase_level_capture_inputs": [
+        "Known and unknown stream matrix cases show event classification behavior across desktop and mobile viewports.",
+        "Unknown-event fallback is captured as known-type booleans and visible fallback state, not raw payload content.",
+        "The capture keeps final A4 label acceptance separate from the observed structured evidence."
+      ],
+      "source_acceptance_blockers": [
+        "A4 reviewer has not accepted final user-facing labels for every event class.",
+        "Phase-level demo stream evidence is still missing."
+      ],
+      "post_capture_remaining_blockers": [
+        "A4 reviewer has not reviewed W1.5.210 stream phase capture evidence for final user-facing event labels."
+      ]
+    }
+  ],
+  "excluded_items": [
+    {
+      "track_id": "TRACK-A4-RUNTIME-BRIDGE-CAPTURE",
+      "reason": "Runtime bridge user-path captures belong to W1.5.211.",
+      "status": "not_executed_in_this_slice"
+    },
+    {
+      "track_id": "TRACK-A8-GIT-HISTORY-PREREQ",
+      "reason": "A8 Git-history prerequisite evidence belongs to W1.5.212 or a later dedicated audit slice.",
+      "status": "not_executed_in_this_slice"
+    },
+    {
+      "fr_id": "FR-015",
+      "reason": "Snapshot restore/continue remains blocked until ADR-0012 or another accepted contract exists.",
+      "status": "blocked_by_contract_gate"
+    }
+  ],
+  "summary": {
+    "phase_capture_item_count": 3,
+    "stream_phase_capture_items": 3,
+    "runtime_bridge_capture_items": 0,
+    "git_history_prereq_items": 0,
+    "accepted_items": 0,
+    "implemented_items": 0,
+    "pending_a4_review_items": 3,
+    "source_needs_followup_items": 3,
+    "source_repair_items": 3,
+    "matrix_case_count": 8,
+    "required_matrix_case_count": 6,
+    "exit_p1_1_status": "not_ready",
+    "next_required_review": "A4 stream phase capture implementation review"
+  },
+  "next_recommended_slices": [
+    {
+      "id": "W1.5.211",
+      "title": "A4 runtime bridge user-path capture",
+      "reason": "Execute the second W1.5.209 repair track for FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 while keeping all FR acceptance decisions pending A4 review."
+    }
+  ]
+}
