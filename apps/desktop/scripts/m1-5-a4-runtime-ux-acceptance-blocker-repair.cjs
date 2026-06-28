@@ -112,6 +112,21 @@ function countBy(items, predicate) {
   return items.filter(predicate).length;
 }
 
+function parseSliceOrdinal(sliceId) {
+  const match = /^W1\.5\.(\d+)$/.exec(sliceId);
+  assertCondition(Boolean(match), `invalid slice id ${sliceId}`);
+  return Number(match[1]);
+}
+
+function assertSliceAtLeast(actual, expected, message) {
+  const actualOrdinal = parseSliceOrdinal(actual);
+  const expectedOrdinal = parseSliceOrdinal(expected);
+  assertCondition(
+    actualOrdinal >= expectedOrdinal,
+    `${message}: expected ${actual} to be at least ${expected}`,
+  );
+}
+
 function validateA4RuntimeUxAcceptanceBlockerRepair(options = {}) {
   const runtimeRepair = readJson(
     options.runtimeRepairPath ?? runtimeRepairPath,
@@ -164,7 +179,17 @@ function validateA4RuntimeUxAcceptanceBlockerRepair(options = {}) {
     "a4_runtime_bridge_user_path_capture_executed_not_accepted",
     "runtime bridge source status",
   );
-  assertEqual(readinessLedger.slice, "W1.5.216", "readiness ledger slice");
+  assertSliceAtLeast(
+    readinessLedger.slice,
+    "W1.5.216",
+    "readiness ledger slice",
+  );
+  assertCondition(
+    JSON.stringify(readinessLedger.m1_5_roadmap_items ?? {}).includes(
+      "W1.5.216 executes the FR-007, FR-008, FR-011, FR-013, FR-014, FR-017, and FR-018 runtime UX blocker repair handoff without accepting FR items",
+    ),
+    "readiness ledger records W1.5.216 runtime UX evidence",
+  );
   assertEqual(
     readinessLedger.phase_1_exit_readiness.find(
       (item) => item.id === "EXIT-P1-1",
@@ -535,11 +560,18 @@ function validateA4RuntimeUxAcceptanceBlockerRepair(options = {}) {
     ["W1.5.217"],
     "next recommended slices",
   );
-  assertDeepEqual(
-    readinessLedger.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.217"],
-    "readiness ledger next recommended slices",
-  );
+  if (readinessLedger.slice === "W1.5.216") {
+    assertDeepEqual(
+      readinessLedger.next_recommended_slices.map((slice) => slice.id),
+      ["W1.5.217"],
+      "readiness ledger next recommended slices",
+    );
+  } else {
+    assertCondition(
+      JSON.stringify(readinessLedger).includes("W1.5.216"),
+      "readiness ledger retains W1.5.216 evidence after later slice advancement",
+    );
+  }
 
   return {
     status: runtimeRepair.repair_status,
