@@ -138,6 +138,21 @@ function countBy(items, predicate) {
   return items.filter(predicate).length;
 }
 
+function parseSliceOrdinal(sliceId) {
+  const match = /^W1\.5\.(\d+)$/.exec(sliceId);
+  assertCondition(Boolean(match), `invalid slice id ${sliceId}`);
+  return Number(match[1]);
+}
+
+function assertSliceAtLeast(actual, expected, message) {
+  const actualOrdinal = parseSliceOrdinal(actual);
+  const expectedOrdinal = parseSliceOrdinal(expected);
+  assertCondition(
+    actualOrdinal >= expectedOrdinal,
+    `${message}: expected ${actual} to be at least ${expected}`,
+  );
+}
+
 function validateA8GitHistoryConformanceBlockerRepair(options = {}) {
   const repair = readJson(options.repairPath ?? repairPath);
   const blockerPlan = readJson(options.blockerPlanPath ?? blockerPlanPath);
@@ -187,7 +202,17 @@ function validateA8GitHistoryConformanceBlockerRepair(options = {}) {
     "a8_git_history_prerequisite_evidence_recorded_not_accepted",
     "A8 prerequisite source status",
   );
-  assertEqual(readinessLedger.slice, "W1.5.217", "readiness ledger slice");
+  assertSliceAtLeast(
+    readinessLedger.slice,
+    "W1.5.217",
+    "readiness ledger slice",
+  );
+  assertCondition(
+    JSON.stringify(readinessLedger.m1_5_roadmap_items ?? {}).includes(
+      "W1.5.217 executes the FR-012 A8 Git-history conformance blocker repair handoff without accepting FR items",
+    ),
+    "readiness ledger records W1.5.217 A8 evidence",
+  );
   assertEqual(
     readinessLedger.phase_1_exit_readiness.find(
       (item) => item.id === "EXIT-P1-1",
@@ -597,11 +622,18 @@ function validateA8GitHistoryConformanceBlockerRepair(options = {}) {
     ["W1.5.218"],
     "next recommended slices",
   );
-  assertDeepEqual(
-    readinessLedger.next_recommended_slices.map((slice) => slice.id),
-    ["W1.5.218"],
-    "readiness ledger next recommended slices",
-  );
+  if (readinessLedger.slice === "W1.5.217") {
+    assertDeepEqual(
+      readinessLedger.next_recommended_slices.map((slice) => slice.id),
+      ["W1.5.218"],
+      "readiness ledger next recommended slices",
+    );
+  } else {
+    assertCondition(
+      JSON.stringify(readinessLedger).includes("W1.5.217"),
+      "readiness ledger retains W1.5.217 evidence after later slice advancement",
+    );
+  }
 
   return {
     status: repair.repair_status,
